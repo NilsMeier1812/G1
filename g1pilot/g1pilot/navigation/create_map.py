@@ -84,6 +84,8 @@ class SceneMapPublisher(Node):
         for marker in self._latest_markers.markers:
             if marker.action != 0:   # 0 == Marker.ADD; DELETE/andere ueberspringen
                 continue
+            if not sm.is_collision_marker(marker):   # reine Anzeige (z.B. Optik-Mesh)
+                continue
             try:
                 x, y, hx, hy = sm.footprint_xy(marker)
             except (AttributeError, ZeroDivisionError):

@@ -178,16 +178,23 @@ class G1IKSolver:
 
         # Ueberwachte Punkte je Arm fuer die UMGEBUNGS-Kollision (Hindernisse/
         # Greif-Objekte, siehe sync_environment()/environment_command_in_collision()
-        # unten): Ellbogen + Hand-TCP. Dieselbe Faustregel wie beim kartesischen
-        # Speedlimit im arm_controller (ein paar repraesentative Punkte statt
-        # voller Mesh-Kollision) -- die Hand-TCP-Frames (_fid_left/_fid_right)
-        # existieren schon.
+        # unten): Ellbogen, Handgelenk, Hand-TCP + Zwischenpunkte auf Unterarm und
+        # Hand. Nur Ellbogen + TCP liessen den ~25 cm langen Unterarm unbewacht --
+        # geplante Bahnen schnitten dann z.B. durch eine Tischkante. Repraesentative
+        # Punkte statt voller Mesh-Kollision (billig genug fuer den Planer).
         self._fid_env_elbow = {}
+        self._fid_env_wrist = {}
         for side in ("left", "right"):
-            try:
-                self._fid_env_elbow[side] = self.model.getFrameId(f"{side}_elbow_link")
-            except Exception:
-                self._fid_env_elbow[side] = None
+            for store, link in ((self._fid_env_elbow, "elbow_link"),
+                                (self._fid_env_wrist, "wrist_roll_link")):
+                try:
+                    store[side] = self.model.getFrameId(f"{side}_{link}")
+                except Exception:
+                    store[side] = None
+        # Arm-Punkte (Ellbogen/Unterarm/Handgelenk) brauchen mehr Abstand als der
+        # TCP: der Unterarm hat ~4 cm Radius. Die Hand selbst behaelt
+        # collision_margin, damit sie z.B. eine Box auf dem Tisch erreicht.
+        self.arm_env_margin = 0.06
 
         # Umgebungs-Objekte (Hindernisse + Greif-Objekte), gesetzt ueber
         # sync_environment(). Alle Posen MUESSEN bereits im world_frame dieses
@@ -195,6 +202,7 @@ class G1IKSolver:
         # transformiert /scene_markers (Frame 'map') per TF dorthin, BEVOR er
         # sync_environment() aufruft.
         self._env_objects = {}
+        self._env_arrays = None
         # Eigenes pin.Data fuer den Umgebungs-Check (analog zu _gate_data oben):
         # die FK hier darf NICHT self.data (Solver-Zustand, von solve()/anderen
         # Aufrufern im selben Tick genutzt) ueberschreiben.
@@ -343,6 +351,15 @@ class G1IKSolver:
                 "pos": pos, "R": R, "half": half,
             }
         self._env_objects = new_objects
+        # Dieselben Objekte als Arrays fuer den vektorisierten Check (der Planer
+        # ruft ihn tausendfach auf; ein zerlegter Arbeitsplatz hat ~65 Boxen).
+        objs = list(new_objects.values())
+        self._env_arrays = None if not objs else (
+            np.stack([o["pos"] for o in objs]),
+            np.stack([o["R"] for o in objs]),
+            np.stack([o["half"] for o in objs]),
+            np.array([o["cls"] == "grasp" for o in objs]),
+        )
 
     @staticmethod
     def _point_obb_distance(p: np.ndarray, obj: dict) -> float:
@@ -356,15 +373,16 @@ class G1IKSolver:
 
     def environment_command_in_collision(self, current_all, hard=False, data=None) -> bool:
         """True, wenn die 29-DOF-Konfiguration current_all (ROS-Gelenkreihen-
-        folge) einen ueberwachten Arm-Punkt (Ellbogen, Hand-TCP) zu nah an ein
-        Umgebungs-Objekt bringt (hard=True: echte Durchdringung, margin=0;
-        hard=False: Sicherheitsmarge collision_margin).
+        folge) einen ueberwachten Arm-Punkt (Ellbogen, Unterarm, Handgelenk,
+        Hand, Hand-TCP) zu nah an ein Umgebungs-Objekt bringt (hard=True: echte
+        Durchdringung, Marge 0; sonst arm_env_margin fuer Arm-Punkte bzw.
+        collision_margin fuer die Hand).
 
         ACM (Allowed-Collision, siehe g1pilot/docs/11_arm_manipulation_technik.md (Umgebungs-Kollisionsgate)):
-        fuer Greif-Objekte (cls='grasp') wird NUR die Hand-TCP-Kombination
-        ausgenommen (die Hand darf ans Greifziel heran) -- der Ellbogen bleibt
-        gegen JEDES Objekt (auch Greif-Objekte) geprueft, und Hindernisse
-        (cls='obstacle') werden fuer BEIDE Punkte geprueft.
+        fuer Greif-Objekte (cls='grasp') werden NUR die Hand-Punkte ausgenommen
+        (die Hand darf ans Greifziel heran) -- Ellbogen/Unterarm/Handgelenk
+        bleiben gegen JEDES Objekt (auch Greif-Objekte) geprueft, und
+        Hindernisse (cls='obstacle') werden fuer ALLE Punkte geprueft.
 
         `data`: optionaler eigener pin.Data-Scratch-Puffer (Default:
         self._env_data). Aufrufer, die VIELE Checks aus einem ANDEREN Thread
@@ -382,20 +400,41 @@ class G1IKSolver:
                 q[self._name_to_q_index[ros_name]] = float(current_all[jid_idx])
         pin.forwardKinematics(self.model, data, q)
         pin.updateFramePlacements(self.model, data)
-        margin = 0.0 if hard else self.collision_margin
 
+        # Punkte sammeln: (Position, Marge, gilt_gegen_Greif-Objekte).
+        # Arm (Ellbogen, 2x Unterarm): gegen ALLE Objekte, groessere Marge.
+        # Hand (Handgelenk, Handgelenk->TCP-Mitte, TCP): collision_margin und nur
+        # gegen Hindernisse -- an ein Greif-Objekt darf die Hand heran (ACM).
+        arm_margin = 0.0 if hard else self.arm_env_margin
+        hand_margin = 0.0 if hard else self.collision_margin
+        pts, margins, vs_grasp = [], [], []
         for side, fid_hand in (("left", self._fid_left), ("right", self._fid_right)):
-            fid_elbow = self._fid_env_elbow.get(side)
-            p_hand = data.oMf[fid_hand].translation if fid_hand is not None else None
-            p_elbow = data.oMf[fid_elbow].translation if fid_elbow is not None else None
-            for obj in self._env_objects.values():
-                if p_elbow is not None:
-                    if self._point_obb_distance(p_elbow, obj) < margin:
-                        return True
-                if p_hand is not None and obj["cls"] != "grasp":
-                    if self._point_obb_distance(p_hand, obj) < margin:
-                        return True
-        return False
+            fe, fw = self._fid_env_elbow.get(side), self._fid_env_wrist.get(side)
+            p_e = data.oMf[fe].translation if fe is not None else None
+            p_w = data.oMf[fw].translation if fw is not None else None
+            p_h = data.oMf[fid_hand].translation if fid_hand is not None else None
+            arm = [p_e] if p_e is not None else []
+            if p_e is not None and p_w is not None:
+                arm += [p_e + (p_w - p_e) * t for t in (1.0 / 3.0, 2.0 / 3.0)]
+            hand = [p for p in (p_w, p_h) if p is not None]
+            if p_w is not None and p_h is not None:
+                hand.append(0.5 * (p_w + p_h))
+            for p in arm:
+                pts.append(p); margins.append(arm_margin); vs_grasp.append(True)
+            for p in hand:
+                pts.append(p); margins.append(hand_margin); vs_grasp.append(False)
+        if not pts or self._env_arrays is None:
+            return False
+
+        P, R, H, is_grasp = self._env_arrays
+        pts = np.asarray(pts)                                   # (M,3)
+        # Punkte in die Box-Achsen drehen: local[m,n] = R[n]^T (p[m] - P[n])
+        local = np.einsum("nji,mnj->mni", R, pts[:, None, :] - P[None, :, :])
+        excess = np.maximum(np.abs(local) - H[None, :, :], 0.0)
+        dist = np.linalg.norm(excess, axis=2)                   # (M,N)
+        hit = dist < np.asarray(margins)[:, None]
+        hit &= ~(~np.asarray(vs_grasp)[:, None] & is_grasp[None, :])   # Hand vs Greif-Objekt erlaubt
+        return bool(hit.any())
 
     def make_scratch_buffers(self) -> dict:
         """Eigener, unabhaengiger FK-/Kollisions-Scratch-Zustand (eigenes

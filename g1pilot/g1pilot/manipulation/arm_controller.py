@@ -1172,8 +1172,15 @@ class ArmController(Node):
         # in der Null-Pose -> die Policy kippt nach ~2 s (headless reproduziert).
         # Also fuer WALK die Arme selbst uebernehmen. Real bleibt unveraendert:
         # dort fuehrt Unitrees Onboard-Regler die Arme beim Laufen.
+        self._sim_auto_enable_arms("WALK")
+
+    def _sim_auto_enable_arms(self, what: str) -> None:
+        """NUR SIM: Arme automatisch aktivieren, wenn eine Aktion sie braucht
+        (WALK: Lauf-Pose, POSE ANFAHREN: gespeicherte Pose), statt sie still zu
+        ignorieren. Real bleibt ENABLE MANIPULATION eine bewusste Operator-
+        Entscheidung. Ein aktiver E-Stop wird nie uebergangen."""
         if is_sim_mode() and not self.arms_enabled and not self.estop_active:
-            self.get_logger().info("WALK (Sim): Arme nicht aktiviert -> fuer die Lauf-Pose aktivieren.")
+            self.get_logger().info(f"{what} (Sim): Arme nicht aktiviert -> automatisch aktivieren.")
             self._arms_controlled_callback(Bool(data=True))
 
     def _on_balance_mode(self, msg: Bool):
@@ -1221,7 +1228,8 @@ class ArmController(Node):
         pro Update (nicht pro Marker) -- alle Marker teilen sich denselben
         Quell-Frame, do_transform_pose_stamped() je Marker ist reine Pose-Arithmetik,
         keine erneute TF-Baum-Abfrage."""
-        add_markers = [m for m in msg.markers if m.action == Marker.ADD]
+        add_markers = [m for m in msg.markers
+                       if m.action == Marker.ADD and sm.is_collision_marker(m)]
         if not add_markers:
             self.ik_solver.sync_environment([])
             return
@@ -1543,6 +1551,8 @@ class ArmController(Node):
         name = (msg.data or "").strip()
         if not name:
             return
+        if not self.walk_mode:
+            self._sim_auto_enable_arms(f"POSE ANFAHREN '{name}'")
         not_ready = self._arms_not_ready_reason()
         if not_ready:
             self.get_logger().warn(f"POSE ANFAHREN '{name}' ignoriert: {not_ready}")

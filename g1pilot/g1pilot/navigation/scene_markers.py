@@ -12,6 +12,9 @@ Kontrakt pro Marker:
   - ns    = NS_OBSTACLE oder NS_GRASP                  (Hindernis vs. Greif-
             Objekt -- steuert im IK-Solver die Kollisions-Ausnahme, siehe
             g1pilot/docs/11_arm_manipulation_technik.md (Umgebungs-Kollisionsgate))
+            oder NS_DISPLAY (nur Anzeige in RViz, z.B. das Optik-Mesh eines in
+            konvexe Teile zerlegten Arbeitsplatzes -- IK/Nav ignorieren es, die
+            Teile kommen als eigene NS_OBSTACLE-Boxen, siehe is_collision_marker)
   - id    = stable_id(name)                            (bleibt ueber Ticks
             stabil, damit RViz Marker nicht staendig neu anlegt)
   - text  = encode_text(name, aabb_half) / decode_text(...)  (wiederverwendetes
@@ -27,6 +30,7 @@ from visualization_msgs.msg import Marker
 
 NS_OBSTACLE = "g1scene:obstacle"
 NS_GRASP = "g1scene:grasp"
+NS_DISPLAY = "g1scene:display"
 
 _MJ_TYPE_TO_MARKER = {
     "box": Marker.CUBE,
@@ -37,11 +41,17 @@ _MJ_TYPE_TO_MARKER = {
 
 
 def ns_for_class(cls: str) -> str:
-    return NS_GRASP if cls == "grasp" else NS_OBSTACLE
+    return {"grasp": NS_GRASP, "display": NS_DISPLAY}.get(cls, NS_OBSTACLE)
 
 
 def class_from_ns(ns: str) -> str:
     return "grasp" if ns == NS_GRASP else "obstacle"
+
+
+def is_collision_marker(marker) -> bool:
+    """False fuer reine Anzeige-Marker (NS_DISPLAY) -- IK und Nav-Karte
+    ueberspringen sie."""
+    return marker.ns != NS_DISPLAY
 
 
 def stable_id(name: str) -> int:
