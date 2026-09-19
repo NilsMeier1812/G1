@@ -392,6 +392,21 @@ if [ "$G1_INSPIRE_HANDS" = "1" ]; then
   ( gui_opener_daemon ) &
 fi
 
+# ── GPU fuer MuJoCo-Viewer/RViz ─────────────────────────────────────────
+# Sonst rendern die Container auf der CPU (llvmpipe) -> CPU fehlt Sim/Regler.
+# NVIDIA (nur mit Container Toolkit) bevorzugt, sonst /dev/dri (Intel/AMD).
+# Siehe docker-compose.nvidia.yml / docker-compose.gpu.yml.
+if [ -z "${COMPOSE_FILE:-}" ]; then
+  _cf="docker-compose.yml"
+  [ -e /dev/dri ] && _cf="$_cf:docker-compose.gpu.yml"
+  if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1 \
+     && command -v nvidia-container-runtime-hook >/dev/null 2>&1; then
+    _cf="$_cf:docker-compose.nvidia.yml"
+  fi
+  export COMPOSE_FILE="$_cf"
+  echo -e "${G}[start] Compose-Dateien: ${COMPOSE_FILE}${R}"
+fi
+
 # ── Reste eines frueheren Laufs sauber entfernen ────────────────────────
 docker compose --profile "$PROFILE" down --remove-orphans
 

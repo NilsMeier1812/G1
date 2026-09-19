@@ -10,11 +10,20 @@
 #
 #   Duenner Wrapper um `docker compose --profile <sim|real|real-full>` auf
 #   der EINEN docker-compose.yml (siehe deren Kopfkommentar) -- es gibt
-#   bewusst keine separaten docker-compose.*.yaml-Dateien mehr.
+#   bewusst keine separaten docker-compose.*.yaml-Dateien mehr. Einzige
+#   Ausnahme: docker-compose.gpu.yml / docker-compose.nvidia.yml (nur GPU-
+#   Zugriff fuer die Sim-Container), automatisch dazugenommen, wenn vorhanden.
 # ═══════════════════════════════════════════════════════
 
 ROBOT_INTERFACE ?= eth0
 DISPLAY         ?= :0
+
+# GPU fuer MuJoCo-Viewer/RViz (sonst CPU-Rendering): /dev/dri -> docker-compose.gpu.yml,
+# NVIDIA + Container Toolkit -> docker-compose.nvidia.yml. Wie in start.sh;
+# per COMPOSE_FILE uebersteuerbar.
+HAS_NVIDIA := $(shell nvidia-smi -L >/dev/null 2>&1 && command -v nvidia-container-runtime-hook >/dev/null 2>&1 && echo 1)
+COMPOSE_FILE ?= docker-compose.yml$(if $(wildcard /dev/dri),:docker-compose.gpu.yml)$(if $(HAS_NVIDIA),:docker-compose.nvidia.yml)
+export COMPOSE_FILE
 
 .PHONY: sim sim-bg real real-full stop \
         build-sim build-real build-real-full \

@@ -13,7 +13,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool, ColorRGBA, String, Float32MultiArray
 from tf2_ros import Buffer, TransformListener
-from tf2_geometry_msgs import do_transform_pose
+from tf2_geometry_msgs import do_transform_pose_stamped
 import pinocchio as pin
 from pinocchio import SE3
 
@@ -38,6 +38,7 @@ from unitree_sdk2py.idl.default import unitree_hg_msg_dds__LowCmd_
 from unitree_sdk2py.utils.crc import CRC
 
 from g1pilot.utils.common import (
+    is_sim_mode,
     MotorState,
     G1_29_JointArmIndex,
     G1_29_JointWristIndex,
@@ -1165,6 +1166,15 @@ class ArmController(Node):
         self._abort_planned_motion("WALK gestartet")
         self._walk_ready_sent = False    # erst melden, wenn die Lauf-Pose erreicht ist
         self.get_logger().info("WALK-Modus: Arme in Lauf-Pose aufraeumen, dann walk_ready.")
+        # NUR SIM: Ohne ENABLE MANIPULATION ueberspringt main_loop den WALK-Zweig
+        # (arms_enabled False) -> Arme kommen nie in die Lauf-Pose, kein walk_ready,
+        # loco_sim laeuft nach Timeout trotzdem los und die Bridge haelt die Arme
+        # in der Null-Pose -> die Policy kippt nach ~2 s (headless reproduziert).
+        # Also fuer WALK die Arme selbst uebernehmen. Real bleibt unveraendert:
+        # dort fuehrt Unitrees Onboard-Regler die Arme beim Laufen.
+        if is_sim_mode() and not self.arms_enabled and not self.estop_active:
+            self.get_logger().info("WALK (Sim): Arme nicht aktiviert -> fuer die Lauf-Pose aktivieren.")
+            self._arms_controlled_callback(Bool(data=True))
 
     def _on_balance_mode(self, msg: Bool):
         """BALANCING: Arme wieder freigeben (rviz/Marker). Sie HALTEN ihre aktuelle
@@ -1199,7 +1209,7 @@ class ArmController(Node):
             return ps
         try:
             tf = self.tf_buffer.lookup_transform(self.frame, ps.header.frame_id, Time(), timeout=Duration(seconds=0.2))
-            return do_transform_pose(ps, tf)
+            return do_transform_pose_stamped(ps, tf)
         except Exception as e:
             self.get_logger().warning(f"[IK] TF {ps.header.frame_id}->{self.frame} failed: {e}")
             return ps
@@ -1209,7 +1219,7 @@ class ArmController(Node):
         Update in den IK-World-Frame (self.frame, Default 'pelvis') transformieren
         und in den IK-Solver einspeisen (sync_environment). Nur EIN TF-Lookup
         pro Update (nicht pro Marker) -- alle Marker teilen sich denselben
-        Quell-Frame, do_transform_pose() je Marker ist reine Pose-Arithmetik,
+        Quell-Frame, do_transform_pose_stamped() je Marker ist reine Pose-Arithmetik,
         keine erneute TF-Baum-Abfrage."""
         add_markers = [m for m in msg.markers if m.action == Marker.ADD]
         if not add_markers:
@@ -1231,7 +1241,7 @@ class ArmController(Node):
                 ps = PoseStamped()
                 ps.header = marker.header
                 ps.pose = marker.pose
-                ps_t = do_transform_pose(ps, tf)
+                ps_t = do_transform_pose_stamped(ps, tf)
                 half = sm.local_half_extents_from_marker(marker)
                 name, _ = sm.decode_text(marker.text)
                 o, p = ps_t.pose.orientation, ps_t.pose.position
@@ -1489,7 +1499,7 @@ class ArmController(Node):
             try:
                 tf = self.tf_buffer.lookup_transform(
                     self.frame, ps.header.frame_id, Time(), timeout=Duration(seconds=0.2))
-                ps = do_transform_pose(ps, tf)
+                ps = do_transform_pose_stamped(ps, tf)
             except Exception as e:  # noqa: BLE001
                 raise ValueError(
                     f"{side}: TF {ps.header.frame_id} -> {self.frame} nicht "

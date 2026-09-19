@@ -1,0 +1,20 @@
+# ══════════════════════════════════════════════════════════════════════
+# GPU-Zusatz fuer die Sim-Container (MuJoCo-Viewer + RViz).
+#
+# Ohne /dev/dri rendern beide Container per Mesa "llvmpipe" auf der CPU
+# (Software-Rendering). Das frisst CPU-Kerne, die Sim + Regler brauchen:
+# niedrige Framerate, und die Wall-Clock-Watchdogs im Lockstep koennen greifen
+# (Sim schreitet mit veraltetem Kommando) -> der Roboter kippt beim Laufen.
+#
+# Wird von start.sh / Makefile AUTOMATISCH dazugenommen, wenn der Host
+# /dev/dri hat (Intel/AMD-Grafik unter Linux). Ohne /dev/dri (z.B. WSL2)
+# bleibt es bei docker-compose.yml allein -- ein fest eingetragenes Device
+# wuerde dort den Start abbrechen.
+# ══════════════════════════════════════════════════════════════════════
+services:
+  mujoco-sim:
+    devices:
+      - /dev/dri:/dev/dri
+  g1pilot-sim:
+    devices:
+      - /dev/dri:/dev/dri

@@ -1,0 +1,22 @@
+# ══════════════════════════════════════════════════════════════════════
+# NVIDIA-Zusatz fuer die Sim-Container (MuJoCo-Viewer + RViz).
+#
+# Wird von start.sh / Makefile AUTOMATISCH dazugenommen, wenn nvidia-smi
+# laeuft UND das NVIDIA Container Toolkit installiert ist. Fest eingetragen
+# wuerde "gpus" auf Rechnern ohne NVIDIA/Toolkit den Start abbrechen
+# ("could not select device driver ... capabilities: [[gpu]]").
+#
+# Die __NV_PRIME_*/__GLX_*-Variablen lassen GLX auf der NVIDIA rendern, auch
+# wenn der Bildschirm an der Intel/AMD-Grafik haengt (Hybrid-Laptop, PRIME
+# Render Offload). Haengt der Bildschirm direkt an der NVIDIA, schaden sie nicht.
+# ══════════════════════════════════════════════════════════════════════
+x-nvidia: &nvidia
+  gpus: all
+  environment:
+    - NVIDIA_DRIVER_CAPABILITIES=all
+    - __NV_PRIME_RENDER_OFFLOAD=1
+    - __GLX_VENDOR_LIBRARY_NAME=nvidia
+
+services:
+  mujoco-sim: *nvidia
+  g1pilot-sim: *nvidia
