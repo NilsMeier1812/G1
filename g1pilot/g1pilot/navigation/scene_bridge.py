@@ -25,6 +25,7 @@ import time
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy
+from std_msgs.msg import Bool
 from visualization_msgs.msg import Marker, MarkerArray
 
 from g1pilot.navigation import scene_markers as sm
@@ -64,10 +65,27 @@ class SceneBridge(Node):
 
         self.timer = self.create_timer(1.0 / rate if rate > 0 else 0.1, self._publish)
 
+        # RESET SCENE (Streamdeck): bewegliche Umgebungs-Objekte in der Sim auf
+        # ihre Startpose zuruecksetzen, Roboter bleibt. Der MuJoCo-Container hat
+        # kein ROS -> UDP an scene_reset.py (Port MUSS zu SCENE_RESET_PORT passen).
+        self.declare_parameter("reset_udp_port", 47903)
+        self.reset_port = int(self.get_parameter("reset_udp_port").value)
+        self._reset_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.create_subscription(Bool, "/g1pilot/scene_reset", self._on_scene_reset, 10)
+
         self.get_logger().info(
             f"scene_bridge aktiv: UDP {self.udp_host}:{self.udp_port} -> "
             f"/scene_markers (Frame '{self.frame_id}')."
         )
+
+    def _on_scene_reset(self, msg: Bool):
+        if not msg.data:
+            return
+        try:
+            self._reset_sock.sendto(b"reset", (self.udp_host, self.reset_port))
+            self.get_logger().info("RESET SCENE -> Umgebungs-Objekte auf Startpose (Sim).")
+        except OSError as e:
+            self.get_logger().warn(f"RESET SCENE nicht gesendet: {e}")
 
     # ── UDP-Empfangs-Thread ──────────────────────────────────────────────
     def _listen(self):

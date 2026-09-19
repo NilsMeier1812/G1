@@ -77,7 +77,7 @@ def _joint_indices_for(sides):
     return idx
 
 
-def _make_state_validity_fn(ik_solver, sides, base_current_all):
+def _make_state_validity_fn(ik_solver, sides, base_current_all, hard=False):
     """Baut is_valid(qN)->bool fuer EINEN oder BEIDE Arme (N = 7*Anzahl Seiten):
     setzt qN in die passenden Eintraege von base_current_all (die NICHT
     geplanten Gelenke -- ggf. der andere Arm + Beine/Taille -- bleiben auf dem
@@ -108,14 +108,33 @@ def _make_state_validity_fn(ik_solver, sides, base_current_all):
         full = base_current_all.copy()
         for i, jidx in enumerate(idx_list):
             full[jidx] = qN[i]
+        cdata = scratch["cdata_hard"] if hard else scratch["cdata_margin"]
         if ik_solver.arm_command_in_collision(
-                full, hard=False, data=scratch["data"], cdata=scratch["cdata_margin"]):
+                full, hard=hard, data=scratch["data"], cdata=cdata):
             return False
         if ik_solver.environment_command_in_collision(
-                full, hard=False, data=scratch["env_data"]):
+                full, hard=hard, data=scratch["env_data"]):
             return False
         return True
 
+    return is_valid
+
+
+# Start/Ziel duerfen im MARGENBAND liegen (naeher als die Sicherheitsmarge, aber
+# ohne echte Kollision) -- genau das, was der Laufzeit-Gate beim Marker-Ziehen
+# erlaubt. Gespeicherte Posen liegen darum oft 2-3 cm am Torso/Tisch und wurden
+# vorher als goal_in_collision abgelehnt. Innerhalb dieses Gelenkraum-Radius um
+# Start bzw. Ziel gilt dann nur die harte Pruefung, sonst ueberall die Marge.
+BAND_RELAX_RADIUS = 0.4   # rad (Norm ueber die geplanten Gelenke)
+
+
+def _relaxed_validity(is_soft, is_hard, anchors, radius=BAND_RELAX_RADIUS):
+    def is_valid(q):
+        if is_soft(q):
+            return True
+        if not is_hard(q):
+            return False
+        return any(np.linalg.norm(q - a) <= radius for a in anchors)
     return is_valid
 
 
@@ -338,16 +357,22 @@ def plan_arms_joint_path(ik_solver, sides, base_current_all, q_start, q_goal,
         "start_in_collision" | "goal_in_collision" | "no_path_found"."""
     rng = rng or np.random.default_rng()
     is_valid = _make_state_validity_fn(ik_solver, sides, base_current_all)
+    is_hard_valid = _make_state_validity_fn(ik_solver, sides, base_current_all, hard=True)
 
     q_start = np.asarray(q_start, dtype=float)
     q_goal = np.asarray(q_goal, dtype=float)
 
     # Schnelle, deterministische Vorpruefungen -- identischer Sicherheitsbegriff
-    # fuer BEIDE Backends, mit klaren Reason-Codes.
-    if not is_valid(q_start):
-        return None, "start_in_collision"
-    if not is_valid(q_goal):
-        return None, "goal_in_collision"
+    # fuer BEIDE Backends, mit klaren Reason-Codes. Start/Ziel im Margenband
+    # (aber ohne echte Kollision) sind erlaubt, siehe BAND_RELAX_RADIUS.
+    anchors = []
+    for q, reason in ((q_start, "start_in_collision"), (q_goal, "goal_in_collision")):
+        if not is_valid(q):
+            if not is_hard_valid(q):
+                return None, reason
+            anchors.append(q)
+    if anchors:
+        is_valid = _relaxed_validity(is_valid, is_hard_valid, anchors)
     if _segment_valid(is_valid, q_start, q_goal, substep):
         return [q_start, q_goal], "direct"
 

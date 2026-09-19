@@ -288,6 +288,7 @@ class StreamDeck(Node):
         self.pub_emergency_stop = self.create_publisher(Bool, '/g1pilot/emergency_stop', 10)
         self.pub_push = self.create_publisher(Bool, '/g1pilot/push', 10)
         self.pub_grasp_box = self.create_publisher(Bool, '/g1pilot/grasp_box', 10)
+        self.pub_scene_reset = self.create_publisher(Bool, '/g1pilot/scene_reset', 10)
         self.pub_catch_falls = self.create_publisher(Bool, '/g1pilot/catch_falls', 10)
         # Positionsspeicher (plan-execute), siehe g1pilot/docs/11_arm_manipulation_technik.md (Positionsspeicher).
         self.pub_pose_save = self.create_publisher(String, '/g1pilot/pose_store/save', 10)
@@ -411,6 +412,12 @@ class ButtonGUI(QWidget):
             button_actions[(1, 3)] = (
                 "GRASP\nBOX",
                 lambda: self.toggle_button((1, 3), self.node.pub_grasp_box))
+
+            # Umgebungs-Objekte (z.B. heruntergefallene Box) zurueck auf ihre
+            # Startpose -- der Roboter bleibt, wo er ist. Nur Sim (scene_reset.py).
+            button_actions[(1, 2)] = (
+                "RESET\nSCENE",
+                lambda: self.flash_button((1, 2), self.node.pub_scene_reset))
 
         for r in range(rows):
             for c in range(cols):

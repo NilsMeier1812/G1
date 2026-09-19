@@ -195,6 +195,12 @@ class G1IKSolver:
         # TCP: der Unterarm hat ~4 cm Radius. Die Hand selbst behaelt
         # collision_margin, damit sie z.B. eine Box auf dem Tisch erreicht.
         self.arm_env_margin = 0.06
+        # "Hart" (echte Durchdringung) fuer die Arm-Punkte = Linkradius: die
+        # Punkte liegen auf der Unterarm-ACHSE, bei Abstand 0 steckte die
+        # Oberflaeche schon ~3 cm im Hindernis. Hand-Punkte: 1 cm (eine auf der
+        # Tischplatte aufliegende Hand zaehlt als Kollision, nicht als "Band").
+        self.arm_env_hard_margin = 0.03
+        self.hand_env_hard_margin = 0.01
 
         # Umgebungs-Objekte (Hindernisse + Greif-Objekte), gesetzt ueber
         # sync_environment(). Alle Posen MUESSEN bereits im world_frame dieses
@@ -375,8 +381,8 @@ class G1IKSolver:
         """True, wenn die 29-DOF-Konfiguration current_all (ROS-Gelenkreihen-
         folge) einen ueberwachten Arm-Punkt (Ellbogen, Unterarm, Handgelenk,
         Hand, Hand-TCP) zu nah an ein Umgebungs-Objekt bringt (hard=True: echte
-        Durchdringung, Marge 0; sonst arm_env_margin fuer Arm-Punkte bzw.
-        collision_margin fuer die Hand).
+        Durchdringung -- arm_env_hard_margin bzw. hand_env_hard_margin; sonst
+        arm_env_margin bzw. collision_margin).
 
         ACM (Allowed-Collision, siehe g1pilot/docs/11_arm_manipulation_technik.md (Umgebungs-Kollisionsgate)):
         fuer Greif-Objekte (cls='grasp') werden NUR die Hand-Punkte ausgenommen
@@ -405,8 +411,8 @@ class G1IKSolver:
         # Arm (Ellbogen, 2x Unterarm): gegen ALLE Objekte, groessere Marge.
         # Hand (Handgelenk, Handgelenk->TCP-Mitte, TCP): collision_margin und nur
         # gegen Hindernisse -- an ein Greif-Objekt darf die Hand heran (ACM).
-        arm_margin = 0.0 if hard else self.arm_env_margin
-        hand_margin = 0.0 if hard else self.collision_margin
+        arm_margin = self.arm_env_hard_margin if hard else self.arm_env_margin
+        hand_margin = self.hand_env_hard_margin if hard else self.collision_margin
         pts, margins, vs_grasp = [], [], []
         for side, fid_hand in (("left", self._fid_left), ("right", self._fid_right)):
             fe, fw = self._fid_env_elbow.get(side), self._fid_env_wrist.get(side)

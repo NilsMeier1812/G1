@@ -350,6 +350,14 @@ class ArmController(Node):
         self.declare_parameter("home_right", [0.3, -0.2, 0.0, 0.5, 0.0, 0.0, 0.0])
         self.home_left  = np.array(self.get_parameter("home_left").value,  dtype=float)
         self.home_right = np.array(self.get_parameter("home_right").value, dtype=float)
+        # Ziel des HOMING-ARMS-Buttons (getrennt von home_*, das auch die IK-
+        # Ruhepose ist). Default Nullpose: Oberarm haengt, Unterarm 90 grad nach
+        # vorn, Haende vor dem Koerper auf ~Tischhoehe -- gute Ausgangslage am
+        # Arbeitsplatz. Angefahren wird GEPLANT (um Tisch/Koerper herum).
+        self.declare_parameter("homing_left",  [0.0] * 7)
+        self.declare_parameter("homing_right", [0.0] * 7)
+        self.homing_left  = np.array(self.get_parameter("homing_left").value,  dtype=float)
+        self.homing_right = np.array(self.get_parameter("homing_right").value, dtype=float)
 
         # Ruhe-Pose fuer die IK-Nullraum-Regularisierung = Home-Pose. Haelt den
         # redundanten (7. DOF) Ellbogen-Swivel natuerlich -> der Arm faellt beim
@@ -902,6 +910,12 @@ class ArmController(Node):
             if not self._in_collision(full_new):
                 return q_new
             if not self._in_collision(full_new, hard=True):
+                if self._planned_motion_active:
+                    # Geplante Bahn: vom Planer schon mit Marge geprueft; ins Band
+                    # darf sie nur nahe Start/Ziel (gespeicherte Pose am Torso/Tisch,
+                    # siehe arm_planner.BAND_RELAX_RADIUS). Sonst hielte der Gate
+                    # kurz vor so einem Ziel an. Echte Kollision haelt weiterhin.
+                    return q_new
                 if self._in_collision(self._full_config_with_arms(q_prev)):
                     return q_new     # schon im Band -> langsames Herausfahren erlaubt
         except Exception as e:
@@ -1116,18 +1130,42 @@ class ArmController(Node):
         if msg.data:
             # Nur bei aktiver Manipulation annehmen. Frueher wurde ein Homing-
             # Klick im disabled-Zustand GESPEICHERT und feuerte dann beim
-            # naechsten Enable als Ueberraschungsbewegung.
+            # naechsten Enable als Ueberraschungsbewegung. (Sim: automatisch
+            # aktivieren, siehe _sim_auto_enable_arms.)
+            if not self.walk_mode:
+                self._sim_auto_enable_arms("HOMING")
             if not self.arms_enabled or self.estop_active:
                 self.get_logger().warn("HOMING ignoriert: Manipulation nicht "
                                        "aktiv (erst ENABLE MANIPULATION).")
                 return
             self._abort_planned_motion("HOMING gestartet")
-            self.get_logger().info("Moving both arms to HOME position.")
-            self.homing_active = True
+            if self.walk_mode:
+                self.get_logger().warn("HOMING ignoriert: WALK aktiv (Arme in Lauf-Pose).")
+                return
+            # Home-Pose GEPLANT anfahren (wie POSE ANFAHREN): um Tisch/Hindernisse
+            # und den eigenen Koerper herum. Die fruehere direkte Gelenkfahrt lief
+            # stur auf geradem Weg -- steht der Roboter am Tisch, fuhr sie die
+            # Haende hinein (Gate haelt nur an) und stiess den Roboter um.
             self.homing_reached = False
             self._reset_after_home = False
-            if hasattr(self.ik_solver, "clear_goals"):
-                self.ik_solver.clear_goals()
+            goals, label = self._homing_goals()
+            self._start_planned_motion(label, ["left", "right"], goals, {}, source="homing")
+
+    def _homing_goals(self):
+        """Ziel fuers Homing: die Homing-Pose (homing_left/right, Default
+        Nullpose) -- ausser sie laege am aktuellen Standort in einem Hindernis
+        (Roboter dicht am/unter dem Tisch). Dann die Lauf-Pose (Haende naeher
+        am Koerper) als sichere Ruhe-Pose."""
+        home = {"left": self.homing_left.copy(), "right": self.homing_right.copy()}
+        try:
+            full = self._full_config_with_arms(np.concatenate((self.homing_left, self.homing_right)))
+            if not self.ik_solver.environment_command_in_collision(full):
+                return home, "HOME"
+        except Exception as e:
+            self.get_logger().warn(f"HOMING: Umgebungs-Check fehlgeschlagen ({e}) -> HOME.")
+            return home, "HOME"
+        self.get_logger().info("HOMING: Homing-Pose laege im Hindernis (Tisch?) -> Lauf-Pose als Ruhe-Pose.")
+        return {"left": self.walk_left.copy(), "right": self.walk_right.copy()}, "HOME (Lauf-Pose, Tisch zu nah)"
 
     def _align_ik_to_config(self, left_q, right_q):
         """IK-Ziele auf die gegebene Arm-Konfiguration setzen -> die Arme HALTEN dort,
