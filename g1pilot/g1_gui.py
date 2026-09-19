@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import os
 import queue
+import re
 import shutil
 import subprocess
 import sys
@@ -330,6 +331,10 @@ class ScrollableFrame(tk.Frame):
 # Queue-Sentinels (Kontrollmarker, unterscheidbar von Log-Zeilen/Strings):
 _EOF = object()   # Reader: Prozess-Ausgabe zu Ende (Prozess beendet)
 _DONE = object()  # Stop-Worker: Aufraeumen (docker down) abgeschlossen -> finalisieren
+# viser-Banner des Editors ("HTTP │ http://127.0.0.1:8081"). Ist 8080 belegt
+# (z.B. alter Editor), weicht viser auf 8081, 8082 ... aus -- die echte URL
+# steht nur in dieser Ausgabezeile.
+_EDITOR_URL_RE = re.compile(r"http://(?:127\.0\.0\.1|localhost):\d+")
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -362,6 +367,7 @@ class ConsoleFrame(tk.Frame):
         self._stop_cmd = stop_cmd
         self._stop_note = stop_note
         self._browser_url = browser_url
+        self._server_url: str | None = None  # echte Editor-URL aus der Ausgabe
         self._proc: subprocess.Popen | None = None
         self._queue: queue.Queue = queue.Queue()  # Log-Strings + _EOF/_DONE-Marker
         self._stopping = False
@@ -438,6 +444,10 @@ class ConsoleFrame(tk.Frame):
     def _reader(self) -> None:
         assert self._proc and self._proc.stdout
         for line in self._proc.stdout:
+            if self._browser_url and self._server_url is None:
+                m = _EDITOR_URL_RE.search(line)
+                if m:
+                    self._server_url = m.group(0)
             self._queue.put(line)
         self._proc.wait()
         self._queue.put(_EOF)  # Prozess-Ausgabe zu Ende
@@ -450,11 +460,15 @@ class ConsoleFrame(tk.Frame):
         demselben Port; ein sofort geschlossener TCP-Connect saehe fuer ihn wie
         ein abgebrochener WebSocket-Handshake aus und wuerde einen (harmlosen)
         Fehler-Traceback loggen.
+
+        Die URL kommt aus der Editor-Ausgabe (_reader), NICHT fest 8080: sonst
+        oeffnet der Browser einen alten, evtl. haengenden Editor auf 8080,
+        waehrend der neue auf 8081 laeuft.
         """
-        url = "http://127.0.0.1:8080"
         deadline = time.monotonic() + 180  # max ~3 min (deckt ersten Start ab)
         while self._alive and not self._stopping and time.monotonic() < deadline:
-            if self._server_responds(url):
+            url = self._server_url
+            if url and self._server_responds(url):
                 if self._alive:
                     self._queue.put(f"\n[GUI] Oeffne Editor im Browser: {url}\n")
                     open_url(url)
@@ -523,6 +537,23 @@ class ConsoleFrame(tk.Frame):
         self._stop_btn.configure(state="disabled")
         # Sauber (ab)geschlossen -> App entscheidet ueber Auto-Rueckkehr/Refresh.
         self.app.notify_finished(self, user_stopped=user_stopped)
+
+    def terminate_editor(self) -> None:
+        """Beim Schliessen des Launchers: Web-Editor mitbeenden.
+
+        Sonst laeuft er verwaist weiter (Ausgabe-Pipe ohne Leser -> haengt),
+        blockiert Port 8080 und der naechste Editor weicht auf 8081 aus.
+        Docker-Stacks sind davon nicht betroffen (die laufen bewusst weiter).
+        """
+        if self._browser_url and self.is_running():
+            try:
+                self._proc.terminate()
+                self._proc.wait(timeout=3)
+            except Exception:
+                try:
+                    self._proc.kill()
+                except Exception:
+                    pass
 
     def stop(self) -> None:
         if self._stopping or not self.is_running():
@@ -1130,7 +1161,10 @@ class App(tk.Tk):
     def _quit(self) -> None:
         # Ein Fenster, ein Schliessen: beendet den Launcher komplett. Bereits
         # gestartete Stacks laufen unabhaengig im Docker weiter (bewusst).
+        # Nur der Web-Editor wird mitbeendet (siehe ConsoleFrame.terminate_editor).
         self._quitting = True
+        for console in list(self.consoles):
+            console.terminate_editor()
         try:
             self.destroy()
         finally:
