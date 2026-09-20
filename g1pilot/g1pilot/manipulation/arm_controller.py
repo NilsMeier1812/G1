@@ -1482,6 +1482,8 @@ class ArmController(Node):
                                      req_id=req_id, source="arm_command")
             self.get_logger().warn(f"arm_command '{req_id}' abgelehnt: {why}")
 
+        if not self.walk_mode:
+            self._sim_auto_enable_arms(f"arm_command '{req_id}'")
         not_ready = self._arms_not_ready_reason()
         if not_ready:
             reject(not_ready)
