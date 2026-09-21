@@ -406,6 +406,17 @@ if [ -z "${COMPOSE_FILE:-}" ]; then
   export COMPOSE_FILE="$_cf"
   echo -e "${G}[start] Compose-Dateien: ${COMPOSE_FILE}${R}"
 fi
+# PRIME Render Offload nur auf Hybrid-Systemen (Bildschirm an Intel/AMD).
+# Treibt die NVIDIA selbst den Bildschirm, bleibt das MuJoCo-Fenster mit
+# Offload schwarz. Siehe docker-compose.nvidia.yml.
+if [ -z "${G1_NV_PRIME_OFFLOAD:-}" ]; then
+  if nvidia-smi --query-gpu=display_active --format=csv,noheader 2>/dev/null \
+       | grep -q Enabled; then
+    export G1_NV_PRIME_OFFLOAD=0
+  else
+    export G1_NV_PRIME_OFFLOAD=1
+  fi
+fi
 
 # ── Reste eines frueheren Laufs sauber entfernen ────────────────────────
 docker compose --profile "$PROFILE" down --remove-orphans

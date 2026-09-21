@@ -46,6 +46,10 @@ def api(url, method="GET", body=None):
             return r.status, json.loads(r.read() or b"{}")
     except urllib.error.HTTPError as e:
         return e.code, json.loads(e.read() or b"{}")
+    except (urllib.error.URLError, OSError) as e:
+        # Kein Server am Port (Sim aus / arm_api noch nicht hochgefahren) oder
+        # Verbindung weg -- als normalen Fehler melden, nicht als Traceback.
+        return 0, {"error": f"keine Verbindung zu {url} ({e})"}
 
 
 def load_steps(category):
@@ -72,7 +76,9 @@ def main():
 
     code, health = api(f"{args.url}/arm/health")
     if code != 200:
-        sys.exit(f"Arm-API nicht erreichbar ({args.url}) -- laeuft die Sim? ({code} {health})")
+        sys.exit(f"Arm-API nicht erreichbar: {health.get('error') or f'{code} {health}'}\n"
+                 f"  -> Sim starten (./start.sh) und im Startmenue START + START BALANCING\n"
+                 f"  -> laeuft sie schon? Test:  curl {args.url}/arm/health")
 
     # Letzte Arm-Ziele merken: ein reiner Hand-Schritt (z.B. "Hand zu") braucht
     # trotzdem ein Arm-Ziel -> dieselbe Stellung nochmal (Fahrt der Laenge 0).

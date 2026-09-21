@@ -24,6 +24,10 @@ DISPLAY         ?= :0
 HAS_NVIDIA := $(shell nvidia-smi -L >/dev/null 2>&1 && command -v nvidia-container-runtime-hook >/dev/null 2>&1 && echo 1)
 COMPOSE_FILE ?= docker-compose.yml$(if $(wildcard /dev/dri),:docker-compose.gpu.yml)$(if $(HAS_NVIDIA),:docker-compose.nvidia.yml)
 export COMPOSE_FILE
+# PRIME Render Offload nur, wenn die NVIDIA KEINEN Bildschirm treibt (Hybrid-
+# Laptop); sonst bleibt das MuJoCo-Fenster schwarz. Wie in start.sh.
+G1_NV_PRIME_OFFLOAD ?= $(if $(HAS_NVIDIA),$(if $(shell nvidia-smi --query-gpu=display_active --format=csv,noheader 2>/dev/null | grep Enabled),0,1),0)
+export G1_NV_PRIME_OFFLOAD
 
 .PHONY: sim sim-bg real real-full stop \
         build-sim build-real build-real-full \

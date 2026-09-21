@@ -6,15 +6,18 @@
 # wuerde "gpus" auf Rechnern ohne NVIDIA/Toolkit den Start abbrechen
 # ("could not select device driver ... capabilities: [[gpu]]").
 #
-# Die __NV_PRIME_*/__GLX_*-Variablen lassen GLX auf der NVIDIA rendern, auch
-# wenn der Bildschirm an der Intel/AMD-Grafik haengt (Hybrid-Laptop, PRIME
-# Render Offload). Haengt der Bildschirm direkt an der NVIDIA, schaden sie nicht.
+# __NV_PRIME_RENDER_OFFLOAD=1 laesst GLX auf der NVIDIA rendern, wenn der
+# Bildschirm an der Intel/AMD-Grafik haengt (Hybrid-Laptop, PRIME Render
+# Offload). Haengt der Bildschirm DIREKT an der NVIDIA (Desktop), macht es das
+# MuJoCo-Fenster SCHWARZ (Bild wird gerendert, aber nie angezeigt). Daher setzt
+# start.sh / Makefile G1_NV_PRIME_OFFLOAD automatisch: 1 nur, wenn die NVIDIA
+# keinen Bildschirm treibt (nvidia-smi display_active != Enabled), sonst 0.
 # ══════════════════════════════════════════════════════════════════════
 x-nvidia: &nvidia
   gpus: all
   environment:
     - NVIDIA_DRIVER_CAPABILITIES=all
-    - __NV_PRIME_RENDER_OFFLOAD=1
+    - __NV_PRIME_RENDER_OFFLOAD=${G1_NV_PRIME_OFFLOAD:-0}
     - __GLX_VENDOR_LIBRARY_NAME=nvidia
 
 services:
