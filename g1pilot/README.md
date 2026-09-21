@@ -7,6 +7,33 @@ gegen eine MuJoCo-Simulation oder den echten Roboter.
 Projektüberblick: [../README.md](../README.md). Vollständige Dokumentation:
 [docs/README.md](docs/README.md).
 
+## Voraussetzungen
+
+**Docker muss installiert sein**, bevor `make build-sim` funktioniert
+(sonst: `make: docker: No such file or directory`). Unter Ubuntu:
+
+```bash
+# Docker Engine installieren
+curl -fsSL https://get.docker.com | sudo sh
+
+# Docker ohne sudo nutzen (danach neu einloggen oder `newgrp docker`)
+sudo usermod -aG docker $USER
+
+# Prüfen
+docker --version
+docker run hello-world
+```
+
+Hinweise:
+
+- Snap-Docker (`sudo snap remove docker`) bitte vorher entfernen — er macht
+  häufig Pfad- und Rechteprobleme.
+- Für das grafische Startmenü (`./start.sh`) wird Tkinter auf dem Host
+  benötigt (nicht im Docker-Image enthalten): `sudo apt install python3-tk`.
+  Ohne Tkinter startet automatisch das Text-Menü.
+- Für GPU-Betrieb zusätzlich das NVIDIA Container Toolkit installieren
+  (siehe `docker-compose.nvidia.yml` / `docker-compose.gpu.yml`).
+
 ## Schnellstart
 
 ```bash
