@@ -35,12 +35,24 @@ Generator sie beim Kombinieren automatisch raus.)
 Objekte werden nach RViz uebertragen (siehe `g1pilot/docs/51_navigation_technik.md`) und dort
 in zwei Klassen unterschieden — **Hindernis** (der Arm weicht aus) und
 **Greif-Objekt** (die Hand darf ran, das Objekt bewegt sich beim Anfassen mit).
-Klassifikation per **Namenskonvention**: benennst du ein Objekt (im Editor
-oben unter „Elements“ umbenennbar) mit dem Praefix **`grasp_`** (Gross-/
-Kleinschreibung egal, z.B. `grasp_apfel`), macht `build_env_scene.py` beim
-Kombinieren automatisch einen **freien, beweglichen Koerper** daraus
-(`<freejoint/>`) — nur so kann MuJoCo es beim Greifen/Anfassen bewegen. Alle
-anderen Objekte bleiben statische Hindernisse.
+Klassifikation per **Namenskonvention**: benennst du ein Objekt mit dem
+Praefix **`grasp_`** (Gross-/Kleinschreibung egal, z.B. `grasp_apfel`), macht
+`build_env_scene.py` beim Kombinieren automatisch einen **freien, beweglichen
+Koerper** daraus (`<freejoint/>`) — nur so kann MuJoCo es beim Greifen/Anfassen
+bewegen. Alle anderen Objekte bleiben statische Hindernisse.
+
+**Im Editor:** Objekt oben unter „Elements" waehlen, dann im Ordner
+**„Greif-Objekt / Name"** entweder **„Greif-Objekt an/aus (grasp_)"** klicken
+(setzt/entfernt das Praefix) oder einen Namen eintippen und **„Umbenennen"**.
+Danach **„Export scene"**. (Der eingebaute Editor kann nicht umbenennen – der
+Ordner wird von `run_editor.py` ergaenzt.)
+
+**Startpunkt des G1:** Standardmaessig startet der Roboter im Ursprung (0,0),
+Blick in +x. Soll er woanders stehen (z.B. vor statt im Tisch), ein beliebiges
+Objekt (z.B. eine Box) dorthin setzen und es **`g1_spawn`** nennen (Ordner
+„Greif-Objekt / Name"). Position = Startpunkt, Drehung um die Hochachse =
+Blickrichtung. Die Markierung wird beim Kombinieren entfernt (kein Hindernis);
+auch START / START BALANCING stellen den Roboter wieder dort auf.
 
 ```
 box_demo        -> Hindernis (statisch, der Arm weicht aus)

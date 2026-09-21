@@ -1,3 +1,4 @@
+import math
 import time
 import mujoco
 import mujoco.viewer
@@ -12,9 +13,28 @@ from hold_base import HoldBase
 from push_listener import PushListener
 from grasp_box import GraspBox
 from scene_state_publisher import SceneStatePublisher
+from scene_reset import SceneReset
 
 
 locker = threading.Lock()
+
+_spec = mujoco.MjSpec.from_file(config.ROBOT_SCENE)
+
+# STARTPUNKT: legt die Umgebung einen g1_spawn fest (im Scene-Editor ein Objekt
+# "g1_spawn..." platzieren, build_env_scene.py macht daraus <custom><numeric
+# name="g1_spawn" data="x y yaw"/>), wird der G1 dort statt im Ursprung ins
+# Modell gesetzt. Direkt im Modell (nicht erst zur Laufzeit), damit qpos0 = Start:
+# der Halte-Weld, der Bridge-Reset (START/BALANCING) und HOLD_BASE beziehen sich
+# alle auf qpos0 und stellen den Roboter damit immer wieder HIER auf.
+for _n in _spec.numerics:
+    _vals = list(_n.data)   # MjDoubleVec kann kein Slicing
+    if _n.name == "g1_spawn" and len(_vals) >= 3:
+        _x, _y, _yaw = (float(v) for v in _vals[:3])
+        _pelvis = _spec.body("pelvis")
+        _pelvis.pos = [_x, _y, float(_pelvis.pos[2])]
+        _pelvis.quat = [math.cos(_yaw / 2.0), 0.0, 0.0, math.sin(_yaw / 2.0)]
+        print(f"[SIM] Startpunkt aus der Umgebung: x={_x:.2f} y={_y:.2f} "
+              f"yaw={math.degrees(_yaw):.0f} Grad.", flush=True)
 
 if getattr(config, "GRASP_BOX", False):
     # Greifbare Test-Kugel fest in jede Inspire-Handflaeche (base_link) einfuegen.
@@ -23,7 +43,6 @@ if getattr(config, "GRASP_BOX", False):
     # Gelenke/Aktuatoren haben, bleiben nu/qpos und alle Bridge-Mappings unveraendert.
     # Wird IMMER eingefuegt (damit der Streamdeck-Toggle sie live schalten kann), aber
     # nur bei GRASP_TEST direkt AN; sonst inert (keine Kollision, unsichtbar, ~6 g).
-    _spec = mujoco.MjSpec.from_file(config.ROBOT_SCENE)
     _on = bool(getattr(config, "GRASP_TEST", False))
     _added = 0
     for _b in list(_spec.bodies):
@@ -46,9 +65,7 @@ if getattr(config, "GRASP_BOX", False):
             _added += 1
     print(f"[SIM] Greif-Box: {_added} Kugel(n) eingefuegt (Start {'AN' if _on else 'AUS'}; "
           f"Streamdeck-Button 'GRASP BOX' schaltet live).", flush=True)
-    mj_model = _spec.compile()
-else:
-    mj_model = mujoco.MjModel.from_xml_path(config.ROBOT_SCENE)
+mj_model = _spec.compile()
 mj_data = mujoco.MjData(mj_model)
 
 # HOLD_BASE: Oberkoerper fuer Arm-Tests ruhig halten (bis ein Loco-Controller
@@ -67,6 +84,10 @@ grasp_box = GraspBox(mj_model, config)
 # SZENEN-BRUECKE: sendet Hindernisse + greifbare Objekte der geladenen Umgebung
 # periodisch per UDP an den ROS-Container (scene_bridge -> RViz/Nav/IK).
 scene_state = SceneStatePublisher(mj_model, config)
+
+# RESET SCENE: bewegliche Umgebungs-Objekte (z.B. heruntergefallene Box) per UDP
+# auf ihre Startpose zuruecksetzen, ohne den Roboter anzufassen.
+scene_reset = SceneReset(mj_model, config)
 
 if config.ENABLE_ELASTIC_BAND:
     elastic_band = ElasticBand()
@@ -108,6 +129,7 @@ def SimulationThread():
         locker.acquire()
 
         grasp_box.apply()   # ausstehenden Box-Toggle anwenden (aendert mj_model)
+        scene_reset.apply(mj_data)   # ausstehenden Szenen-Reset anwenden
 
         if config.ENABLE_ELASTIC_BAND:
             if elastic_band.enable:
@@ -183,6 +205,7 @@ def SimulationLockstep(unitree):
 
         locker.acquire()
         grasp_box.apply()   # ausstehenden Box-Toggle anwenden (aendert mj_model)
+        scene_reset.apply(mj_data)   # ausstehenden Szenen-Reset anwenden
         if config.ENABLE_ELASTIC_BAND and elastic_band.enable:
             mj_data.xfrc_applied[band_attached_link, :3] = elastic_band.Advance(
                 mj_data.qpos[:3], mj_data.qvel[:3]

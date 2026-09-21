@@ -131,8 +131,13 @@ LOCO_STARTUP_HOLD_POSE = [
     -0.1, 0.0, 0.0, 0.3, -0.2, 0.0,   # linkes Bein:  hip_pitch, hip_roll, hip_yaw, knee, ankle_pitch, ankle_roll
     -0.1, 0.0, 0.0, 0.3, -0.2, 0.0,   # rechtes Bein: dito
     0.0, 0.0, 0.0,                    # Taille: yaw, roll, pitch
-    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,  # linker Arm  (15..21): gehalten -> kein Limp-Fall beim Laden
-    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,  # rechter Arm (22..28); 0 = loco_sims HOLD-Ziel -> kein Sprung
+    # Arme = LAUF-POSE (= Policy-Default-Armpose, identisch mit walk_left/walk_right
+    # im arm_controller). Gilt, solange noch kein rt/arm_sdk kam, und fuer den Reset
+    # beim START BALANCING. Mit Armen in der Null-Pose kippt die Lauf-Policy nach
+    # ~2 s (headless reproduziert); der Stand-Balancer steht mit Lauf-Pose sogar
+    # ruhiger (CoM naeher an der Fussmitte).
+    0.35, 0.18, 0.0, 0.87, 0.0, 0.0, 0.0,    # linker Arm  (15..21): shoulder p/r/y, elbow, wrist r/p/y
+    0.35, -0.18, 0.0, 0.87, 0.0, 0.0, 0.0,   # rechter Arm (22..28)
 ]
 LOCO_STARTUP_HOLD_KP = 100.0
 # Kraeftig gedaempft: die im verschweissten Startup-Hold frei haengenden Beine
@@ -173,6 +178,9 @@ SCENE_ENABLE = _env_truthy("SCENE_ENABLE", True)
 SCENE_UDP_PORT = int(os.environ.get("SIM_SCENE_PORT", "47902"))
 SCENE_UDP_HOST = os.environ.get("SIM_SCENE_HOST", "127.0.0.1")
 SCENE_PUBLISH_HZ = float(os.environ.get("SIM_SCENE_HZ", "10.0"))
+# RESET SCENE: bewegliche Umgebungs-Objekte auf Startpose (Roboter bleibt).
+# Port MUSS mit scene_bridge.py (Parameter reset_udp_port) uebereinstimmen.
+SCENE_RESET_PORT = int(os.environ.get("SIM_SCENE_RESET_PORT", "47903"))
 # === SZENEN-BRUECKE END ===
 
 

@@ -313,13 +313,18 @@ class UnitreeSdk2Bridge:
             self.mj_data.eq_active[self.weld_id] = val
 
     def _reset_pose(self, legw, pelvis_z):
-        # Roboter in eine saubere Pose stellen: Pelvis aufrecht auf pelvis_z (x,y=0),
-        # Beine/Taille = legw (15 Werte), ARME = 0, Geschwindigkeit 0. Die Arme MUESSEN
-        # mit genullt werden: im gehaltenen HOLD haengen sie sonst limp durch (z.B.
-        # Ellbogen ~70 grad), und der Sprung auf 0 beim Policy-Start kippt den Roboter.
+        # Roboter in eine saubere Pose stellen: Pelvis aufrecht auf pelvis_z (am Startpunkt),
+        # Beine/Taille = legw[0..14], ARME = legw[15..28] (fehlend -> 0), Geschwindigkeit 0.
+        # Die Arme MUESSEN mit gesetzt werden: im gehaltenen HOLD haengen sie sonst limp
+        # durch (z.B. Ellbogen ~70 grad). Gesetzt wird die Lauf-Pose aus
+        # config.LOCO_STARTUP_HOLD_POSE -- dieselbe, auf die der Startup-Hold die Arme
+        # regelt (kein Sprung) und mit der die Lauf-Policy stabil laeuft.
         qp = self.mj_data.qpos
-        qp[0] = 0.0; qp[1] = 0.0; qp[2] = pelvis_z
-        qp[3] = 1.0; qp[4] = 0.0; qp[5] = 0.0; qp[6] = 0.0   # Quaternion aufrecht [w,x,y,z]
+        # x/y + Blickrichtung = Startpunkt des Modells (qpos0; = Ursprung, ausser die
+        # Umgebung legt per g1_spawn einen anderen fest, siehe unitree_mujoco.py).
+        q0 = self.mj_model.qpos0
+        qp[0] = q0[0]; qp[1] = q0[1]; qp[2] = pelvis_z
+        qp[3:7] = q0[3:7]   # aufrecht, gedreht wie am Startpunkt [w,x,y,z]
         for i in range(self.num_motor):
             qp[7 + i] = legw[i] if i < len(legw) else 0.0
         self.mj_data.qvel[:] = 0.0
@@ -336,7 +341,7 @@ class UnitreeSdk2Bridge:
             self._set_weld(False)
             print("[BRIDGE] Balancing START -> Stand-Pose gesetzt, Weld geloest.", flush=True)
         elif code == 0:     # HOLD/Standby: in Spawn-Pose stellen + Basis halten
-            self._reset_pose([0.0] * 15, self.spawn_z)
+            self._reset_pose([0.0] * 15 + self.stance_pose[15:], self.spawn_z)
             self._set_weld(True)
             print("[BRIDGE] HOLD -> Spawn-Pose, Weld an (Basis gehalten).", flush=True)
         elif code == 2:     # DAMP/Emergency: Basis freigeben, kein Reset

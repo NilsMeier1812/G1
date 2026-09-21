@@ -1,0 +1,24 @@
+<mujoco model="MuJoCo Model">
+  <compiler angle="radian"/>
+
+  <size nkey="1"/>
+
+  <asset>
+    <mesh name="asset_arbeitsplatz_station.stl_0002_mesh" file="../meshes/arbeitsplatz_station.stl"/>
+  </asset>
+
+  <worldbody>
+    <geom name="asset_arbeitsplatz_station.stl_0002" pos="0.886775 -1.122 -0.636442" quat="0.999994 -0.0033499 0 0" type="mesh" mass="0" mesh="asset_arbeitsplatz_station.stl_0002_mesh"/>
+    <geom name="floor" size="2.5 2.5 0.01" pos="0 0 -0.01" type="plane"/>
+    <camera name="camera" pos="1 0 1.5"/>
+    <light pos="0 0 5"/>
+    <body name="box_0003_body_0">
+      <joint type="free"/>
+      <geom name="grasp_box_0003" size="0.1 0.025 0.05" pos="-0.675676 -1.15439 0.84583" type="box" rgba="0.784314 0.392157 0.941176 1" mass="0.2"/>
+    </body>
+  </worldbody>
+
+  <keyframe>
+    <key name="home" qpos="0 0 0 0 0 0 0"/>
+  </keyframe>
+</mujoco>

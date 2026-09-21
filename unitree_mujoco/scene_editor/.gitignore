@@ -10,3 +10,6 @@ __pycache__/
 
 # MuJoCo-Log aus Validierungslaeufen
 MUJOCO_LOG.TXT
+
+# Kollisions-Zerlegung (von build_env_scene.py erzeugt, wird bei Bedarf neu gebaut)
+meshes/.collision/

@@ -34,6 +34,8 @@ Aufruf:
     python3 build_env_scene.py --env scenes/warehouse.xml --inspire 1
 """
 import argparse
+import hashlib
+import math
 import os
 import re
 import sys
@@ -41,11 +43,29 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 GRASP_PREFIX_RE = re.compile(r"^grasp_", re.IGNORECASE)
+# Startpunkt-Markierung: ein Objekt, dessen Name mit "g1_spawn" beginnt, legt
+# fest, WO der G1 startet (Position x/y + Blickrichtung aus der Drehung um z).
+# Es wird beim Kombinieren entfernt und als <custom><numeric name="g1_spawn"
+# data="x y yaw"/> abgelegt; unitree_mujoco.py setzt den Roboter dorthin.
+SPAWN_PREFIX_RE = re.compile(r"^g1_spawn", re.IGNORECASE)
 
 HERE = Path(__file__).resolve().parent          # .../unitree_mujoco/scene_editor
 MJ_ROOT = HERE.parent                            # .../unitree_mujoco
 G1_DIR = MJ_ROOT / "unitree_robots" / "g1"
 G1_MESHDIR = G1_DIR / "meshes"                    # meshdir des Robotermodells
+
+# Kollisions-Zerlegung statischer Mesh-Hindernisse (siehe add_collision_hulls).
+# Liegt unter unitree_mujoco/ -> auch im read-only gemounteten Container sichtbar.
+COLLISION_CACHE = HERE / "meshes" / ".collision"
+# Namens-Suffix des erzeugten Kollisions-Bodys. scene_objects.py (Sim -> RViz)
+# erkennt ihn daran, blendet ihn aus und behandelt das zugehoerige Optik-Mesh
+# (contype/conaffinity 0) trotzdem als Hindernis. Beide Stellen muessen passen.
+COLLISION_BODY_SUFFIX = "__collision"
+# contype/conaffinity fuer Umgebungs-Objekte: Bit 1 (G1-Koerper) + Bit 2 (Haende).
+ENV_COLLISION_BITS = "3"
+EDITOR_VENV = HERE / ".venv"
+ORIENT_ATTRS = ("quat", "euler", "axisangle", "xyaxes", "zaxis")
+CONTACT_ATTRS = ("friction", "solref", "solimp", "condim", "priority", "margin")
 
 # Roboter-Basismodell je nach Hand-Variante (wie config.py)
 ROBOT_FILES = {
@@ -124,12 +144,142 @@ def _wrap_grasp_geom(geom_el):
     inner = ET.Element("geom", dict(geom_el.attrib))
     inner.attrib.pop("pos", None)
     inner.attrib.pop("quat", None)
+    # Der Scene-Editor exportiert Meshes als statische Geoms mit mass="0" --
+    # an einem freien Koerper verweigert MuJoCo das ("mass and inertia of
+    # moving bodies must be larger than mjMINVAL"). Dann Masse aus Geometrie
+    # und Default-Dichte berechnen lassen.
+    try:
+        if float(inner.get("mass", "1")) <= 0.0:
+            inner.attrib.pop("mass")
+    except ValueError:
+        pass
     body.append(inner)
     return body
 
 
 def _is_grasp_geom(el) -> bool:
     return el.tag == "geom" and bool(GRASP_PREFIX_RE.match(el.get("name") or ""))
+
+
+def _floats(s, default):
+    return [float(x) for x in s.split()] if s else list(default)
+
+
+def _quat_mul(a, b):
+    aw, ax, ay, az = a
+    bw, bx, by, bz = b
+    return [aw * bw - ax * bx - ay * by - az * bz,
+            aw * bx + ax * bw + ay * bz - az * by,
+            aw * by - ax * bz + ay * bw + az * bx,
+            aw * bz + ax * by - ay * bx + az * bw]
+
+
+def _quat_rotate(q, v):
+    w, x, y, z = _quat_mul(_quat_mul(q, [0.0, *v]), [q[0], -q[1], -q[2], -q[3]])
+    return [x, y, z]
+
+
+def _fmt(vals):
+    return " ".join(f"{v:.6g}" for v in vals)
+
+
+def _normalize_free_body(body_el) -> None:
+    """Freier Koerper aus dem Scene-Editor: Pose vom Geom auf den Body ziehen.
+
+    Der Editor exportiert bewegliche Objekte als <body> im Ursprung mit einem
+    verschobenen Geom darin (<body><joint type="free"/><geom pos="x y z"/>).
+    MuJoCo simuliert das korrekt, aber der Body-Ursprung (xpos) liegt dann bei
+    0,0,0 -- und genau den meldet scene_state_publisher als Live-Pose an RViz
+    (Box erscheint im Ursprung statt auf dem Tisch). Hier: Body-Pose = Welt-Pose
+    des Geoms, Geom liegt identisch im Body. Nur fuer den einfachen Fall (ein
+    Geom, keine Kind-Bodies, Orientierung nur per quat).
+    """
+    has_free = body_el.find("freejoint") is not None or any(
+        j.get("type") == "free" for j in body_el.findall("joint"))
+    geoms = body_el.findall("geom")
+    if not has_free or len(geoms) != 1 or body_el.find("body") is not None:
+        return
+    geom = geoms[0]
+    other_orient = [a for a in ORIENT_ATTRS if a != "quat"]
+    if any(geom.get(a) or body_el.get(a) for a in other_orient):
+        return
+    b_pos = _floats(body_el.get("pos"), (0.0, 0.0, 0.0))
+    b_quat = _floats(body_el.get("quat"), (1.0, 0.0, 0.0, 0.0))
+    g_pos = _floats(geom.get("pos"), (0.0, 0.0, 0.0))
+    g_quat = _floats(geom.get("quat"), (1.0, 0.0, 0.0, 0.0))
+    rotated = _quat_rotate(b_quat, g_pos)
+    body_el.set("pos", _fmt([b + r for b, r in zip(b_pos, rotated)]))
+    body_el.set("quat", _fmt(_quat_mul(b_quat, g_quat)))
+    geom.attrib.pop("pos", None)
+    geom.attrib.pop("quat", None)
+
+
+def _decompose_cached(mesh_abs: Path):
+    """Konvexe Zerlegung (V-HACD) eines Meshes, gecacht nach Datei-Inhalt.
+
+    Gibt die Liste der Teil-Huellen (STL-Pfade) zurueck; None, wenn trimesh/
+    vhacdx fehlen (dann bleibt das Mesh wie bisher).
+    """
+    digest = hashlib.sha1(mesh_abs.read_bytes()).hexdigest()[:10]
+    out_dir = COLLISION_CACHE / f"{mesh_abs.stem}-{digest}"
+    hulls = sorted(out_dir.glob("hull_*.stl"))
+    if hulls:
+        return hulls
+    try:
+        import trimesh
+    except ImportError:
+        return None
+    mesh = trimesh.load(str(mesh_abs), force="mesh")
+    parts = trimesh.decomposition.convex_decomposition(
+        mesh, maxConvexHulls=64, resolution=400000, maxRecursionDepth=12)
+    if isinstance(parts, dict):
+        parts = [parts]
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for i, part in enumerate(parts):
+        trimesh.Trimesh(part["vertices"], part["faces"]).export(
+            str(out_dir / f"hull_{i:02d}.stl"))
+    return sorted(out_dir.glob("hull_*.stl"))
+
+
+def add_collision_hulls(geom_el, mesh_abs: Path, mesh_scale, asset, wb, warnings) -> None:
+    """Statisches Mesh-Hindernis: Kollision ueber konvexe Teil-Huellen.
+
+    MuJoCo kollidiert ein Mesh-Geom nur mit seiner EINEN konvexen Huelle. Bei
+    einem Arbeitsplatz/Regal "fuellt" die alles auf: Objekte auf dem Tisch
+    starten IN der Huelle und werden weggeschossen, auf der Tischplatte liegen
+    bleibt nichts. Darum: das Original-Mesh nur noch als Optik (contype/
+    conaffinity 0), die Kollision uebernehmen die Teile der Zerlegung (group 3
+    = im Viewer standardmaessig ausgeblendet) in einem Body mit derselben Pose.
+    """
+    hulls = _decompose_cached(mesh_abs)
+    if not hulls:
+        warnings.append(f"  ! Mesh '{geom_el.get('mesh')}': keine Kollisions-Zerlegung "
+                        "(trimesh fehlt) -> Kollision nur ueber konvexe Huelle.")
+        return
+
+    geom_el.set("contype", "0")
+    geom_el.set("conaffinity", "0")
+
+    base = geom_el.get("name") or geom_el.get("mesh")
+    body = ET.SubElement(wb, "body", {"name": f"{base}{COLLISION_BODY_SUFFIX}",
+                                      "pos": geom_el.get("pos", "0 0 0")})
+    for attr in ORIENT_ATTRS:
+        if geom_el.get(attr):
+            body.set(attr, geom_el.get(attr))
+    for i, hull in enumerate(hulls):
+        mesh_name = f"{geom_el.get('mesh')}_hull{i:02d}"
+        mesh_attrs = {"name": mesh_name, "file": rel_to_meshdir(hull)}
+        if mesh_scale:
+            mesh_attrs["scale"] = mesh_scale
+        ET.SubElement(asset, "mesh", mesh_attrs)
+        hull_attrs = {"type": "mesh", "mesh": mesh_name, "group": "3",
+                      "rgba": "0.9 0.3 0.3 0.4"}
+        for attr in CONTACT_ATTRS:
+            if geom_el.get(attr):
+                hull_attrs[attr] = geom_el.get(attr)
+        ET.SubElement(body, "geom", hull_attrs)
+    warnings.append(f"  i Mesh '{geom_el.get('mesh')}': Kollision ueber {len(hulls)} "
+                    "konvexe Teile (Viewer: Gruppe 3 einblenden zum Ansehen).")
 
 
 def merge_environment(env_root, asset, wb, env_dir, warnings):
@@ -143,6 +293,8 @@ def merge_environment(env_root, asset, wb, env_dir, warnings):
       kommen aus der Basis.
     """
     used_asset_names = {el.get("name") for el in asset if el.get("name")}
+    env_meshes = {}  # Mesh-Name -> (absoluter Pfad, scale) fuer add_collision_hulls
+    n_base = len(wb)  # alles danach in <worldbody> stammt aus der Umgebung
 
     for env_asset in env_root.findall("asset"):
         for el in list(env_asset):
@@ -164,6 +316,8 @@ def merge_environment(env_root, asset, wb, env_dir, warnings):
                         warnings.append(
                             "  ! Mesh liegt ausserhalb von unitree_mujoco/ (im Docker-"
                             f"Container evtl. nicht sichtbar): {mesh_abs}")
+                    if nm:
+                        env_meshes[nm] = (mesh_abs, el.get("scale"))
                 el.set("file", rel_to_meshdir(mesh_abs))
             asset.append(el)
             if nm:
@@ -178,7 +332,23 @@ def merge_environment(env_root, asset, wb, env_dir, warnings):
             if _is_grasp_geom(el):
                 wb.append(_wrap_grasp_geom(el))
                 continue
+            if el.tag == "body":
+                _normalize_free_body(el)
             wb.append(el)
+            if el.tag == "geom" and el.get("type") == "mesh" and el.get("mesh") in env_meshes:
+                mesh_abs, mesh_scale = env_meshes[el.get("mesh")]
+                add_collision_hulls(el, mesh_abs, mesh_scale, asset, wb, warnings)
+
+    # Kollisions-Bits der Umgebung: Koerper-Geoms des G1 kollidieren auf Bit 1,
+    # die Haende/Finger (Inspire) nur auf Bit 2 (damit sie nicht am eigenen
+    # Koerper haengen bleiben). Umgebungs-Objekte bekommen darum BEIDE Bits (3),
+    # sonst greifen die Haende durch Box und Tisch hindurch. Explizit gesetzte
+    # Werte (z.B. contype=0 = reine Optik) bleiben unangetastet.
+    for el in list(wb)[n_base:]:
+        for g in el.iter("geom"):
+            if g.get("contype") is None and g.get("conaffinity") is None:
+                g.set("contype", ENV_COLLISION_BITS)
+                g.set("conaffinity", ENV_COLLISION_BITS)
 
     # Auf Abschnitte hinweisen, die eine reine Objekt-Umgebung normalerweise
     # nicht enthalten sollte (werden bewusst NICHT uebernommen).
@@ -188,7 +358,49 @@ def merge_environment(env_root, asset, wb, env_dir, warnings):
                             "(Umgebungen sollen nur Objekte enthalten).")
 
 
+def _reexec_in_editor_venv() -> None:
+    """start.sh ruft das Skript mit dem System-python3 auf, dem trimesh/vhacdx
+    (fuer die Kollisions-Zerlegung) meist fehlen. Dann einmalig mit dem Python
+    aus scene_editor/.venv neu starten, falls vorhanden."""
+    try:
+        import trimesh  # noqa: F401
+        return
+    except ImportError:
+        pass
+    venv_py = EDITOR_VENV / "bin" / "python"
+    if venv_py.is_file() and Path(sys.prefix).resolve() != EDITOR_VENV.resolve():
+        os.execv(str(venv_py), [str(venv_py), str(Path(__file__).resolve()), *sys.argv[1:]])
+
+
+def extract_spawn(env_root, warnings):
+    """Startpunkt-Markierung (g1_spawn...) aus der Umgebung entfernen und
+    (x, y, yaw) zurueckgeben -- oder None, wenn keine da ist (Start im Ursprung)."""
+    for env_wb in env_root.findall("worldbody"):
+        for el in list(env_wb):
+            names = [el.get("name") or ""] + [g.get("name") or "" for g in el.findall("geom")]
+            if el.tag not in ("geom", "body") or not any(SPAWN_PREFIX_RE.match(n) for n in names):
+                continue
+            env_wb.remove(el)
+            if el.tag == "body":
+                _normalize_free_body(el)
+                pos = _floats(el.get("pos"), (0.0, 0.0, 0.0))
+                quat = _floats(el.get("quat"), (1.0, 0.0, 0.0, 0.0))
+                inner = el.find("geom")
+                if inner is not None and inner.get("pos"):
+                    pos = [a + b for a, b in zip(pos, _quat_rotate(quat, _floats(inner.get("pos"), (0, 0, 0))))]
+            else:
+                pos = _floats(el.get("pos"), (0.0, 0.0, 0.0))
+                quat = _floats(el.get("quat"), (1.0, 0.0, 0.0, 0.0))
+            w, x, y, z = quat
+            yaw = math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+            warnings.append(f"  i Startpunkt '{names[0] or names[-1]}': G1 startet bei "
+                            f"x={pos[0]:.2f} y={pos[1]:.2f}, Blickrichtung {math.degrees(yaw):.0f} Grad.")
+            return pos[0], pos[1], yaw
+    return None
+
+
 def main() -> None:
+    _reexec_in_editor_venv()
     ap = argparse.ArgumentParser(description="G1-Basis + Umgebung zu lauffaehiger Szene kombinieren")
     ap.add_argument("--env", required=True,
                     help="Umgebungs-XML (nur Objekte), z.B. scenes/warehouse.xml")
@@ -220,7 +432,11 @@ def main() -> None:
 
     warnings = []
     mj, asset, wb = build_base(robot_file, f"g1_env_{name}")
+    spawn = extract_spawn(env_root, warnings)
     merge_environment(env_root, asset, wb, env_dir, warnings)
+    if spawn is not None:
+        custom = ET.SubElement(mj, "custom")
+        ET.SubElement(custom, "numeric", {"name": "g1_spawn", "data": _fmt(spawn)})
 
     ET.indent(mj, space="  ")
     header = (

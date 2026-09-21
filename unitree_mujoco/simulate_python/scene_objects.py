@@ -35,6 +35,17 @@ from pathlib import Path
 
 GRASP_PREFIX_RE = re.compile(r"^grasp_", re.IGNORECASE)
 
+# build_env_scene.py zerlegt statische Mesh-Hindernisse fuer die Kollision in
+# konvexe Teile: Body "<geom-name>__collision" (nur Kollision) + das Original-
+# Mesh als reine Optik (contype/conaffinity 0). Fuer RViz/IK/Nav: das Original-
+# Mesh wird nur ANGEZEIGT (Klasse "display"), als Hindernisse gehen die
+# Bounding-Boxen der einzelnen Teile raus. Die Bounding-Box des GANZEN Meshes
+# waere bei einem Arbeitsplatz ein Riesenquader um Tisch + Roboter -> die
+# Arm-Planung meldet dann jede Stellung als Kollision (start_in_collision).
+COLLISION_BODY_SUFFIX = "__collision"
+# Unsichtbar in RViz (Alpha 0), zaehlen aber fuer IK/Nav. Zum Ansehen Alpha > 0.
+HULL_BOX_RGBA = [0.9, 0.3, 0.3, 0.0]
+
 
 def classify_name(name: str) -> str:
     return "grasp" if GRASP_PREFIX_RE.match(name or "") else "obstacle"
@@ -92,7 +103,19 @@ def _is_decorative(attrs: dict) -> bool:
 
 
 def _mesh_local_aabb_half(stl_path: Path):
-    """Halbe Bounding-Box (lokal, VOR Skalierung) eines STL-Meshes.
+    """Halbe Bounding-Box (lokal, VOR Skalierung) eines STL-Meshes."""
+    aabb = _mesh_local_aabb(stl_path)
+    return aabb[1] if aabb is not None else None
+
+
+def _center_half(xs, ys, zs):
+    return (((xs[0] + xs[1]) / 2.0, (ys[0] + ys[1]) / 2.0, (zs[0] + zs[1]) / 2.0),
+            ((xs[1] - xs[0]) / 2.0, (ys[1] - ys[0]) / 2.0, (zs[1] - zs[0]) / 2.0))
+
+
+def _mesh_local_aabb(stl_path: Path):
+    """(Mitte, Halbe Kantenlaengen) der Bounding-Box (lokal, VOR Skalierung) eines
+    STL-Meshes.
 
     Reine Bounding-Box, kein Convex-Hull -- reicht fuer die 2D-Fussabdruck-
     Rasterung (Nav) und als konservative Kollisions-Naeherung (IK). Unterstuetzt
@@ -120,7 +143,7 @@ def _mesh_local_aabb_half(stl_path: Path):
                     ys[0] = min(ys[0], vy); ys[1] = max(ys[1], vy)
                     zs[0] = min(zs[0], vz); zs[1] = max(zs[1], vz)
                 off += 50
-            return ((xs[1] - xs[0]) / 2.0, (ys[1] - ys[0]) / 2.0, (zs[1] - zs[0]) / 2.0)
+            return _center_half(xs, ys, zs)
     # ASCII-STL-Fallback: Zeilen "vertex x y z" auswerten.
     try:
         text = data.decode("ascii", errors="ignore")
@@ -140,7 +163,7 @@ def _mesh_local_aabb_half(stl_path: Path):
                 found = True
     if not found:
         return None
-    return ((xs[1] - xs[0]) / 2.0, (ys[1] - ys[0]) / 2.0, (zs[1] - zs[0]) / 2.0)
+    return _center_half(xs, ys, zs)
 
 
 def _resolve_mesh_file(file_: str, scene_dir: Path, meshdir: str):
@@ -199,19 +222,22 @@ def _collect_mesh_assets(root, scene_dir: Path):
     return meshes
 
 
-def _geom_spec(geom_el, meshes: dict, base_pos, base_quat):
+def _geom_spec(geom_el, meshes: dict, base_pos, base_quat, has_collision_body=False):
     """Baut die Objekt-Spec aus einem einzelnen <geom>-Element.
 
     base_pos/base_quat = Pose der umschliessenden <body> (0/Identity, falls
     das Geom direkt in <worldbody> liegt) -- fuer greifbare Objekte (in einen
     <body><freejoint/> gewrapt, siehe build_env_scene.py) traegt die BODY die
     Pose, das Geom selbst liegt bei "0 0 0"/Identity relativ dazu.
+
+    has_collision_body: Optik-Mesh mit eigenem Kollisions-Body (siehe
+    COLLISION_BODY_SUFFIX) -- trotz contype/conaffinity 0 ein Hindernis.
     """
     name = geom_el.get("name") or ""
     gtype = geom_el.get("type", "box")
     rgba = _floats(geom_el.get("rgba"), (0.7, 0.7, 0.7, 1.0))
     attrs = {"contype": geom_el.get("contype"), "conaffinity": geom_el.get("conaffinity")}
-    if _is_decorative(attrs):
+    if _is_decorative(attrs) and not has_collision_body:
         return None
 
     local_pos = _floats(geom_el.get("pos"), (0.0, 0.0, 0.0))
@@ -248,6 +274,35 @@ def _geom_spec(geom_el, meshes: dict, base_pos, base_quat):
     return spec
 
 
+def _hull_box_specs(col_body, meshes: dict, base_name: str):
+    """Je konvexem Kollisions-Teil (Geom im "__collision"-Body) eine Hindernis-
+    Box: lokale Bounding-Box des Teils, in die Welt-Pose des Bodys gedreht."""
+    body_pos = _floats(col_body.get("pos"), (0.0, 0.0, 0.0))
+    body_quat = _floats(col_body.get("quat"), (1.0, 0.0, 0.0, 0.0))
+    specs = []
+    for i, g in enumerate(col_body.findall("geom")):
+        info = meshes.get(g.get("mesh"))
+        aabb = _mesh_local_aabb(Path(info["file"])) if info else None
+        if aabb is None:
+            continue
+        sx, sy, sz = info["scale"]
+        center = (aabb[0][0] * sx, aabb[0][1] * sy, aabb[0][2] * sz)
+        half = [abs(aabb[1][0] * sx), abs(aabb[1][1] * sy), abs(aabb[1][2] * sz)]
+        pos, quat = _compose_pose(body_pos, body_quat, center, (1.0, 0.0, 0.0, 0.0))
+        specs.append({
+            "name": f"{base_name}#{i:02d}",
+            "class": "obstacle",
+            "type": "box",
+            "pos": pos,
+            "quat": quat,
+            "rgba": list(HULL_BOX_RGBA),
+            "size": half,
+            "mesh_basename": None,
+            "aabb_half": None,
+        })
+    return specs
+
+
 def parse_scene_objects(scene_xml_path: str):
     """Liste der Umgebungs-Objekte (Hindernisse + Greif-Objekte) aus der
     kombinierten Szene. Jeder Eintrag ist ein dict wie in _geom_spec()
@@ -266,6 +321,11 @@ def parse_scene_objects(scene_xml_path: str):
     scene_dir = path.parent
     meshes = _collect_mesh_assets(root, scene_dir)
 
+    collision_bodies = {
+        el.get("name"): el for wb in root.findall("worldbody") for el in wb
+        if el.tag == "body" and (el.get("name") or "").endswith(COLLISION_BODY_SUFFIX)
+    }
+
     specs = []
     for wb in root.findall("worldbody"):
         for el in list(wb):
@@ -274,10 +334,17 @@ def parse_scene_objects(scene_xml_path: str):
             if el.tag == "geom":
                 if el.get("name") == "floor" and el.get("type") == "plane":
                     continue
-                spec = _geom_spec(el, meshes, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0))
+                col_body = collision_bodies.get((el.get("name") or "") + COLLISION_BODY_SUFFIX)
+                spec = _geom_spec(el, meshes, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0),
+                                  has_collision_body=col_body is not None)
                 if spec is not None and spec["name"]:
+                    if col_body is not None:
+                        spec["class"] = "display"   # nur Anzeige, Hindernisse = Teil-Boxen
+                        specs.extend(_hull_box_specs(col_body, meshes, spec["name"]))
                     specs.append(spec)
             elif el.tag == "body":
+                if el.get("name") in collision_bodies:
+                    continue  # reine Kollisions-Teile, Hindernis ist das Optik-Mesh
                 body_pos = _floats(el.get("pos"), (0.0, 0.0, 0.0))
                 body_quat = _floats(el.get("quat"), (1.0, 0.0, 0.0, 0.0))
                 inner_geom = el.find("geom")
@@ -289,8 +356,13 @@ def parse_scene_objects(scene_xml_path: str):
                     # (siehe build_env_scene.py) -- der ist massgeblich fuer die
                     # Live-Pose-Aufloesung (mj_data.xpos[body_id]) und die
                     # ROS-Identifikation.
+                    geom_name = spec["name"]
                     spec["name"] = el.get("name") or spec["name"]
-                    spec["class"] = classify_name(spec["name"])
+                    # grasp_ am Body ODER am Geom darin: Der Scene-Editor legt
+                    # bewegliche Objekte als <body name="x_body_0"><geom name="x">
+                    # ab -- umbenannt wird dort oft nur das Geom.
+                    is_grasp = "grasp" in (classify_name(spec["name"]), classify_name(geom_name))
+                    spec["class"] = "grasp" if is_grasp else "obstacle"
                     spec["has_freejoint"] = el.find("freejoint") is not None
                     specs.append(spec)
     return specs

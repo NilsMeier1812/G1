@@ -82,7 +82,10 @@ class SceneStatePublisher:
     def _obstacle_payload(self):
         return [
             {
-                "name": o["name"], "class": "obstacle", "type": o["type"],
+                # "display" (nur Anzeige, z.B. Optik-Mesh eines in Teile zerlegten
+                # Arbeitsplatzes) MUSS durchgereicht werden -- sonst sieht die IK
+                # wieder die Riesen-Box um das ganze Mesh (siehe scene_objects.py).
+                "name": o["name"], "class": o.get("class", "obstacle"), "type": o["type"],
                 "pos": o["pos"], "quat": o["quat"], "rgba": o["rgba"],
                 "size": o["size"], "mesh": o["mesh_basename"],
                 "aabb_half": o["aabb_half"],
