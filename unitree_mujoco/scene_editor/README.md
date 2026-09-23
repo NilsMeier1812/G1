@@ -334,3 +334,16 @@ Mehr dazu in `meshes/README.md`.
   verwirft beim XML-Import manche Tags (Joints/Aktuatoren ausserhalb der
   Roboterbeschreibung, Reibung). Deshalb im Editor nur die roboterfreie
   Umgebung bauen, nicht die volle G1-Szene.
+- **Greif-Objekte fliegen beim Start weg / staendige `[scene-reset]`-Meldungen
+  im Log** – `build_env_scene.py` braucht `trimesh` + `vhacdx` (jetzt in
+  `requirements.txt`, `./setup.sh` installiert sie mit), um Mesh-Hindernisse
+  wie den Arbeitsplatz in mehrere konvexe Teil-Huellen zu zerlegen. Fehlen
+  die Pakete (z.B. `.venv` nach einem frischen `docker pull`/Checkout nicht
+  neu aufgesetzt), faellt der Generator **still** auf die EINE konvexe Huelle
+  des ganzen Meshes zurueck -- die "fuellt" bei einem Tisch/Regal den
+  offenen Raum auf, abgelegte Greif-Objekte starten dann IN der Huelle und
+  werden im ersten Sim-Schritt weggeschossen. Pruefen: `.venv/bin/python3 -c
+  "import trimesh, vhacdx"` sollte ohne Fehler laufen; sonst `./setup.sh`
+  erneut ausfuehren (braucht genug freien Diskspeicher!) und danach die
+  betroffene(n) Szene(n) neu bauen (`python3 build_env_scene.py --env
+  scenes/<name>.xml`, oder einfach `g1pilot/start.sh` neu starten).

@@ -5,3 +5,14 @@ mujoco-scene-editor==0.1.3
 # yourdfpy fehlt in den Abhaengigkeiten des Editors, wird aber beim Start
 # gebraucht (Laden von robot_descriptions). Ohne das crasht mjcreate/mjedit.
 yourdfpy
+
+# trimesh + vhacdx: konvexe Zerlegung statischer Mesh-Hindernisse in
+# build_env_scene.py (add_collision_hulls). Ohne die beiden kollidiert ein
+# Mesh-Geom nur mit seiner EINEN konvexen Huelle -- bei einem
+# Arbeitsplatz/Regal "fuellt" die den offenen Raum auf: abgelegte
+# Greif-Objekte starten IN der Huelle und werden beim ersten Sim-Schritt
+# weggeschossen (kommt als staendiges [scene-reset] im Log). Fehlen die
+# Pakete, faellt build_env_scene.py mit einer Warnung still auf die
+# unzerlegte Huelle zurueck -- keine sichtbare Fehlermeldung.
+trimesh
+vhacdx
