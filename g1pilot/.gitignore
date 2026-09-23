@@ -68,8 +68,13 @@ hardware/~$armAssembly.SLDASM
 .gui_open_request
 
 # Laufzeit-/Nutzerdaten im bind-gemounteten Repo (persistent ueber Container-
-# Neustarts, aber nicht versioniert): Positionsspeicher (pose_store.py).
-/data/
+# Neustarts): Positionsspeicher (pose_store.py).
+/data/*
+# Ausnahme: Die gespeicherten Posen SIND versioniert -- so lassen sie sich auf
+# anderen Rechnern/Robotern mitbenutzen (git pull statt haendisch kopieren).
+# (Deshalb /data/* statt /data/: ein ignoriertes VERZEICHNIS laesst sich nicht
+# per ! wieder oeffnen, Git steigt gar nicht erst hinein.)
+!/data/arm_poses.json
 
 *.FCBak
 
