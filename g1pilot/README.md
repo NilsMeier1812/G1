@@ -22,15 +22,31 @@ sudo usermod -aG docker $USER
 # Prüfen
 docker --version
 docker run hello-world
+
+# Host-Pakete: Tkinter (grafisches Startmenü von ./start.sh) und venv
+# (Umgebungs-Builder / Scene-Editor)
+sudo apt install -y python3-tk python3-venv
+python3 -c 'import tkinter; print(tkinter.TkVersion)'
+
+# Umgebungs-Builder einrichten (trimesh + vhacdx für build_env_scene.py)
+cd ../unitree_mujoco/scene_editor && ./setup.sh && cd -
 ```
 
 Hinweise:
 
 - Snap-Docker (`sudo snap remove docker`) bitte vorher entfernen — er macht
   häufig Pfad- und Rechteprobleme.
-- Für das grafische Startmenü (`./start.sh`) wird Tkinter auf dem Host
-  benötigt (nicht im Docker-Image enthalten): `sudo apt install python3-tk`.
-  Ohne Tkinter startet automatisch das Text-Menü.
+- Tkinter (`python3-tk`) ist nicht im Docker-Image enthalten, sondern wird
+  auf dem Host gebraucht. Fehlt es, startet `./start.sh` ohne Fehlermeldung
+  das Text-Menü statt der GUI. Das gilt auch unter WSL2: Das Display kommt
+  dort über WSLg, Tkinter muss aber trotzdem installiert werden.
+- Ohne `scene_editor/.venv` mit `trimesh`/`vhacdx` baut `start.sh`
+  Umgebungen ohne Fehlermeldung mit groben Kollisionshüllen (Greif-Objekte
+  fliegen weg). Nach dem Verschieben des Repos das `.venv` neu anlegen:
+  `rm -rf .venv && ./setup.sh`.
+- **WSL2 + VPN (z. B. eduVPN):** Kommt WSL nicht ins Internet (`apt` hängt
+  bei `Ign:`, `curl` läuft in einen Timeout), Mirrored Networking aktivieren.
+  Anleitung: [WSL2-Netzwerk](docs/01_installation.md#wsl2-netzwerk-vpn-uni-wlan-roboter).
 - Für GPU-Betrieb zusätzlich das NVIDIA Container Toolkit installieren
   (siehe `docker-compose.nvidia.yml` / `docker-compose.gpu.yml`).
 

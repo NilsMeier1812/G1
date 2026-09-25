@@ -29,6 +29,13 @@ if [[ ! -x "$VENV/bin/python" ]]; then
   echo "Kein virtualenv gefunden. Bitte zuerst  ./setup.sh  ausfuehren." >&2
   exit 1
 fi
+# Ein .venv aus einem abgebrochenen setup.sh (z.B. ohne python3-venv) hat
+# python, aber keine Pakete -> sonst kryptischer ImportError (cachier o.ae.).
+if ! "$VENV/bin/python" -c "import mujoco_scene_editor, cachier, trimesh" 2>/dev/null; then
+  echo "virtualenv ist unvollstaendig (Pakete fehlen). Neu aufsetzen mit:" >&2
+  echo "  rm -rf .venv && ./setup.sh" >&2
+  exit 1
+fi
 
 # RoBits-Config persistent halten
 export ROBITS_CONFIG_DIR="${ROBITS_CONFIG_DIR:-$(pwd)/.robits_config}"

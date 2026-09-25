@@ -11,8 +11,45 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-PY="${PYTHON:-python3}"
 VENV=".venv"
+
+# mujoco-scene-editor 0.1.3 verlangt Python >=3.10,<3.13. Ubuntu 26.04 bringt
+# nur 3.14 mit -> passenden Interpreter suchen: $PYTHON, python3.12..3.10,
+# ein per uv installiertes 3.12, zuletzt python3.
+py_ok() { "$1" -c 'import sys; sys.exit(not ((3, 10) <= sys.version_info[:2] < (3, 13)))' 2>/dev/null; }
+
+UV="$(command -v uv || echo "$HOME/.local/bin/uv")"
+UV_PY=""
+[[ -x "$UV" ]] && UV_PY="$("$UV" python find 3.12 2>/dev/null || true)"
+
+PY=""
+for cand in ${PYTHON:-} python3.12 python3.11 python3.10 "$UV_PY" python3; do
+  [[ -n "$cand" ]] && command -v "$cand" >/dev/null 2>&1 && py_ok "$cand" && { PY="$cand"; break; }
+done
+if [[ -z "$PY" ]]; then
+  echo "FEHLER: kein Python 3.10-3.12 gefunden (mujoco-scene-editor laeuft nicht" >&2
+  echo "        mit $(python3 --version 2>&1)). Ohne sudo z.B. per uv:" >&2
+  echo "  curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
+  echo "  ~/.local/bin/uv python install 3.12" >&2
+  echo "  ./setup.sh" >&2
+  exit 1
+fi
+echo ">> Nutze $PY ($("$PY" --version 2>&1))"
+
+# Ohne ensurepip (Debian/Ubuntu: Paket python3-venv) legt 'venv' ein .venv
+# OHNE pip an und bricht ab -> kaputtes venv, das launch.sh spaeter findet.
+if ! "$PY" -c "import ensurepip" 2>/dev/null; then
+  echo "FEHLER: venv-Modul fehlt fuer $PY. Bitte installieren:" >&2
+  echo "  sudo apt install -y python3-venv" >&2
+  exit 1
+fi
+
+# Reste eines abgebrochenen Setups (venv ohne pip) oder ein venv mit falscher
+# Python-Version entfernen.
+if [[ -d "$VENV" ]] && { [[ ! -x "$VENV/bin/pip" ]] || ! py_ok "$VENV/bin/python"; }; then
+  echo ">> Unvollstaendiges/inkompatibles $VENV gefunden -> wird neu angelegt."
+  rm -rf "$VENV"
+fi
 
 echo ">> Erstelle virtualenv in $VENV ..."
 "$PY" -m venv "$VENV"

@@ -89,9 +89,24 @@ hineingeladen (siehe Abschnitt 4).
 
 ## 1. Setup (einmalig)
 
+Voraussetzung auf dem Host: **Python 3.10–3.12** (`mujoco-scene-editor`
+unterstützt 3.13+ nicht). Ubuntu 22.04/24.04 passt; unter Ubuntu 26.04
+(Python 3.14) vorher `curl -LsSf https://astral.sh/uv/install.sh | sh &&
+~/.local/bin/uv python install 3.12`. `setup.sh` sucht sich automatisch
+einen passenden Interpreter (oder `PYTHON=/pfad/zu/python3.12 ./setup.sh`).
+
+Außerdem `python3-venv`. Ohne das Paket
+bricht `python3 -m venv` mit `No module named 'ensurepip'` ab und
+hinterlässt ein `.venv` ohne `pip`. `setup.sh` lädt die Pakete von PyPI,
+braucht also Internet (unter WSL2 mit VPN siehe
+[WSL2-Netzwerk](../../g1pilot/docs/01_installation.md#wsl2-netzwerk-vpn-uni-wlan-roboter)).
+
 ```bash
+sudo apt install -y python3-venv
 cd unitree_mujoco/scene_editor
+rm -rf .venv          # nur bei altem/kaputtem venv, z.B. nach Verschieben des Repos
 ./setup.sh
+.venv/bin/python -c "import trimesh, vhacdx; print('ok')"   # Kontrolle
 ```
 
 Das legt ein eigenes `.venv/` an und installiert den Editor dort hinein
