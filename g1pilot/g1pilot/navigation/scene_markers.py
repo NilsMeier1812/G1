@@ -31,6 +31,10 @@ from visualization_msgs.msg import Marker
 NS_OBSTACLE = "g1scene:obstacle"
 NS_GRASP = "g1scene:grasp"
 NS_DISPLAY = "g1scene:display"
+# Stations-Ziele (station_<Name> aus der Szene): ARROW = Ziel-Pose (Position +
+# Blickrichtung), Marker.text = Name; dazu ein TEXT-Label. Kein Hindernis --
+# Nav/IK ignorieren sie, die Demo-GUI baut daraus ihre Stations-Knoepfe.
+NS_STATION = "g1scene:station"
 
 _MJ_TYPE_TO_MARKER = {
     "box": Marker.CUBE,
@@ -49,9 +53,15 @@ def class_from_ns(ns: str) -> str:
 
 
 def is_collision_marker(marker) -> bool:
-    """False fuer reine Anzeige-Marker (NS_DISPLAY) -- IK und Nav-Karte
-    ueberspringen sie."""
-    return marker.ns != NS_DISPLAY
+    """False fuer reine Anzeige-Marker (NS_DISPLAY) und Stations-Ziele
+    (NS_STATION) -- IK und Nav-Karte ueberspringen sie."""
+    return marker.ns not in (NS_DISPLAY, NS_STATION)
+
+
+def station_label(name: str) -> str:
+    """'station_Arbeitsplatz_2' -> 'Arbeitsplatz 2' (Knopf-/RViz-Beschriftung)."""
+    label = name[len("station_"):] if name.lower().startswith("station_") else name
+    return label.replace("_", " ").strip() or name
 
 
 def stable_id(name: str) -> int:

@@ -18,6 +18,7 @@ Gegenrichtung). Beide Container laufen mit network_mode: host -> Loopback
 verbindet sie ohne DDS/ROS.
 """
 import json
+import math
 import socket
 import threading
 import time
@@ -147,6 +148,37 @@ class SceneBridge(Node):
         m.text = sm.encode_text(obj["name"], obj.get("aabb_half"))
         return m
 
+    def _station_markers(self, st: dict):
+        """Station -> ARROW (Ziel-Pose, text = Name) + TEXT-Label darueber."""
+        name = st["name"]
+        x, y = float(st["pos"][0]), float(st["pos"][1])
+        yaw = float(st["yaw"])
+        arrow = Marker()
+        arrow.header.frame_id = self.frame_id
+        arrow.header.stamp = self.get_clock().now().to_msg()
+        arrow.ns = sm.NS_STATION
+        arrow.id = sm.stable_id(name)
+        arrow.type = Marker.ARROW
+        arrow.action = Marker.ADD
+        arrow.pose.position.x, arrow.pose.position.y, arrow.pose.position.z = x, y, 0.05
+        arrow.pose.orientation.z = math.sin(yaw / 2.0)
+        arrow.pose.orientation.w = math.cos(yaw / 2.0)
+        arrow.scale.x, arrow.scale.y, arrow.scale.z = 0.5, 0.08, 0.08
+        arrow.color.r, arrow.color.g, arrow.color.b, arrow.color.a = 0.1, 0.8, 0.3, 0.9
+        arrow.text = name
+        label = Marker()
+        label.header = arrow.header
+        label.ns = sm.NS_STATION
+        label.id = sm.stable_id(name + "#label")
+        label.type = Marker.TEXT_VIEW_FACING
+        label.action = Marker.ADD
+        label.pose.position.x, label.pose.position.y, label.pose.position.z = x, y, 0.4
+        label.pose.orientation.w = 1.0
+        label.scale.z = 0.15
+        label.color.r = label.color.g = label.color.b = label.color.a = 1.0
+        label.text = sm.station_label(name)
+        return arrow, label
+
     def _publish(self):
         with self._lock:
             snapshot = self._snapshot
@@ -156,6 +188,13 @@ class SceneBridge(Node):
         objs = list(snapshot.get("obstacles", [])) + list(snapshot.get("grasp", []))
         array = MarkerArray()
         seen_ids = set()
+        for st in snapshot.get("stations", []):
+            try:
+                for marker in self._station_markers(st):
+                    array.markers.append(marker)
+                    seen_ids.add((marker.ns, marker.id))
+            except (KeyError, TypeError, ValueError, IndexError) as e:
+                self.get_logger().warn(f"Ungueltige Station '{st}' uebersprungen: {e}")
         for obj in objs:
             name = obj.get("name")
             if not name:

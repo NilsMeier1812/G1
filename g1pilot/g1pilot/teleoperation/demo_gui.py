@@ -24,6 +24,7 @@ siehe launch/teleoperation_launcher.launch.py und docs/42_demo_gui_konzept.md.
 """
 
 import json
+import math
 import os
 import re
 import sys
@@ -36,8 +37,12 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import QTimer, Qt
 
 import rclpy
+from rclpy.qos import QoSProfile, DurabilityPolicy
 from std_msgs.msg import Bool, String
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, PoseStamped
+from visualization_msgs.msg import Marker, MarkerArray
+
+from g1pilot.navigation import scene_markers as sm
 
 from g1pilot.utils.window_style import DarkStyle
 from g1pilot.utils.common import is_sim_mode
@@ -92,6 +97,37 @@ class DemoNode(StreamDeck):
                                  lambda m: self.on_walk_ready and self.on_walk_ready(m.data), 10)
         self.create_subscription(String, "/g1pilot/arm_command/status",
                                  self._arm_status, 10)
+        # Stations-Ziele aus der Szene (station_<Name>, siehe scene_bridge.py):
+        # name -> (x, y, yaw). on_stations wird nur bei Aenderung gerufen.
+        self.stations = {}
+        self.on_stations = None
+        self.pub_goal = self.create_publisher(PoseStamped, "/g1pilot/goal", 10)
+        qos_scene = QoSProfile(depth=1)
+        qos_scene.durability = DurabilityPolicy.TRANSIENT_LOCAL
+        self.create_subscription(MarkerArray, "/scene_markers", self._scene_markers, qos_scene)
+
+    def _scene_markers(self, msg: MarkerArray):
+        stations = {}
+        for m in msg.markers:
+            if m.ns != sm.NS_STATION or m.type != Marker.ARROW or m.action != Marker.ADD:
+                continue
+            q = m.pose.orientation
+            yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+            stations[m.text] = (m.pose.position.x, m.pose.position.y, yaw)
+        if stations != self.stations:
+            self.stations = stations
+            if self.on_stations:
+                self.on_stations(sorted(stations))
+
+    def publish_goal(self, x, y, yaw):
+        """Ziel fuer dijkstra_planner/nav2point (wie »2D Goal Pose« in RViz)."""
+        msg = PoseStamped()
+        msg.header.frame_id = "map"
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.pose.position.x, msg.pose.position.y = float(x), float(y)
+        msg.pose.orientation.z = math.sin(yaw / 2.0)
+        msg.pose.orientation.w = math.cos(yaw / 2.0)
+        self.pub_goal.publish(msg)
 
     def _arm_status(self, msg: String):
         try:
@@ -220,6 +256,16 @@ class WalkPanel(QWidget):
         self.nav_hint.setWordWrap(True)
         nav.addWidget(self.nav_hint, 1)
         outer.addLayout(nav)
+        # Stations-Knoepfe: setzen das Ziel + schalten AUTO NAV ein. Werden aus
+        # den station_<Name>-Markierungen der geladenen Szene gebaut.
+        self.station_row = QHBoxLayout()
+        self.station_row.setSpacing(10)
+        self.station_row.addWidget(self._caption("Zur Station:"))
+        self.station_btns = []
+        self.on_station = None
+        self.station_row.addStretch(1)
+        outer.addLayout(self.station_row)
+        self.set_stations([])
         self.set_auto_nav_view(False)
 
     @staticmethod
@@ -227,6 +273,25 @@ class WalkPanel(QWidget):
         lbl = QLabel(text)
         lbl.setStyleSheet("color:#aaa; font-size:15px;")
         return lbl
+
+    def set_stations(self, names):
+        for b in self.station_btns:
+            self.station_row.removeWidget(b)
+            b.deleteLater()
+        self.station_btns = []
+        if not names:
+            b = QLabel("keine — in der Szene Objekte »station_<Name>« anlegen")
+            b.setStyleSheet("color:#666; font-size:14px;")
+            self.station_row.insertWidget(1, b)
+            self.station_btns.append(b)
+            return
+        for i, name in enumerate(names):
+            b = big_button("➜  " + sm.station_label(name), "#2e7d32", font=15, height=48)
+            b.setMaximumWidth(240)
+            b.setEnabled(NAV_AVAILABLE)
+            b.clicked.connect(lambda _, n=name: self.on_station and self.on_station(n))
+            self.station_row.insertWidget(1 + i, b)
+            self.station_btns.append(b)
 
     def set_speed(self, name):
         self.speed = SPEEDS[name]
@@ -463,6 +528,10 @@ class DemoGUI(QWidget):
         self.btn_reset_scene.clicked.connect(lambda: self._pulse(n.pub_scene_reset))
         self.btn_push.clicked.connect(self._push)
         self.btn_reset_robot.clicked.connect(self._reset_robot)
+        self.walk_panel.on_station = self.go_to_station
+        n.on_stations = self.walk_panel.set_stations
+        if n.stations:
+            self.walk_panel.set_stations(sorted(n.stations))
 
         mp.btn_play.clicked.connect(lambda: self.run_poses(self._demo_names()[0]))
         mp.btn_open.clicked.connect(lambda: self._hands("open"))
@@ -556,6 +625,16 @@ class DemoGUI(QWidget):
             self._status("AUTO NAV: navigiert selbstständig zum Ziel …", MODE_COLOR[WALK])
         elif self.mode == WALK:
             self._status("AUTO NAV aus — manuelle Steuerung frei.", MODE_COLOR[WALK])
+
+    def go_to_station(self, name):
+        """Stations-Knopf: Ziel setzen -> Planer plant -> AUTO NAV laeuft hin."""
+        st = self.node.stations.get(name)
+        if st is None or self.mode != WALK:
+            return
+        self.node.publish_goal(*st)
+        self.set_auto_nav(True)
+        self._status(f"AUTO NAV: läuft zur Station »{sm.station_label(name)}« …",
+                     MODE_COLOR[WALK])
 
     def _publish_cmd_vel(self):
         # Dauerhaft senden (wie ui_interface): ausserhalb von GEHEN immer 0.
