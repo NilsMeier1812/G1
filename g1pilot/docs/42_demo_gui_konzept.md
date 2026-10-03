@@ -68,18 +68,18 @@ damit die Zuordnung ohne Lesen klar ist.
 
 **GEHEN**
 
-- **Knopf** (`VirtualJoystick` aus dem Streamdeck): ziehen = fahren,
+- **Knopf** (`VirtualJoystick` aus dem Streamdeck): ziehen = laufen,
   loslassen = stehen.
-- **Pfeiltasten** ▲▼◀▶ und **⟲/⟳ drehen**: *gedrückt halten* = fahren,
+- **Pfeiltasten** ▲▼◀▶ und **⟲/⟳ drehen**: *gedrückt halten* = laufen,
   loslassen = sofort 0. Das ist bewusst ein Tot-Mann-Prinzip: Ein einzelner Klick
-  löst keine Dauerfahrt aus.
+  löst kein Dauerlaufen aus.
 - **Tempo** Langsam (0.3) / Normal (0.6) als Faktor auf die normierte
   Geschwindigkeit. Vollgas (1.0) ist in der Demo absichtlich nicht wählbar.
 - `/g1pilot/loco_cmd_vel` wird mit ~30 Hz gesendet, außerhalb von GEHEN immer 0.
-- **AUTO NAV** (Toggle, `/g1pilot/auto_enable`): Der Roboter fährt selbstständig
+- **AUTO NAV** (Toggle, `/g1pilot/auto_enable`): Der Roboter navigiert selbstständig
   zum Ziel, das in RViz gesetzt wurde (»2D Goal Pose«). Solange AUTO NAV an ist,
   sind Knopf und Pfeile gesperrt und ausgegraut, und die GUI sendet **kein**
-  `loco_cmd_vel`. In der Sim fährt die Navigation über dasselbe Topic
+  `loco_cmd_vel`. In der Sim sendet die Navigation über dasselbe Topic
   (`joy_to_cmdvel`), und die Nullen der GUI würden sie sonst ständig ausbremsen.
   Beim Wechsel zu GREIFEN und bei NOT-HALT geht AUTO NAV automatisch aus. Der
   Knopf ist nur aktiv, wenn der Nav-Stack läuft (`G1_ENABLE_NAV` bzw.

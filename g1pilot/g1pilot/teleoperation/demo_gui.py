@@ -148,7 +148,7 @@ def big_button(text, color="#2d2d2d", font=20, height=80):
 
 # ── Bereich 2a: Gehen ────────────────────────────────────────────────────
 class WalkPanel(QWidget):
-    """Joystick-Knopf ODER Pfeiltasten (gedrueckt halten = fahren, loslassen =
+    """Joystick-Knopf ODER Pfeiltasten (gedrueckt halten = laufen, loslassen =
     stehen). Ausgabe: velocity() -> (vx, vy, yaw), bereits mit Stufe skaliert."""
 
     def __init__(self):
@@ -252,10 +252,10 @@ class WalkPanel(QWidget):
         if on:
             self.reset()
             self.btn_auto_nav.setText("AUTO NAV  ● AN\nantippen zum Stoppen")
-            self.nav_hint.setText("Fährt selbstständig zum Ziel. Ziel in RViz setzen "
+            self.nav_hint.setText("Navigiert selbstständig zum Ziel. Ziel in RViz setzen "
                                   "(»2D Goal Pose«). Manuelle Steuerung ist gesperrt.")
         elif NAV_AVAILABLE:
-            self.btn_auto_nav.setText("AUTO NAV\nselbst zum Ziel fahren")
+            self.btn_auto_nav.setText("AUTO NAV\nselbst zum Ziel laufen")
             self.nav_hint.setText("Erst Ziel in RViz setzen, dann AUTO NAV einschalten.")
         else:
             self.btn_auto_nav.setText("AUTO NAV")
@@ -533,7 +533,7 @@ class DemoGUI(QWidget):
         self.node.publish_bool(self.node.pub_auto_enable, on)
         self.walk_panel.set_auto_nav_view(on)
         if on:
-            self._status("AUTO NAV: fährt selbstständig zum Ziel …", MODE_COLOR[WALK])
+            self._status("AUTO NAV: navigiert selbstständig zum Ziel …", MODE_COLOR[WALK])
         elif self.mode == WALK:
             self._status("AUTO NAV aus — manuelle Steuerung frei.", MODE_COLOR[WALK])
 
