@@ -107,7 +107,8 @@ damit die Zuordnung ohne Lesen klar ist.
 ## Bedienen
 
 ```bash
-G1_GUI=demo ./start.sh     # oder im Startmenü: 2d) Bedienoberfläche → Demo
+./start.sh   # grafisches Startmenü → Simulation → Schalter „Demo-Oberflaeche statt Streamdeck“
+./start.sh --menu         # Text-Menü: 2d) Bedienoberfläche → Demo
 ```
 
 Demo-Posen anlegen: GREIFEN → Erweitert → *Pose speichern …*, Name
