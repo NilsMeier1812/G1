@@ -625,6 +625,7 @@ class SimFrame(tk.Frame):
         self.v_hands = tk.BooleanVar(value=False)
         self.v_open_guis = tk.BooleanVar(value=True)
         self.v_nav = tk.BooleanVar(value=False)
+        self.v_demo_gui = tk.BooleanVar(value=False)
         self.v_rebuild = tk.BooleanVar(value=False)
         self.v_env = tk.StringVar(value="Standard — aktuelles Terrain (scene.xml)")
         self.v_rt = tk.StringVar(value="1.0")
@@ -645,6 +646,8 @@ class SimFrame(tk.Frame):
                    "CoM-/TF-Visualisierung (MuJoCo-Fenster kommt immer)")
         toggle_row(s, "Navigation mitstarten", self.v_nav,
                    "dijkstra_planner + nav2point + Sim-Glue")
+        toggle_row(s, "Demo-Oberflaeche statt Streamdeck", self.v_demo_gui,
+                   "vereinfacht: Gehen / Greifen (docs/42_demo_gui_konzept.md)")
 
         s = section(b, "Inspire-FTP-Haende")
         toggle_row(s, "Inspire-Haende (Finger steuerbar + GUIs)", self.v_hands,
@@ -674,6 +677,7 @@ class SimFrame(tk.Frame):
         env["G1_INSPIRE_HANDS"] = "1" if self.v_hands.get() else "0"
         env["OPEN_GUIS"] = "true" if (self.v_hands.get() and self.v_open_guis.get()) else "false"
         env["G1_ENABLE_NAV"] = "1" if self.v_nav.get() else "0"
+        env["G1_GUI"] = "demo" if self.v_demo_gui.get() else "streamdeck"
         env["G1_ENV"] = self._scene_paths.get(self.v_env.get(), "")
         rt = self.v_rt.get().strip() or "1.0"
         try:
@@ -711,6 +715,7 @@ class RealFrame(tk.Frame):
         self.v_open_guis = tk.BooleanVar(value=True)
         self.v_rviz = tk.BooleanVar(value=True)
         self.v_lidar = tk.BooleanVar(value=False)
+        self.v_demo_gui = tk.BooleanVar(value=False)
         self.v_rebuild = tk.BooleanVar(value=False)
         self.v_left = tk.StringVar(value="192.168.123.210")
         self.v_right = tk.StringVar(value="192.168.123.211")
@@ -768,6 +773,8 @@ class RealFrame(tk.Frame):
         field_row(s, "Joystick-Name (evdev)", self.v_joy, width=24)
         toggle_row(s, "LiDAR aktivieren (G1_ENABLE_LIDAR)", self.v_lidar,
                    "nur mit Livox-Setup")
+        toggle_row(s, "Demo-Oberflaeche statt Streamdeck", self.v_demo_gui,
+                   "vereinfacht: Gehen / Greifen")
 
         s = section(b, "Walk-Limits (konservativ fuer erste Tests)")
         row = tk.Frame(s, bg=CARD)
@@ -822,6 +829,7 @@ class RealFrame(tk.Frame):
         env = os.environ.copy()
         env["G1_MODE"] = "real"
         env["G1_REAL_CONFIRM"] = "1"  # Sicherheits-Gate von start.sh im --yes-Modus
+        env["G1_GUI"] = "demo" if self.v_demo_gui.get() else "streamdeck"
         env["ROBOT_INTERFACE"] = iface
         env["G1_INSPIRE_HANDS"] = "1" if self.v_hands.get() else "0"
         env["OPEN_GUIS"] = "true" if (self.v_hands.get() and self.v_open_guis.get()) else "false"
