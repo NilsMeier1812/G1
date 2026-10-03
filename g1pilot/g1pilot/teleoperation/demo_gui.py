@@ -349,6 +349,7 @@ class DemoGUI(QWidget):
         self.mode = None            # aktiver Modus (WALK/MANIP) oder None
         self.pending = None         # angeforderter, noch nicht bestaetigter Modus
         self.started = self.sim_mode
+        self._estop_unacked = False   # Sim: NOT-HALT noch nicht per START quittiert
         self.queue = []             # verbleibende Posen einer laufenden Sequenz
         self.current_pose = None
         self._walk_req = 0          # verwirft veraltete WALK-Timeouts
@@ -422,6 +423,12 @@ class DemoGUI(QWidget):
         self.btn_reset_scene.setFixedWidth(170)
         self.btn_reset_scene.setVisible(self.sim_mode)
         bottom.addWidget(self.btn_reset_scene)
+        # Nur Sim: Roboter nach NOT-HALT/Sturz zurueck an den Startpunkt (HOLD,
+        # gehalten wie beim Start) -> danach Modus waehlen, steht sanft auf.
+        self.btn_reset_robot = big_button("↺  Roboter\nzurücksetzen", font=15, height=70)
+        self.btn_reset_robot.setFixedWidth(170)
+        self.btn_reset_robot.setVisible(self.sim_mode)
+        bottom.addWidget(self.btn_reset_robot)
         # Stoer-Test (nur Sim): schubst den Roboter -> zeigt, dass er sich faengt.
         self.btn_push = big_button("➜  Roboter\nschubsen", font=15, height=70)
         self.btn_push.setFixedWidth(170)
@@ -455,6 +462,7 @@ class DemoGUI(QWidget):
         self.btn_estop.clicked.connect(self.emergency_stop)
         self.btn_reset_scene.clicked.connect(lambda: self._pulse(n.pub_scene_reset))
         self.btn_push.clicked.connect(self._push)
+        self.btn_reset_robot.clicked.connect(self._reset_robot)
 
         mp.btn_play.clicked.connect(lambda: self.run_poses(self._demo_names()[0]))
         mp.btn_open.clicked.connect(lambda: self._hands("open"))
@@ -471,6 +479,7 @@ class DemoGUI(QWidget):
         self.node.publish_bool(self.node.pub_start, True)
         self.started = True
         self.btn_start.setVisible(False)
+        self._estop_unacked = False
         self._status("Gestartet. Jetzt einen Modus wählen.", "#aaa")
         self._refresh()
 
@@ -481,6 +490,17 @@ class DemoGUI(QWidget):
         self.set_auto_nav(False)
         self.walk_panel.reset()
         n = self.node
+        if self._estop_unacked:
+            # Sim nach NOT-HALT: START quittiert den E-Stop-Latch im
+            # arm_controller -- sonst ignoriert er jedes ENABLE und die Arme
+            # bleiben dauerhaft schlaff (Real: Knopf "Roboter starten").
+            # Getrennte Topics -> keine Reihenfolge-Garantie: Modus (ENABLE)
+            # erst kurz danach senden, sonst kaeme er evtl. vor dem START an.
+            n.publish_bool(n.pub_start, True)
+            self._estop_unacked = False
+            self._status("NOT-HALT quittiert …", "#aaa")
+            QTimer.singleShot(300, lambda: self.request_mode(mode))
+            return
         if mode == MANIP:
             # BALANCING: Fuesse geplant, Arme frei -> sofort bestaetigt.
             n.publish_bool(n.pub_arms_enabled, True)
@@ -660,6 +680,24 @@ class DemoGUI(QWidget):
         self._pulse(self.node.pub_push, duration=400)
         self._status("Roboter wird geschubst …", "#ffb300")
 
+    def _reset_robot(self):
+        """Nur Sim: wie beim Start -> loco_sim HOLD; die Bridge stellt den Roboter
+        an den Startpunkt (bzw. g1_spawn) und haelt ihn (Weld). Beim naechsten
+        Modus-Klick wird er in die Stand-Pose gestellt und freigegeben."""
+        n = self.node
+        self._cancel_sequence()
+        self.set_auto_nav(False)
+        self.walk_panel.reset()
+        for pub in (n.pub_start_balancing, n.pub_start_walking, n.pub_arms_enabled):
+            n.publish_bool(pub, False)
+        n.publish_bool(n.pub_start, True)
+        self._estop_unacked = False
+        self.mode = self.pending = None
+        self.started = True
+        self._refresh()
+        self._status("Roboter steht wieder am Startpunkt (gehalten) — "
+                     "oben einen Modus wählen.", "#aaa")
+
     def emergency_stop(self):
         n = self.node
         self._cancel_sequence()
@@ -669,6 +707,7 @@ class DemoGUI(QWidget):
                     n.pub_arms_enabled, n.pub_arms_home):
             n.publish_bool(pub, False)
         n.publish_bool(n.pub_emergency_stop, True)
+        self._estop_unacked = self.sim_mode
         self.mode = self.pending = None
         # REAL: nach NOT-HALT wieder bewusst ueber START gehen.
         self.started = self.sim_mode
