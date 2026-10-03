@@ -422,6 +422,11 @@ class DemoGUI(QWidget):
         self.btn_reset_scene.setFixedWidth(170)
         self.btn_reset_scene.setVisible(self.sim_mode)
         bottom.addWidget(self.btn_reset_scene)
+        # Stoer-Test (nur Sim): schubst den Roboter -> zeigt, dass er sich faengt.
+        self.btn_push = big_button("➜  Roboter\nschubsen", font=15, height=70)
+        self.btn_push.setFixedWidth(170)
+        self.btn_push.setVisible(self.sim_mode)
+        bottom.addWidget(self.btn_push)
         self.btn_estop = QPushButton("NOT-HALT")
         self.btn_estop.setFixedSize(220, 90)
         self.btn_estop.setStyleSheet("""
@@ -449,6 +454,7 @@ class DemoGUI(QWidget):
         self.btn_start.clicked.connect(self._start_robot)
         self.btn_estop.clicked.connect(self.emergency_stop)
         self.btn_reset_scene.clicked.connect(lambda: self._pulse(n.pub_scene_reset))
+        self.btn_push.clicked.connect(self._push)
 
         mp.btn_play.clicked.connect(lambda: self.run_poses(self._demo_names()[0]))
         mp.btn_open.clicked.connect(lambda: self._hands("open"))
@@ -648,6 +654,11 @@ class DemoGUI(QWidget):
         """Bool-Impuls True -> False (wie flash_button im Streamdeck)."""
         self.node.publish_bool(pub, True)
         QTimer.singleShot(duration, lambda: self.node.publish_bool(pub, False))
+
+    def _push(self):
+        """Wie PUSH ROBOT im Streamdeck: 400-ms-Impuls auf /g1pilot/push."""
+        self._pulse(self.node.pub_push, duration=400)
+        self._status("Roboter wird geschubst …", "#ffb300")
 
     def emergency_stop(self):
         n = self.node

@@ -35,7 +35,7 @@ ergeben. Die Demo-GUI reduziert die Bedienung auf **eine Entscheidung zur Zeit**
 │                          [▼]              [ Normal]              │
 ├──────────────────────────────────────────────────────────────────┤
 │ 3 · STATUS                                                       │
-│ ▌Fährt: Winken …                        [↺ Szene]  ( NOT-HALT )  │
+│ ▌Fährt: Winken …             [↺ Szene] [➜ Schubsen]  ( NOT-HALT ) │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -111,6 +111,9 @@ damit die Zuordnung ohne Lesen klar ist.
 - **NOT-HALT** ist immer sichtbar, rund und rot. Er sendet dasselbe wie der
   Streamdeck. Beide Kacheln werden danach inaktiv.
 - **↺ Szene zurücksetzen** (nur Sim).
+- **➜ Roboter schubsen** (nur Sim): Störtest wie PUSH ROBOT im Streamdeck
+  (400-ms-Impuls auf `/g1pilot/push`). Er zeigt, dass sich der Roboter in beiden
+  Modi fängt.
 
 ## Bedienen
 
