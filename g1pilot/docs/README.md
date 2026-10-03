@@ -28,6 +28,7 @@ Alle Dokumente sind auch über das grafische Startmenü erreichbar
 | Arm-API (externe Projekte) | [20_arm_api_anleitung.md](20_arm_api_anleitung.md) | [21_arm_api_technik.md](21_arm_api_technik.md) |
 | Locomotion (Stehen/Laufen) | [30_loco_anleitung.md](30_loco_anleitung.md) | [31_loco_technik.md](31_loco_technik.md) |
 | Teleoperation (Streamdeck/Joystick) | [40_teleoperation_anleitung.md](40_teleoperation_anleitung.md) | [41_teleoperation_technik.md](41_teleoperation_technik.md) |
+| Demo-Oberfläche (Konzept) | [42_demo_gui_konzept.md](42_demo_gui_konzept.md) | [42_demo_gui_konzept.md](42_demo_gui_konzept.md) |
 | Navigation (autonomes Fahren) | [50_navigation_anleitung.md](50_navigation_anleitung.md) | [51_navigation_technik.md](51_navigation_technik.md) |
 | Inspire-FTP-Hände | [60_inspire_haende_anleitung.md](60_inspire_haende_anleitung.md) | [61_inspire_haende_technik.md](61_inspire_haende_technik.md) |
 | Echter Roboter (Sicherheit & Ablauf) | [70_echtroboter_anleitung.md](70_echtroboter_anleitung.md) | — (siehe die jeweiligen Technik-Dokumente oben) |

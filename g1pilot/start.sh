@@ -259,6 +259,12 @@ else
     "Nein — ohne Navigation (nur Teleop/Loco)|0"
   export G1_ENABLE_NAV="$REPLY_VALUE"
 
+  # ── 2d) Bedienoberflaeche ────────────────────────────────────────────
+  ask_menu "2d) Bedienoberflaeche?" 1 "${G1_GUI:-}" \
+    "Streamdeck — alle Funktionen (Entwicklung)|streamdeck" \
+    "Demo       — vereinfacht: Gehen / Greifen (Vorfuehrung)|demo"
+  export G1_GUI="$REPLY_VALUE"
+
   # ── 3) Rebuild ────────────────────────────────────────────────────────
   ask_menu "3) Docker-Images vor dem Start neu bauen?" 1 "" \
     "Nein — vorhandene Images nutzen (schnell)|0" \
@@ -288,6 +294,7 @@ else
   echo -e "   Loco-Policy    : ${G}g1_wholebody${R} ${DIM}(Stehen=cmd0; Laufen via Streamdeck)${R}"
   _nav_lbl=$( [ "${G1_ENABLE_NAV}" = "1" ] && echo "an (dijkstra + nav2point + Sim-Glue)" || echo "aus" )
   echo -e "   Navigation     : ${G}G1_ENABLE_NAV=${G1_ENABLE_NAV}${R} ${DIM}(${_nav_lbl})${R}"
+  echo -e "   Oberflaeche    : ${G}G1_GUI=${G1_GUI}${R}"
   [ "${#PASSTHRU[@]}" -gt 0 ] && echo -e "   compose-Args   : ${G}${PASSTHRU[*]}${R}"
   echo
 fi
