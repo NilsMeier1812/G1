@@ -31,6 +31,7 @@ import sys
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QGridLayout, QPushButton, QVBoxLayout, QHBoxLayout,
     QLabel, QStackedWidget, QFrame, QDialog, QMessageBox, QSizePolicy,
+    QGraphicsOpacityEffect,
 )
 from PyQt6.QtCore import QTimer, Qt
 
@@ -63,6 +64,15 @@ MAX_DEMO_BUTTONS = 8
 WALK_SWITCH_TIMEOUT_MS = 6000
 
 TERMINAL = ("reached", "failed", "rejected", "cancelled")
+
+
+def _envflag(name):
+    return os.environ.get(name, '0').strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+# AUTO NAV nur, wenn der Nav-Stack laeuft (Sim: G1_ENABLE_NAV, Real:
+# G1_ENABLE_LIDAR) -- sonst publiziert der Knopf an niemanden.
+NAV_AVAILABLE = _envflag('G1_ENABLE_NAV') or _envflag('G1_ENABLE_LIDAR')
 
 
 def pretty_pose_name(name: str) -> str:
@@ -131,6 +141,7 @@ def big_button(text, color="#2d2d2d", font=20, height=80):
         QPushButton:hover {{ border:2px solid #aaa; }}
         QPushButton:pressed {{ background:#555; }}
         QPushButton:checked {{ background:#4CAF50; border:2px solid #80ff80; }}
+        QPushButton:disabled {{ background:#1c1c1c; color:#555; border:1px solid #2a2a2a; }}
     """)
     return b
 
@@ -145,8 +156,14 @@ class WalkPanel(QWidget):
         self.held = set()        # gerade gehaltene Pfeiltasten
         self.speed = SPEEDS["Langsam"]
 
-        lay = QHBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setSpacing(14)
+        # Manuelle Steuerung in einem Container -> bei AUTO NAV komplett sperren.
+        self.manual = QWidget()
+        lay = QHBoxLayout(self.manual)
+        lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(30)
+        outer.addWidget(self.manual, 1)
 
         # Knopf
         left = QVBoxLayout()
@@ -190,6 +207,21 @@ class WalkPanel(QWidget):
         lay.addLayout(right)
         self.set_speed("Langsam")
 
+        # AUTO NAV: Roboter faehrt selbststaendig zum in RViz gesetzten Ziel
+        # (/g1pilot/auto_enable -> joy_mux gibt den Nav-Joy weiter).
+        nav = QHBoxLayout()
+        nav.setSpacing(16)
+        self.btn_auto_nav = big_button("", "#283593", height=70)
+        self.btn_auto_nav.setCheckable(True)
+        self.btn_auto_nav.setFixedWidth(360)
+        self.btn_auto_nav.setEnabled(NAV_AVAILABLE)
+        nav.addWidget(self.btn_auto_nav)
+        self.nav_hint = self._caption("")
+        self.nav_hint.setWordWrap(True)
+        nav.addWidget(self.nav_hint, 1)
+        outer.addLayout(nav)
+        self.set_auto_nav_view(False)
+
     @staticmethod
     def _caption(text):
         lbl = QLabel(text)
@@ -209,8 +241,30 @@ class WalkPanel(QWidget):
         clamp = lambda v: max(-1.0, min(1.0, v))   # noqa: E731
         return clamp(vx) * self.speed, clamp(vy) * self.speed, clamp(yaw) * self.speed
 
+    def set_auto_nav_view(self, on):
+        """Nur Anzeige: Knopf-Text/Haken, Hinweis, manuelle Steuerung sperren."""
+        self.btn_auto_nav.setChecked(on)
+        self.manual.setEnabled(not on)
+        # Gesperrt sichtbar machen (der gezeichnete Joystick kennt kein :disabled).
+        fade = QGraphicsOpacityEffect(self.manual)
+        fade.setOpacity(0.3 if on else 1.0)
+        self.manual.setGraphicsEffect(fade)
+        if on:
+            self.reset()
+            self.btn_auto_nav.setText("AUTO NAV  ● AN\nantippen zum Stoppen")
+            self.nav_hint.setText("Fährt selbstständig zum Ziel. Ziel in RViz setzen "
+                                  "(»2D Goal Pose«). Manuelle Steuerung ist gesperrt.")
+        elif NAV_AVAILABLE:
+            self.btn_auto_nav.setText("AUTO NAV\nselbst zum Ziel fahren")
+            self.nav_hint.setText("Erst Ziel in RViz setzen, dann AUTO NAV einschalten.")
+        else:
+            self.btn_auto_nav.setText("AUTO NAV")
+            self.nav_hint.setText("Navigation ist nicht gestartet — im Startmenü "
+                                  "»Navigation mitstarten« aktivieren.")
+
     def reset(self):
         self.held.clear()
+        self.joystick.mouseReleaseEvent(None)   # Knopf zentrieren -> vx=vy=0
 
 
 # ── Bereich 2b: Greifen ──────────────────────────────────────────────────
@@ -298,6 +352,7 @@ class DemoGUI(QWidget):
         self.queue = []             # verbleibende Posen einer laufenden Sequenz
         self.current_pose = None
         self._walk_req = 0          # verwirft veraltete WALK-Timeouts
+        self.auto_nav = False
 
         node.on_walk_ready = self._on_walk_ready
         node.on_arm_status = self._on_arm_status
@@ -388,6 +443,7 @@ class DemoGUI(QWidget):
     def _wire(self):
         n = self.node
         mp = self.manip_panel
+        self.walk_panel.btn_auto_nav.clicked.connect(lambda on: self.set_auto_nav(on))
         self.tiles[WALK].clicked.connect(lambda: self.request_mode(WALK))
         self.tiles[MANIP].clicked.connect(lambda: self.request_mode(MANIP))
         self.btn_start.clicked.connect(self._start_robot)
@@ -416,6 +472,7 @@ class DemoGUI(QWidget):
         if not self.started or mode == self.mode or mode == self.pending:
             return
         self._cancel_sequence()
+        self.set_auto_nav(False)
         self.walk_panel.reset()
         n = self.node
         if mode == MANIP:
@@ -460,8 +517,26 @@ class DemoGUI(QWidget):
             self.panel_title.setText(MODE_TITLE[self.mode])
         self.panel_title.setStyleSheet(f"color:{color}; font-size:20px; font-weight:800;")
 
+    def set_auto_nav(self, on):
+        """AUTO NAV an/aus. Aus sendet joy_mux einmal einen neutralen Stop."""
+        on = bool(on) and NAV_AVAILABLE and self.mode == WALK
+        if on == self.auto_nav:
+            self.walk_panel.set_auto_nav_view(on)
+            return
+        self.auto_nav = on
+        self.node.publish_bool(self.node.pub_auto_enable, on)
+        self.walk_panel.set_auto_nav_view(on)
+        if on:
+            self._status("AUTO NAV: fährt selbstständig zum Ziel …", MODE_COLOR[WALK])
+        elif self.mode == WALK:
+            self._status("AUTO NAV aus — manuelle Steuerung frei.", MODE_COLOR[WALK])
+
     def _publish_cmd_vel(self):
         # Dauerhaft senden (wie ui_interface): ausserhalb von GEHEN immer 0.
+        # Bei AUTO NAV GAR NICHT senden: in der Sim faehrt Nav ueber dasselbe
+        # Topic (joy_to_cmdvel) -- unsere Nullen wuerden den Roboter staendig bremsen.
+        if self.auto_nav:
+            return
         vx, vy, yaw = self.walk_panel.velocity() if self.mode == WALK else (0.0, 0.0, 0.0)
         msg = Twist()
         msg.linear.x, msg.linear.y, msg.angular.z = float(vx), float(vy), float(yaw)
@@ -577,6 +652,7 @@ class DemoGUI(QWidget):
     def emergency_stop(self):
         n = self.node
         self._cancel_sequence()
+        self.set_auto_nav(False)
         self.walk_panel.reset()
         for pub in (n.pub_start, n.pub_start_balancing, n.pub_start_walking,
                     n.pub_arms_enabled, n.pub_arms_home):

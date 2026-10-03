@@ -76,6 +76,14 @@ damit die Zuordnung ohne Lesen klar ist.
 - **Tempo** Langsam (0.3) / Normal (0.6) als Faktor auf die normierte
   Geschwindigkeit. Vollgas (1.0) ist in der Demo absichtlich nicht wählbar.
 - `/g1pilot/loco_cmd_vel` wird mit ~30 Hz gesendet, außerhalb von GEHEN immer 0.
+- **AUTO NAV** (Toggle, `/g1pilot/auto_enable`): Der Roboter fährt selbstständig
+  zum Ziel, das in RViz gesetzt wurde (»2D Goal Pose«). Solange AUTO NAV an ist,
+  sind Knopf und Pfeile gesperrt und ausgegraut, und die GUI sendet **kein**
+  `loco_cmd_vel`. In der Sim fährt die Navigation über dasselbe Topic
+  (`joy_to_cmdvel`), und die Nullen der GUI würden sie sonst ständig ausbremsen.
+  Beim Wechsel zu GREIFEN und bei NOT-HALT geht AUTO NAV automatisch aus. Der
+  Knopf ist nur aktiv, wenn der Nav-Stack läuft (`G1_ENABLE_NAV` bzw.
+  `G1_ENABLE_LIDAR`); sonst erklärt ein Hinweis, wie man ihn einschaltet.
 
 **GREIFEN**
 
@@ -140,5 +148,5 @@ auf die bestehenden Topics. Es gibt keine neuen Schnittstellen.
 4. **Sprache**: Labels sind Deutsch. Ein EN-Umschalter wäre für Messen sinnvoll.
 5. **Bilder statt Text** auf den Bewegungs-Knöpfen, z. B. ein Vorschaubild je
    Pose im Pose-Store.
-6. **Navigation** (AUTO NAV) ist bewusst nicht enthalten. Sie könnte ein dritter
-   Modus „FAHREN ZU …“ mit Ziel-Knöpfen werden.
+6. **Navigation mit festen Zielen**: Statt eines Ziels in RViz könnten
+   Ziel-Knöpfe (»zum Tisch«, »zur Tür«) direkt auf das Goal-Topic publizieren.
