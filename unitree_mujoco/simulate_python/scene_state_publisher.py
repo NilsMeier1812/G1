@@ -13,7 +13,7 @@ und die Payload reicher (volle Objektliste statt eines Toggle-Bits) -> JSON
 statt eines einzelnen Bytes/Zahl.
 
 Protokoll: ein UDP-Datagramm = eine komplette Szenen-Momentaufnahme (JSON):
-    {"obstacles": [...], "grasp": [...]}
+    {"obstacles": [...], "grasp": [...], "stations": [{name, pos[2], yaw}]}
 Jedes Objekt: {name, class, type, pos[3], quat[4 wxyz], size/mesh_basename/
 aabb_half, rgba[4]}. Hindernisse haben eine FESTE Pose (aus der Szenen-XML,
 einmalig geparst); greifbare Objekte werden JEDEN Publish-Tick mit ihrer
@@ -26,6 +26,24 @@ import socket
 import time
 
 import scene_objects
+
+
+# UDP-Datagramm-Grenze (IPv4: 65535 - 8 UDP - 20 IP). Groessere Snapshots
+# verweigert sendto() mit EMSGSIZE -> beim Empfaenger kommt GAR NICHTS an.
+_UDP_MAX = 65507
+
+
+def _round(x, nd=4):
+    """Floats auf 0.1 mm / 1e-4 runden -- halbiert grob die JSON-Groesse.
+    Noetig, weil Szenen mit mehreren zerlegten Meshes (je bis 64 Kollisions-
+    Boxen) sonst ueber die UDP-Grenze kommen (z.B. scene_A5: 67 KB)."""
+    if isinstance(x, float):
+        return round(x, nd)
+    if isinstance(x, (list, tuple)):
+        return [_round(i, nd) for i in x]
+    if isinstance(x, dict):
+        return {k: _round(v, nd) for k, v in x.items()}
+    return x
 
 
 class SceneStatePublisher:
@@ -41,6 +59,14 @@ class SceneStatePublisher:
 
         self.obstacles = []
         self.grasp = []   # je Eintrag: dict + "body_id"
+        # Stations-Ziele (station_<Name>, von build_env_scene.py als <custom>-
+        # numeric "x y yaw" abgelegt) -> Stations-Knoepfe der Demo-GUI.
+        self.stations = []
+        for i in range(mj_model.nnumeric):
+            num = mj_model.numeric(i)
+            if num.name.lower().startswith("station_") and len(num.data) >= 3:
+                x, y, yaw = (float(v) for v in num.data[:3])
+                self.stations.append({"name": num.name, "pos": [x, y], "yaw": yaw})
 
         if not self.enabled:
             print("[scene] deaktiviert (SCENE_ENABLE=0).")
@@ -76,7 +102,7 @@ class SceneStatePublisher:
             return
 
         print(f"[scene] Szenen-Publisher aktiv: {len(self.obstacles)} Hindernis(se), "
-              f"{len(self.grasp)} Greif-Objekt(e) -> 127.0.0.1:{self.port} @ {self.hz:.0f} Hz "
+              f"{len(self.grasp)} Greif-Objekt(e), {len(self.stations)} Station(en) -> 127.0.0.1:{self.port} @ {self.hz:.0f} Hz "
               f"(scene_bridge, ROS-Seite).")
 
     def _obstacle_payload(self):
@@ -118,17 +144,21 @@ class SceneStatePublisher:
             return
         self._next_t = now + self._period
         try:
-            payload = json.dumps({
+            payload = json.dumps(_round({
                 "obstacles": self._obstacle_payload(),
                 "grasp": self._grasp_payload(mj_data),
-            }).encode("utf-8")
+                "stations": self.stations,
+            }), separators=(",", ":")).encode("utf-8")
         except Exception as e:
             print(f"[scene] WARN: Snapshot konnte nicht kodiert werden: {e}")
             return
-        if len(payload) > 60000 and not self._warned_size:
-            self._warned_size = True
-            print(f"[scene] WARN: Szenen-Snapshot ist {len(payload)} Bytes -- "
-                  f"koennte auf manchen Systemen als UDP-Datagramm fragmentieren.")
+        if len(payload) > _UDP_MAX:
+            if not self._warned_size:
+                self._warned_size = True
+                print(f"[scene] FEHLER: Szenen-Snapshot ist {len(payload)} Bytes "
+                      f"(> {_UDP_MAX}, UDP-Grenze) -> wird NICHT gesendet, RViz/Nav/IK "
+                      f"sehen keine Objekte. Szene verkleinern (weniger zerlegte Meshes).")
+            return
         try:
             self._sock.sendto(payload, (self.host, self.port))
         except OSError:

@@ -54,6 +54,13 @@ Objekt (z.B. eine Box) dorthin setzen und es **`g1_spawn`** nennen (Ordner
 Blickrichtung. Die Markierung wird beim Kombinieren entfernt (kein Hindernis);
 auch START / START BALANCING stellen den Roboter wieder dort auf.
 
+**Stationen fuer AUTO NAV:** Objekte (z.B. flache Boxen) **`station_<Name>`**
+nennen, z.B. `station_Rampe`. Position = Ziel, Drehung um die Hochachse =
+Blickrichtung am Ziel. Wie `g1_spawn` werden sie beim Kombinieren entfernt
+(kein Hindernis); in RViz erscheinen sie als gruener Pfeil mit Namen, und die
+Demo-GUI zeigt im Gehen-Bereich je Station einen Knopf („➜ Rampe"): Klick setzt
+das Ziel und schaltet AUTO NAV ein.
+
 ```
 box_demo        -> Hindernis (statisch, der Arm weicht aus)
 grasp_apfel      -> Greif-Objekt (beweglich, die Hand darf ran)

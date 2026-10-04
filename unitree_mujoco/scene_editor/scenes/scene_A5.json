@@ -1,0 +1,601 @@
+{
+   "blueprints": [
+      {
+         "class_path": "robits.sim.blueprints.BlueprintGroup",
+         "path": "/box_0001_body_0",
+         "pose": {
+            "class_path": "robits.sim.blueprints.Pose",
+            "matrix": [
+               [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+               ],
+               [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+               ],
+               [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+               ],
+               [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+               ]
+            ]
+         }
+      },
+      {
+         "class_path": "robits.sim.blueprints.GeomBlueprint",
+         "path": "/box_0001_body_0/grasp_box_0001",
+         "geom_type": "box",
+         "pose": {
+            "class_path": "robits.sim.blueprints.Pose",
+            "matrix": [
+               [
+                  0.9990758097113906,
+                  0.0,
+                  0.04298286227706594,
+                  0.531067
+               ],
+               [
+                  0.0,
+                  1.0,
+                  0.0,
+                  -0.213428
+               ],
+               [
+                  -0.04298286227706594,
+                  0.0,
+                  0.9990758097113906,
+                  0.852653
+               ],
+               [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+               ]
+            ]
+         },
+         "size": [
+            0.05,
+            0.05,
+            0.05
+         ],
+         "rgba": [
+            0.784313976764679,
+            0.3921569883823395,
+            0.9411759972572327,
+            1.0
+         ],
+         "is_static": false,
+         "mass": 0.2
+      },
+      {
+         "class_path": "robits.sim.blueprints.BlueprintGroup",
+         "path": "/grasp_cylinder_0002_body_1",
+         "pose": {
+            "class_path": "robits.sim.blueprints.Pose",
+            "matrix": [
+               [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+               ],
+               [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+               ],
+               [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+               ],
+               [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+               ]
+            ]
+         }
+      },
+      {
+         "class_path": "robits.sim.blueprints.GeomBlueprint",
+         "path": "/grasp_cylinder_0002_body_1/grasp_cylinder_0002",
+         "geom_type": "cylinder",
+         "pose": {
+            "class_path": "robits.sim.blueprints.Pose",
+            "matrix": [
+               [
+                  0.9990758097113906,
+                  0.0,
+                  0.04298286227706594,
+                  0.489769
+               ],
+               [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.51492
+               ],
+               [
+                  -0.04298286227706594,
+                  0.0,
+                  0.9990758097113906,
+                  0.85443
+               ],
+               [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+               ]
+            ]
+         },
+         "size": [
+            0.05,
+            0.1,
+            0.0
+         ],
+         "rgba": [
+            0.2862749993801117,
+            0.20784300565719604,
+            0.9882349967956543,
+            1.0
+         ],
+         "is_static": false,
+         "mass": 0.2
+      },
+      {
+         "class_path": "robits.sim.blueprints.BlueprintGroup",
+         "path": "/grasp_cylinder_0003_body_2",
+         "pose": {
+            "class_path": "robits.sim.blueprints.Pose",
+            "matrix": [
+               [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+               ],
+               [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+               ],
+               [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+               ],
+               [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+               ]
+            ]
+         }
+      },
+      {
+         "class_path": "robits.sim.blueprints.GeomBlueprint",
+         "path": "/grasp_cylinder_0003_body_2/grasp_cylinder_0003",
+         "geom_type": "cylinder",
+         "pose": {
+            "class_path": "robits.sim.blueprints.Pose",
+            "matrix": [
+               [
+                  0.9990758097113906,
+                  0.0,
+                  0.04298286227706594,
+                  0.514343
+               ],
+               [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0873031
+               ],
+               [
+                  -0.04298286227706594,
+                  0.0,
+                  0.9990758097113906,
+                  0.853373
+               ],
+               [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+               ]
+            ]
+         },
+         "size": [
+            0.02,
+            0.1,
+            0.0
+         ],
+         "rgba": [
+            0.035294100642204285,
+            0.5294119715690613,
+            0.09411759674549103,
+            1.0
+         ],
+         "is_static": false,
+         "mass": 0.2
+      },
+      {
+         "class_path": "robits.sim.blueprints.MeshBlueprint",
+         "path": "/asset_Beispiel_Arbeitsplatz_m.stl_0004",
+         "mesh_path": "meshes/Beispiel_Arbeitsplatz_m.stl",
+         "pose": {
+            "class_path": "robits.sim.blueprints.Pose",
+            "matrix": [
+               [
+                  0.0322605240686199,
+                  -0.99855560570928,
+                  0.0429828309774,
+                  1.00112
+               ],
+               [
+                  0.9994793119387201,
+                  0.032290367352319826,
+                  4.311200001161364e-09,
+                  0.773992
+               ],
+               [
+                  -0.0013879692941999935,
+                  0.0429604155016,
+                  0.99907581180494,
+                  -0.0570813
+               ],
+               [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+               ]
+            ]
+         },
+         "is_static": true,
+         "scale": 1.0
+      },
+      {
+         "class_path": "robits.sim.blueprints.MeshBlueprint",
+         "path": "/asset_Tisch_mit_Faechern_m.stl_0005",
+         "mesh_path": "meshes/Tisch_mit_Faechern_m.stl",
+         "pose": {
+            "class_path": "robits.sim.blueprints.Pose",
+            "matrix": [
+               [
+                  0.007144159720052556,
+                  0.9999744801653162,
+                  4.39810506340042e-33,
+                  -2.6265362676266646
+               ],
+               [
+                  -0.9999744801653162,
+                  0.007144159720052556,
+                  5.338246044733003e-32,
+                  0.23298398824850902
+               ],
+               [
+                  5.33496773707259e-32,
+                  -4.7793656481713964e-33,
+                  1.0,
+                  -0.016093146049930684
+               ],
+               [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+               ]
+            ]
+         },
+         "is_static": false,
+         "scale": 1.0
+      },
+      {
+         "class_path": "robits.sim.blueprints.MeshBlueprint",
+         "path": "/asset_Standardwagen_gross_m.stl_0006",
+         "mesh_path": "meshes/Standardwagen_gross_m.stl",
+         "pose": {
+            "class_path": "robits.sim.blueprints.Pose",
+            "matrix": [
+               [
+                  1.0,
+                  -0.0,
+                  0.0,
+                  -2.4755990110952184
+               ],
+               [
+                  0.0,
+                  1.0,
+                  5.473822126268817e-48,
+                  -1.7258344118769389
+               ],
+               [
+                  -0.0,
+                  -5.473822126268817e-48,
+                  1.0,
+                  2.3448841650924524e-32
+               ],
+               [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+               ]
+            ]
+         },
+         "is_static": false,
+         "scale": 1.0
+      },
+      {
+         "class_path": "robits.sim.blueprints.MeshBlueprint",
+         "path": "/grasp_asset_sample_ramp_stl_0007",
+         "mesh_path": "meshes/sample_ramp.stl",
+         "pose": {
+            "class_path": "robits.sim.blueprints.Pose",
+            "matrix": [
+               [
+                  0.9999897028707639,
+                  -1.2297983434745255e-32,
+                  -0.004538078055881802,
+                  -2.6216808586116924
+               ],
+               [
+                  1.2353919853411375e-32,
+                  1.0,
+                  1.2297983434745261e-32,
+                  2.0949330373216957
+               ],
+               [
+                  0.004538078055881802,
+                  -1.235391985341138e-32,
+                  0.9999897028707639,
+                  -0.01189751488423943
+               ],
+               [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+               ]
+            ]
+         },
+         "is_static": false,
+         "scale": 2.0
+      },
+      {
+         "class_path": "robits.sim.blueprints.MeshBlueprint",
+         "path": "/grasp_asset_KLT_400x300_m_stl_0009",
+         "mesh_path": "meshes/KLT_400x300_m.stl",
+         "pose": {
+            "class_path": "robits.sim.blueprints.Pose",
+            "matrix": [
+               [
+                  1.0,
+                  -0.0,
+                  0.0,
+                  -2.148829687592626
+               ],
+               [
+                  0.0,
+                  1.0,
+                  5.473822126268817e-48,
+                  -0.2625103687465725
+               ],
+               [
+                  -0.0,
+                  -5.473822126268817e-48,
+                  1.0,
+                  0.7667591211830659
+               ],
+               [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+               ]
+            ]
+         },
+         "is_static": false,
+         "scale": 1.0
+      },
+      {
+         "class_path": "robits.sim.blueprints.MeshBlueprint",
+         "path": "/grasp_asset_KLT_300x200_m_stl_0010",
+         "mesh_path": "meshes/KLT_300x200_m.stl",
+         "pose": {
+            "class_path": "robits.sim.blueprints.Pose",
+            "matrix": [
+               [
+                  1.0,
+                  -0.0,
+                  0.0,
+                  -2.0924298108430817
+               ],
+               [
+                  0.0,
+                  1.0,
+                  5.473822126268817e-48,
+                  0.5481696984621632
+               ],
+               [
+                  -0.0,
+                  -5.473822126268817e-48,
+                  1.0,
+                  0.7615787688936402
+               ],
+               [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+               ]
+            ]
+         },
+         "is_static": false,
+         "scale": 1.0
+      },
+      {
+         "class_path": "robits.sim.blueprints.GeomBlueprint",
+         "path": "/station_Arbeitsplatz_1",
+         "geom_type": "box",
+         "pose": {
+            "class_path": "robits.sim.blueprints.Pose",
+            "matrix": [
+               [
+                  1.0,
+                  -0.0,
+                  0.0,
+                  0.0
+               ],
+               [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+               ],
+               [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.01
+               ],
+               [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+               ]
+            ]
+         },
+         "size": [
+            0.15,
+            0.1,
+            0.01
+         ],
+         "rgba": [
+            0.1,
+            0.8,
+            0.3,
+            0.5
+         ],
+         "is_static": true,
+         "mass": 0.0
+      },
+      {
+         "class_path": "robits.sim.blueprints.GeomBlueprint",
+         "path": "/station_Arbeitsplatz_2",
+         "geom_type": "box",
+         "pose": {
+            "class_path": "robits.sim.blueprints.Pose",
+            "matrix": [
+               [
+                  -1.0,
+                  -1.2246467991473532e-16,
+                  0.0,
+                  -1.4
+               ],
+               [
+                  1.2246467991473532e-16,
+                  -1.0,
+                  0.0,
+                  0.23
+               ],
+               [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.01
+               ],
+               [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+               ]
+            ]
+         },
+         "size": [
+            0.15,
+            0.1,
+            0.01
+         ],
+         "rgba": [
+            0.1,
+            0.8,
+            0.3,
+            0.5
+         ],
+         "is_static": true,
+         "mass": 0.0
+      },
+      {
+         "class_path": "robits.sim.blueprints.GeomBlueprint",
+         "path": "/station_Rampe",
+         "geom_type": "box",
+         "pose": {
+            "class_path": "robits.sim.blueprints.Pose",
+            "matrix": [
+               [
+                  -1.0,
+                  -1.2246467991473532e-16,
+                  0.0,
+                  -0.9
+               ],
+               [
+                  1.2246467991473532e-16,
+                  -1.0,
+                  0.0,
+                  2.49
+               ],
+               [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.01
+               ],
+               [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+               ]
+            ]
+         },
+         "size": [
+            0.15,
+            0.1,
+            0.01
+         ],
+         "rgba": [
+            0.1,
+            0.8,
+            0.3,
+            0.5
+         ],
+         "is_static": true,
+         "mass": 0.0
+      }
+   ]
+}

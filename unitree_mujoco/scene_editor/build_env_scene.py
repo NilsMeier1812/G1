@@ -48,6 +48,12 @@ GRASP_PREFIX_RE = re.compile(r"^grasp_", re.IGNORECASE)
 # Es wird beim Kombinieren entfernt und als <custom><numeric name="g1_spawn"
 # data="x y yaw"/> abgelegt; unitree_mujoco.py setzt den Roboter dorthin.
 SPAWN_PREFIX_RE = re.compile(r"^g1_spawn", re.IGNORECASE)
+# Stations-Markierungen: Objekte "station_<Name>" (beliebig viele) = Ziele fuer
+# die Stations-Knoepfe der Demo-GUI (AUTO NAV). Position = Ziel, Drehung um z =
+# Blickrichtung am Ziel. Werden wie g1_spawn entfernt (kein Hindernis) und als
+# <custom><numeric name="station_<Name>" data="x y yaw"/> abgelegt; der
+# Szenen-Publisher schickt sie mit nach ROS (/scene_markers, ns g1scene:station).
+STATION_PREFIX_RE = re.compile(r"^station_", re.IGNORECASE)
 
 HERE = Path(__file__).resolve().parent          # .../unitree_mujoco/scene_editor
 MJ_ROOT = HERE.parent                            # .../unitree_mujoco
@@ -372,6 +378,40 @@ def _reexec_in_editor_venv() -> None:
         os.execv(str(venv_py), [str(venv_py), str(Path(__file__).resolve()), *sys.argv[1:]])
 
 
+def _marker_xy_yaw(el):
+    """Position + Blickrichtung (Drehung um z) einer Markierung (geom oder body)."""
+    if el.tag == "body":
+        _normalize_free_body(el)
+        pos = _floats(el.get("pos"), (0.0, 0.0, 0.0))
+        quat = _floats(el.get("quat"), (1.0, 0.0, 0.0, 0.0))
+        inner = el.find("geom")
+        if inner is not None and inner.get("pos"):
+            pos = [a + b for a, b in zip(pos, _quat_rotate(quat, _floats(inner.get("pos"), (0, 0, 0))))]
+    else:
+        pos = _floats(el.get("pos"), (0.0, 0.0, 0.0))
+        quat = _floats(el.get("quat"), (1.0, 0.0, 0.0, 0.0))
+    w, x, y, z = quat
+    return pos, math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+
+
+def extract_stations(env_root, warnings):
+    """Stations-Markierungen (station_...) aus der Umgebung entfernen und als
+    Liste [(name, x, y, yaw)] zurueckgeben (Reihenfolge wie in der Datei)."""
+    out = []
+    for env_wb in env_root.findall("worldbody"):
+        for el in list(env_wb):
+            names = [el.get("name") or ""] + [g.get("name") or "" for g in el.findall("geom")]
+            name = next((n for n in names if STATION_PREFIX_RE.match(n)), None)
+            if el.tag not in ("geom", "body") or name is None:
+                continue
+            env_wb.remove(el)
+            pos, yaw = _marker_xy_yaw(el)
+            out.append((name, pos[0], pos[1], yaw))
+            warnings.append(f"  i Station '{name}': x={pos[0]:.2f} y={pos[1]:.2f}, "
+                            f"Blickrichtung {math.degrees(yaw):.0f} Grad.")
+    return out
+
+
 def extract_spawn(env_root, warnings):
     """Startpunkt-Markierung (g1_spawn...) aus der Umgebung entfernen und
     (x, y, yaw) zurueckgeben -- oder None, wenn keine da ist (Start im Ursprung)."""
@@ -381,18 +421,7 @@ def extract_spawn(env_root, warnings):
             if el.tag not in ("geom", "body") or not any(SPAWN_PREFIX_RE.match(n) for n in names):
                 continue
             env_wb.remove(el)
-            if el.tag == "body":
-                _normalize_free_body(el)
-                pos = _floats(el.get("pos"), (0.0, 0.0, 0.0))
-                quat = _floats(el.get("quat"), (1.0, 0.0, 0.0, 0.0))
-                inner = el.find("geom")
-                if inner is not None and inner.get("pos"):
-                    pos = [a + b for a, b in zip(pos, _quat_rotate(quat, _floats(inner.get("pos"), (0, 0, 0))))]
-            else:
-                pos = _floats(el.get("pos"), (0.0, 0.0, 0.0))
-                quat = _floats(el.get("quat"), (1.0, 0.0, 0.0, 0.0))
-            w, x, y, z = quat
-            yaw = math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+            pos, yaw = _marker_xy_yaw(el)
             warnings.append(f"  i Startpunkt '{names[0] or names[-1]}': G1 startet bei "
                             f"x={pos[0]:.2f} y={pos[1]:.2f}, Blickrichtung {math.degrees(yaw):.0f} Grad.")
             return pos[0], pos[1], yaw
@@ -433,10 +462,14 @@ def main() -> None:
     warnings = []
     mj, asset, wb = build_base(robot_file, f"g1_env_{name}")
     spawn = extract_spawn(env_root, warnings)
+    stations = extract_stations(env_root, warnings)
     merge_environment(env_root, asset, wb, env_dir, warnings)
-    if spawn is not None:
+    if spawn is not None or stations:
         custom = ET.SubElement(mj, "custom")
-        ET.SubElement(custom, "numeric", {"name": "g1_spawn", "data": _fmt(spawn)})
+        if spawn is not None:
+            ET.SubElement(custom, "numeric", {"name": "g1_spawn", "data": _fmt(spawn)})
+        for name, x, y, yaw in stations:
+            ET.SubElement(custom, "numeric", {"name": name, "data": _fmt((x, y, yaw))})
 
     ET.indent(mj, space="  ")
     header = (
