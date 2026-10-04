@@ -353,7 +353,7 @@ Visualization Manager:
       Value: true
       Visual Enabled: true
     - Class: rviz_default_plugins/TF
-      Enabled: true
+      Enabled: false
       Frame Timeout: 15
       Frames:
         All Enabled: false
@@ -793,7 +793,7 @@ Visualization Manager:
             Reliability Policy: Reliable
             Value: /g1pilot/workspace/left
           Value: true
-      Enabled: true
+      Enabled: false
       Name: Reach2Point
   Enabled: true
   Global Options:
