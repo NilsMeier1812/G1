@@ -93,6 +93,15 @@ damit die Zuordnung ohne Lesen klar ist.
   Konvention gilt auch für `demo_sequence.py`.
   Gibt es die Kategorie noch nicht, erscheinen als Fallback alle Posen mit einem
   Hinweis.
+- **Abläufe**: jede Pose-Store-Kategorie `Ablauf <Name>` wird ein eigener
+  Knopf „▶ <Name>“; ihre Posen laufen in Namensreihenfolge ab (`AP1_01_…`,
+  `AP1_02_…`), die Statuszeile zeigt „Schritt n/m“. Ablauf-Posen erscheinen
+  nicht als Einzelknöpfe. Reine Hand-Posen (nur `left_hand`/`right_hand`)
+  melden nach `hand_only_settle_s` (1.8 s) `reached`. Beispiel-Abläufe für die
+  Szene A5 (Arbeitsplatz 1: Zylinder links greifen und an rechts übergeben;
+  Arbeitsplatz 2: blaue KLT mit beiden Händen anheben) installiert
+  `python3 -m g1pilot.tools.install_example_sequences`; sie gelten für den
+  Roboter genau an der jeweiligen Station.
 - **▶ Ganze Demo abspielen** fährt alle Demo-Posen nacheinander an. Der nächste
   Schritt startet erst, wenn `/g1pilot/arm_command/status` `reached` meldet.
   Bei `failed`/`rejected`/`cancelled` bricht die Folge ab und der Grund steht im

@@ -134,7 +134,9 @@ class LocoSim(Node):
         # stationaeren PD-STAND -> der Roboter laeuft nicht mit weit abstehenden
         # Armen los. Fallback nach walk_arm_timeout_s, falls keine Meldung kommt.
         self.declare_parameter("walk_arm_wait", True)
-        self.declare_parameter("walk_arm_timeout_s", 4.0)
+        # Grosszuegig: aus der Sicheren Pose (Ellbogen hinten) brauchen die Arme mit
+        # dem kartesischen Speedlimit (0.25 m/s) deutlich laenger als 4 s.
+        self.declare_parameter("walk_arm_timeout_s", 15.0)
 
         # PD-Balancer-Gains (live tunebar via ros2 param set). Bewaehrte Defaults.
         self.declare_parameter("bal_kp_scale", 10.0)         # Posture-Steifigkeit (Haupthebel)

@@ -176,7 +176,9 @@ class SceneBridge(Node):
         label.pose.orientation.w = 1.0
         label.scale.z = 0.15
         label.color.r = label.color.g = label.color.b = label.color.a = 1.0
-        label.text = sm.station_label(name)
+        # RViz-Text (MovableText) rendert ein Leerzeichen viel breiter als ein
+        # Zeichen -> "Arbeitsplatz      2". Darum hier Bindestrich statt Leerzeichen.
+        label.text = sm.station_label(name).replace(" ", "-")
         return arrow, label
 
     def _publish(self):

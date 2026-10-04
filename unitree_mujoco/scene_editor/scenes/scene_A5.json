@@ -596,6 +596,100 @@
          ],
          "is_static": true,
          "mass": 0.0
+      },
+      {
+         "class_path": "robits.sim.blueprints.GeomBlueprint",
+         "path": "/grasp_asset_KLT_300x200_m_stl_0010__rippe_links",
+         "geom_type": "box",
+         "pose": {
+            "class_path": "robits.sim.blueprints.Pose",
+            "matrix": [
+               [
+                  1.0,
+                  0.0,
+                  0.0,
+                  -2.09243
+               ],
+               [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.39067
+               ],
+               [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.891
+               ],
+               [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+               ]
+            ]
+         },
+         "size": [
+            0.09,
+            0.0075,
+            0.006
+         ],
+         "rgba": [
+            0.1,
+            0.3,
+            0.8,
+            1.0
+         ],
+         "is_static": true,
+         "mass": 0.02
+      },
+      {
+         "class_path": "robits.sim.blueprints.GeomBlueprint",
+         "path": "/grasp_asset_KLT_300x200_m_stl_0010__rippe_rechts",
+         "geom_type": "box",
+         "pose": {
+            "class_path": "robits.sim.blueprints.Pose",
+            "matrix": [
+               [
+                  1.0,
+                  0.0,
+                  0.0,
+                  -2.09243
+               ],
+               [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.70567
+               ],
+               [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.891
+               ],
+               [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+               ]
+            ]
+         },
+         "size": [
+            0.09,
+            0.0075,
+            0.006
+         ],
+         "rgba": [
+            0.1,
+            0.3,
+            0.8,
+            1.0
+         ],
+         "is_static": true,
+         "mass": 0.02
       }
    ]
 }

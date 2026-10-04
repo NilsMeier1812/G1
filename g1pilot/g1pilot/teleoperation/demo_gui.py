@@ -63,10 +63,15 @@ SPEEDS = {"Langsam": 0.3, "Normal": 0.6}
 
 # Pose-Store-Kategorie, deren Posen als Beispielbewegungen erscheinen.
 DEMO_CATEGORY = os.environ.get("G1_DEMO_CATEGORY", "Demo")
+# Ablaeufe: jede Kategorie "Ablauf <Name>" = eine Sequenz (Posen in Namens-
+# reihenfolge, z.B. AP1_01_..., AP1_02_...) -> ein Knopf "▶ <Name>".
+SEQUENCE_PREFIX = "Ablauf "
+# Knopf "Grundstellung" faehrt diese gespeicherte Pose an.
+HOME_POSE = os.environ.get("G1_HOME_POSE", "Sichere_Pose")
 MAX_DEMO_BUTTONS = 8
 # WALK gilt als "angekommen", wenn arms/walk_ready kommt -- spaetestens nach
 # diesem Timeout (loco_sim laeuft dann ohnehin selbst los).
-WALK_SWITCH_TIMEOUT_MS = 6000
+WALK_SWITCH_TIMEOUT_MS = 16000   # > loco_sim walk_arm_timeout_s (15 s)
 
 TERMINAL = ("reached", "failed", "rejected", "cancelled")
 
@@ -352,6 +357,9 @@ class ManipPanel(QWidget):
         head.addWidget(self.btn_play)
         lay.addLayout(head)
 
+        self.seq_row = QHBoxLayout()
+        self.seq_row.setSpacing(10)
+        lay.addLayout(self.seq_row)
         self.demo_grid = QGridLayout()
         self.demo_grid.setSpacing(10)
         lay.addLayout(self.demo_grid)
@@ -391,6 +399,21 @@ class ManipPanel(QWidget):
     def _toggle_expert(self, on):
         self.expert.setVisible(on)
         self.btn_expert.setText("Erweitert ▾" if on else "Erweitert ▸")
+
+    def fill_sequence_buttons(self, sequences):
+        """sequences: [(Anzeigename, [Posennamen ...]), ...]"""
+        while self.seq_row.count():
+            w = self.seq_row.takeAt(0).widget()
+            if w is not None:
+                w.deleteLater()
+        if not sequences:
+            return
+        self.seq_row.addWidget(WalkPanel._caption("Abläufe:"))
+        for label, names in sequences:
+            b = big_button(f"▶  {label}", "#1565c0", font=17, height=64)
+            b.setToolTip(" → ".join(pretty_pose_name(n) for n in names))
+            b.clicked.connect(lambda _, ns=list(names), lb=label: self.gui.run_poses(ns, lb))
+            self.seq_row.addWidget(b)
 
     def fill_demo_buttons(self, names, note=""):
         while self.demo_grid.count():
@@ -666,21 +689,33 @@ class DemoGUI(QWidget):
         names = sorted(grouped.get(DEMO_CATEGORY, []), key=str.lower)
         if names:
             return names, ""
-        all_names = sorted((n for ns in grouped.values() for n in ns), key=str.lower)
+        all_names = sorted((n for cat, ns in grouped.items()
+                            if not cat.startswith(SEQUENCE_PREFIX) for n in ns), key=str.lower)
         if not all_names:
             return [], "Noch keine Posen gespeichert (Erweitert → Pose speichern)."
         return all_names, (f"Keine Kategorie »{DEMO_CATEGORY}« — zeige alle Posen. "
                            f"Posen in »{DEMO_CATEGORY}« speichern, um die Auswahl festzulegen.")
 
+    def _sequences(self):
+        store = self._pose_store()
+        if store is None:
+            return []
+        return [(cat[len(SEQUENCE_PREFIX):].strip(), sorted(ns, key=str.lower))
+                for cat, ns in sorted(store.list_grouped().items())
+                if cat.startswith(SEQUENCE_PREFIX) and ns]
+
     def _reload_demo_buttons(self):
         self.manip_panel.fill_demo_buttons(*self._demo_names())
+        self.manip_panel.fill_sequence_buttons(self._sequences())
 
-    def run_poses(self, names):
+    def run_poses(self, names, label=None):
         """Eine oder mehrere Posen nacheinander anfahren; der naechste Schritt
         startet, wenn arm_command/status 'reached' meldet."""
         if self.mode != MANIP or not names:
             return
         self.queue = list(names)
+        self._seq_label = label
+        self._seq_total = len(names)
         self._next_pose()
 
     def _next_pose(self):
@@ -690,7 +725,10 @@ class DemoGUI(QWidget):
             return
         self.current_pose = self.queue.pop(0)
         self.node.publish_str(self.node.pub_pose_goto, self.current_pose)
-        self._status(f"Fährt: {pretty_pose_name(self.current_pose)} …", MODE_COLOR[MANIP])
+        step = ""
+        if getattr(self, "_seq_label", None):
+            step = f"{self._seq_label} · Schritt {self._seq_total - len(self.queue)}/{self._seq_total}: "
+        self._status(f"{step}{pretty_pose_name(self.current_pose)} …", MODE_COLOR[MANIP])
 
     def _on_arm_status(self, data):
         if self.current_pose is None:
@@ -699,7 +737,7 @@ class DemoGUI(QWidget):
         if state not in TERMINAL:
             return
         if state == "reached":
-            QTimer.singleShot(800, self._next_pose)
+            QTimer.singleShot(300, self._next_pose)
         else:
             self.queue.clear()
             self.current_pose = None
@@ -721,7 +759,14 @@ class DemoGUI(QWidget):
         self._status("Hände öffnen" if action == "open" else "Hände schließen", MODE_COLOR[MANIP])
 
     def _home(self):
+        """Grundstellung = Sichere Pose (Ellbogen hinten, Haende seitlich ueber
+        Tischhoehe) -- geplant angefahren wie jede Pose. Fehlt sie im Speicher,
+        das alte Homing des arm_controller."""
         self._cancel_sequence()
+        store = self._pose_store()
+        if store is not None and store.get(HOME_POSE) is not None:
+            self.run_poses([HOME_POSE], "Grundstellung")
+            return
         self._pulse(self.node.pub_arms_home)
         self._status("Arme fahren in Grundstellung …", MODE_COLOR[MANIP])
 

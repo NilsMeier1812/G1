@@ -83,8 +83,15 @@ ohne entsprechendes Setup bleibt die Karte leer (kein `/scene_markers`-Sender).
 
 Klassischer Grid-Dijkstra mit:
 
-- **Inflation** (`inflation_radius_m`, Default 0.40 m) — Sicherheitsabstand
+- **Inflation** (`inflation_radius_m`, Default 0.30 m) — Sicherheitsabstand
   um belegte Zellen.
+- **Zielanfahrt** (`goal_approach_m` 0.60 m, `goal_min_clearance_m` 0.10 m) —
+  die letzten 0.6 m vor dem Ziel dürfen in den Sicherheitsabstand hinein, aber
+  nie näher als 0.10 m an ein Objekt. Nur so sind Stationen direkt am Tisch
+  (z. B. `station_Arbeitsplatz_2`, 0.25 m vor der Kante) erreichbar.
+- **Start/Ziel im Sicherheitsabstand** werden auf die nächste freie Zelle
+  geschoben; ohne kollisionsfreien Pfad wird **kein** Pfad publiziert (früher:
+  gerade Linie durch die Objekte).
 - **Turn-Cost** (`turn_cost_gain`) — bevorzugt gerade Wege gegenüber
   Zickzack.
 - **Line-of-Sight-Shortcut** (`shortcut_path`) — entfernt unnötige
@@ -111,6 +118,18 @@ noch Drehen auf den mitgelieferten Ziel-Yaw (`yaw_tol_deg` Toleranz). Ab
 `yaw_hold_dist` vor dem Ziel wird das kontinuierliche Nachdrehen zum
 aktuellen Wegpunkt abgeschaltet (Orbit-Fix) — sonst würde der Roboter
 knapp vor dem Ziel um den (dann instabilen) Punkt kreisen.
+
+Zielgenauigkeit (fuer Stationen/Greifabläufe wichtig):
+
+- `goal_tolerance` 0.05 m; der Planer legt das Pfadende exakt aufs Ziel
+  (nicht auf die Zellmitte).
+- Ab `yaw_hold_dist` dreht der Roboter auf den **Ziel-Yaw** (nicht mehr zum
+  Pfadpunkt) und gleitet holonom hinein.
+- `min_axis` 0.35 / `min_yaw_axis` 0.25: Mindest-Ausschlag, weil `loco_sim`
+  bei ‖cmd‖ < `stand_eps` (0.1) nur steht — sonst blieb der Roboter 10–20 cm
+  vor dem Ziel stehen, die Endausrichtung startete nie (Folge: schräg, z. B. 45°).
+- Kein Fortschritt `stall_s` (3 s) innerhalb `stall_dist` (0.35 m) →
+  Endausrichtung trotzdem.
 
 ### `sim_localization` (nur Sim) / MOLA + `mola_fixed` (nur Real)
 

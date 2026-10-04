@@ -37,6 +37,10 @@ def generate_launch_description():
         # Toleranz [rad] fuer die geplante Bewegung (Positionsspeicher, siehe
         # g1pilot/docs/11_arm_manipulation_technik.md (Positionsspeicher)), ab der ein Wegpunkt als erreicht gilt.
         DeclareLaunchArgument("planned_motion_tolerance", default_value="0.02"),
+        # Glaettung geplanter Pose-Fahrten (-1 = wie ik_alpha), Wartezeit reiner
+        # Hand-Posen. Sim setzt schnellere Werte (bringup_sim).
+        DeclareLaunchArgument("planned_motion_alpha", default_value="-1.0"),
+        DeclareLaunchArgument("hand_only_settle_s", default_value="1.8"),
         # PD-Gains des arm_controller. Defaults = Sim-Tuning (MuJoCo braucht
         # hohe Daempfung); bringup_real ueberschreibt mit den Unitree-
         # Beispielwerten (kp=60, kd=1.5).
@@ -88,6 +92,10 @@ def generate_launch_description():
                     LaunchConfiguration("environment_collision_gate"), value_type=bool),
                 'planned_motion_tolerance': ParameterValue(
                     LaunchConfiguration("planned_motion_tolerance"), value_type=float),
+                'planned_motion_alpha': ParameterValue(
+                    LaunchConfiguration("planned_motion_alpha"), value_type=float),
+                'hand_only_settle_s': ParameterValue(
+                    LaunchConfiguration("hand_only_settle_s"), value_type=float),
                 'kp_low': ParameterValue(LaunchConfiguration("kp_low"), value_type=float),
                 'kd_low': ParameterValue(LaunchConfiguration("kd_low"), value_type=float),
                 'kp_wrist': ParameterValue(LaunchConfiguration("kp_wrist"), value_type=float),

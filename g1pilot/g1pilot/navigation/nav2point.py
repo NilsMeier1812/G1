@@ -21,7 +21,7 @@ class Nav2Point(Node):
         self.declare_parameter('pos_kp', 0.8)
         self.declare_parameter('yaw_kp', 1.5)
         self.declare_parameter('waypoint_tolerance', 0.20)
-        self.declare_parameter('goal_tolerance', 0.10)
+        self.declare_parameter('goal_tolerance', 0.03)
         self.declare_parameter('frame_id', 'map')
         self.declare_parameter('joy_topic', '/g1pilot/auto_joy')
         self.declare_parameter('path_topic', '/g1pilot/path')
@@ -48,9 +48,16 @@ class Nav2Point(Node):
         # dem Ziel NICHT mehr zum Punkt drehen (sonst umkreist der Roboter ihn).
         self.declare_parameter('goal_topic', '/g1pilot/goal')
         self.declare_parameter('final_align', True)     # am Ziel auf Ziel-Yaw drehen
-        self.declare_parameter('yaw_tol_deg', 8.0)      # Toleranz Endausrichtung [deg]
+        self.declare_parameter('yaw_tol_deg', 3.0)      # Toleranz Endausrichtung [deg] (Greifen braucht < 5)
         self.declare_parameter('align_yaw_kp', 1.2)     # Dreh-Regler beim Ausrichten
         self.declare_parameter('yaw_hold_dist', 0.5)    # ab hier Yaw-Jagen aus (Orbit-Fix) [m]
+        # loco_sim schaltet bei ||cmd|| < stand_eps (0.1) auf Stehen -> zu kleine
+        # Kommandos kurz vor dem Ziel bringen den Roboter 10-20 cm davor zum
+        # Stehen, die Endausrichtung startet nie. Daher Mindest-Ausschlag:
+        self.declare_parameter('min_axis', 0.35)        # Translation, normiert (-> >= 0.17 m/s)
+        self.declare_parameter('min_yaw_axis', 0.25)    # Endausrichtung, normiert
+        self.declare_parameter('stall_s', 3.0)          # kein Fortschritt nahe Ziel -> ausrichten
+        self.declare_parameter('stall_dist', 0.35)      # [m]
         goal_topic = self.get_parameter('goal_topic').value
         self.final_align = bool(self.get_parameter('final_align').value)
         self.yaw_tol = math.radians(float(self.get_parameter('yaw_tol_deg').value))
@@ -68,6 +75,12 @@ class Nav2Point(Node):
         self.pub_wp_marker = self.create_publisher(Marker, '/g1pilot/waypoint_marker', qos)
         self.pub_goal_marker = self.create_publisher(Marker, '/g1pilot/goal_marker', qos)
         self.timer = self.create_timer(1.0 / self.rate, self.loop)
+        self.min_axis = float(self.get_parameter('min_axis').value)
+        self.min_yaw_axis = float(self.get_parameter('min_yaw_axis').value)
+        self.stall_s = float(self.get_parameter('stall_s').value)
+        self.stall_dist = float(self.get_parameter('stall_dist').value)
+        self._best_dist = None
+        self._best_t = None
 
         self.have_pose = False
         self.auto_enabled = False
@@ -98,6 +111,7 @@ class Nav2Point(Node):
         self.path_frame = msg.header.frame_id if msg.header.frame_id else self.frame_id
         self.idx = 0
         self.aligning = False      # neuer Pfad -> Ausrichtungsphase zuruecksetzen
+        self._best_dist = None
         self.logged_no_path = False
         self.logged_end_path = False
         if self.path:
@@ -192,6 +206,17 @@ class Nav2Point(Node):
 
             dist_goal = math.hypot(self.path[-1][0] - self.x, self.path[-1][1] - self.y)
 
+            # Haengt der Roboter kurz vor dem Ziel fest (kein Fortschritt), trotzdem
+            # in die Endausrichtung gehen -- sonst bleibt er schraeg stehen.
+            now = self.get_clock().now().nanoseconds * 1e-9
+            if self._best_dist is None or dist_goal < self._best_dist - 0.02:
+                self._best_dist, self._best_t = dist_goal, now
+            elif (not self.aligning and dist_goal <= self.stall_dist
+                  and now - self._best_t > self.stall_s):
+                self.get_logger().info(
+                    f'Kein Fortschritt {dist_goal:.2f} m vor dem Ziel -> Endausrichtung.')
+                self.aligning = True
+
             joy = Joy()
             joy.header.stamp = self.get_clock().now().to_msg()
             axes = [0.0] * 8
@@ -211,7 +236,10 @@ class Nav2Point(Node):
                         self.aligning = False
                         return
                     wz = max(-self.wz_lim, min(self.wz_lim, self.align_yaw_kp * yaw_err))
-                    axes[2] = max(-1.0, min(1.0, -wz / self.wz_lim))
+                    n = wz / self.wz_lim
+                    if abs(n) < self.min_yaw_axis:      # sonst steht loco_sim nur
+                        n = math.copysign(self.min_yaw_axis, n)
+                    axes[2] = max(-1.0, min(1.0, -n))
                     buttons[8] = 1
                     joy.axes = axes
                     joy.buttons = buttons
@@ -235,14 +263,24 @@ class Nav2Point(Node):
             vy_b = s * vx_w + c * vy_w
 
             # Orbit-Fix: nahe am Ziel NICHT mehr zum (dann instabilen) Punkt
-            # drehen -> die letzten Zentimeter gerade reingleiten, dann ausrichten.
+            # drehen, sondern schon auf den Ziel-Yaw (holonom: seitlich/rueckwaerts
+            # reingleiten) -- so steht er auch dann richtig, wenn die letzten
+            # Zentimeter nicht ganz aufgehen.
             if dist_goal < self.yaw_hold_dist:
-                wz = 0.0
+                if self.final_align and self.goal_yaw is not None:
+                    wz = max(-self.wz_lim, min(self.wz_lim,
+                             self.align_yaw_kp * self._wrap(self.goal_yaw - self.yaw)))
+                else:
+                    wz = 0.0
             else:
                 wz = max(-self.wz_lim, min(self.wz_lim, self.yaw_kp * yaw_err))
 
-            axes[1] = max(-1.0, min(1.0, -vx_b / self.vx_lim))
-            axes[0] = max(-1.0, min(1.0, -vy_b / self.vy_lim))
+            nx, ny = vx_b / self.vx_lim, vy_b / self.vy_lim
+            mag = math.hypot(nx, ny)
+            if 1e-6 < mag < self.min_axis:          # nicht unter die Steh-Schwelle fallen
+                nx, ny = nx * self.min_axis / mag, ny * self.min_axis / mag
+            axes[1] = max(-1.0, min(1.0, -nx))
+            axes[0] = max(-1.0, min(1.0, -ny))
             axes[2] = max(-1.0, min(1.0, -wz / self.wz_lim))
             buttons[8] = 1
 

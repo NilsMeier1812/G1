@@ -54,6 +54,12 @@ SPAWN_PREFIX_RE = re.compile(r"^g1_spawn", re.IGNORECASE)
 # <custom><numeric name="station_<Name>" data="x y yaw"/> abgelegt; der
 # Szenen-Publisher schickt sie mit nach ROS (/scene_markers, ns g1scene:station).
 STATION_PREFIX_RE = re.compile(r"^station_", re.IGNORECASE)
+# Anbauteile an Greif-Objekten: ein Geom "<grasp-Name>__<beliebig>" (z.B.
+# "grasp_klt__rippe_links") wird beim Kombinieren in den freien Koerper seines
+# Greif-Objekts gehaengt (Pose relativ umgerechnet) -- so lassen sich z.B. Rippen/
+# Griffleisten an ein Mesh anbauen, ohne das Mesh zu aendern (dessen Kollision
+# ist die konvexe Huelle, Vorspruenge im Mesh wuerden dort verschwinden).
+ATTACH_SEP = "__"
 
 HERE = Path(__file__).resolve().parent          # .../unitree_mujoco/scene_editor
 MJ_ROOT = HERE.parent                            # .../unitree_mujoco
@@ -164,7 +170,28 @@ def _wrap_grasp_geom(geom_el):
 
 
 def _is_grasp_geom(el) -> bool:
-    return el.tag == "geom" and bool(GRASP_PREFIX_RE.match(el.get("name") or ""))
+    return (el.tag == "geom" and bool(GRASP_PREFIX_RE.match(el.get("name") or ""))
+            and ATTACH_SEP not in (el.get("name") or ""))
+
+
+def _attach_parts(body_el, parts, warnings):
+    """Anbauteile (Welt-Pose) als Geoms relativ zum Greif-Koerper anhaengen."""
+    bpos = _floats(body_el.get("pos"), (0.0, 0.0, 0.0))
+    bq = _floats(body_el.get("quat"), (1.0, 0.0, 0.0, 0.0))
+    bq_inv = [bq[0], -bq[1], -bq[2], -bq[3]]
+    for g in parts:
+        gpos = _floats(g.get("pos"), (0.0, 0.0, 0.0))
+        gq = _floats(g.get("quat"), (1.0, 0.0, 0.0, 0.0))
+        new = ET.Element("geom", dict(g.attrib))
+        new.set("pos", _fmt(_quat_rotate(bq_inv, [a - b for a, b in zip(gpos, bpos)])))
+        new.set("quat", _fmt(_quat_mul(bq_inv, gq)))
+        try:   # Masse 0 (statischer Editor-Export) an bewegtem Koerper -> Dichte
+            if float(new.get("mass", "1")) <= 0.0:
+                new.attrib.pop("mass")
+        except ValueError:
+            pass
+        body_el.append(new)
+        warnings.append(f"  i Anbauteil '{g.get('name')}' an '{body_el.get('name')}' gehaengt.")
 
 
 def _floats(s, default):
@@ -329,6 +356,15 @@ def merge_environment(env_root, asset, wb, env_dir, warnings):
             if nm:
                 used_asset_names.add(nm)
 
+    # Anbauteile einsammeln (gehoeren in den Koerper ihres Greif-Objekts)
+    attach = {}
+    for env_wb in env_root.findall("worldbody"):
+        for el in list(env_wb):
+            nm = el.get("name") or ""
+            if el.tag == "geom" and ATTACH_SEP in nm and GRASP_PREFIX_RE.match(nm):
+                attach.setdefault(nm.split(ATTACH_SEP)[0], []).append(el)
+                env_wb.remove(el)
+
     for env_wb in env_root.findall("worldbody"):
         for el in list(env_wb):
             if el.tag == "light":
@@ -336,7 +372,9 @@ def merge_environment(env_root, asset, wb, env_dir, warnings):
             if el.tag == "geom" and el.get("type") == "plane":
                 continue  # Boden kommt aus der Basis
             if _is_grasp_geom(el):
-                wb.append(_wrap_grasp_geom(el))
+                body = _wrap_grasp_geom(el)
+                _attach_parts(body, attach.pop(el.get("name"), []), warnings)
+                wb.append(body)
                 continue
             if el.tag == "body":
                 _normalize_free_body(el)
@@ -344,6 +382,10 @@ def merge_environment(env_root, asset, wb, env_dir, warnings):
             if el.tag == "geom" and el.get("type") == "mesh" and el.get("mesh") in env_meshes:
                 mesh_abs, mesh_scale = env_meshes[el.get("mesh")]
                 add_collision_hulls(el, mesh_abs, mesh_scale, asset, wb, warnings)
+
+    for parent, parts in attach.items():
+        warnings.append(f"  ! Anbauteile ohne Greif-Objekt '{parent}' ignoriert: "
+                        + ", ".join(g.get("name") for g in parts))
 
     # Kollisions-Bits der Umgebung: Koerper-Geoms des G1 kollidieren auf Bit 1,
     # die Haende/Finger (Inspire) nur auf Bit 2 (damit sie nicht am eigenen

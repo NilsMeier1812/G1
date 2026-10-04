@@ -84,6 +84,10 @@ def generate_launch_description():
                 # fuer den echten G1 (bringup_real nutzt die Defaults 2.0 s).
                 'arm_weight_ramp_up_s': '0.0',
                 'arm_weight_ramp_down_s': '0.0',
+                # Sim: Greif-Ablaeufe zuegiger (Real behaelt 0.25 m/s / ik_alpha).
+                'ee_velocity_limit': '0.5',
+                'planned_motion_alpha': '1.0',
+                'hand_only_settle_s': '1.5',
             }.items()
         ),
 
