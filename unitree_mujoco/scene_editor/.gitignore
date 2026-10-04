@@ -13,3 +13,12 @@ MUJOCO_LOG.TXT
 
 # Kollisions-Zerlegung (von build_env_scene.py erzeugt, wird bei Bedarf neu gebaut)
 meshes/.collision/
+
+# Roh-CAD-Exporte NICHT versionieren (oft > 100 MB -> GitHub lehnt den Push ab).
+# Versioniert werden nur die skalierten/verkleinerten Meshes, die die Szenen
+# nutzen: Konvention *_m.stl (Meter) + die Beispiele. Neues Roh-CAD einfach
+# hier liegen lassen; erst die _m-Variante wird mit eingecheckt.
+meshes/*.stl
+!meshes/*_m.stl
+!meshes/sample_*.stl
+!meshes/arbeitsplatz_station.stl
