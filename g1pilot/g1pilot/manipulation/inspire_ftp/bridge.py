@@ -9,6 +9,7 @@ die per Modbus TCP mit den echten Haenden sprachen) in EINEM ROS2-Node:
   * WebSocket :8766  <-> Controller/hand_controller_viewer.html  (Steuerung)
   * WebSocket :8765  <-> Viewer/inspire_hand_viewer.html         (Kraft/Taktil)
   * ROS2 /joint_states                                            (RViz-Finger)
+  * ROS2 /g1pilot/hand_cmd + /g1pilot/hand_status  <-> Qt-Demo-GUI (Seite HAENDE)
 
 Die eigentliche "Hardware"-Anbindung steckt im Backend (siehe backends.py):
 Stufe 1 = SimJointStateBackend (RViz), Stufe 2 = MujocoContactBackend
@@ -129,6 +130,16 @@ class InspireFtpBridge(Node):
             Float32MultiArray, "/g1pilot/hand_goal/right",
             lambda m: self._on_hand_goal("right", m), 10)
 
+        # ── ROS-Pendant zum Controller-WebSocket (fuer die Qt-Demo-GUI) ──────
+        #  hand_cmd: dieselben JSON-Befehle wie ws://…:8766 (set_angle, set_force,
+        #            set_speed, set_enabled, set_all_angles, open_hand, close_hand).
+        #  hand_status: ~10 Hz JSON {left|right: controller_state + "zones"}, wobei
+        #            "zones" je Taktil-Zone nur den Spitzenwert (0..4095) enthaelt
+        #            -- genug fuer die Kraftzonen-Anzeige, ohne volle Taxel-Matrix.
+        self.create_subscription(String, "/g1pilot/hand_cmd", self._on_hand_cmd, 10)
+        self.hand_status_pub = self.create_publisher(String, "/g1pilot/hand_status", 10)
+        self.create_timer(0.1, self._publish_hand_status)
+
         # ── Mapping-Limits an die echte URDF klemmen, falls auffindbar ───────
         urdf = joint_map.default_urdf_path()
         limits = joint_map.load_limits_from_urdf(urdf) if urdf else {}
@@ -234,6 +245,22 @@ class InspireFtpBridge(Node):
             with self.models[side].lock:
                 msg.data = [float(a) for a in self.models[side].angle_act]
             self.hand_state_pub[side].publish(msg)
+
+    def _on_hand_cmd(self, msg: String):
+        try:
+            self._handle_cmd(json.loads(msg.data))
+        except Exception as e:  # noqa: BLE001
+            self.get_logger().warn(f"hand_cmd-Fehler: {e}")
+
+    def _publish_hand_status(self):
+        out = {}
+        for side in ("left", "right"):
+            model = self.models[side]
+            st = model.controller_state()
+            with model.lock:
+                st["zones"] = {k: (max(v) if v else 0) for k, v in model.zones.items()}
+            out[side] = st
+        self.hand_status_pub.publish(String(data=json.dumps(out)))
 
     def _on_hand_goal(self, side: str, msg: Float32MultiArray):
         """Gespeicherte Handstellung wiederherstellen: 6 Sollwinkel (0..1000)

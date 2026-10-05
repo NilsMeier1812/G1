@@ -83,6 +83,14 @@ Reihenfolge/Neustart). file://-Oeffnen der Dateien aus `web/` geht weiterhin,
 aber der `?autoconnect=1`-Query-String kommt dabei je nach Opener (xdg-open,
 WSL) nicht an — darum der HTTP-Weg.
 
+**Qt-Demo-GUI**: Ohne Browser steuert die Demo-GUI (`G1_GUI=demo`, Modus
+GREIFEN → Seite HÄNDE) die Haende ueber zwei ROS-Topics der Bridge:
+
+| Topic | Typ | Inhalt |
+|-------|-----|--------|
+| `/g1pilot/hand_cmd` | `std_msgs/String` (JSON) | dieselben Befehle wie der Controller-WebSocket (`set_angle`, `set_force`, `set_speed`, `set_enabled`, `set_all_angles`, `open_hand`, `close_hand`) |
+| `/g1pilot/hand_status` | `std_msgs/String` (JSON, ~10 Hz) | je Hand `controller_state()` + `zones` (Spitzenwert 0..4095 je Taktil-Zone) |
+
 Die WebSockets bleiben unveraendert: `ws://localhost:8766` (Controller) bzw.
 `ws://localhost:8765` (Viewer). Der Container nutzt `network_mode: host`,
 daher ist `localhost` korrekt.

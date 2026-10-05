@@ -87,6 +87,12 @@ damit die Zuordnung ohne Lesen klar ist.
 
 **GREIFEN**
 
+Oben im Panel schaltet ein Umschalter **🦾 ARME | ✋ HÄNDE** zwischen zwei
+Seiten um (beides braucht viel Platz, darum nie gleichzeitig). Beim Wechsel in
+GREIFEN ist ARME aktiv.
+
+*Seite ARME*
+
 - **Beispielbewegungen**: ein Knopf je Pose aus der Pose-Store-Kategorie
   `Demo` (änderbar über `G1_DEMO_CATEGORY`), maximal 8, sortiert nach Namen. Das
   Präfix `Demo_<n>_` wird ausgeblendet, aus `Demo_2_Winken` wird „Winken“. Diese
@@ -112,6 +118,24 @@ damit die Zuordnung ohne Lesen klar ist.
   Betreuer: Pose anfahren (Dialog), Pose speichern (Dialog, Kategorie `Demo`
   vorausgewählt) und Marker folgen. Die Dialoge werden aus `ui_interface.py`
   wiederverwendet.
+
+*Seite HÄNDE* (`teleoperation/hand_panel.py`) ersetzt die beiden Browser-GUIs
+der Hand-Bridge (`hand_controller_viewer.html`, `inspire_hand_viewer.html`):
+
+- **Ganze Hand** (immer sichtbar): beide Hände öffnen/schließen sowie je Hand
+  eigene Öffnen/Schließen-Knöpfe (`/g1pilot/hand_action/{left,right}`, wie der
+  Streamdeck). Stufen für **Griffkraft** (Kraft-Limit aller Finger: Sanft 300 g,
+  Mittel 800 g, Fest 1500 g) und **Tempo** (Langsam/Normal/Schnell).
+- **Kraftzonen**: Handskizze je Hand mit den 17 Taktil-Zonen als Heatmap
+  (Spitzenwert je Zone, Nulllage = erste Daten; „Kraftzonen nullen“ übernimmt
+  die aktuelle Lage neu). Daneben je Finger die Ist-Öffnung (gelber Balken, %)
+  und die gemessene Kraft in g (grün → orange → rot bei Erreichen des Limits).
+- **Einzelne Finger ▸** (Toggle) blendet je Finger einen Soll-Schieber
+  (oben = offen) und das Kraft-Limit ein. Ein Ein/Aus-Hauptschalter fehlt
+  bewusst: ein Finger-Befehl aktiviert die Hand bei Bedarf selbst.
+- Kommuniziert nur über ROS: `/g1pilot/hand_cmd` (JSON, dieselben Befehle wie
+  der Controller-WebSocket `:8766`) und `/g1pilot/hand_status` (JSON, ~10 Hz).
+  Kommt kein Status, erscheint ein Hinweis (Hand-Bridge läuft nicht).
 
 ### 3 · Status (unten)
 

@@ -11,10 +11,14 @@ Streamdeck-Kacheln gibt es drei klar getrennte Bereiche:
                          Wechsels (Arme raeumen auf) blinkt "wechselt ...".
   2) STEUERUNG (Mitte) : zeigt NUR die Bedienelemente des aktiven Modus.
                          GEHEN   -> Joystick-Knopf + Pfeiltasten + Drehen.
-                         GREIFEN -> Beispielbewegungen (Pose-Store-Kategorie
-                                    "Demo"), Haende, Grundstellung und ein
-                                    eingeklappter "Erweitert"-Bereich mit den
-                                    bisherigen Einzelfunktionen.
+                         GREIFEN -> Umschalter ARME | HAENDE:
+                                    ARME   = Beispielbewegungen (Pose-Store-
+                                             Kategorie "Demo"), Grundstellung und
+                                             eingeklappter "Erweitert"-Bereich.
+                                    HAENDE = ganze Hand auf/zu, Griffkraft,
+                                             Kraftzonen + einzelne Finger
+                                             (hand_panel.py, ersetzt die
+                                             Browser-GUIs der Hand-Bridge).
   3) STATUS (unten)    : was der Roboter gerade tut + immer sichtbarer NOT-HALT.
 
 Die GUI publiziert auf DIESELBEN Topics wie ui_interface.py (Streamdeck) --
@@ -49,6 +53,7 @@ from g1pilot.utils.common import is_sim_mode
 from g1pilot.teleoperation.ui_interface import (
     StreamDeck, VirtualJoystick, PoseSaveDialog, PoseLoadDialog,
 )
+from g1pilot.teleoperation.hand_panel import HandPanel
 
 WALK = "walk"
 MANIP = "manip"
@@ -98,10 +103,14 @@ class DemoNode(StreamDeck):
         super().__init__()
         self.on_walk_ready = None
         self.on_arm_status = None
+        self.on_hand_status = None
         self.create_subscription(Bool, "/g1pilot/arms/walk_ready",
                                  lambda m: self.on_walk_ready and self.on_walk_ready(m.data), 10)
         self.create_subscription(String, "/g1pilot/arm_command/status",
                                  self._arm_status, 10)
+        # Hand-Bridge (inspire_ftp/bridge.py): Einzelbefehle + Zustand.
+        self.pub_hand_cmd = self.create_publisher(String, "/g1pilot/hand_cmd", 10)
+        self.create_subscription(String, "/g1pilot/hand_status", self._hand_status, 10)
         # Stations-Ziele aus der Szene (station_<Name>, siehe scene_bridge.py):
         # name -> (x, y, yaw). on_stations wird nur bei Aenderung gerufen.
         self.stations = {}
@@ -133,6 +142,14 @@ class DemoNode(StreamDeck):
         msg.pose.orientation.z = math.sin(yaw / 2.0)
         msg.pose.orientation.w = math.cos(yaw / 2.0)
         self.pub_goal.publish(msg)
+
+    def _hand_status(self, msg: String):
+        try:
+            data = json.loads(msg.data)
+        except ValueError:
+            return
+        if self.on_hand_status:
+            self.on_hand_status(data)
 
     def _arm_status(self, msg: String):
         try:
@@ -339,14 +356,59 @@ class WalkPanel(QWidget):
 
 # ── Bereich 2b: Greifen ──────────────────────────────────────────────────
 class ManipPanel(QWidget):
-    """Beispielbewegungen als grosse Knoepfe + 'Ganze Demo abspielen'.
+    """Umschalter ARME | HAENDE, darunter jeweils eine Seite.
+    ARME: Beispielbewegungen als grosse Knoepfe + 'Ganze Demo abspielen'.
     Einzelfunktionen (Pose anfahren/speichern, Marker folgen) liegen
-    eingeklappt unter 'Erweitert' -- fuer den Betreuer, nicht fuer Besucher."""
+    eingeklappt unter 'Erweitert' -- fuer den Betreuer, nicht fuer Besucher.
+    HAENDE: HandPanel (ganze Hand + umschaltbar einzelne Finger)."""
 
     def __init__(self, gui):
         super().__init__()
         self.gui = gui
-        lay = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(8)
+
+        seg = QHBoxLayout()
+        seg.setSpacing(0)
+        self.view_btns = {}
+        for key, text, radius in (("arms", "🦾  ARME", "14px 0 0 14px"),
+                                  ("hands", "✋  HÄNDE", "0 14px 14px 0")):
+            b = QPushButton(text)
+            b.setCheckable(True)
+            b.setMinimumHeight(42)
+            b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            b.setStyleSheet(f"""
+                QPushButton {{ background:#1c1c1c; color:#888; font-size:17px; font-weight:800;
+                               border:2px solid #333; border-radius:0; padding:6px;
+                               border-top-left-radius:{radius.split()[0]};
+                               border-top-right-radius:{radius.split()[1]};
+                               border-bottom-right-radius:{radius.split()[2]};
+                               border-bottom-left-radius:{radius.split()[3]}; }}
+                QPushButton:checked {{ background:{MODE_COLOR[MANIP]}; color:white;
+                                       border-color:white; }}
+                QPushButton:hover:!checked {{ border-color:{MODE_COLOR[MANIP]}; }}
+            """)
+            b.clicked.connect(lambda _, k=key: self.show_view(k))
+            seg.addWidget(b)
+            self.view_btns[key] = b
+        seg_wrap = QHBoxLayout()
+        seg_wrap.addStretch(1)
+        seg_wrap.addLayout(seg, 4)
+        seg_wrap.addStretch(1)
+        outer.addLayout(seg_wrap)
+
+        self.views = QStackedWidget()
+        outer.addWidget(self.views, 1)
+        arms = QWidget()
+        self.views.addWidget(arms)
+        self.hand_panel = HandPanel(
+            gui.node, status_cb=lambda t: gui._status(t, MODE_COLOR[MANIP]))
+        self.views.addWidget(self.hand_panel)
+        self.view_pages = {"arms": arms, "hands": self.hand_panel}
+
+        lay = QVBoxLayout(arms)
+        lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(14)
 
         head = QHBoxLayout()
@@ -395,6 +457,12 @@ class ManipPanel(QWidget):
         self.btn_expert.toggled.connect(self._toggle_expert)
         lay.addWidget(self.expert)
         lay.addStretch(1)
+        self.show_view("arms")
+
+    def show_view(self, key):
+        self.views.setCurrentWidget(self.view_pages[key])
+        for k, b in self.view_btns.items():
+            b.setChecked(k == key)
 
     def _toggle_expert(self, on):
         self.expert.setVisible(on)
@@ -557,8 +625,9 @@ class DemoGUI(QWidget):
             self.walk_panel.set_stations(sorted(n.stations))
 
         mp.btn_play.clicked.connect(lambda: self.run_poses(self._demo_names()[0]))
-        mp.btn_open.clicked.connect(lambda: self._hands("open"))
-        mp.btn_close.clicked.connect(lambda: self._hands("close"))
+        mp.btn_open.clicked.connect(lambda: mp.hand_panel.hand_action(None, "open"))
+        mp.btn_close.clicked.connect(lambda: mp.hand_panel.hand_action(None, "close"))
+        n.on_hand_status = mp.hand_panel.on_status
         mp.btn_home.clicked.connect(self._home)
         mp.btn_cancel.clicked.connect(self._cancel)
         mp.btn_goto.clicked.connect(self._pose_goto_dialog)
@@ -752,11 +821,6 @@ class DemoGUI(QWidget):
         self._cancel_sequence()
         self.node.publish_bool(self.node.pub_pose_cancel, True)
         self._status("Bewegung gestoppt.", "#aaa")
-
-    def _hands(self, action):
-        self.node.publish_str(self.node.pub_left_hand, action)
-        self.node.publish_str(self.node.pub_right_hand, action)
-        self._status("Hände öffnen" if action == "open" else "Hände schließen", MODE_COLOR[MANIP])
 
     def _home(self):
         """Grundstellung = Sichere Pose (Ellbogen hinten, Haende seitlich ueber
