@@ -69,7 +69,7 @@ SPEEDS = {"Langsam": 0.3, "Normal": 0.6}
 # Pose-Store-Kategorie, deren Posen als Beispielbewegungen erscheinen.
 DEMO_CATEGORY = os.environ.get("G1_DEMO_CATEGORY", "Demo")
 # Ablaeufe: jede Kategorie "Ablauf <Name>" = eine Sequenz (Posen in Namens-
-# reihenfolge, z.B. AP1_01_..., AP1_02_...) -> ein Knopf "▶ <Name>".
+# reihenfolge, z.B. AP1_01_..., AP1_02_...) -> ein Knopf "<Name>".
 SEQUENCE_PREFIX = "Ablauf "
 # Knopf "Grundstellung" faehrt diese gespeicherte Pose an.
 HOME_POSE = os.environ.get("G1_HOME_POSE", "Sichere_Pose")
@@ -308,7 +308,7 @@ class WalkPanel(QWidget):
             self.station_btns.append(b)
             return
         for i, name in enumerate(names):
-            b = big_button("➜  " + sm.station_label(name), "#2e7d32", font=15, height=48)
+            b = big_button(sm.station_label(name), "#2e7d32", font=15, height=48)
             b.setMaximumWidth(240)
             b.setEnabled(NAV_AVAILABLE)
             b.clicked.connect(lambda _, n=name: self.on_station and self.on_station(n))
@@ -372,8 +372,8 @@ class ManipPanel(QWidget):
         seg = QHBoxLayout()
         seg.setSpacing(0)
         self.view_btns = {}
-        for key, text, radius in (("arms", "🦾  ARME", "14px 0 0 14px"),
-                                  ("hands", "✋  HÄNDE", "0 14px 14px 0")):
+        for key, text, radius in (("arms", "ARME", "14px 0 0 14px"),
+                                  ("hands", "HÄNDE", "0 14px 14px 0")):
             b = QPushButton(text)
             b.setCheckable(True)
             b.setMinimumHeight(42)
@@ -414,7 +414,7 @@ class ManipPanel(QWidget):
         head = QHBoxLayout()
         head.addWidget(WalkPanel._caption("Beispielbewegungen"))
         head.addStretch(1)
-        self.btn_play = big_button("▶  Ganze Demo abspielen", "#2e7d32", height=60)
+        self.btn_play = big_button("Ganze Demo abspielen", "#2e7d32", height=60)
         self.btn_play.setFixedWidth(320)
         head.addWidget(self.btn_play)
         lay.addLayout(head)
@@ -431,8 +431,8 @@ class ManipPanel(QWidget):
         row = QHBoxLayout()
         self.btn_open = big_button("Hände öffnen")
         self.btn_close = big_button("Hände schließen")
-        self.btn_home = big_button("⌂  Grundstellung")
-        self.btn_cancel = big_button("■  Bewegung stoppen", "#5d4037")
+        self.btn_home = big_button("Grundstellung")
+        self.btn_cancel = big_button("Bewegung stoppen", "#5d4037")
         for b in (self.btn_open, self.btn_close, self.btn_home, self.btn_cancel):
             row.addWidget(b)
         lay.addLayout(row)
@@ -478,7 +478,7 @@ class ManipPanel(QWidget):
             return
         self.seq_row.addWidget(WalkPanel._caption("Abläufe:"))
         for label, names in sequences:
-            b = big_button(f"▶  {label}", "#1565c0", font=17, height=64)
+            b = big_button(label, "#1565c0", font=17, height=64)
             b.setToolTip(" → ".join(pretty_pose_name(n) for n in names))
             b.clicked.connect(lambda _, ns=list(names), lb=label: self.gui.run_poses(ns, lb))
             self.seq_row.addWidget(b)
@@ -545,7 +545,7 @@ class DemoGUI(QWidget):
         top.addWidget(self.tiles[WALK])
         top.addWidget(self.tiles[MANIP])
         root.addLayout(top)
-        self.btn_start = big_button("⏻  Roboter starten", "#455a64", height=60)
+        self.btn_start = big_button("Roboter starten", "#455a64", height=60)
         self.btn_start.setVisible(not self.sim_mode)
         root.addWidget(self.btn_start)
 
@@ -575,18 +575,18 @@ class DemoGUI(QWidget):
         self.status.setWordWrap(True)
         self.status.setMinimumHeight(70)
         bottom.addWidget(self.status, 1)
-        self.btn_reset_scene = big_button("↺  Szene\nzurücksetzen", font=15, height=70)
+        self.btn_reset_scene = big_button("Szene\nzurücksetzen", font=15, height=70)
         self.btn_reset_scene.setFixedWidth(170)
         self.btn_reset_scene.setVisible(self.sim_mode)
         bottom.addWidget(self.btn_reset_scene)
         # Nur Sim: Roboter nach NOT-HALT/Sturz zurueck an den Startpunkt (HOLD,
         # gehalten wie beim Start) -> danach Modus waehlen, steht sanft auf.
-        self.btn_reset_robot = big_button("↺  Roboter\nzurücksetzen", font=15, height=70)
+        self.btn_reset_robot = big_button("Roboter\nzurücksetzen", font=15, height=70)
         self.btn_reset_robot.setFixedWidth(170)
         self.btn_reset_robot.setVisible(self.sim_mode)
         bottom.addWidget(self.btn_reset_robot)
         # Stoer-Test (nur Sim): schubst den Roboter -> zeigt, dass er sich faengt.
-        self.btn_push = big_button("➜  Roboter\nschubsen", font=15, height=70)
+        self.btn_push = big_button("Roboter\nschubsen", font=15, height=70)
         self.btn_push.setFixedWidth(170)
         self.btn_push.setVisible(self.sim_mode)
         bottom.addWidget(self.btn_push)
@@ -790,7 +790,7 @@ class DemoGUI(QWidget):
     def _next_pose(self):
         if not self.queue:
             self.current_pose = None
-            self._status("Fertig ✓", "#66bb6a")
+            self._status("Fertig.", "#66bb6a")
             return
         self.current_pose = self.queue.pop(0)
         self.node.publish_str(self.node.pub_pose_goto, self.current_pose)
@@ -901,7 +901,7 @@ class DemoGUI(QWidget):
         self.started = self.sim_mode
         self.btn_start.setVisible(not self.sim_mode)
         self._refresh()
-        self._status("⚠ NOT-HALT aktiv — Roboter ist weich geschaltet. "
+        self._status("NOT-HALT aktiv — Roboter ist weich geschaltet. "
                      "Zum Fortsetzen oben einen Modus wählen.", "#ef5350")
 
     def _status(self, text, color):

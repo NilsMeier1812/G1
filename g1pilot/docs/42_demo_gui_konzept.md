@@ -24,9 +24,9 @@ ergeben. Die Demo-GUI reduziert die Bedienung auf **eine Entscheidung zur Zeit**
 ├──────────────────────────────────────────────────────────────────┤
 │ 2 · STEUERUNG            Rahmen in der Farbe des aktiven Modus   │
 │                                                                  │
-│  GREIFEN:                                [▶ Ganze Demo abspielen]│
+│  GREIFEN:                                  [Ganze Demo abspielen]│
 │   [ Winken ] [ Zeigen ] [ Box greifen ] [ Ablegen ]              │
-│   [Hände öffnen] [Hände schließen] [⌂ Grundstellung] [■ Stop]│
+│   [Hände öffnen] [Hände schließen] [Grundstellung] [Stop]    │
 │   Erweitert ▸   (Pose anfahren … / Pose speichern … / Marker)    │
 │                                                                  │
 │  GEHEN:                                                          │
@@ -35,7 +35,7 @@ ergeben. Die Demo-GUI reduziert die Bedienung auf **eine Entscheidung zur Zeit**
 │                          [▼]              [ Normal]              │
 ├──────────────────────────────────────────────────────────────────┤
 │ 3 · STATUS                                                       │
-│ ▌Fährt: Winken …             [↺ Szene] [➜ Schubsen]  ( NOT-HALT ) │
+│ ▌Fährt: Winken …             [Szene]   [Schubsen]      ( NOT-HALT ) │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -57,7 +57,7 @@ Jede Kachel hat drei klar unterscheidbare Zustände:
   `loco_sim`).
 - **inaktiv**: dunkelgrau, „antippen zum Wechseln“
 
-Auf dem echten Roboter sind die Kacheln gesperrt, bis „⏻ Roboter starten“
+Auf dem echten Roboter sind die Kacheln gesperrt, bis „Roboter starten“
 (`/g1pilot/start`) gedrückt wurde. Nach einem NOT-HALT ist das wieder nötig.
 In der Sim startet die GUI wie der Streamdeck nach 3 s automatisch in GREIFEN.
 
@@ -87,7 +87,7 @@ damit die Zuordnung ohne Lesen klar ist.
 
 **GREIFEN**
 
-Oben im Panel schaltet ein Umschalter **🦾 ARME | ✋ HÄNDE** zwischen zwei
+Oben im Panel schaltet ein Umschalter **ARME | HÄNDE** zwischen zwei
 Seiten um (beides braucht viel Platz, darum nie gleichzeitig). Beim Wechsel in
 GREIFEN ist ARME aktiv.
 
@@ -100,7 +100,7 @@ GREIFEN ist ARME aktiv.
   Gibt es die Kategorie noch nicht, erscheinen als Fallback alle Posen mit einem
   Hinweis.
 - **Abläufe**: jede Pose-Store-Kategorie `Ablauf <Name>` wird ein eigener
-  Knopf „▶ <Name>“; ihre Posen laufen in Namensreihenfolge ab (`AP1_01_…`,
+  Knopf „<Name>“; ihre Posen laufen in Namensreihenfolge ab (`AP1_01_…`,
   `AP1_02_…`), die Statuszeile zeigt „Schritt n/m“. Ablauf-Posen erscheinen
   nicht als Einzelknöpfe. Reine Hand-Posen (nur `left_hand`/`right_hand`)
   melden nach `hand_only_settle_s` (1.8 s) `reached`. Beispiel-Abläufe für die
@@ -108,7 +108,7 @@ GREIFEN ist ARME aktiv.
   Arbeitsplatz 2: blaue KLT mit beiden Händen anheben) installiert
   `python3 -m g1pilot.tools.install_example_sequences`; sie gelten für den
   Roboter genau an der jeweiligen Station.
-- **▶ Ganze Demo abspielen** fährt alle Demo-Posen nacheinander an. Der nächste
+- **Ganze Demo abspielen** fährt alle Demo-Posen nacheinander an. Der nächste
   Schritt startet erst, wenn `/g1pilot/arm_command/status` `reached` meldet.
   Bei `failed`/`rejected`/`cancelled` bricht die Folge ab und der Grund steht im
   Status.
@@ -122,17 +122,19 @@ GREIFEN ist ARME aktiv.
 *Seite HÄNDE* (`teleoperation/hand_panel.py`) ersetzt die beiden Browser-GUIs
 der Hand-Bridge (`hand_controller_viewer.html`, `inspire_hand_viewer.html`):
 
-- **Ganze Hand** (immer sichtbar): beide Hände öffnen/schließen sowie je Hand
-  eigene Öffnen/Schließen-Knöpfe (`/g1pilot/hand_action/{left,right}`, wie der
-  Streamdeck). Stufen für **Griffkraft** (Kraft-Limit aller Finger: Sanft 300 g,
-  Mittel 800 g, Fest 1500 g) und **Tempo** (Langsam/Normal/Schnell).
+- **Ganze Hand**: beide Hände öffnen/schließen sowie je Hand eigene
+  Öffnen/Schließen-Knöpfe (`/g1pilot/hand_action/{left,right}`, wie der
+  Streamdeck).
+- **Finger**: je Finger ein Soll-Schieber (oben = offen), die Ist-Öffnung
+  (gelber Balken, %) und die gemessene Kraft in g (grün → orange → rot bei
+  Erreichen des Griffkraft-Limits). Ein Ein/Aus-Hauptschalter fehlt bewusst:
+  ein Finger-Befehl aktiviert die Hand bei Bedarf selbst.
 - **Kraftzonen**: Handskizze je Hand mit den 17 Taktil-Zonen als Heatmap
-  (Spitzenwert je Zone, Nulllage = erste Daten; „Kraftzonen nullen“ übernimmt
-  die aktuelle Lage neu). Daneben je Finger die Ist-Öffnung (gelber Balken, %)
-  und die gemessene Kraft in g (grün → orange → rot bei Erreichen des Limits).
-- **Einzelne Finger ▸** (Toggle) blendet je Finger einen Soll-Schieber
-  (oben = offen) und das Kraft-Limit ein. Ein Ein/Aus-Hauptschalter fehlt
-  bewusst: ein Finger-Befehl aktiviert die Hand bei Bedarf selbst.
+  (Spitzenwert je Zone, Nulllage = erste Daten).
+- **Erweitert ▸** (eingeklappt): Auswahl **Griffkraft** (setzt das Kraft-Limit
+  aller Finger: Sanft 300 g, Mittel 800 g, Fest 1500 g) und **Tempo**
+  (Langsam/Normal/Schnell), dazu „Kraftzonen nullen“ (aktuelle Taktil-Werte
+  als Nulllage). Einzelne Kraft-Limits je Finger gibt es in der Demo-GUI nicht.
 - Kommuniziert nur über ROS: `/g1pilot/hand_cmd` (JSON, dieselben Befehle wie
   der Controller-WebSocket `:8766`) und `/g1pilot/hand_status` (JSON, ~10 Hz).
   Kommt kein Status, erscheint ein Hinweis (Hand-Bridge läuft nicht).
@@ -143,8 +145,8 @@ der Hand-Bridge (`hand_controller_viewer.html`, `inspire_hand_viewer.html`):
   …“, „Fährt: Winken …“, „Fertig ✓“ oder „Abgebrochen (failed) …“.
 - **NOT-HALT** ist immer sichtbar, rund und rot. Er sendet dasselbe wie der
   Streamdeck. Beide Kacheln werden danach inaktiv.
-- **↺ Szene zurücksetzen** (nur Sim).
-- **➜ Roboter schubsen** (nur Sim): Störtest wie PUSH ROBOT im Streamdeck
+- **Szene zurücksetzen** (nur Sim).
+- **Roboter schubsen** (nur Sim): Störtest wie PUSH ROBOT im Streamdeck
   (400-ms-Impuls auf `/g1pilot/push`). Er zeigt, dass sich der Roboter in beiden
   Modi fängt.
 

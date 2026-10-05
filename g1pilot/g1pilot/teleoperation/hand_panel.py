@@ -6,10 +6,11 @@ hand_panel — Handsteuerung der Demo-GUI (Inspire RH56DFTP-2, Sim UND real).
 Qt-Ersatz fuer die beiden Browser-GUIs der Hand-Bridge (hand_controller_viewer
 und inspire_hand_viewer). Zwei Ebenen, damit es im Demo-Betrieb einfach bleibt:
 
-  * GANZE HAND (immer sichtbar): Beide/Links/Rechts oeffnen + schliessen,
-    Griffkraft- und Tempo-Stufen, Kraftzonen-Anzeige (Taktil-Heatmap auf einer
-    Handskizze) und je Finger Oeffnung + gemessene Kraft.
-  * EINZELNE FINGER (Toggle): je Finger Soll-Winkel-Schieber und Kraft-Limit.
+  * GANZE HAND: Beide/Links/Rechts oeffnen + schliessen.
+  * FINGER: je Finger Soll-Schieber, Ist-Oeffnung und gemessene Kraft, dazu
+    die Kraftzonen-Anzeige (Taktil-Heatmap auf einer Handskizze).
+  * ERWEITERT (eingeklappt): Griffkraft und Tempo als Auswahl, Kraftzonen
+    nullen. Die Griffkraft setzt das Kraft-Limit aller Finger.
 
 Kommunikation ausschliesslich ueber ROS (siehe inspire_ftp/bridge.py):
   /g1pilot/hand_action/{left,right}  String "open"/"close" (wie Streamdeck)
@@ -21,7 +22,7 @@ import json
 import time
 
 from PyQt6.QtWidgets import (
-    QWidget, QFrame, QLabel, QPushButton, QSlider, QProgressBar,
+    QWidget, QFrame, QLabel, QPushButton, QSlider, QProgressBar, QComboBox,
     QVBoxLayout, QHBoxLayout, QSizePolicy,
 )
 from PyQt6.QtCore import Qt, QRectF, QTimer
@@ -149,20 +150,18 @@ class TactileHand(QWidget):
 
 # ── Ein Finger (DOF) ───────────────────────────────────────────────────────
 class FingerControl(QWidget):
-    """Kompakt: Oeffnung (Ist) + gemessene Kraft. Ausgeklappt zusaetzlich
-    Soll-Winkel-Schieber (oben = offen) und Kraft-Limit."""
+    """Soll-Schieber (oben = offen), Ist-Oeffnung und gemessene Kraft. Das
+    Kraft-Limit kommt global ueber die Griffkraft (HandPanel)."""
 
     BAR_CSS = ("QProgressBar {{ background:#0a1220; border:1px solid #2b3d55; border-radius:4px;"
                " color:white; font-size:11px; }}"
                " QProgressBar::chunk {{ background:{c}; border-radius:3px; }}")
 
-    def __init__(self, name, on_angle, on_force):
+    def __init__(self, name, on_angle):
         super().__init__()
         self.on_angle = on_angle
-        self.on_force = on_force
         self._sync = False
         self._angle_touched = 0.0
-        self._force_touched = 0.0
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(2, 0, 2, 0)
@@ -211,45 +210,15 @@ class FingerControl(QWidget):
         self.force_bar.setMinimumWidth(36)
         self.force_bar.setFormat("0 g")
         self.force_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.force_bar.setToolTip("Gemessene Kontaktkraft")
+        self.force_bar.setToolTip("Gemessene Kontaktkraft (rot = Griffkraft-Limit erreicht)")
         self.force_bar.setStyleSheet(self.BAR_CSS.format(c="#2e7d32"))
         lay.addWidget(self.force_bar)
-
-        self.limit = QSlider(Qt.Orientation.Horizontal)
-        self.limit.setRange(0, MAX_FORCE)
-        self.limit.setSingleStep(50)
-        self.limit.setPageStep(250)
-        self.limit.setToolTip("Kraft-Limit: darüber fährt der Finger wieder auf")
-        self.limit.setStyleSheet("""
-            QSlider::groove:horizontal { background:#1e2e44; height:6px; border-radius:3px; }
-            QSlider::sub-page:horizontal { background:#c97eff; height:6px; border-radius:3px; }
-            QSlider::handle:horizontal { background:#c97eff; width:16px; margin:-6px 0;
-                                         border-radius:8px; }
-        """)
-        self.limit.valueChanged.connect(self._limit_changed)
-        lay.addWidget(self.limit)
-        self.limit_lbl = _caption("≤ – g", 11, "#c97eff")
-        self.limit_lbl.setToolTip("Kraft-Limit")
-        self.limit_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lay.addWidget(self.limit_lbl)
-        self.set_expanded(False)
-
-    def set_expanded(self, on):
-        for w in (self.angle, self.limit, self.limit_lbl):
-            w.setVisible(on)
 
     def _angle_changed(self, v):
         if self._sync:
             return
         self._angle_touched = time.monotonic()
         self.on_angle(v)
-
-    def _limit_changed(self, v):
-        self.limit_lbl.setText(f"≤ {v} g")
-        if self._sync:
-            return
-        self._force_touched = time.monotonic()
-        self.on_force(v)
 
     def set_target(self, value, user=False):
         """Soll-Schieber setzen. user=True: kommt von einem Ganz-Hand-Knopf ->
@@ -274,9 +243,6 @@ class FingerControl(QWidget):
         self._sync = True
         if not self.angle.isSliderDown() and now - self._angle_touched > USER_HOLD_S:
             self.angle.setValue(int(angle_set if angle_set >= 0 else angle_act))
-        if not self.limit.isSliderDown() and now - self._force_touched > USER_HOLD_S:
-            self.limit.setValue(int(force_set))
-            self.limit_lbl.setText(f"≤ {int(force_set)} g")
         self._sync = False
 
 
@@ -325,9 +291,7 @@ class HandCard(QFrame):
         # Wie die Browser-GUI: rechts gespiegelt -> beide Daumen zur Mitte.
         order = range(6) if side == "left" else reversed(range(6))
         for i in order:
-            fc = FingerControl(FINGER_NAMES[i],
-                               lambda v, d=i: panel.set_angle(side, d, v),
-                               lambda v, d=i: panel.set_force(side, d, v))
+            fc = FingerControl(FINGER_NAMES[i], lambda v, d=i: panel.set_angle(side, d, v))
             self.fingers[i] = fc
             fingers.addWidget(fc, 1)
         if side == "left":
@@ -337,10 +301,6 @@ class HandCard(QFrame):
             body.addLayout(fingers, 7)
             body.addLayout(zone_box, 3)
         lay.addLayout(body, 1)
-
-    def set_expanded(self, on):
-        for fc in self.fingers.values():
-            fc.set_expanded(on)
 
     def show_action(self, action):
         for i, fc in self.fingers.items():
@@ -391,36 +351,17 @@ class HandPanel(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(10)
 
-        # Zeile 1: beide Haende + Finger-Toggle
+        # Zeile 1: beide Haende
         row = QHBoxLayout()
         row.setSpacing(10)
         row.addWidget(_caption("Beide Hände:", 15))
-        self.btn_open_all = _btn("✋  Öffnen", "#2e7d32", font=18)
-        self.btn_close_all = _btn("✊  Schließen", "#5d4037", font=18)
+        self.btn_open_all = _btn("Öffnen", "#2e7d32", font=18)
+        self.btn_close_all = _btn("Schließen", "#5d4037", font=18)
         self.btn_open_all.clicked.connect(lambda: self.hand_action(None, "open"))
         self.btn_close_all.clicked.connect(lambda: self.hand_action(None, "close"))
-        row.addWidget(self.btn_open_all, 2)
-        row.addWidget(self.btn_close_all, 2)
-        self.btn_fingers = _btn("Einzelne Finger ▸", "#37474f", font=15, checkable=True)
-        self.btn_fingers.toggled.connect(self._toggle_fingers)
-        row.addWidget(self.btn_fingers, 1)
+        row.addWidget(self.btn_open_all)
+        row.addWidget(self.btn_close_all)
         lay.addLayout(row)
-
-        # Zeile 2: Stufen fuer Griffkraft + Tempo, Kraftzonen nullen
-        row2 = QHBoxLayout()
-        row2.setSpacing(8)
-        row2.addWidget(_caption("Griffkraft", 13))
-        self.grip_btns = self._preset_row(row2, GRIP_FORCES, self.set_grip)
-        row2.addSpacing(18)
-        row2.addWidget(_caption("Tempo", 13))
-        self.speed_btns = self._preset_row(row2, HAND_SPEEDS, self.set_speed)
-        row2.addSpacing(18)
-        self.btn_zero = _btn("Kraftzonen nullen", font=13, height=38)
-        self.btn_zero.setToolTip("Aktuelle Taktil-Werte als Nulllage übernehmen "
-                                 "(Hände dabei nichts berühren lassen).")
-        self.btn_zero.clicked.connect(self.zero_tactile)
-        row2.addWidget(self.btn_zero)
-        lay.addLayout(row2)
 
         self.hint = _caption("", 14, "#ffb300")
         self.hint.setWordWrap(True)
@@ -434,21 +375,62 @@ class HandPanel(QWidget):
         hands.addWidget(self.cards["right"], 1)
         lay.addLayout(hands, 1)
 
+        # Erweitert (eingeklappt): Griffkraft, Tempo, Kraftzonen nullen
+        self.btn_expert = QPushButton("Erweitert ▸")
+        self.btn_expert.setCheckable(True)
+        self.btn_expert.setStyleSheet("QPushButton{background:transparent;color:#888;"
+                                      "border:none;font-size:14px;text-align:left;}")
+        self.btn_expert.toggled.connect(self._toggle_expert)
+        lay.addWidget(self.btn_expert)
+        self.expert = QFrame()
+        ex = QHBoxLayout(self.expert)
+        ex.setContentsMargins(0, 0, 0, 0)
+        ex.setSpacing(10)
+        ex.addWidget(_caption("Griffkraft", 14))
+        self.grip_box = self._combo(GRIP_FORCES, "g", self.set_grip)
+        ex.addWidget(self.grip_box)
+        ex.addSpacing(16)
+        ex.addWidget(_caption("Tempo", 14))
+        self.speed_box = self._combo(HAND_SPEEDS, None, self.set_speed)
+        ex.addWidget(self.speed_box)
+        ex.addStretch(1)
+        self.btn_zero = _btn("Kraftzonen nullen", font=14, height=40)
+        self.btn_zero.setMaximumWidth(200)
+        self.btn_zero.setToolTip("Aktuelle Taktil-Werte als Nulllage übernehmen "
+                                 "(Hände dabei nichts berühren lassen).")
+        self.btn_zero.clicked.connect(self.zero_tactile)
+        ex.addWidget(self.btn_zero)
+        self.expert.setVisible(False)
+        lay.addWidget(self.expert)
+
         self.watchdog = QTimer(self)
         self.watchdog.timeout.connect(self._check_stale)
         self.watchdog.start(500)
         self._check_stale()
 
     @staticmethod
-    def _preset_row(layout, presets, cb):
-        btns = {}
+    def _combo(presets, unit, cb):
+        """Auswahl der Stufen. 'activated' feuert nur bei Nutzer-Auswahl, nicht
+        beim Nachziehen aus dem Status."""
+        box = QComboBox()
         for name, val in presets.items():
-            b = _btn(name, font=13, height=38, checkable=True)
-            b.setMaximumWidth(110)
-            b.clicked.connect(lambda _, n=name: cb(n))
-            layout.addWidget(b)
-            btns[name] = b
-        return btns
+            box.addItem(f"{name} ({val} {unit})" if unit else name, name)
+        box.setCurrentIndex(-1)
+        box.setMinimumHeight(40)
+        box.setMinimumWidth(170)
+        box.setStyleSheet("""
+            QComboBox { background:#2d2d2d; color:white; font-size:14px; font-weight:700;
+                        border:1px solid #555; border-radius:10px; padding:4px 12px; }
+            QComboBox:hover { border:2px solid #aaa; }
+            QComboBox QAbstractItemView { background:#2d2d2d; color:white;
+                                          selection-background-color:#fb8c00; }
+        """)
+        box.activated.connect(lambda i: cb(box.itemData(i)))
+        return box
+
+    def _toggle_expert(self, on):
+        self.expert.setVisible(on)
+        self.btn_expert.setText("Erweitert ▾" if on else "Erweitert ▸")
 
     # ── Befehle ─────────────────────────────────────────────────────────
     def _cmd(self, **cmd):
@@ -474,26 +456,16 @@ class HandPanel(QWidget):
         self._ensure_enabled(side)
         self._cmd(type="set_angle", side=side, dof=dof, value=int(value))
 
-    def set_force(self, side, dof, value):
-        self._cmd(type="set_force", side=side, dof=dof, value=int(value))
-
     def set_grip(self, name):
         val = GRIP_FORCES[name]
         for s in SIDES:
             for d in range(6):
                 self._cmd(type="set_force", side=s, dof=d, value=val)
-        self._mark(self.grip_btns, name)
         self.status_cb(f"Griffkraft: {name} ({val} g je Finger)")
 
     def set_speed(self, name):
         self._cmd(type="set_speed", value=HAND_SPEEDS[name])
-        self._mark(self.speed_btns, name)
         self.status_cb(f"Hand-Tempo: {name}")
-
-    @staticmethod
-    def _mark(btns, name):
-        for n, b in btns.items():
-            b.setChecked(n == name)
 
     def zero_tactile(self):
         for s in SIDES:
@@ -501,11 +473,6 @@ class HandPanel(QWidget):
             if zones:
                 self.baseline[s] = {k: float(v) for k, v in zones.items()}
         self.status_cb("Kraftzonen genullt.")
-
-    def _toggle_fingers(self, on):
-        self.btn_fingers.setText("Einzelne Finger ▾" if on else "Einzelne Finger ▸")
-        for c in self.cards.values():
-            c.set_expanded(on)
 
     # ── Status von der Bridge ───────────────────────────────────────────
     def on_status(self, data):
@@ -526,12 +493,12 @@ class HandPanel(QWidget):
         sets = [data.get(s, {}) for s in SIDES]
         forces = {f for st in sets for f in st.get("force_set", [])}
         grip = next((n for n, v in GRIP_FORCES.items() if forces == {v}), None)
-        for n, b in self.grip_btns.items():
-            b.setChecked(n == grip)
         speeds = {st.get("speed_set") for st in sets if "speed_set" in st}
         speed = next((n for n, v in HAND_SPEEDS.items() if speeds == {v}), None)
-        for n, b in self.speed_btns.items():
-            b.setChecked(n == speed)
+        # Passt der Bridge-Zustand zu keiner Stufe -> Auswahl leer.
+        for box, name in ((self.grip_box, grip), (self.speed_box, speed)):
+            if not box.view().isVisible():
+                box.setCurrentIndex(box.findData(name) if name else -1)
 
     def _check_stale(self):
         online = time.monotonic() - self.last_status < STALE_S
