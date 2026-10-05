@@ -290,7 +290,16 @@ class HandCard(QFrame):
         self.fingers = {}
         # Wie die Browser-GUI: rechts gespiegelt -> beide Daumen zur Mitte.
         order = range(6) if side == "left" else reversed(range(6))
+        prev_thumb = None
         for i in order:
+            is_thumb = i >= 4
+            if prev_thumb is not None and is_thumb != prev_thumb:
+                # Duenne Linie zwischen Daumen-Paar und den vier Fingern.
+                sep = QFrame()
+                sep.setFixedWidth(1)
+                sep.setStyleSheet("background:#4a6880; border:none;")
+                fingers.addWidget(sep)
+            prev_thumb = is_thumb
             fc = FingerControl(FINGER_NAMES[i], lambda v, d=i: panel.set_angle(side, d, v))
             self.fingers[i] = fc
             fingers.addWidget(fc, 1)
