@@ -47,6 +47,11 @@ Solange ein Marker nicht gezogen wird, folgt er standardmäßig der Hand
 (Leader-Follower) — nach einer fremden Bewegung (Homing, Positionsspeicher)
 "springt" er also nicht, sondern schleicht sich unauffällig nach.
 
+Im Gehen-Modus (`/g1pilot/start_walking`) sind die Marker ausgeblendet — die
+Arme gehören dann der Lauf-Pose, und die schwingenden Hände würden die Marker
+nur hinterherspringen lassen. Beim Wechsel zu Greifen bzw. START BALANCING
+(`/g1pilot/start_balancing`) erscheinen sie wieder an der aktuellen Handposition.
+
 **3. Home-Position**
 
 Button **HOMING ARMS** fährt beide Arme in eine definierte Ruhepose (nur bei

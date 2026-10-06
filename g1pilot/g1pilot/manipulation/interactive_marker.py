@@ -91,10 +91,42 @@ class InteractiveMarkerEFF(Node):
         self.marker_spawned = {"right": False, "left": False}
         self.timer = self.create_timer(self.spawn_dt, self._try_spawn_missing)
 
+        # GEHEN: Marker komplett ausblenden. Die Arme schwingen beim Laufen, der
+        # Follow-Update wuerde den Marker-Server mit setPose fluten -> RViz
+        # verliert die Update-Reihenfolge ("Update sequence number is out of
+        # order") und initialisiert die Marker staendig neu (Springen). Der
+        # arm_controller ignoriert Marker im WALK ohnehin. Bei BALANCING (Greifen)
+        # werden sie an der aktuellen Hand-TF neu erzeugt.
+        self.walk_mode = False
+        self.create_subscription(Bool, '/g1pilot/start_walking', self._on_walk_mode, 10)
+        self.create_subscription(Bool, '/g1pilot/start_balancing', self._on_balance_mode, 10)
+
         # Laufzeit-Umschalten des Follow-Verhaltens (z.B. vom Streamdeck-Button).
         self.create_subscription(Bool, '/g1pilot/marker_follow_ee', self._set_follow, 10)
         self.follow_timer = self.create_timer(self.follow_dt, self._follow_update)
         self.get_logger().info(f"[marker] follow_ee={self.follow_ee} (Leader-Follower)")
+
+    def _on_walk_mode(self, msg: Bool):
+        if not msg.data or self.walk_mode:
+            return
+        self.walk_mode = True
+        for side in ("right", "left"):
+            if self.marker_spawned[side]:
+                self.server.erase(f"{side}_hand_goal")
+            self.marker_spawned[side] = False
+            self.dragging[side] = False
+            self._await_arrival[side] = False
+        self.server.applyChanges()
+        self.get_logger().info("[marker] GEHEN: Hand-Marker ausgeblendet.")
+
+    def _on_balance_mode(self, msg: Bool):
+        if not msg.data or not self.walk_mode:
+            return
+        self.walk_mode = False
+        # Sofort an der aktuellen Hand-TF neu erzeugen (sonst spaetestens per
+        # Spawn-Timer). Publishing-Zustand (Menue) bleibt erhalten.
+        self._try_spawn_missing()
+        self.get_logger().info("[marker] GREIFEN: Hand-Marker wieder eingeblendet.")
 
     def _set_follow(self, msg: Bool):
         if bool(msg.data) != self.follow_ee:
@@ -173,6 +205,8 @@ class InteractiveMarkerEFF(Node):
         return mh
 
     def _try_spawn_missing(self):
+        if self.walk_mode:
+            return
         if not self.marker_spawned["right"]:
             self._try_spawn_one("right", self.right_tf, self.right_scale)
 

@@ -14,7 +14,7 @@ HTTP-Brücke siehe [21_arm_api_technik.md](21_arm_api_technik.md).
 | `g1pilot/manipulation/arm_planner.py` | Gelenkraum-Wegplaner (OMPL RRTConnect + Fallback) für den Positionsspeicher |
 | `g1pilot/manipulation/pose_store.py` | Dateibasierte Ablage gespeicherter Posen |
 | `g1pilot/manipulation/arm_command.py` | Wire-Format der Live-Pose-Schnittstelle (gemeinsam mit `arm_api.py`) |
-| `g1pilot/manipulation/interactive_marker.py` | RViz-Marker, Leader-Follower-Verhalten |
+| `g1pilot/manipulation/interactive_marker.py` | RViz-Marker, Leader-Follower-Verhalten; im WALK ausgeblendet, bei BALANCING an der Hand-TF neu erzeugt |
 | `g1pilot/utils/joints_names.py` | Gelenk-Indizes, -Limits, -Namen (einzige Quelle der Wahrheit) |
 
 ## Node: `arm_controller`
