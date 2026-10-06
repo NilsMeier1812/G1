@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import functools
+import math
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile
@@ -36,7 +37,16 @@ class InteractiveMarkerEFF(Node):
         # synchron und ein Antippen erzeugt nur eine kleine relative Bewegung
         # statt eines Sprungs. Schaltbar per Param und per Topic.
         self.declare_parameter('marker_follow_ee', True)
-        self.declare_parameter('follow_rate_hz', 20.0)
+        # Nachfuehren nur in groben Schritten: jede setPose ist ein Update an
+        # RViz. Der Balance-Regler bewegt die Taille staendig, also wandert die
+        # Hand im pelvis-Frame um Millimeter -- mit feiner Schwelle und 20 Hz
+        # gab das einen Dauerstrom an Updates; RViz verlor dabei den Takt
+        # ("Update sequence number is out of order") und lud alle Marker neu.
+        # Jetzt: 10 Hz, Totband 1 cm / 3 Grad; steht die Hand still, wird der
+        # Rest-Versatz einmal genau nachgezogen.
+        self.declare_parameter('follow_rate_hz', 10.0)
+        self.declare_parameter('follow_deadband_m', 0.01)
+        self.declare_parameter('follow_deadband_deg', 3.0)
 
         self.fixed_frame = self.get_parameter('fixed_frame').get_parameter_value().string_value
         self.spawn_dt = 1.0 / float(self.get_parameter('spawn_rate_hz').value)
@@ -52,6 +62,12 @@ class InteractiveMarkerEFF(Node):
         self.publish_default = bool(self.get_parameter('publish_enabled_default').value)
         self.follow_ee = bool(self.get_parameter('marker_follow_ee').value)
         self.follow_dt = 1.0 / float(self.get_parameter('follow_rate_hz').value)
+        self.follow_pos_tol = float(self.get_parameter('follow_deadband_m').value)
+        # Quaternion-Skalarprodukt |q1.q2| = cos(Winkel/2)
+        self.follow_ori_tol = math.cos(math.radians(
+            float(self.get_parameter('follow_deadband_deg').value)) / 2.0)
+        self._follow_prev = {"right": None, "left": None}
+        self._follow_still = {"right": 0, "left": 0}
 
         # Pro Seite merken, ob der Marker gerade mit der Maus gezogen wird, damit
         # der Follow-Update das Ziehen nicht ueberschreibt.
@@ -186,9 +202,24 @@ class InteractiveMarkerEFF(Node):
                 # Marker bleibt derweil auf der Ziel-Pose stehen -> nicht bewegen.
                 continue
 
+            # Steht die Hand still (gegenueber dem letzten Tick)?
+            prev = self._follow_prev[side]
+            if prev is not None and self._pose_close(hand, prev, pos_tol=0.002):
+                self._follow_still[side] += 1
+            else:
+                self._follow_still[side] = 0
+            self._follow_prev[side] = hand
+
             cur = self.current_pose.get(side)
-            if cur is not None and self._pose_close(cur, hand):
-                continue  # Hand steht praktisch still -> nichts tun
+            if cur is not None:
+                if self._pose_close(cur, hand):
+                    continue  # Marker sitzt schon auf der Hand
+                within_deadband = self._pose_close(
+                    cur, hand, pos_tol=self.follow_pos_tol, ori_tol=self.follow_ori_tol)
+                # Kleiner Versatz: nur nachziehen, wenn die Hand zur Ruhe gekommen
+                # ist (einmaliges genaues Einrasten statt Dauer-Updates).
+                if within_deadband and self._follow_still[side] != still_needed:
+                    continue
             self.current_pose[side] = hand
             self.server.setPose(f"{side}_hand_goal", hand)
             changed = True
