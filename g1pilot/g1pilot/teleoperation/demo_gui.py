@@ -71,8 +71,8 @@ DEMO_CATEGORY = os.environ.get("G1_DEMO_CATEGORY", "Demo")
 # Ablaeufe: jede Kategorie "Ablauf <Name>" = eine Sequenz (Posen in Namens-
 # reihenfolge, z.B. AP1_01_..., AP1_02_...) -> ein Knopf "<Name>".
 SEQUENCE_PREFIX = "Ablauf "
-# Knopf "Grundstellung" faehrt diese gespeicherte Pose an.
-HOME_POSE = os.environ.get("G1_HOME_POSE", "Sichere_Pose")
+# Knopf "Sichere Pose" faehrt diese gespeicherte Pose an.
+SAFE_POSE = os.environ.get("G1_SAFE_POSE", "Sichere_Pose")
 # WALK gilt als "angekommen", wenn arms/walk_ready kommt -- spaetestens nach
 # diesem Timeout (loco_sim laeuft dann ohnehin selbst los).
 WALK_SWITCH_TIMEOUT_MS = 16000   # > loco_sim walk_arm_timeout_s (15 s)
@@ -944,24 +944,20 @@ class DemoGUI(QWidget):
         self._status("Bewegung gestoppt.", "#aaa")
 
     def _safe_pose(self):
-        """Gespeicherte »Sichere Pose« (HOME_POSE) geplant anfahren."""
+        """Gespeicherte »Sichere Pose« (SAFE_POSE) geplant anfahren."""
         self._cancel_sequence()
         store = self._pose_store()
-        if store is None or store.get(HOME_POSE) is None:
-            self._status(f"Pose »{pretty_pose_name(HOME_POSE)}« ist nicht gespeichert "
+        if store is None or store.get(SAFE_POSE) is None:
+            self._status(f"Pose »{pretty_pose_name(SAFE_POSE)}« ist nicht gespeichert "
                          "(Erweitert → Pose speichern).", "#ffb300")
             return
-        self.run_poses([HOME_POSE], "Sichere Pose")
+        self.run_poses([SAFE_POSE], "Sichere Pose")
 
     def _home(self):
-        """Grundstellung = Sichere Pose (Ellbogen hinten, Haende seitlich ueber
-        Tischhoehe) -- geplant angefahren wie jede Pose. Fehlt sie im Speicher,
-        das alte Homing des arm_controller."""
+        """Grundstellung = Homing des arm_controller (/g1pilot/arms/home): Lauf-
+        Pose, Arme neben dem Koerper -- geplant angefahren. Die »Sichere Pose«
+        (Arme hoch, Ellbogen hinten) hat ihren eigenen Knopf."""
         self._cancel_sequence()
-        store = self._pose_store()
-        if store is not None and store.get(HOME_POSE) is not None:
-            self.run_poses([HOME_POSE], "Grundstellung")
-            return
         self._pulse(self.node.pub_arms_home)
         self._status("Arme fahren in Grundstellung …", MODE_COLOR[MANIP])
 

@@ -361,14 +361,9 @@ class ArmController(Node):
         self.declare_parameter("home_right", [0.3, -0.2, 0.0, 0.5, 0.0, 0.0, 0.0])
         self.home_left  = np.array(self.get_parameter("home_left").value,  dtype=float)
         self.home_right = np.array(self.get_parameter("home_right").value, dtype=float)
-        # Ziel des HOMING-ARMS-Buttons (getrennt von home_*, das auch die IK-
-        # Ruhepose ist). Default Nullpose: Oberarm haengt, Unterarm 90 grad nach
-        # vorn, Haende vor dem Koerper auf ~Tischhoehe -- gute Ausgangslage am
-        # Arbeitsplatz. Angefahren wird GEPLANT (um Tisch/Koerper herum).
-        self.declare_parameter("homing_left",  [0.0] * 7)
-        self.declare_parameter("homing_right", [0.0] * 7)
-        self.homing_left  = np.array(self.get_parameter("homing_left").value,  dtype=float)
-        self.homing_right = np.array(self.get_parameter("homing_right").value, dtype=float)
+        # Ziel des HOMING-ARMS-Buttons (Streamdeck) bzw. »Grundstellung« (Demo-GUI):
+        # die Lauf-Pose walk_left/right weiter unten (Arme neben dem Koerper).
+        # Frueher Nullpose (Unterarm waagerecht nach vorn) -- siehe _homing_goals.
 
         # Ruhe-Pose fuer die IK-Nullraum-Regularisierung = Home-Pose. Haelt den
         # redundanten (7. DOF) Ellbogen-Swivel natuerlich -> der Arm faellt beim
@@ -1163,20 +1158,11 @@ class ArmController(Node):
             self._start_planned_motion(label, ["left", "right"], goals, {}, source="homing")
 
     def _homing_goals(self):
-        """Ziel fuers Homing: die Homing-Pose (homing_left/right, Default
-        Nullpose) -- ausser sie laege am aktuellen Standort in einem Hindernis
-        (Roboter dicht am/unter dem Tisch). Dann die Lauf-Pose (Haende naeher
-        am Koerper) als sichere Ruhe-Pose."""
-        home = {"left": self.homing_left.copy(), "right": self.homing_right.copy()}
-        try:
-            full = self._full_config_with_arms(np.concatenate((self.homing_left, self.homing_right)))
-            if not self.ik_solver.environment_command_in_collision(full):
-                return home, "HOME"
-        except Exception as e:
-            self.get_logger().warn(f"HOMING: Umgebungs-Check fehlgeschlagen ({e}) -> HOME.")
-            return home, "HOME"
-        self.get_logger().info("HOMING: Homing-Pose laege im Hindernis (Tisch?) -> Lauf-Pose als Ruhe-Pose.")
-        return {"left": self.walk_left.copy(), "right": self.walk_right.copy()}, "HOME (Lauf-Pose, Tisch zu nah)"
+        """Ziel fuers Homing (Grundstellung): immer die Lauf-Pose -- Arme neben
+        dem Koerper, Haende auf Hueft-Hoehe. Liegt nah am Koerper und kollidiert
+        daher auch dicht am Tisch nicht (die fruehere Nullpose mit Unterarmen
+        nach vorn musste dort auf die Lauf-Pose ausweichen)."""
+        return {"left": self.walk_left.copy(), "right": self.walk_right.copy()}, "HOME (Lauf-Pose)"
 
     def _align_ik_to_config(self, left_q, right_q):
         """IK-Ziele auf die gegebene Arm-Konfiguration setzen -> die Arme HALTEN dort,

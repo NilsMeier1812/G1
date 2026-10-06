@@ -119,8 +119,10 @@ Titelzeile vom Inhalt (auch bei GEHEN).
   `failed`/`rejected`/`cancelled` bricht der Ablauf ab und der Grund steht im
   Status. Gibt es noch keine Abläufe, erklärt ein Hinweis, wie man einen anlegt.
 - **Sichere Pose** fährt die gespeicherte Pose `Sichere_Pose` geplant an
-  (Hinweis, falls sie fehlt). **Grundstellung** fährt ebenfalls `Sichere_Pose`
-  an, ohne sie das alte Homing (`/g1pilot/arms/home`). **Bewegung stoppen**
+  (Arme hoch, Ellbogen hinten; Hinweis, falls sie fehlt; Name über
+  `G1_SAFE_POSE` änderbar). **Grundstellung** sendet `/g1pilot/arms/home`: der
+  Arm-Controller fährt geplant die **Lauf-Pose** an (Arme neben dem Körper,
+  Hände auf Hüfthöhe), genau wie HOMING ARMS am Streamdeck. **Bewegung stoppen**
   sendet `/g1pilot/pose_store/cancel`. Hände öffnen/schließen liegt auf der
   Seite HÄNDE.
 - **Erweitert ▸** (eingeklappt) enthält die bisherigen Einzelfunktionen für den

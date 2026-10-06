@@ -54,8 +54,9 @@ nur hinterherspringen lassen. Beim Wechsel zu Greifen bzw. START BALANCING
 
 **3. Home-Position**
 
-Button **HOMING ARMS** fährt beide Arme in eine definierte Ruhepose (nur bei
-aktiver Manipulation).
+Button **HOMING ARMS** (Demo-GUI: **Grundstellung**) fährt beide Arme geplant
+in die Lauf-Pose: Arme neben dem Körper, Hände auf Hüfthöhe (nur bei aktiver
+Manipulation). Es ist dieselbe Pose, die die Arme beim Gehen halten.
 
 **4. Positionsspeicher — Posen sichern und wieder anfahren**
 
