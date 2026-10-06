@@ -382,6 +382,10 @@ class ArmController(Node):
         self.walk_left  = np.array(self.get_parameter("walk_left").value,  dtype=float)
         self.walk_right = np.array(self.get_parameter("walk_right").value, dtype=float)
         self.walk_mode = False
+        # Uebergang in die Lauf-Pose laeuft noch als GEPLANTE Bewegung (um Tisch/
+        # Hindernisse herum, wie HOMING). Erst danach haelt der WALK-Zweig in
+        # main_loop die Lauf-Pose und meldet walk_ready.
+        self._walk_transition = False
         # Sobald die Arme die Lauf-Pose erreicht haben, meldet der Controller das per
         # /g1pilot/arms/walk_ready -> loco_sim laeuft erst DANN los (Arme aufgeraeumt).
         # Toleranz etwas lockerer als die Homing-Toleranz (die Haltepose muss nicht
@@ -896,6 +900,22 @@ class ArmController(Node):
             return True
         return False
 
+    def _escaping_environment(self, q_prev: np.ndarray, full_new: np.ndarray) -> bool:
+        """Steckt der AKTUELLE Zustand schon echt in einem Umgebungs-Objekt (z.B.
+        Hand-Oberflaeche in der Tischplatte, weil der Roboter seit dem Anfahren
+        naeher gekommen ist), haelt der harte Check jeden Schritt an -- der Arm
+        kaeme nie heraus. Dann ist ein Schritt erlaubt, der keine harte
+        Selbstkollision erzeugt und NICHT tiefer hineinfuehrt."""
+        if not self.environment_collision_gate:
+            return False
+        ik = self.ik_solver
+        if self.self_collision_gate and ik.arm_command_in_collision(full_new, hard=True):
+            return False
+        v_prev = ik.environment_violation(self._full_config_with_arms(q_prev), hard=True)
+        if v_prev <= 0.0:
+            return False
+        return ik.environment_violation(full_new, hard=True) <= v_prev + 1e-9
+
     def _apply_collision_gate(self, q_prev: np.ndarray, q_new: np.ndarray) -> np.ndarray:
         """Kollisions-Gate (Selbst + Umgebung) auf dem KOMMANDIERTEN Schritt:
           * Kandidat frei                      -> senden.
@@ -904,6 +924,8 @@ class ArmController(Node):
             (Rueckzug aus dem Band muss moeglich sein; Tempo ist ohnehin
             durch das kartesische Limit gedeckelt).
           * Kandidat faehrt NEU ins Band       -> halten (q_prev).
+          * Aktueller Zustand steckt schon im Objekt -> zulassen, solange es
+            nicht tiefer hineingeht (_escaping_environment).
 
         Laeuft unconditional fuer JEDEN q_target (Marker-Servoing UND geplante
         Bewegung) -- auch eine bereits kollisionsfrei GEPLANTE Bahn bekommt so
@@ -924,6 +946,8 @@ class ArmController(Node):
                     return q_new
                 if self._in_collision(self._full_config_with_arms(q_prev)):
                     return q_new     # schon im Band -> langsames Herausfahren erlaubt
+            elif self._escaping_environment(q_prev, full_new):
+                return q_new         # steckt schon drin -> nur nicht tiefer
         except Exception as e:
             self.get_logger().warn(f"Kollisions-Gate-Fehler: {e} -- halte Pose.")
             return q_prev
@@ -1144,10 +1168,12 @@ class ArmController(Node):
                 self.get_logger().warn("HOMING ignoriert: Manipulation nicht "
                                        "aktiv (erst ENABLE MANIPULATION).")
                 return
-            self._abort_planned_motion("HOMING gestartet")
             if self.walk_mode:
+                # VOR dem Abbruch pruefen: sonst wuerde ein ignoriertes Homing
+                # den geplanten Weg in die Lauf-Pose abwuergen.
                 self.get_logger().warn("HOMING ignoriert: WALK aktiv (Arme in Lauf-Pose).")
                 return
+            self._abort_planned_motion("HOMING gestartet")
             # Home-Pose GEPLANT anfahren (wie POSE ANFAHREN): um Tisch/Hindernisse
             # und den eigenen Koerper herum. Die fruehere direkte Gelenkfahrt lief
             # stur auf geradem Weg -- steht der Roboter am Tisch, fuhr sie die
@@ -1208,6 +1234,16 @@ class ArmController(Node):
         # Also fuer WALK die Arme selbst uebernehmen. Real bleibt unveraendert:
         # dort fuehrt Unitrees Onboard-Regler die Arme beim Laufen.
         self._sim_auto_enable_arms("WALK")
+        # Den Weg in die Lauf-Pose PLANEN (um Tisch/Hindernisse herum). Die
+        # fruehere direkte Gelenkfahrt lief auf gerader Linie -- steht der
+        # Roboter am Tisch, fuhren die Finger in die Platte und das Gate hielt
+        # die Arme nur an (walk_ready kam dann erst per loco_sim-Timeout).
+        if self.arms_enabled and not self.estop_active:
+            self._walk_transition = True
+            self._start_planned_motion(
+                "Lauf-Pose (WALK)", ["left", "right"],
+                {"left": self.walk_left.copy(), "right": self.walk_right.copy()},
+                {}, source="walk")
 
     def _sim_auto_enable_arms(self, what: str) -> None:
         """NUR SIM: Arme automatisch aktivieren, wenn eine Aktion sie braucht
@@ -1224,6 +1260,8 @@ class ArmController(Node):
         if not msg.data or not self.walk_mode:
             return
         self.walk_mode = False
+        if self._walk_transition:
+            self._abort_planned_motion("BALANCING gestartet")
         self.homing_active = False
         self.homing_reached = False
         if self._walk_ready_sent:
@@ -1393,6 +1431,12 @@ class ArmController(Node):
 
     def _on_pose_cancel(self, msg: Bool):
         if not msg.data:
+            return
+        if self.walk_mode:
+            # Ein Abbruch liesse die Arme auf GERADEM Weg in die Lauf-Pose fahren
+            # (WALK braucht sie dort) -- schlechter als der geplante Weg.
+            self.get_logger().info("POSE ABBRECHEN ignoriert: WALK aktiv "
+                                   "(Arme fahren geplant in die Lauf-Pose).")
             return
         self._abort_planned_motion("POSE ABBRECHEN")
 
@@ -1711,13 +1755,23 @@ class ArmController(Node):
         if result[2] != self._plan_gen:
             return   # veraltet: abgebrochen oder von einer neueren Planung ueberholt.
         if result[0] != "ok":
-            return   # Fehlschlag wurde schon vom Worker geloggt -- Arm haelt einfach.
+            # Fehlschlag wurde schon vom Worker geloggt -- Arm haelt einfach.
+            # Ausnahme WALK: die Lauf-Pose muss trotzdem angefahren werden
+            # (sonst kein walk_ready) -> wie frueher direkt, das Laufzeit-Gate
+            # haelt bei Kollision weiterhin an.
+            if self._walk_transition:
+                self._walk_transition = False
+                self.get_logger().warn(
+                    "WALK: kein kollisionsfreier Weg in die Lauf-Pose gefunden -- "
+                    "fahre direkt (Kollisions-Gate haelt bei Beruehrung an).")
+            return
         # Defense-in-depth: sind die Arme seit dem Planungsstart gesperrt worden
         # (E-Stop, DISABLE, Homing, WALK)? Dann verwerfen. Normalerweise hat ein
         # solcher Wechsel _plan_gen bereits erhoeht (Abbruch); diese Pruefung
         # faengt Restfaelle ab.
         if (self.estop_active or not self.arms_enabled
-                or self.homing_active or self.walk_mode):
+                or self.homing_active
+                or (self.walk_mode and not self._walk_transition)):
             self._publish_cmd_status(
                 ac.ST_CANCELLED, reason="Arme waehrend der Planung gesperrt "
                                         "(E-Stop/DISABLE/Homing/WALK).",
@@ -1752,6 +1806,7 @@ class ArmController(Node):
         was_planning = (self._planning_thread is not None
                         and self._planning_thread.is_alive())
         self._planned_motion_active = False
+        self._walk_transition = False   # WALK faellt auf die direkte Lauf-Pose zurueck
         self._planned_sides = []
         self._planned_waypoints = None
         self._pending_hand_goals = {}
@@ -1790,8 +1845,10 @@ class ArmController(Node):
         # Marker hat IMMER Vorrang -- ein laufender ODER gerade geplanter Plan
         # (Positionsspeicher) wird sofort verworfen, kein Kaempfen zweier
         # Geschwindigkeitsquellen.
-        if self._planned_motion_active or (
-                self._planning_thread is not None and self._planning_thread.is_alive()):
+        # Waehrend WALK ignoriert main_loop die Marker ohnehin -- den Uebergang
+        # in die Lauf-Pose also nicht abbrechen.
+        if not self.walk_mode and (self._planned_motion_active or (
+                self._planning_thread is not None and self._planning_thread.is_alive())):
             self._abort_planned_motion("Marker bewegt -- manueller Vorrang")
 
         if self._reset_after_home:
@@ -1851,8 +1908,10 @@ class ArmController(Node):
         # Marker hat IMMER Vorrang -- ein laufender ODER gerade geplanter Plan
         # (Positionsspeicher) wird sofort verworfen, kein Kaempfen zweier
         # Geschwindigkeitsquellen.
-        if self._planned_motion_active or (
-                self._planning_thread is not None and self._planning_thread.is_alive()):
+        # Waehrend WALK ignoriert main_loop die Marker ohnehin -- den Uebergang
+        # in die Lauf-Pose also nicht abbrechen.
+        if not self.walk_mode and (self._planned_motion_active or (
+                self._planning_thread is not None and self._planning_thread.is_alive())):
             self._abort_planned_motion("Marker bewegt -- manueller Vorrang")
 
         if self._reset_after_home:
@@ -2000,7 +2059,7 @@ class ArmController(Node):
             # in self.msg geschrieben -- die gehoeren nicht in rt/arm_sdk.)
             return
 
-        if self.walk_mode:
+        if self.walk_mode and not self._walk_transition:
             # WALK: Arme auf die Lauf-Pose halten (Marker ignoriert). Die
             # Geschwindigkeitsbegrenzung unten faehrt sie sanft dorthin (kein Teleport).
             q_target = np.concatenate((self.walk_left, self.walk_right))
@@ -2102,11 +2161,16 @@ class ArmController(Node):
                     q_target[tgt] = wp[col]
                 if reached_wp and idx == len(wps) - 1:
                     self._planned_motion_active = False
+                    self._walk_transition = False   # WALK-Zweig haelt ab jetzt
                     self._align_ik_to_config(q_target[0:7], q_target[7:14])
                     self._publish_cmd_status(ac.ST_REACHED, sides=sides,
                                              detail=self._cmd_ik_detail or None)
                     self.get_logger().info(
                         f"Geplante Bewegung zu {self._planned_pose_name} abgeschlossen.")
+
+        elif self._walk_transition:
+            # WALK: Weg in die Lauf-Pose wird noch geplant -> stillhalten.
+            q_target = self._last_q_target.copy()
 
         else:
             # IK-Seed: Arm-Gelenke aus dem LETZTEN ZIEL (deterministisch), nicht

@@ -184,13 +184,25 @@ class G1IKSolver:
         # Punkte statt voller Mesh-Kollision (billig genug fuer den Planer).
         self._fid_env_elbow = {}
         self._fid_env_wrist = {}
+        self._fid_env_shoulder = {}
+        self._fid_env_wrist_yaw = {}
         for side in ("left", "right"):
             for store, link in ((self._fid_env_elbow, "elbow_link"),
-                                (self._fid_env_wrist, "wrist_roll_link")):
+                                (self._fid_env_wrist, "wrist_roll_link"),
+                                (self._fid_env_shoulder, "shoulder_roll_link"),
+                                (self._fid_env_wrist_yaw, "wrist_yaw_link")):
                 try:
                     store[side] = self.model.getFrameId(f"{side}_{link}")
                 except Exception:
                     store[side] = None
+        # Hand-OBERFLAECHE (Handballen + Finger) als Punktwolke im wrist_yaw-
+        # Frame. Die drei Punkte auf der Achse Handgelenk->TCP liessen Finger und
+        # Handbreite unbewacht: der Planer hielt Wege fuer frei, auf denen die
+        # Finger mehrere cm in der Tischplatte steckten (gegen die echten Meshes
+        # nachgemessen). Die Finger stehen im Check immer auf neutral (sie sind
+        # nicht Teil der 29 Gelenke), die Hand ist darin also starr.
+        self._env_hand_pts = {side: self._sample_hand_surface(side)
+                              for side in ("left", "right")}
         # Arm-Punkte (Ellbogen/Unterarm/Handgelenk) brauchen mehr Abstand als der
         # TCP: der Unterarm hat ~4 cm Radius. Die Hand selbst behaelt
         # collision_margin, damit sie z.B. eine Box auf dem Tisch erreicht.
@@ -201,6 +213,11 @@ class G1IKSolver:
         # Tischplatte aufliegende Hand zaehlt als Kollision, nicht als "Band").
         self.arm_env_hard_margin = 0.03
         self.hand_env_hard_margin = 0.01
+        # Hand-OBERFLAECHENpunkte (s.u.) liegen schon auf der Haut: "hart" heisst
+        # dort echte Beruehrung. Mit 1 cm waere jede gespeicherte Pose, bei der
+        # ein Finger knapp ueber der Tischplatte steht (Box schieben), als Start
+        # wie als Ziel unbrauchbar.
+        self.hand_surface_env_hard_margin = 0.005
 
         # Umgebungs-Objekte (Hindernisse + Greif-Objekte), gesetzt ueber
         # sync_environment(). Alle Posen MUESSEN bereits im world_frame dieses
@@ -336,6 +353,76 @@ class G1IKSolver:
     # dieselbe "ein paar Punkte statt volle Mesh-Kollision"-Faustregel wie beim
     # kartesischen Speedlimit im arm_controller.
 
+    # Punkte je Hand (Farthest-Point-Sampling ueber die Mesh-Vertices): ~3 cm
+    # Abstand auf einer G1-Inspire-Hand -- dichter als die harte Hand-Marge
+    # zulaesst, dass eine Kante unbemerkt zwischen zwei Punkte rutscht.
+    ENV_HAND_POINTS = 80
+    # Objekte, deren naechster Punkt weiter als das vom Becken weg ist, kann
+    # kein Arm erreichen (Schulter ~0.3 m + Arm/Hand < 1 m); der Rest ist Puffer
+    # fuer Roboterbewegung zwischen zwei /scene_markers-Updates (10 Hz).
+    ENV_REACH_RADIUS = 1.5
+
+    @staticmethod
+    def _geometry_vertices(geom):
+        """Vertices einer Kollisionsgeometrie (Convex nach _init_collision_gate,
+        sonst BVH-Mesh) als (K,3)-Array, oder None (Primitive wie Zylinder)."""
+        for getter in ("points", "vertices"):
+            fn = getattr(geom, getter, None)
+            if fn is None:
+                continue
+            try:
+                pts = np.asarray(fn(), dtype=float)
+                if pts.ndim == 2 and pts.shape[1] == 3 and len(pts):
+                    return pts
+            except Exception:
+                pass
+        return None
+
+    def _sample_hand_surface(self, side):
+        """Punktwolke der Hand (alle Kollisionsgeometrien ab dem wrist_yaw-Gelenk
+        abwaerts: Handballen, Finger, Kraftsensoren) im wrist_yaw_link-Frame,
+        Finger in Neutralstellung. Rueckgabe (K,3) oder None."""
+        fid = self._fid_env_wrist_yaw.get(side)
+        if fid is None:
+            return None
+        try:
+            jid = self.model.getJointId(f"{side}_wrist_yaw_joint")
+            subtree = set(self.model.subtrees[jid])
+        except Exception:
+            return None
+        data = pin.Data(self.model)
+        q = pin.neutral(self.model)
+        pin.forwardKinematics(self.model, data, q)
+        pin.updateFramePlacements(self.model, data)
+        T_hand_inv = data.oMf[fid].inverse()
+        clouds = []
+        for g in self.collision_model.geometryObjects:
+            if g.parentJoint not in subtree:
+                continue
+            pts = self._geometry_vertices(g.geometry)
+            if pts is None:
+                continue
+            T = T_hand_inv * data.oMi[g.parentJoint] * g.placement
+            clouds.append(pts @ T.rotation.T + T.translation)
+        if not clouds:
+            return None
+        cloud = np.concatenate(clouds)
+        rng = np.random.default_rng(0)            # deterministisch je Start
+        if len(cloud) > 20000:
+            cloud = cloud[rng.choice(len(cloud), 20000, replace=False)]
+        # Farthest-Point-Sampling: gleichmaessig ueber die Hand verteilt, auch
+        # dort, wo das Mesh wenige Vertices hat.
+        n = min(self.ENV_HAND_POINTS, len(cloud))
+        chosen = [int(np.argmax(np.linalg.norm(cloud - cloud.mean(axis=0), axis=1)))]
+        dmin = np.linalg.norm(cloud - cloud[chosen[0]], axis=1)
+        for _ in range(n - 1):
+            i = int(np.argmax(dmin))
+            chosen.append(i)
+            dmin = np.minimum(dmin, np.linalg.norm(cloud - cloud[i], axis=1))
+        print(f"[IK] Umgebungs-Check {side}: {n} Hand-Oberflaechenpunkte "
+              f"(aus {len(clouds)} Geometrien).", flush=True)
+        return cloud[chosen]
+
     def sync_environment(self, objects) -> None:
         """Ersetzt die bekannten Umgebungs-Objekte durch `objects` (Iterable von
         dicts: name, cls ('obstacle'|'grasp'), half_extents (hx,hy,hz), pos
@@ -358,11 +445,21 @@ class G1IKSolver:
             }
         self._env_objects = new_objects
         # Dieselben Objekte als Arrays fuer den vektorisierten Check (der Planer
-        # ruft ihn tausendfach auf; ein zerlegter Arbeitsplatz hat ~65 Boxen).
-        objs = list(new_objects.values())
-        self._env_arrays = None if not objs else (
-            np.stack([o["pos"] for o in objs]),
-            np.stack([o["R"] for o in objs]),
+        # ruft ihn tausendfach auf; eine Szene hat ~200 Boxen). Nur was ein Arm
+        # ueberhaupt erreichen kann -- der Check prueft je Arm ~90 Punkte.
+        objs = [o for o in new_objects.values()
+                if self._point_obb_distance(np.zeros(3), o) < self.ENV_REACH_RADIUS]
+        if not objs:
+            self._env_arrays = None
+            return
+        P = np.stack([o["pos"] for o in objs])                  # (N,3)
+        R = np.stack([o["R"] for o in objs])                    # (N,3,3)
+        # Box-Achsen als EINE (3,3N)-Matrix: local = p @ R_cat - offset ist dann
+        # ein einziges BLAS-Produkt statt eines einsum ueber (M,N,3,3).
+        R_cat = R.transpose(1, 0, 2).reshape(3, 3 * len(objs))
+        offset = np.einsum("nj,nji->ni", P, R)                  # P[n] in Box-Achsen
+        self._env_arrays = (
+            R_cat, offset,
             np.stack([o["half"] for o in objs]),
             np.array([o["cls"] == "grasp" for o in objs]),
         )
@@ -377,11 +474,13 @@ class G1IKSolver:
         excess = np.maximum(np.abs(local) - obj["half"], 0.0)
         return float(np.linalg.norm(excess))
 
-    def environment_command_in_collision(self, current_all, hard=False, data=None) -> bool:
+    def environment_command_in_collision(self, current_all, hard=False, data=None,
+                                         sides=("left", "right")) -> bool:
         """True, wenn die 29-DOF-Konfiguration current_all (ROS-Gelenkreihen-
-        folge) einen ueberwachten Arm-Punkt (Ellbogen, Unterarm, Handgelenk,
-        Hand, Hand-TCP) zu nah an ein Umgebungs-Objekt bringt (hard=True: echte
-        Durchdringung -- arm_env_hard_margin bzw. hand_env_hard_margin; sonst
+        folge) einen ueberwachten Arm-Punkt (Oberarm, Ellbogen, Unterarm,
+        Handgelenk, Hand-TCP, Hand-/Finger-Oberflaeche) zu nah an ein Umgebungs-
+        Objekt bringt (hard=True: echte Durchdringung -- arm_env_hard_margin,
+        hand_env_hard_margin bzw. hand_surface_env_hard_margin; sonst
         arm_env_margin bzw. collision_margin).
 
         ACM (Allowed-Collision, siehe g1pilot/docs/11_arm_manipulation_technik.md (Umgebungs-Kollisionsgate)):
@@ -396,9 +495,23 @@ class G1IKSolver:
         eigenen Puffer uebergeben (siehe make_scratch_buffers()) -- sonst
         wuerden sie sich mit dem 250-Hz-Regelkreis denselben mutable Zustand
         teilen (Pinocchio-Kontrakt: Model ist threadsicher/read-only, Data
-        ist mutabler Scratch-Zustand pro Aufrufer)."""
+        ist mutabler Scratch-Zustand pro Aufrufer).
+
+        `sides`: nur die Punkte dieser Arme pruefen. Der Planer uebergibt die
+        GEPLANTEN Arme -- ein stehender Arm, dessen Hand im Margenband am Tisch
+        liegt, wuerde sonst JEDEN Zwischenzustand ungueltig machen."""
+        return self.environment_violation(current_all, hard=hard, data=data,
+                                          sides=sides) > 0.0
+
+    def environment_violation(self, current_all, hard=False, data=None,
+                              sides=("left", "right")) -> float:
+        """Wie environment_command_in_collision, aber als MASS statt Ja/Nein:
+        Summe ueber alle verletzenden (Punkt, Objekt)-Paare von (Marge - Abstand),
+        Abstand vorzeichenbehaftet (negativ = Punkt steckt im Objekt). 0.0 =
+        kollisionsfrei. Erlaubt "nicht tiefer hinein" als Kriterium, um aus einem
+        Zustand herauszufahren, der schon in Kollision ist (Gate + Planer)."""
         if not self._env_objects:
-            return False
+            return 0.0
         data = data if data is not None else self._env_data
         q = pin.neutral(self.model)
         for jid_idx, ros_name in enumerate(self._ros_joint_names):
@@ -408,39 +521,55 @@ class G1IKSolver:
         pin.updateFramePlacements(self.model, data)
 
         # Punkte sammeln: (Position, Marge, gilt_gegen_Greif-Objekte).
-        # Arm (Ellbogen, 2x Unterarm): gegen ALLE Objekte, groessere Marge.
-        # Hand (Handgelenk, Handgelenk->TCP-Mitte, TCP): collision_margin und nur
-        # gegen Hindernisse -- an ein Greif-Objekt darf die Hand heran (ACM).
+        # Arm (Ellbogen, 2x Oberarm, 2x Unterarm, auf der Link-Achse): gegen ALLE
+        # Objekte, groessere Marge. Hand (Handgelenk, Achse Handgelenk->TCP und
+        # die Oberflaechenpunkte von Handballen/Fingern): collision_margin und
+        # nur gegen Hindernisse -- an ein Greif-Objekt darf die Hand heran (ACM).
         arm_margin = self.arm_env_hard_margin if hard else self.arm_env_margin
         hand_margin = self.hand_env_hard_margin if hard else self.collision_margin
-        pts, margins, vs_grasp = [], [], []
+        surf_margin = self.hand_surface_env_hard_margin if hard else self.collision_margin
+        arm_pts, hand_pts, surf_pts = [], [], []
         for side, fid_hand in (("left", self._fid_left), ("right", self._fid_right)):
+            if side not in sides:
+                continue
             fe, fw = self._fid_env_elbow.get(side), self._fid_env_wrist.get(side)
+            fs, fy = self._fid_env_shoulder.get(side), self._fid_env_wrist_yaw.get(side)
             p_e = data.oMf[fe].translation if fe is not None else None
             p_w = data.oMf[fw].translation if fw is not None else None
             p_h = data.oMf[fid_hand].translation if fid_hand is not None else None
-            arm = [p_e] if p_e is not None else []
-            if p_e is not None and p_w is not None:
-                arm += [p_e + (p_w - p_e) * t for t in (1.0 / 3.0, 2.0 / 3.0)]
-            hand = [p for p in (p_w, p_h) if p is not None]
+            p_s = data.oMf[fs].translation if fs is not None else None
+            if p_e is not None:
+                arm_pts.append(p_e)
+                for p_o in (p_s, p_w):
+                    if p_o is not None:
+                        arm_pts += [p_e + (p_o - p_e) * t for t in (1.0 / 3.0, 2.0 / 3.0)]
+            hand_pts += [p for p in (p_w, p_h) if p is not None]
             if p_w is not None and p_h is not None:
-                hand.append(0.5 * (p_w + p_h))
-            for p in arm:
-                pts.append(p); margins.append(arm_margin); vs_grasp.append(True)
-            for p in hand:
-                pts.append(p); margins.append(hand_margin); vs_grasp.append(False)
-        if not pts or self._env_arrays is None:
-            return False
+                hand_pts.append(0.5 * (p_w + p_h))
+            surf = self._env_hand_pts.get(side)
+            if surf is not None and fy is not None:
+                T = data.oMf[fy]
+                surf_pts.append(surf @ T.rotation.T + T.translation)
+        if self._env_arrays is None or not (arm_pts or hand_pts or surf_pts):
+            return 0.0
 
-        P, R, H, is_grasp = self._env_arrays
-        pts = np.asarray(pts)                                   # (M,3)
+        R_cat, offset, H, is_grasp = self._env_arrays
+        n_surf = sum(len(sp) for sp in surf_pts)
+        pts = np.concatenate([np.asarray(arm_pts + hand_pts).reshape(-1, 3)] + surf_pts)  # (M,3)
+        margins = np.concatenate([np.full(len(arm_pts), arm_margin),
+                                  np.full(len(hand_pts), hand_margin),
+                                  np.full(n_surf, surf_margin)])
+        vs_grasp = np.zeros(len(pts), dtype=bool)
+        vs_grasp[:len(arm_pts)] = True
         # Punkte in die Box-Achsen drehen: local[m,n] = R[n]^T (p[m] - P[n])
-        local = np.einsum("nji,mnj->mni", R, pts[:, None, :] - P[None, :, :])
-        excess = np.maximum(np.abs(local) - H[None, :, :], 0.0)
-        dist = np.linalg.norm(excess, axis=2)                   # (M,N)
-        hit = dist < np.asarray(margins)[:, None]
-        hit &= ~(~np.asarray(vs_grasp)[:, None] & is_grasp[None, :])   # Hand vs Greif-Objekt erlaubt
-        return bool(hit.any())
+        local = (pts @ R_cat).reshape(len(pts), -1, 3) - offset[None]
+        inner = np.abs(local) - H[None, :, :]
+        dist = np.linalg.norm(np.maximum(inner, 0.0), axis=2)   # (M,N)
+        # Innen: negative Eindringtiefe (Abstand zur naechsten Seitenflaeche).
+        dist = np.where(dist > 0.0, dist, np.max(inner, axis=2))
+        viol = margins[:, None] - dist
+        viol[~vs_grasp[:, None] & is_grasp[None, :]] = 0.0      # Hand vs Greif-Objekt erlaubt
+        return float(np.sum(np.maximum(viol, 0.0)))
 
     def make_scratch_buffers(self) -> dict:
         """Eigener, unabhaengiger FK-/Kollisions-Scratch-Zustand (eigenes

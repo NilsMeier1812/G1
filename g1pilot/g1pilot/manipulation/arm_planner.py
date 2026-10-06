@@ -103,6 +103,10 @@ def _make_state_validity_fn(ik_solver, sides, base_current_all, hard=False):
     RRTConnect plant single-threaded, daher genuegt EIN Puffersatz pro Aufruf."""
     scratch = ik_solver.make_scratch_buffers()
     idx_list = _joint_indices_for(sides)
+    # Umgebung nur fuer die GEPLANTEN Arme pruefen: der stehende Arm aendert
+    # sich entlang des Pfads nicht -- liegt seine Hand im Margenband am Tisch,
+    # waere sonst jeder Zwischenzustand ungueltig (no_path_found).
+    sides_l = _sides_list(sides)
 
     def is_valid(qN: np.ndarray) -> bool:
         full = base_current_all.copy()
@@ -113,7 +117,7 @@ def _make_state_validity_fn(ik_solver, sides, base_current_all, hard=False):
                 full, hard=hard, data=scratch["data"], cdata=cdata):
             return False
         if ik_solver.environment_command_in_collision(
-                full, hard=hard, data=scratch["env_data"]):
+                full, hard=hard, data=scratch["env_data"], sides=sides_l):
             return False
         return True
 
@@ -126,6 +130,41 @@ def _make_state_validity_fn(ik_solver, sides, base_current_all, hard=False):
 # vorher als goal_in_collision abgelehnt. Innerhalb dieses Gelenkraum-Radius um
 # Start bzw. Ziel gilt dann nur die harte Pruefung, sonst ueberall die Marge.
 BAND_RELAX_RADIUS = 0.4   # rad (Norm ueber die geplanten Gelenke)
+
+
+def _make_escape_validity_fn(ik_solver, sides, base_current_all, q_start):
+    """Start steckt schon ECHT in einem Umgebungs-Objekt (z.B. Roboter seit dem
+    Anfahren naeher an den Tisch geraten): ohne Ausnahme gaebe es keinen Weg
+    heraus. Liefert is_ok(q) -> True, wenn q keine harte SELBSTkollision hat und
+    nicht tiefer im Objekt steckt als der Start (environment_violation hart),
+    oder None, wenn der Start selbst in harter Selbstkollision ist (dafuer gilt
+    die Ausnahme nicht)."""
+    scratch = ik_solver.make_scratch_buffers()
+    idx_list = _joint_indices_for(sides)
+    sides_l = _sides_list(sides)
+
+    def full_of(qN):
+        full = base_current_all.copy()
+        for i, jidx in enumerate(idx_list):
+            full[jidx] = qN[i]
+        return full
+
+    def self_hard_ok(full):
+        return not ik_solver.arm_command_in_collision(
+            full, hard=True, data=scratch["data"], cdata=scratch["cdata_hard"])
+
+    full0 = full_of(q_start)
+    if not self_hard_ok(full0):
+        return None
+    v0 = ik_solver.environment_violation(full0, hard=True, data=scratch["env_data"],
+                                         sides=sides_l)
+
+    def is_ok(qN):
+        full = full_of(qN)
+        return self_hard_ok(full) and ik_solver.environment_violation(
+            full, hard=True, data=scratch["env_data"], sides=sides_l) <= v0 + 1e-9
+
+    return is_ok
 
 
 def _relaxed_validity(is_soft, is_hard, anchors, radius=BAND_RELAX_RADIUS):
@@ -354,7 +393,11 @@ def plan_arms_joint_path(ik_solver, sides, base_current_all, q_start, q_goal,
       - waypoints: Liste von np.ndarray(7*Seiten) [q_start ... q_goal] (inkl.
         beider Enden), oder None bei Fehlschlag.
       - reason: "direct" | "ompl_rrtconnect" | "rrt_connect" |
-        "start_in_collision" | "goal_in_collision" | "no_path_found"."""
+        "start_in_collision" | "goal_in_collision" | "no_path_found".
+
+    Steckt der START schon in einem Umgebungs-Objekt, darf der Pfad nahe am
+    Start (BAND_RELAX_RADIUS) nur nicht TIEFER hinein (siehe
+    _make_escape_validity_fn) -- sonst kaeme der Arm dort nie wieder heraus."""
     rng = rng or np.random.default_rng()
     is_valid = _make_state_validity_fn(ik_solver, sides, base_current_all)
     is_hard_valid = _make_state_validity_fn(ik_solver, sides, base_current_all, hard=True)
@@ -366,13 +409,27 @@ def plan_arms_joint_path(ik_solver, sides, base_current_all, q_start, q_goal,
     # fuer BEIDE Backends, mit klaren Reason-Codes. Start/Ziel im Margenband
     # (aber ohne echte Kollision) sind erlaubt, siehe BAND_RELAX_RADIUS.
     anchors = []
+    escape = None
     for q, reason in ((q_start, "start_in_collision"), (q_goal, "goal_in_collision")):
         if not is_valid(q):
             if not is_hard_valid(q):
-                return None, reason
+                if q is q_start:
+                    escape = _make_escape_validity_fn(
+                        ik_solver, sides, base_current_all, q_start)
+                if escape is None:
+                    return None, reason
+                continue
             anchors.append(q)
     if anchors:
         is_valid = _relaxed_validity(is_valid, is_hard_valid, anchors)
+    if escape is not None:
+        is_valid_inner = is_valid
+
+        def is_valid(q):
+            if is_valid_inner(q):
+                return True
+            return (np.linalg.norm(q - q_start) <= BAND_RELAX_RADIUS
+                    and escape(q))
     if _segment_valid(is_valid, q_start, q_goal, substep):
         return [q_start, q_goal], "direct"
 

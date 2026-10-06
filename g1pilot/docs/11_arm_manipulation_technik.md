@@ -37,6 +37,12 @@ Der Node hält mehrere unabhängige, aber interagierende Zustände:
 - `walk_mode` — während `WALK` (siehe [31_loco_technik.md](31_loco_technik.md))
   hält der Controller die Arme in einer definierten Lauf-Pose, damit die
   Lauf-Policy stabil bleibt.
+- `_walk_transition` — der Weg **in** die Lauf-Pose läuft beim WALK-Start
+  als geplante Bewegung (wie Homing, um Tisch/Hindernisse herum). Erst danach
+  hält der WALK-Zweig die Pose und meldet `walk_ready`. Findet der Planer
+  keinen Weg, fährt der Controller wie früher direkt (das Gate hält bei
+  Kollision an). Marker-Bewegung, ein ignoriertes HOMING und POSE ABBRECHEN
+  brechen den Übergang nicht ab; BALANCING, E-Stop und DISABLE schon.
 - `_planned_motion_active` — eine geplante Bewegung (Positionsspeicher /
   Live-Kommando) fährt gerade eine vorab berechnete Wegpunktliste ab.
 
@@ -75,15 +81,20 @@ Reihenfolge (vereinfacht):
 4. Ist Manipulation deaktiviert → ggf. Gewichtsrampe abwärts fahren, sonst
    still sein.
 5. Zielkonfiguration `q_target` je nach aktivem Modus bestimmen: `walk_mode`
-   (Lauf-Pose) > `homing_active`/`homing_reached` (Home-Pose) >
-   `_planned_motion_active` (nächster Wegpunkt der geplanten Bahn) > sonst
-   IK-Ergebnis aus dem reaktiven Servoing (`ik_solver.get_joint_targets`).
+   ohne `_walk_transition` (Lauf-Pose halten) > `homing_active`/`homing_reached`
+   (Home-Pose) > `_planned_motion_active` (nächster Wegpunkt der geplanten
+   Bahn) > `_walk_transition` (Weg in die Lauf-Pose wird noch geplant →
+   stillhalten) > sonst IK-Ergebnis aus dem reaktiven Servoing
+   (`ik_solver.get_joint_targets`).
 6. Geschwindigkeitslimit (`arm_velocity_limit`) + exponentielle Glättung
    (`ik_alpha`).
 7. Kartesisches Geschwindigkeitslimit (`_limit_cartesian_speed`, überwacht
    Hand-TCPs + Ellbogen).
 8. Kollisions-Gate (`_apply_collision_gate`) — hält bei Kollision auf der
-   vorherigen Position an.
+   vorherigen Position an. Steckt der aktuelle Zustand schon echt in einem
+   Umgebungs-Objekt (z.B. Roboter seit dem Anfahren näher an den Tisch
+   geraten), sind Schritte erlaubt, die nicht tiefer hineinführen
+   (`_escaping_environment`, Maß: `ik_solver.environment_violation`).
 9. Schreiben: bei `use_robot=true` `rt/arm_sdk` mit
    Schwerkraft-Feedforward-Drehmoment (`_arm_gravity_tau`,
    Parameter `gravity_comp`), sonst `/joint_states`.
@@ -171,7 +182,22 @@ Pinocchio-basierter, gedämpfter Pseudo-Inverse-Löser mit:
 - Umgebungs-Kollisions-Gate gegen Objekte aus `/scene_markers`
   (`environment_command_in_collision`, `sync_environment` — siehe
   [51_navigation_technik.md](51_navigation_technik.md), Abschnitt
-  Szenen-Brücke).
+  Szenen-Brücke). Geprüft werden Punkte gegen orientierte Boxen:
+  - Arm auf der Link-Achse (2× Oberarm, Ellbogen, 2× Unterarm): Marge
+    `arm_env_margin` 6 cm, hart 3 cm (≈ Linkradius), gegen **alle** Objekte.
+  - Hand-Achse (Handgelenk, Mitte, TCP): Marge 3 cm, hart 1 cm.
+  - Hand-**Oberfläche**: 80 Punkte je Hand per Farthest-Point-Sampling aus
+    den Kollisions-Meshes von Handballen und Fingern (`_sample_hand_surface`,
+    Finger in Neutralstellung, starr im `wrist_yaw_link`-Frame). Marge 3 cm,
+    hart 0,5 cm (`hand_surface_env_hard_margin` — die Punkte liegen schon auf
+    der Haut). Ohne sie sah der Check weder Finger noch Handbreite, und der
+    Planer hielt Wege für frei, auf denen die Finger mehrere cm in der
+    Tischplatte steckten.
+  - Hand-Punkte gelten nur gegen Hindernisse; Greif-Objekte darf die Hand
+    berühren (ACM, gewollt).
+  - Objekte, deren nächster Punkt weiter als `ENV_REACH_RADIUS` (1,5 m) vom
+    Becken liegt, werden schon in `sync_environment` aussortiert; die
+    Punkt-Box-Rechnung ist ein einziges Matrixprodukt (~0,4 ms je Check).
 - `solve_pose(side, T_goal, current_all)` — Einzelaufruf-Variante (kein
   gemeinsamer Solver-Zustand), genutzt vom Planungs-Thread, damit dieser
   nicht mit dem reaktiven 250-Hz-Servoing um denselben mutablen
@@ -190,6 +216,19 @@ zusätzlich mit derselben Segmentprüfung wie der Fallback nachvalidiert
 (`_path_segments_valid`); schlägt das fehl, springt der Aufruf auf den
 Fallback um. `shortcut_path()` glättet das Ergebnis danach zufällig
 (Shortcut-Sampling), unabhängig vom verwendeten Backend.
+
+Gegen die Umgebung prüft der Planer nur die **geplanten** Arme
+(`sides`-Argument von `environment_command_in_collision`): der stehende Arm
+ändert sich entlang des Pfads nicht, und läge seine Hand im Margenband am
+Tisch, wäre sonst jeder Zwischenzustand ungültig. Arm-gegen-Arm und
+Arm-gegen-Körper prüft weiterhin die Selbstkollision über die volle
+Konfiguration.
+
+Start und Ziel dürfen im Margenband liegen (nahe daran gilt dann nur die
+harte Prüfung, `BAND_RELAX_RADIUS`). Steckt der **Start** echt in einem
+Umgebungs-Objekt, darf der Pfad nahe am Start nur nicht tiefer hinein
+(`_make_escape_validity_fn`) — sonst käme der Arm dort nie heraus. Ein Ziel
+in echter Kollision wird weiter mit `goal_in_collision` abgelehnt.
 
 Da der Planungsthread parallel zum reaktiven 250-Hz-Loop auf demselben
 `ik_solver`-Objekt arbeitet, holt sich `_make_state_validity_fn` **eigene**

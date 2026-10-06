@@ -49,7 +49,8 @@ Solange ein Marker nicht gezogen wird, folgt er standardmäßig der Hand
 
 Im Gehen-Modus (`/g1pilot/start_walking`) sind die Marker ausgeblendet — die
 Arme gehören dann der Lauf-Pose, und die schwingenden Hände würden die Marker
-nur hinterherspringen lassen. Beim Wechsel zu Greifen bzw. START BALANCING
+nur hinterherspringen lassen. Der Weg in die Lauf-Pose wird geplant (um Tisch
+und Hindernisse herum), genau wie bei Grundstellung und Pose anfahren. Beim Wechsel zu Greifen bzw. START BALANCING
 (`/g1pilot/start_balancing`) erscheinen sie wieder an der aktuellen Handposition.
 
 **3. Home-Position**
