@@ -18,8 +18,8 @@ Real: MOLA-LiDAR-Odometrie).
 
 ## Voraussetzungen
 
-- **Simulation:** Navigation beim Start aktivieren (Menüpunkt „Navigation
-  mitstarten" im Startmenü, oder `G1_ENABLE_NAV=1 ./start.sh --yes`).
+- **Simulation:** Navigation beim Start aktivieren (Startmenü → Simulation →
+  Ausstattung → „Navigation“, oder `G1_ENABLE_NAV=1 ./start.sh --yes`).
 - **Echter Roboter:** Livox-MID360-LiDAR + das große Docker-Image, aktiviert
   über `G1_ENABLE_LIDAR=1`.
 - RViz wird bei aktiver Navigation automatisch mitgestartet (Nav-Ansicht,

@@ -38,7 +38,8 @@ services:
       - MUJOCO_GL=glfw
       # weld = Arm-only (Basis fix), off = Loco-Modus (Basis frei). Siehe run_sim_loco.sh.
       - HOLD_BASE_MODE=${HOLD_BASE_MODE:-weld}
-      # Realtime-Faktor (1.0 = Echtzeit). Nur OHNE Lockstep relevant.
+      # Sim-Tempo (1.0 = Echtzeit, <1 = Zeitlupe). Im Lockstep die Obergrenze
+      # der Geschwindigkeit (langsame PCs laufen ohnehin langsamer).
       - SIM_REALTIME_FACTOR=${SIM_REALTIME_FACTOR:-1.0}
       # Lockstep: deterministische Regelrate (decimation Physikschritte pro
       # rt/lowcmd). run_sim_loco.sh setzt 1 -> garantierte 50 Hz fuer die Policy.

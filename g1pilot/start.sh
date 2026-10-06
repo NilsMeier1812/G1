@@ -8,14 +8,19 @@
 #  Tkinter/Display, kommt automatisch das Text-Menue unten. Erzwingen mit
 #  --menu (Text) oder G1_NO_GUI=1.
 #
-#  Text-Menue — allererste Frage: SIMULATION oder ECHTER ROBOTER.
+#  Text-Menue — gleicher Aufbau und gleiche Defaults wie die GUI.
+#  Allererste Frage: SIMULATION oder ECHTER ROBOTER.
 #
-#  SIM  : MuJoCo + loco_sim (Whole-Body-Policy). Fragen: RViz, Inspire-
-#         Haende, GUI-Auto-Open, Rebuild. Lockstep immer an.
+#  SIM  : MuJoCo + loco_sim (Whole-Body-Policy, Lockstep immer an).
+#         Umgebung -> Bedienoberflaeche -> Inspire-Haende -> Navigation
+#         -> RViz -> Rebuild.
 #  REAL : Unitree-Loco-Controller (loco_client) + Arm-Manipulation +
-#         Inspire-Haende via Modbus TCP. Fragen: Netzwerk-Interface (mit
-#         Auto-Erkennung), Haende + IPs, GUI-Auto-Open, RViz, Rebuild —
-#         plus SICHERHEITS-BESTAETIGUNG (der Roboter bewegt sich!).
+#         Inspire-Haende via Modbus TCP. Netzwerk-Interface (Auto-
+#         Erkennung) -> Bedienoberflaeche -> Haende + IPs -> RViz ->
+#         Rebuild, plus SICHERHEITS-BESTAETIGUNG (der Roboter bewegt sich!).
+#
+#  Hand-Oberflaechen im Browser (OPEN_GUIS) werden nur beim Streamdeck
+#  abgefragt -- die Demo-GUI hat die Handsteuerung eingebaut.
 #
 #  Alles hat sinnvolle Defaults — einfach ENTER druecken nimmt den Default.
 #  Nicht-interaktiv nutzbar via Env, z.B.:
@@ -89,6 +94,33 @@ ask_menu() {
   echo
 }
 
+# ── Gemeinsame Fragen (Sim + Real) ──────────────────────────────────────
+ask_gui() {
+  ask_menu "$1) Bedienoberflaeche?" 1 "${G1_GUI:-}" \
+    "Demo-GUI   — Vorfuehrung: Gehen / Greifen, Arme + Haende|demo" \
+    "Streamdeck — Entwicklung: alle Einzelfunktionen|streamdeck"
+  export G1_GUI="$REPLY_VALUE"
+}
+
+ask_hand_browser() {
+  # Nur Streamdeck + Haende: die Demo-GUI hat die Handsteuerung eingebaut.
+  if [ "$G1_INSPIRE_HANDS" = "1" ] && [ "$G1_GUI" = "streamdeck" ]; then
+    ask_menu "$1) Hand-Oberflaechen im Browser oeffnen?" 2 "${OPEN_GUIS:-}" \
+      "Ja   — Controller + Taktil-Viewer oeffnen sich und verbinden|true" \
+      "Nein — bei Bedarf per Streamdeck-Kachel INSPIRE FTP GUIs|false"
+    export OPEN_GUIS="$REPLY_VALUE"
+  else
+    export OPEN_GUIS=false
+  fi
+}
+
+ask_rebuild() {
+  ask_menu "$1) Docker-Images vor dem Start neu bauen?" 1 "" \
+    "Nein — vorhandene Images nutzen (schnell)|0" \
+    "Ja   — --build (nach Aenderungen an Dockerfiles/Abhaengigkeiten)|1"
+  if [ "$REPLY_VALUE" = "1" ]; then PASSTHRU+=("--build"); fi
+}
+
 clear 2>/dev/null || true
 echo -e "${B}╔══════════════════════════════════════════════╗${R}"
 echo -e "${B}║      G1 — Start-Menue (Sim / Real)            ║${R}"
@@ -128,42 +160,33 @@ if [ "$G1_MODE" = "real" ]; then
   fi
   export ROBOT_INTERFACE="$REPLY_VALUE"
 
-  # ── R2) Inspire-FTP-Haende (Modbus TCP im Roboter-LAN) ────────────────
-  ask_menu "R2) Inspire-FTP-Haende ansteuern? (Modbus TCP, an den G1 angeschlossen)" 1 "${G1_INSPIRE_HANDS:-}" \
-    "Ja  — Hand-Bridge mit Modbus-Backend + GUIs|1" \
+  # ── R2) Bedienoberflaeche ─────────────────────────────────────────────
+  ask_gui R2
+
+  # ── R3) Inspire-FTP-Haende (Modbus TCP im Roboter-LAN) ────────────────
+  ask_menu "R3) Inspire-Haende ansteuern? (Modbus TCP im Roboter-LAN)" 1 "${G1_INSPIRE_HANDS:-}" \
+    "Ja   — Hand-Bridge mit Modbus-Backend|1" \
     "Nein — ohne Haende|0"
   export G1_INSPIRE_HANDS="$REPLY_VALUE"
-
-  if [ "$G1_INSPIRE_HANDS" = "1" ]; then
-    if [ "$ASSUME_YES" != "1" ]; then
-      read -rp "$(echo -e "   ${DIM}IP linke Hand  [${G1_HAND_LEFT_HOST:-192.168.123.210}]:${R} ")" _l
-      read -rp "$(echo -e "   ${DIM}IP rechte Hand [${G1_HAND_RIGHT_HOST:-192.168.123.211}]:${R} ")" _r
-      export G1_HAND_LEFT_HOST="${_l:-${G1_HAND_LEFT_HOST:-192.168.123.210}}"
-      export G1_HAND_RIGHT_HOST="${_r:-${G1_HAND_RIGHT_HOST:-192.168.123.211}}"
-      echo
-    else
-      export G1_HAND_LEFT_HOST="${G1_HAND_LEFT_HOST:-192.168.123.210}"
-      export G1_HAND_RIGHT_HOST="${G1_HAND_RIGHT_HOST:-192.168.123.211}"
-    fi
-    ask_menu "R2b) Hand-GUIs automatisch im Browser oeffnen (und verbinden)?" 1 "${OPEN_GUIS:-}" \
-      "Ja  — Controller + Viewer oeffnen sich selbst und verbinden|true" \
-      "Nein — GUIs manuell oeffnen (http://localhost:8767/...)|false"
-    export OPEN_GUIS="$REPLY_VALUE"
-  else
-    export OPEN_GUIS=false
+  if [ "$G1_INSPIRE_HANDS" = "1" ] && [ "$ASSUME_YES" != "1" ]; then
+    read -rp "$(echo -e "   ${DIM}IP linke Hand  [${G1_HAND_LEFT_HOST:-192.168.123.210}]:${R} ")" _l
+    read -rp "$(echo -e "   ${DIM}IP rechte Hand [${G1_HAND_RIGHT_HOST:-192.168.123.211}]:${R} ")" _r
+    G1_HAND_LEFT_HOST="${_l:-${G1_HAND_LEFT_HOST:-}}"
+    G1_HAND_RIGHT_HOST="${_r:-${G1_HAND_RIGHT_HOST:-}}"
+    echo
   fi
+  export G1_HAND_LEFT_HOST="${G1_HAND_LEFT_HOST:-192.168.123.210}"
+  export G1_HAND_RIGHT_HOST="${G1_HAND_RIGHT_HOST:-192.168.123.211}"
+  ask_hand_browser R3b
 
-  # ── R3) RViz ──────────────────────────────────────────────────────────
-  ask_menu "R3) RViz mitstarten? (rviz-Marker = Interface der Arm-Manipulation)" 1 "${USE_RVIZ:-}" \
-    "Ja  — RViz an (empfohlen: IK-Marker + Zustand sichtbar)|true" \
-    "Nein — ohne RViz (nur Streamdeck/PS4)|false"
+  # ── R4) RViz ──────────────────────────────────────────────────────────
+  ask_menu "R4) RViz mitstarten?" 1 "${USE_RVIZ:-}" \
+    "Ja   — empfohlen: Arm-Marker + Zustand sichtbar|true" \
+    "Nein — ohne RViz|false"
   export USE_RVIZ="$REPLY_VALUE"
 
-  # ── R4) Rebuild ───────────────────────────────────────────────────────
-  ask_menu "R4) Docker-Images vor dem Start neu bauen?" 1 "" \
-    "Nein — vorhandene Images nutzen (schnell)|0" \
-    "Ja  — --build (nach Code-/Dockerfile-Aenderungen)|1"
-  if [ "$REPLY_VALUE" = "1" ]; then PASSTHRU+=("--build"); fi
+  # ── R5) Rebuild ───────────────────────────────────────────────────────
+  ask_rebuild R5
 
   export G1_SIM_MODE=false
 
@@ -174,11 +197,12 @@ if [ "$G1_MODE" = "real" ]; then
   echo -e "   Interface      : ${G}ROBOT_INTERFACE=${ROBOT_INTERFACE}${R}"
   _hands_lbl=$( [ "${G1_INSPIRE_HANDS}" = "1" ] && echo "Modbus ${G1_HAND_LEFT_HOST} / ${G1_HAND_RIGHT_HOST}" || echo "aus" )
   echo -e "   Haende         : ${G}G1_INSPIRE_HANDS=${G1_INSPIRE_HANDS}${R} ${DIM}(${_hands_lbl})${R}"
+  echo -e "   Oberflaeche    : ${G}G1_GUI=${G1_GUI}${R}"
   echo -e "   RViz           : ${G}USE_RVIZ=${USE_RVIZ}${R}"
-  echo -e "   Walk-Limits    : ${G}vx=${G1_MAX_VX:-0.4} vy=${G1_MAX_VY:-0.3} vyaw=${G1_MAX_VYAW:-0.4}${R}"
-  echo -e "   ${DIM}Kein Auto-Start: Der Roboter bewegt sich erst nach STREAMDECK-${R}"
-  echo -e "   ${DIM}Kommandos (START -> START BALANCING -> ...).${R}"
-  echo -e "   ${Y}E-STOP (Streamdeck) = Damp = Roboter sackt ZUSAMMEN (sichern!).${R}"
+  echo -e "   Geh-Limits     : ${G}vx=${G1_MAX_VX:-0.4} vy=${G1_MAX_VY:-0.3} vyaw=${G1_MAX_VYAW:-0.4}${R}"
+  echo -e "   ${DIM}Kein Auto-Start: Der Roboter bewegt sich erst, wenn er in der${R}"
+  echo -e "   ${DIM}Bedienoberflaeche gestartet wird (Demo-GUI: 'Roboter starten', Streamdeck: START).${R}"
+  echo -e "   ${Y}NOT-HALT / E-STOP = Damp = Roboter sackt ZUSAMMEN (sichern!).${R}"
   echo -e "   ${DIM}Checkliste vor dem ersten Lauf: g1pilot/docs/70_echtroboter_anleitung.md${R}"
   echo
   if [ "$ASSUME_YES" = "1" ]; then
@@ -201,38 +225,13 @@ if [ "$G1_MODE" = "real" ]; then
 else
   PROFILE=sim
 
-  # ── 1) RViz ───────────────────────────────────────────────────────────
-  ask_menu "1) RViz mitstarten? (MuJoCo-Fenster kommt immer)" 2 "${USE_RVIZ:-}" \
-    "Ja  — RViz an (CoM-/TF-Visualisierung; dank Lockstep gefahrlos)|true" \
-    "Nein — nur MuJoCo-Fenster|false"
-  export USE_RVIZ="$REPLY_VALUE"
-
-  # ── 2) Inspire-FTP-Haende ─────────────────────────────────────────────
-  #   Master-Schalter: waehlt im MuJoCo das Inspire-Finger-Modell UND startet die
-  #   Hand-Bridge (HTML-GUIs :8766/:8765 + DDS, Finger steuerbar/gemessen in RViz).
-  ask_menu "2) Inspire-FTP-Haende? (Finger steuerbar + GUIs; sonst Rubber-Hand)" 2 "${G1_INSPIRE_HANDS:-}" \
-    "Ja  — Inspire-Modell + Hand-Bridge (GUIs :8766/:8765, echte Kraefte)|1" \
-    "Nein — bisheriges Rubber-Hand-Modell|0"
-  export G1_INSPIRE_HANDS="$REPLY_VALUE"
-
-  # ── 2b) Hand-GUIs automatisch im Browser oeffnen (nur mit Inspire-Haenden) ─
-  if [ "$G1_INSPIRE_HANDS" = "1" ]; then
-    ask_menu "2b) Hand-GUIs automatisch im Browser oeffnen (und verbinden)?" 1 "${OPEN_GUIS:-}" \
-      "Ja  — Controller + Viewer oeffnen sich selbst und verbinden|true" \
-      "Nein — GUIs manuell oeffnen (web/*.html)|false"
-    export OPEN_GUIS="$REPLY_VALUE"
-  else
-    export OPEN_GUIS=false
-  fi
-
-  # ── 2d) Umgebung waehlen (G1 bleibt gleich, nur die Welt drumherum) ────
+  # ── 1) Umgebung (G1 bleibt gleich, nur die Welt drumherum) ─────────────
   #   Umgebungen werden im scene_editor gebaut (scene_editor/scenes/*.xml).
-  #   "Standard" = bisheriges Terrain (scene.xml). Bei einer Auswahl erzeugt
-  #   build_env_scene.py auf dem HOST eine kombinierte Szene (G1 + Umgebung) im
-  #   g1-Ordner; der Container mountet das Repo nur read-only, kann also selbst
-  #   nichts schreiben.
+  #   "Standard" = bisheriges Terrain (scene.xml). Die kombinierte Szene
+  #   (G1 + Umgebung) wird weiter unten auf dem HOST erzeugt -- der Container
+  #   kann im Repo-Mount nichts schreiben.
   _scenes_dir="../unitree_mujoco/scene_editor/scenes"
-  _env_menu=("Standard — aktuelles Terrain (scene.xml)|__default__")
+  _env_menu=("Standard (scene.xml)|__default__")
   if [ -d "$_scenes_dir" ]; then
     for _f in "$_scenes_dir"/*.xml; do
       [ -e "$_f" ] || continue
@@ -240,11 +239,42 @@ else
       _env_menu+=("$_b|$_b")
     done
   fi
-  ask_menu "2d) Welche Umgebung laden? (G1 wird unveraendert hineingeladen)" 1 "${G1_ENV:-}" "${_env_menu[@]}"
-  if [ "$REPLY_VALUE" = "__default__" ] || [ -z "$REPLY_VALUE" ]; then
-    G1_ENV=""
+  ask_menu "1) Welche Umgebung laden?" 1 "${G1_ENV:-}" "${_env_menu[@]}"
+  if [ "$REPLY_VALUE" = "__default__" ]; then G1_ENV=""; else G1_ENV="$REPLY_VALUE"; fi
+
+  # ── 2) Bedienoberflaeche ──────────────────────────────────────────────
+  ask_gui 2
+
+  # ── 3) Inspire-FTP-Haende ─────────────────────────────────────────────
+  #   Master-Schalter: waehlt im MuJoCo das Inspire-Finger-Modell UND startet die
+  #   Hand-Bridge (Finger steuerbar, Kraft/Taktil gemessen).
+  ask_menu "3) Inspire-Haende? (Finger steuerbar + Kraftsensoren)" 1 "${G1_INSPIRE_HANDS:-}" \
+    "Ja   — Inspire-Modell + Hand-Bridge|1" \
+    "Nein — starre Haende (Rubber-Hand-Modell)|0"
+  export G1_INSPIRE_HANDS="$REPLY_VALUE"
+  ask_hand_browser 3b
+
+  # ── 4) Navigation ─────────────────────────────────────────────────────
+  ask_menu "4) Navigation mitstarten? (Planer + Stationen / AUTO NAV)" 2 "${G1_ENABLE_NAV:-}" \
+    "Ja   — Nav-Stack an (erzwingt RViz)|1" \
+    "Nein — ohne Navigation|0"
+  export G1_ENABLE_NAV="$REPLY_VALUE"
+
+  # ── 5) RViz (bei Navigation Pflicht: Karte/Ziel-Werkzeug leben dort) ───
+  if [ "$G1_ENABLE_NAV" = "1" ]; then
+    export USE_RVIZ=true
   else
-    G1_ENV="$REPLY_VALUE"
+    ask_menu "5) RViz mitstarten? (MuJoCo-Fenster kommt immer)" 2 "${USE_RVIZ:-}" \
+      "Ja   — Zusatzfenster mit TF/Markern|true" \
+      "Nein — nur MuJoCo-Fenster|false"
+    export USE_RVIZ="$REPLY_VALUE"
+  fi
+
+  # ── 6) Rebuild ────────────────────────────────────────────────────────
+  ask_rebuild 6
+
+  # ── Umgebung erzeugen (braucht G1_INSPIRE_HANDS, darum erst hier) ───────
+  if [ -n "$G1_ENV" ]; then
     if ! python3 ../unitree_mujoco/scene_editor/build_env_scene.py \
            --env "$_scenes_dir/${G1_ENV}.xml" --inspire "${G1_INSPIRE_HANDS:-0}" >/dev/null; then
       echo -e "${Y}[start] Umgebung '${G1_ENV}' konnte nicht erzeugt werden -> Standard.${R}"
@@ -253,31 +283,14 @@ else
   fi
   export G1_ENV
 
-  # ── 2c) Navigation (g1pilot-Ansatz) mitstarten ───────────────────────
-  ask_menu "2c) Navigation mitstarten? (dijkstra_planner + nav2point + Sim-Glue)" 2 "${G1_ENABLE_NAV:-}" \
-    "Ja  — Nav-Stack an (Ziel per RViz/CLI; siehe g1pilot/docs/50_navigation_anleitung.md)|1" \
-    "Nein — ohne Navigation (nur Teleop/Loco)|0"
-  export G1_ENABLE_NAV="$REPLY_VALUE"
-
-  # ── 2d) Bedienoberflaeche ────────────────────────────────────────────
-  ask_menu "2d) Bedienoberflaeche?" 1 "${G1_GUI:-}" \
-    "Streamdeck — alle Funktionen (Entwicklung)|streamdeck" \
-    "Demo       — vereinfacht: Gehen / Greifen (Vorfuehrung)|demo"
-  export G1_GUI="$REPLY_VALUE"
-
-  # ── 3) Rebuild ────────────────────────────────────────────────────────
-  ask_menu "3) Docker-Images vor dem Start neu bauen?" 1 "" \
-    "Nein — vorhandene Images nutzen (schnell)|0" \
-    "Ja  — --build (nach Code-/Dockerfile-Aenderungen)|1"
-  if [ "$REPLY_VALUE" = "1" ]; then PASSTHRU+=("--build"); fi
-
   # ── Feste Sim-Voreinstellungen (Loco-Modus, Basis frei) ───────────────
   export HOLD_BASE_MODE=off            # Basis frei -> die Policy regelt den Koerper
   # Lockstep ist im Betrieb IMMER an (deterministische 50-Hz-Regelrate, PC-unabhaengig).
   export SIM_LOCKSTEP=1
   # Eine velocity-konditionierte Whole-Body-Policy macht Stehen UND Laufen: cmd=0
   # -> stehen, cmd!=0 -> laufen. Kein separater Balance-Regler mehr zu waehlen.
-  # Lockstep ist auf Echtzeit gedeckelt; SIM_REALTIME_FACTOR steuert das Tempo (1.0=Echtzeit).
+  # Lockstep ist auf Echtzeit gedeckelt; SIM_REALTIME_FACTOR (GUI: Sim-Tempo) setzt
+  # diese Obergrenze (1.0 = Echtzeit, <1 = Zeitlupe).
   export SIM_REALTIME_FACTOR=${SIM_REALTIME_FACTOR:-1.0}
   export G1_SIM_MODE=true
 
@@ -286,12 +299,10 @@ else
   _env_lbl=$( [ -n "${G1_ENV}" ] && echo "${G1_ENV} (scene_env_${G1_ENV}.xml)" || echo "Standard (scene.xml)" )
   echo -e "   Umgebung       : ${G}G1_ENV=${G1_ENV:-<default>}${R} ${DIM}(${_env_lbl})${R}"
   echo -e "   RViz           : ${G}USE_RVIZ=${USE_RVIZ}${R}"
-  _hands_lbl=$( [ "${G1_INSPIRE_HANDS}" = "1" ] && echo "Inspire-FTP (Finger + GUIs)" || echo "Rubber-Hand" )
+  _hands_lbl=$( [ "${G1_INSPIRE_HANDS}" = "1" ] && echo "Inspire-FTP" || echo "Rubber-Hand" )
   echo -e "   Haende         : ${G}G1_INSPIRE_HANDS=${G1_INSPIRE_HANDS}${R} ${DIM}(${_hands_lbl})${R}"
-  [ "${G1_INSPIRE_HANDS}" = "1" ] && echo -e "   Hand-GUIs      : ${G}OPEN_GUIS=${OPEN_GUIS}${R} ${DIM}(Browser-Auto-Open :8766/:8765)${R}"
-  echo -e "   Lockstep       : ${G}SIM_LOCKSTEP=${SIM_LOCKSTEP}${R} ${DIM}(immer an, auf Echtzeit gedeckelt)${R}"
-  echo -e "   Basis          : ${G}HOLD_BASE_MODE=${HOLD_BASE_MODE}${R} (Loco-Modus)"
-  echo -e "   Loco-Policy    : ${G}g1_wholebody${R} ${DIM}(Stehen=cmd0; Laufen via Streamdeck)${R}"
+  [ "${OPEN_GUIS}" = "true" ] && echo -e "   Hand-Browser   : ${G}OPEN_GUIS=${OPEN_GUIS}${R}"
+  echo -e "   Sim-Tempo      : ${G}SIM_REALTIME_FACTOR=${SIM_REALTIME_FACTOR}${R} ${DIM}(Lockstep, gedeckelt)${R}"
   _nav_lbl=$( [ "${G1_ENABLE_NAV}" = "1" ] && echo "an (dijkstra + nav2point + Sim-Glue)" || echo "aus" )
   echo -e "   Navigation     : ${G}G1_ENABLE_NAV=${G1_ENABLE_NAV}${R} ${DIM}(${_nav_lbl})${R}"
   echo -e "   Oberflaeche    : ${G}G1_GUI=${G1_GUI}${R}"

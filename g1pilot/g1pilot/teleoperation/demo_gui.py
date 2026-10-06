@@ -347,7 +347,7 @@ class WalkPanel(QWidget):
         else:
             self.btn_auto_nav.setText("AUTO NAV")
             self.nav_hint.setText("Navigation ist nicht gestartet — im Startmenü "
-                                  "»Navigation mitstarten« aktivieren.")
+                                  "Ausstattung → »Navigation« aktivieren.")
 
     def reset(self):
         self.held.clear()

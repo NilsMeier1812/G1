@@ -270,9 +270,24 @@ Set-NetFirewallHyperVVMSetting -Name '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -D
 ## Starten im Alltag
 
 Der einfachste Einstieg ist `./start.sh`. Ohne Argumente öffnet sich ein
-grafisches Startmenü (`g1_gui.py`, Tkinter): drei Karten — *Simulation
-starten*, *Echten Roboter starten*, *Umgebungen bearbeiten*. Alles läuft in
-einem Fenster; Menü, Optionsseiten und Log-Ansicht werden ausgetauscht.
+grafisches Startmenü (`g1_gui.py`, Tkinter): drei Karten — *Simulation*,
+*Echter Roboter*, *Umgebungen*. Alles läuft in einem Fenster; Menü,
+Optionsseiten und Log-Ansicht werden ausgetauscht.
+
+Die Optionsseiten von Simulation und echtem Roboter sind gleich aufgebaut:
+
+| Abschnitt | Simulation | Echter Roboter |
+|---|---|---|
+| Umgebung / Verbindung | Szene aus `scene_editor/scenes/` | Netzwerk-Interface (prüft auf 192.168.123.x) |
+| Bedienoberfläche | Demo-GUI (Default) oder Streamdeck | Demo-GUI (Default) oder Streamdeck |
+| Ausstattung | Inspire-Hände (Default an), Navigation, RViz (bei Navigation Pflicht) | Inspire-Hände + IPs, RViz |
+| Geh-Limits | — | vorwärts / seitlich / drehen |
+| Erweitert (eingeklappt) | Sim-Tempo, Images neu bauen | Modbus-Port, Gamepad-Name, LiDAR (experimentell), Images neu bauen |
+
+Die Hand-Oberflächen im Browser werden nur beim Streamdeck angeboten; die
+Demo-GUI hat die Handsteuerung eingebaut. Die letzte Auswahl merkt sich das
+Startmenü in `~/.config/g1pilot/launcher.json` (nicht die
+Sicherheitsbestätigung und nicht „Images neu bauen“).
 Startet man einen Stack, erscheint dessen Docker-Ausgabe live im Fenster mit
 einem Stop-Button. Über *‹ Menü* geht man zurück, ohne den Stack zu beenden —
 er taucht unter *Laufende Prozesse* wieder auf. Fehlt Tkinter oder ein

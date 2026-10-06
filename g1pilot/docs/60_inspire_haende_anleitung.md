@@ -42,8 +42,10 @@ http://localhost:8767/hand_controller_viewer.html?autoconnect=1
 http://localhost:8767/inspire_hand_viewer.html?autoconnect=1
 ```
 
-Beim Sim-/Real-Start kann „Hand-GUIs automatisch öffnen" aktiviert werden —
-dann öffnen sich beide Seiten von selbst, sobald die Bridge bereit ist.
+Mit der Streamdeck-Oberfläche kann man beim Sim-/Real-Start „Hand-Oberflächen
+im Browser öffnen“ aktivieren — dann öffnen sich beide Seiten von selbst,
+sobald die Bridge bereit ist. Die Demo-GUI braucht das nicht: dort steckt die
+Handsteuerung unter Greifen → Hände.
 
 **Per Kommandozeile:**
 

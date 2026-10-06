@@ -60,19 +60,21 @@ WSL2 ist hiervon nicht betroffen).
    erlauben (`sudo ufw allow in on <NIC>`) oder deaktivieren.
 
 Die Interface-Auswahl im Startmenü markiert die NIC mit
-`192.168.123.x`-Adresse automatisch als Vorschlag.
+`192.168.123.x`-Adresse automatisch als Vorschlag und warnt, wenn das
+gewählte Interface keine solche Adresse hat.
 
 ## C · Stack starten
 
 ```bash
 cd g1pilot && ./start.sh
-# -> "ECHTER ROBOTER" wählen
-# -> Interface bestätigen, Hände ja/nein + IPs, RViz an, ggf. neu bauen
-# -> Sicherheitsabfrage "REAL" eintippen
+# -> "Echter Roboter" wählen
+# -> Interface bestätigen, Bedienoberfläche (Demo-GUI / Streamdeck),
+#    Hände ja/nein + IPs, RViz an, Geh-Limits prüfen
+# -> Sicherheitshinweis bestätigen (Text-Menü: "REAL" eintippen)
 ```
 
-Erwartung: Container startet, Build läuft durch, RViz und der Streamdeck
-(Titel „— REAL") öffnen sich. **Der Roboter tut nichts von selbst.**
+Erwartung: Container startet, Build läuft durch, RViz und die gewählte
+Bedienoberfläche (Titel „— REAL") öffnen sich. **Der Roboter tut nichts von selbst.**
 
 ## D · DDS-Verbindung prüfen (bevor irgendetwas kommandiert wird)
 

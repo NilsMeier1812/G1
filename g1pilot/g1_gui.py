@@ -19,12 +19,22 @@
 #  per '‹ Menue' zurueck (Prozess laeuft weiter) und ueber 'Laufende Prozesse'
 #  wieder hin. Schliessen = ein einziges Fenster schliessen.
 #
+#  Aufbau (Sim und Real gleich, in der Reihenfolge der Entscheidungen):
+#     Umgebung (nur Sim) bzw. Verbindung (nur Real) -> Bedienoberflaeche
+#     (Demo-GUI / Streamdeck) -> Ausstattung (Haende, Navigation, RViz)
+#     -> eingeklapptes 'Erweitert'. Real zusaetzlich Geh-Limits und das
+#     Sicherheits-Gate. Hand-Oberflaechen im Browser werden nur beim
+#     Streamdeck angeboten -- die Demo-GUI hat die Handsteuerung eingebaut.
+#  Die letzte Auswahl wird gemerkt (~/.config/g1pilot/launcher.json); die
+#  Real-Sicherheitsbestaetigung und "Images neu bauen" bewusst nicht.
+#
 #  Start:  python3 g1_gui.py        (start.sh startet das automatisch)
 #
 #  Faellt Tkinter/DISPLAY aus, benutzt start.sh weiter das Text-Menue.
 # ════════════════════════════════════════════════════════════════════════
 from __future__ import annotations
 
+import json
 import os
 import queue
 import re
@@ -255,7 +265,100 @@ def primary_button(parent, text: str, cmd, color: str = ACCENT) -> tk.Button:
                      font=("TkDefaultFont", 11, "bold"), padx=18, pady=8)
 
 
-def big_button(parent, icon, title, subtitle, color, cmd):
+def hint(parent, text: str) -> tk.Label:
+    lbl = tk.Label(parent, text=text, bg=CARD, fg=MUTED, font=("TkDefaultFont", 9),
+                   wraplength=620, justify="left")
+    lbl.pack(anchor="w", pady=(2, 0))
+    return lbl
+
+
+def choice_rows(parent, var: tk.StringVar, choices) -> None:
+    """Einzelauswahl als Radiobuttons mit Erklaerung: [(wert, titel, text)]."""
+    for value, title, text in choices:
+        row = tk.Frame(parent, bg=CARD)
+        row.pack(fill="x", pady=1)
+        tk.Radiobutton(row, text=title, value=value, variable=var, bg=CARD, fg=FG,
+                       selectcolor=BG, activebackground=CARD, activeforeground=FG,
+                       width=14, anchor="w",
+                       font=("TkDefaultFont", 10, "bold")).pack(side="left")
+        tk.Label(row, text=text, bg=CARD, fg=MUTED,
+                 font=("TkDefaultFont", 9)).pack(side="left", padx=4)
+
+
+def collapsible(parent, title: str) -> tk.Frame:
+    """Eingeklappte Card ('Erweitert ▸'). Gibt den Inhalts-Frame zurueck."""
+    outer = tk.Frame(parent, bg=CARD)
+    outer.pack(fill="x", padx=14, pady=6)
+    inner = tk.Frame(outer, bg=CARD)
+    btn = tk.Button(outer, text=f"{title}  ▸", bg=CARD, fg=ACCENT, relief="flat", bd=0,
+                    activebackground=CARD, activeforeground=ACCENT, anchor="w",
+                    font=("TkDefaultFont", 10, "bold"))
+    btn.pack(fill="x", padx=8, pady=(6, 6))
+
+    def toggle():
+        if inner.winfo_ismapped():
+            inner.pack_forget()
+            btn.configure(text=f"{title}  ▸")
+        else:
+            inner.pack(fill="x", padx=12, pady=(0, 10))
+            btn.configure(text=f"{title}  ▾")
+
+    btn.configure(command=toggle)
+    return inner
+
+
+def set_row_state(widget, enabled: bool) -> None:
+    """Alle Eingabe-Widgets unterhalb von widget (de)aktivieren."""
+    for child in widget.winfo_children():
+        try:
+            child.configure(state="normal" if enabled else "disabled")
+        except tk.TclError:
+            pass
+        set_row_state(child, enabled)
+
+
+def show_row(widget, visible: bool) -> None:
+    """Zeile ein-/ausblenden. widget liegt allein in einem eigenen Container
+    (siehe slot()), damit es beim Wiedereinblenden an seinem Platz landet."""
+    if visible and not widget.winfo_manager():
+        widget.pack(fill="x", pady=2)
+    elif not visible and widget.winfo_manager():
+        widget.pack_forget()
+
+
+def slot(parent) -> tk.Frame:
+    """Fester Platzhalter fuer eine ein-/ausblendbare Zeile."""
+    f = tk.Frame(parent, bg=CARD)
+    f.pack(fill="x")
+    return f
+
+
+# ── Zuletzt gewaehlte Optionen merken (pro Ansicht) ─────────────────────
+SETTINGS_FILE = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) \
+    / "g1pilot" / "launcher.json"
+
+
+def load_settings(key: str) -> dict:
+    try:
+        return json.loads(SETTINGS_FILE.read_text()).get(key, {})
+    except Exception:
+        return {}
+
+
+def save_settings(key: str, values: dict) -> None:
+    try:
+        data = json.loads(SETTINGS_FILE.read_text()) if SETTINGS_FILE.exists() else {}
+    except Exception:
+        data = {}
+    data[key] = values
+    try:
+        SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        SETTINGS_FILE.write_text(json.dumps(data, indent=2))
+    except Exception:
+        pass   # Merken ist Komfort -- Start darf daran nie scheitern
+
+
+def big_button(parent, title, subtitle, color, cmd):
     """Grosse anklickbare Karte fuers Hauptmenue."""
     card = tk.Frame(parent, bg=CARD, cursor="hand2")
     card.pack(fill="x", pady=7)
@@ -263,7 +366,7 @@ def big_button(parent, icon, title, subtitle, color, cmd):
     bar.pack(side="left", fill="y")
     inner = tk.Frame(card, bg=CARD)
     inner.pack(side="left", fill="both", expand=True, padx=14, pady=12)
-    tk.Label(inner, text=f"{icon}  {title}", bg=CARD, fg=FG,
+    tk.Label(inner, text=title, bg=CARD, fg=FG,
              font=("TkDefaultFont", 14, "bold")).pack(anchor="w")
     tk.Label(inner, text=subtitle, bg=CARD, fg=MUTED,
              font=("TkDefaultFont", 10)).pack(anchor="w")
@@ -278,7 +381,7 @@ def nav_header(frame, app, title, subtitle, color=FG):
     head.pack(fill="x", padx=16, pady=(12, 2))
     top = tk.Frame(head, bg=BG)
     top.pack(fill="x")
-    tk.Button(top, text="‹  Menue", command=app.show_menu, bg=CARD, fg=FG,
+    tk.Button(top, text="‹  Menü", command=app.show_menu, bg=CARD, fg=FG,
               relief="flat", padx=10, pady=4).pack(side="left")
     tk.Label(top, text=title, bg=BG, fg=color,
              font=("TkDefaultFont", 15, "bold")).pack(side="left", padx=10)
@@ -378,11 +481,11 @@ class ConsoleFrame(tk.Frame):
         # Kopfzeile: Zurueck + Titel + Status.
         head = tk.Frame(self, bg=CARD)
         head.pack(fill="x")
-        tk.Button(head, text="‹  Menue", command=app.show_menu, bg=CARD, fg=FG,
+        tk.Button(head, text="‹  Menü", command=app.show_menu, bg=CARD, fg=FG,
                   relief="flat", padx=10, pady=6).pack(side="left", padx=6, pady=6)
         tk.Label(head, text=title, bg=CARD, fg=FG,
                  font=("TkDefaultFont", 11, "bold")).pack(side="left", padx=6)
-        self._status = tk.Label(head, text="laeuft…", bg=CARD, fg=AMBER,
+        self._status = tk.Label(head, text="läuft…", bg=CARD, fg=AMBER,
                                 font=("TkDefaultFont", 10, "bold"))
         self._status.pack(side="right", padx=12)
 
@@ -404,12 +507,12 @@ class ConsoleFrame(tk.Frame):
         # Fussleiste.
         foot = tk.Frame(self, bg=BG)
         foot.pack(fill="x", padx=10, pady=8)
-        self._stop_btn = tk.Button(foot, text="■  Stoppen", command=self.stop,
+        self._stop_btn = tk.Button(foot, text="Stoppen", command=self.stop,
                                    bg=RED, fg="white", activebackground="#c93b3f",
                                    relief="flat", font=("TkDefaultFont", 10, "bold"),
                                    padx=14, pady=6)
         self._stop_btn.pack(side="left")
-        tk.Label(foot, text="'Menue' laesst den Prozess im Hintergrund weiterlaufen.",
+        tk.Label(foot, text="»Menü« lässt den Prozess im Hintergrund weiterlaufen.",
                  bg=BG, fg=MUTED, font=("TkDefaultFont", 9)).pack(side="left", padx=12)
 
         self._append(f"$ {' '.join(argv)}\n\n")
@@ -424,7 +527,7 @@ class ConsoleFrame(tk.Frame):
 
     def state(self) -> str:
         if self.is_running():
-            return "stoppe…" if self._stopping else "laeuft"
+            return "stoppe…" if self._stopping else "läuft"
         return "gestoppt" if self._stopping else "beendet"
 
     # ── intern ────────────────────────────────────────────────────────────
@@ -597,95 +700,156 @@ class ConsoleFrame(tk.Frame):
 
 
 # ════════════════════════════════════════════════════════════════════════
+#  Gemeinsame Bausteine der beiden Start-Ansichten
+# ════════════════════════════════════════════════════════════════════════
+GUI_CHOICES = [
+    ("demo", "Demo-GUI",
+     "Vorführung: Gehen / Greifen, Arme + Hände, Stationen anfahren"),
+    ("streamdeck", "Streamdeck",
+     "Entwicklung: alle Einzelfunktionen als Kacheln"),
+]
+
+
+def gui_section(parent, var: tk.StringVar) -> None:
+    s = section(parent, "Bedienoberfläche")
+    choice_rows(s, var, GUI_CHOICES)
+
+
+def hand_gui_rows(parent, var: tk.BooleanVar):
+    """Browser-Oberflaechen der Hand-Bridge (nur fuer den Streamdeck relevant)
+    bzw. Hinweis, dass die Demo-GUI die Handsteuerung eingebaut hat.
+    -> (zeile_browser, zeile_hinweis), beide per show_row() umschaltbar."""
+    s = slot(parent)
+    row = toggle_row(s, "Hand-Oberflächen im Browser öffnen", var,
+                     "Controller + Taktil-Viewer der Hand-Bridge")
+    s2 = slot(parent)
+    note = tk.Label(s2, text="Handsteuerung ist in der Demo-GUI eingebaut (Greifen → Hände).",
+                    bg=CARD, fg=MUTED, font=("TkDefaultFont", 9), anchor="w")
+    return row, note
+
+
+def start_footer(frame, app, text: str, cmd, color: str) -> tk.Button:
+    foot = tk.Frame(frame, bg=BG)
+    foot.pack(fill="x", side="bottom", padx=16, pady=12)
+    btn = primary_button(foot, text, cmd, color)
+    btn.pack(side="left")
+    tk.Button(foot, text="Abbrechen", command=app.show_menu, bg=CARD, fg=FG,
+              relief="flat", padx=12, pady=8).pack(side="right")
+    return btn
+
+
+# ════════════════════════════════════════════════════════════════════════
 #  View: Simulation starten
 # ════════════════════════════════════════════════════════════════════════
 class SimFrame(tk.Frame):
+    """Sim-Start. Aufbau in der Reihenfolge der Entscheidungen:
+    Umgebung -> Bedienoberflaeche -> Ausstattung -> Erweitert.
+    Die Auswahl wird gemerkt (settings), Defaults siehe start.sh (Sim-Zweig)."""
+
     ephemeral = True
-    view_title = "Simulation starten"
+    view_title = "Simulation"
+    DEFAULT_ENV = "Standard (scene.xml)"
 
     def __init__(self, parent, app):
         super().__init__(parent, bg=BG)
         self.app = app
-        nav_header(self, app, "Simulation starten",
-                   "MuJoCo + Whole-Body-Policy. Alle Optionen in einem Fenster.")
-
-        # Aktionsleiste unten (ausserhalb des Scrollbereichs).
-        foot = tk.Frame(self, bg=BG)
-        foot.pack(fill="x", side="bottom", padx=16, pady=12)
-        primary_button(foot, "▶  Simulation starten", self._start, GREEN).pack(side="left")
-        tk.Button(foot, text="Abbrechen (Menue)", command=app.show_menu, bg=CARD, fg=FG,
-                  relief="flat", padx=12, pady=8).pack(side="right")
+        nav_header(self, app, "Simulation",
+                   "MuJoCo + Whole-Body-Policy — gefahrlos testen.")
+        start_footer(self, app, "Simulation starten", self._start, GREEN)
 
         body = ScrollableFrame(self)
         body.pack(fill="both", expand=True)
         b = body.body
 
-        # Defaults spiegeln start.sh (Sim-Zweig).
-        self.v_rviz = tk.BooleanVar(value=False)
-        self.v_hands = tk.BooleanVar(value=False)
-        self.v_open_guis = tk.BooleanVar(value=True)
-        self.v_nav = tk.BooleanVar(value=False)
-        self.v_demo_gui = tk.BooleanVar(value=False)
-        self.v_rebuild = tk.BooleanVar(value=False)
-        self.v_env = tk.StringVar(value="Standard — aktuelles Terrain (scene.xml)")
-        self.v_rt = tk.StringVar(value="1.0")
+        st = load_settings("sim")
+        scenes = [p.stem for p in list_scenes()]
+        env = st.get("env", "")
+        self.v_env = tk.StringVar(value=env if env in scenes else self.DEFAULT_ENV)
+        self.v_gui = tk.StringVar(value=st.get("gui", "demo"))
+        self.v_hands = tk.BooleanVar(value=st.get("hands", True))
+        self.v_nav = tk.BooleanVar(value=st.get("nav", False))
+        self.v_rviz = tk.BooleanVar(value=st.get("rviz", False))
+        self._rviz_own = None   # eigene RViz-Wahl, solange Navigation RViz erzwingt
+        self.v_open_guis = tk.BooleanVar(value=st.get("open_guis", False))
+        self.v_rt = tk.StringVar(value=st.get("rt", "1.0"))
+        self.v_rebuild = tk.BooleanVar(value=False)   # bewusst nie gemerkt
 
-        s = section(b, "Umgebung (G1 bleibt gleich, nur die Welt wechselt)")
-        self._scene_paths: dict[str, str] = {"Standard — aktuelles Terrain (scene.xml)": ""}
-        names = ["Standard — aktuelles Terrain (scene.xml)"]
-        for p in list_scenes():
-            names.append(p.stem)
-            self._scene_paths[p.stem] = p.stem
-        ttk.Combobox(s, textvariable=self.v_env, values=names,
+        # 1) Umgebung
+        s = section(b, "Umgebung")
+        ttk.Combobox(s, textvariable=self.v_env, values=[self.DEFAULT_ENV, *scenes],
                      state="readonly", width=44).pack(anchor="w", pady=2)
-        tk.Label(s, text="Umgebungen anlegen/bearbeiten: Menue -> 'Umgebungen bearbeiten'.",
-                 bg=CARD, fg=MUTED, font=("TkDefaultFont", 9)).pack(anchor="w", pady=(2, 0))
+        hint(s, "Der G1 bleibt gleich, nur die Welt wechselt. Anlegen und bearbeiten: "
+                "Startmenü → Umgebungen.")
 
-        s = section(b, "Visualisierung & Features")
-        toggle_row(s, "RViz mitstarten", self.v_rviz,
-                   "CoM-/TF-Visualisierung (MuJoCo-Fenster kommt immer)")
-        toggle_row(s, "Navigation mitstarten", self.v_nav,
-                   "dijkstra_planner + nav2point + Sim-Glue")
-        toggle_row(s, "Demo-Oberflaeche statt Streamdeck", self.v_demo_gui,
-                   "vereinfacht: Gehen / Greifen (docs/42_demo_gui_konzept.md)")
+        # 2) Bedienoberflaeche
+        gui_section(b, self.v_gui)
 
-        s = section(b, "Inspire-FTP-Haende")
-        toggle_row(s, "Inspire-Haende (Finger steuerbar + GUIs)", self.v_hands,
-                   "sonst Rubber-Hand")
-        self._open_row = toggle_row(s, "Hand-GUIs automatisch im Browser oeffnen",
-                                    self.v_open_guis)
-        self.v_hands.trace_add("write", lambda *_: self._sync_hands())
-        self._sync_hands()
+        # 3) Ausstattung
+        s = section(b, "Ausstattung")
+        toggle_row(s, "Inspire-Hände", self.v_hands,
+                   "Finger steuerbar, Kraftsensoren; sonst starre Hände")
+        hand_box = tk.Frame(s, bg=CARD)
+        hand_box.pack(fill="x", padx=(24, 0))
+        self._open_row, self._hand_hint = hand_gui_rows(hand_box, self.v_open_guis)
+        toggle_row(s, "Navigation", self.v_nav,
+                   "Planer + Stationen / AUTO NAV in der Demo-GUI")
+        self._rviz_row = toggle_row(s, "RViz", self.v_rviz,
+                                    "Zusatzfenster mit TF/Markern; MuJoCo-Fenster kommt immer")
+        for v in (self.v_hands, self.v_gui, self.v_nav):
+            v.trace_add("write", lambda *_: self._sync())
 
-        s = section(b, "Erweitert")
-        field_row(s, "Realtime-Faktor (1.0=Echtzeit)", self.v_rt, width=8)
-        toggle_row(s, "Docker-Images vor dem Start neu bauen (--build)", self.v_rebuild,
-                   "nach Code-/Dockerfile-Aenderungen")
+        # 4) Erweitert
+        s = collapsible(b, "Erweitert")
+        field_row(s, "Sim-Tempo (1.0 = Echtzeit)", self.v_rt, width=8)
+        hint(s, "Kleiner als 1.0 = Zeitlupe (Obergrenze; langsame PCs laufen ohnehin langsamer).")
+        toggle_row(s, "Docker-Images neu bauen", self.v_rebuild,
+                   "nur nach Änderungen an Dockerfiles/Abhängigkeiten")
+        self._sync()
 
-    def _sync_hands(self) -> None:
-        state = "normal" if self.v_hands.get() else "disabled"
-        for child in self._open_row.winfo_children():
-            try:
-                child.configure(state=state)
-            except tk.TclError:
-                pass
+    def _sync(self) -> None:
+        hands = self.v_hands.get()
+        streamdeck = self.v_gui.get() == "streamdeck"
+        # Browser-Oberflaechen nur fuer den Streamdeck -- die Demo-GUI hat sie eingebaut.
+        show_row(self._open_row, hands and streamdeck)
+        show_row(self._hand_hint, hands and not streamdeck)
+        # Navigation braucht RViz (Karte/Ziel-Werkzeug leben dort) -> erzwungen;
+        # ohne Navigation wieder die eigene RViz-Wahl.
+        nav = self.v_nav.get()
+        set_row_state(self._rviz_row, not nav)
+        if nav and self._rviz_own is None:
+            self._rviz_own = self.v_rviz.get()
+            self.v_rviz.set(True)
+        elif not nav and self._rviz_own is not None:
+            self.v_rviz.set(self._rviz_own)
+            self._rviz_own = None
 
     def _start(self) -> None:
-        env = os.environ.copy()
-        env["G1_MODE"] = "sim"
-        env["USE_RVIZ"] = "true" if self.v_rviz.get() else "false"
-        env["G1_INSPIRE_HANDS"] = "1" if self.v_hands.get() else "0"
-        env["OPEN_GUIS"] = "true" if (self.v_hands.get() and self.v_open_guis.get()) else "false"
-        env["G1_ENABLE_NAV"] = "1" if self.v_nav.get() else "0"
-        env["G1_GUI"] = "demo" if self.v_demo_gui.get() else "streamdeck"
-        env["G1_ENV"] = self._scene_paths.get(self.v_env.get(), "")
         rt = self.v_rt.get().strip() or "1.0"
         try:
             float(rt)
         except ValueError:
-            messagebox.showerror("Ungueltig", "Realtime-Faktor muss eine Zahl sein (z.B. 1.0).",
+            messagebox.showerror("Ungültig", "Sim-Tempo muss eine Zahl sein (z.B. 1.0).",
                                  parent=self)
             return
+        env_name = self.v_env.get()
+        env_name = "" if env_name == self.DEFAULT_ENV else env_name
+        hands = self.v_hands.get()
+        gui = self.v_gui.get()
+        save_settings("sim", {
+            "env": env_name, "gui": gui, "hands": hands, "nav": self.v_nav.get(),
+            "rviz": self.v_rviz.get() if self._rviz_own is None else self._rviz_own,
+            "open_guis": self.v_open_guis.get(), "rt": rt,
+        })
+
+        env = os.environ.copy()
+        env["G1_MODE"] = "sim"
+        env["G1_ENV"] = env_name
+        env["G1_GUI"] = gui
+        env["G1_INSPIRE_HANDS"] = "1" if hands else "0"
+        env["OPEN_GUIS"] = "true" if (hands and gui == "streamdeck"
+                                      and self.v_open_guis.get()) else "false"
+        env["G1_ENABLE_NAV"] = "1" if self.v_nav.get() else "0"
+        env["USE_RVIZ"] = "true" if self.v_rviz.get() else "false"
         env["SIM_REALTIME_FACTOR"] = rt
 
         argv = ["bash", str(START_SH), "--yes"]
@@ -701,45 +865,42 @@ class SimFrame(tk.Frame):
 #  View: Echten Roboter starten
 # ════════════════════════════════════════════════════════════════════════
 class RealFrame(tk.Frame):
+    """Real-Start: Verbindung -> Bedienoberflaeche -> Ausstattung -> Geh-Limits
+    -> Erweitert -> Sicherheits-Bestaetigung. Die Bestaetigung wird NIE gemerkt."""
+
     ephemeral = True
-    view_title = "Echten Roboter starten"
+    view_title = "Echter Roboter"
 
     def __init__(self, parent, app):
         super().__init__(parent, bg=BG)
         self.app = app
-        nav_header(self, app, "Echten Roboter starten",
-                   "Unitree-Loco + Arme + Haende ueber LAN. Der Roboter bewegt sich!", RED)
-
-        # Defaults spiegeln start.sh (Real-Zweig).
-        self.v_hands = tk.BooleanVar(value=True)
-        self.v_open_guis = tk.BooleanVar(value=True)
-        self.v_rviz = tk.BooleanVar(value=True)
-        self.v_lidar = tk.BooleanVar(value=False)
-        self.v_demo_gui = tk.BooleanVar(value=False)
-        self.v_rebuild = tk.BooleanVar(value=False)
-        self.v_left = tk.StringVar(value="192.168.123.210")
-        self.v_right = tk.StringVar(value="192.168.123.211")
-        self.v_port = tk.StringVar(value="6000")
-        self.v_vx = tk.StringVar(value="0.4")
-        self.v_vy = tk.StringVar(value="0.3")
-        self.v_vyaw = tk.StringVar(value="0.4")
-        self.v_joy = tk.StringVar(value="Wireless Controller")
-        self.v_confirm = tk.BooleanVar(value=False)
-
-        # Aktionsleiste unten.
-        foot = tk.Frame(self, bg=BG)
-        foot.pack(fill="x", side="bottom", padx=16, pady=12)
-        self.start_btn = primary_button(foot, "🤖  Echten Roboter starten", self._start, RED)
+        nav_header(self, app, "Echter Roboter",
+                   "G1 per LAN: Unitree-Loco + Arme + Hände. Der Roboter bewegt sich!", RED)
+        self.start_btn = start_footer(self, app, "Echten Roboter starten", self._start, RED)
         self.start_btn.configure(state="disabled")
-        self.start_btn.pack(side="left")
-        tk.Button(foot, text="Abbrechen (Menue)", command=app.show_menu, bg=CARD, fg=FG,
-                  relief="flat", padx=12, pady=8).pack(side="right")
 
         body = ScrollableFrame(self)
         body.pack(fill="both", expand=True)
         b = body.body
 
-        s = section(b, "Netzwerk-Interface zum G1 (Roboter-LAN = 192.168.123.x)")
+        st = load_settings("real")
+        self.v_gui = tk.StringVar(value=st.get("gui", "demo"))
+        self.v_hands = tk.BooleanVar(value=st.get("hands", True))
+        self.v_left = tk.StringVar(value=st.get("left", "192.168.123.210"))
+        self.v_right = tk.StringVar(value=st.get("right", "192.168.123.211"))
+        self.v_open_guis = tk.BooleanVar(value=st.get("open_guis", False))
+        self.v_rviz = tk.BooleanVar(value=st.get("rviz", True))
+        self.v_vx = tk.StringVar(value=st.get("vx", "0.4"))
+        self.v_vy = tk.StringVar(value=st.get("vy", "0.3"))
+        self.v_vyaw = tk.StringVar(value=st.get("vyaw", "0.4"))
+        self.v_port = tk.StringVar(value=st.get("port", "6000"))
+        self.v_joy = tk.StringVar(value=st.get("joy", "Wireless Controller"))
+        self.v_lidar = tk.BooleanVar(value=False)
+        self.v_rebuild = tk.BooleanVar(value=False)
+        self.v_confirm = tk.BooleanVar(value=False)
+
+        # 1) Verbindung
+        s = section(b, "Verbindung zum G1")
         nics = detect_nics()
         values = []
         default = ""
@@ -748,52 +909,63 @@ class RealFrame(tk.Frame):
             label = f"{name}  ({ip or 'keine IPv4'})"
             values.append(label)
             self._iface_map[label] = name
-            if ip.startswith("192.168.123."):
+            if ip.startswith("192.168.123.") or (not default and name == st.get("iface")):
                 default = label
-        if not values:
-            values = [""]
-        self.v_iface = tk.StringVar(value=default or values[0])
-        ttk.Combobox(s, textvariable=self.v_iface, values=values, width=42).pack(anchor="w", pady=2)
-        tk.Label(s, text="Kein passendes Interface? Namen direkt eintippen (z.B. enp3s0).",
-                 bg=CARD, fg=MUTED, font=("TkDefaultFont", 9)).pack(anchor="w")
-
-        s = section(b, "Inspire-FTP-Haende (Modbus TCP im Roboter-LAN)")
-        toggle_row(s, "Haende ansteuern (Hand-Bridge + GUIs)", self.v_hands)
-        self._hand_box = tk.Frame(s, bg=CARD)
-        self._hand_box.pack(fill="x")
-        field_row(self._hand_box, "IP linke Hand", self.v_left)
-        field_row(self._hand_box, "IP rechte Hand", self.v_right)
-        field_row(self._hand_box, "Modbus-Port", self.v_port, width=8)
-        toggle_row(self._hand_box, "Hand-GUIs automatisch oeffnen", self.v_open_guis)
-        self.v_hands.trace_add("write", lambda *_: self._sync_hands())
-        self._sync_hands()
-
-        s = section(b, "Steuerung & Visualisierung")
-        toggle_row(s, "RViz mitstarten (IK-Marker der Arm-Manipulation)", self.v_rviz)
-        field_row(s, "Joystick-Name (evdev)", self.v_joy, width=24)
-        toggle_row(s, "LiDAR aktivieren (G1_ENABLE_LIDAR)", self.v_lidar,
-                   "nur mit Livox-Setup")
-        toggle_row(s, "Demo-Oberflaeche statt Streamdeck", self.v_demo_gui,
-                   "vereinfacht: Gehen / Greifen")
-
-        s = section(b, "Walk-Limits (konservativ fuer erste Tests)")
+        self.v_iface = tk.StringVar(value=default or (values[0] if values else st.get("iface", "")))
         row = tk.Frame(s, bg=CARD)
         row.pack(fill="x", pady=2)
-        for lbl, var in (("vx", self.v_vx), ("vy", self.v_vy), ("vyaw", self.v_vyaw)):
-            tk.Label(row, text=lbl, bg=CARD, fg=FG).pack(side="left", padx=(0, 2))
+        tk.Label(row, text="Netzwerk-Interface", bg=CARD, fg=FG, width=22, anchor="w",
+                 font=("TkDefaultFont", 10)).pack(side="left")
+        ttk.Combobox(row, textvariable=self.v_iface, values=values, width=34).pack(side="left")
+        self._lan = tk.Label(s, text="", bg=CARD, font=("TkDefaultFont", 9))
+        self._lan.pack(anchor="w", pady=(4, 0))
+        self.v_iface.trace_add("write", lambda *_: self._sync_lan(nics))
+        self._sync_lan(nics)
+
+        # 2) Bedienoberflaeche
+        gui_section(b, self.v_gui)
+
+        # 3) Ausstattung
+        s = section(b, "Ausstattung")
+        toggle_row(s, "Inspire-Hände (Modbus TCP im Roboter-LAN)", self.v_hands)
+        self._hand_box = tk.Frame(s, bg=CARD)
+        self._hand_box.pack(fill="x", padx=(24, 0))
+        field_row(self._hand_box, "IP linke Hand", self.v_left)
+        field_row(self._hand_box, "IP rechte Hand", self.v_right)
+        self._open_row, self._hand_hint = hand_gui_rows(self._hand_box, self.v_open_guis)
+        toggle_row(s, "RViz", self.v_rviz, "empfohlen: Arm-Marker + Zustand sichtbar")
+        for v in (self.v_hands, self.v_gui):
+            v.trace_add("write", lambda *_: self._sync())
+
+        # 4) Geh-Limits
+        s = section(b, "Geh-Limits (konservativ für die ersten Tests)")
+        row = tk.Frame(s, bg=CARD)
+        row.pack(fill="x", pady=2)
+        for lbl, var, unit in (("vorwärts", self.v_vx, "m/s"), ("seitlich", self.v_vy, "m/s"),
+                               ("drehen", self.v_vyaw, "rad/s")):
+            tk.Label(row, text=lbl, bg=CARD, fg=FG).pack(side="left", padx=(0, 4))
             tk.Entry(row, textvariable=var, width=6, bg=BG, fg=FG,
-                     insertbackground=FG, relief="flat").pack(side="left", padx=(0, 12), ipady=2)
+                     insertbackground=FG, relief="flat").pack(side="left", ipady=2)
+            tk.Label(row, text=unit, bg=CARD, fg=MUTED).pack(side="left", padx=(2, 16))
 
-        s = section(b, "Erweitert")
-        toggle_row(s, "Docker-Images vor dem Start neu bauen (--build)", self.v_rebuild)
+        # 5) Erweitert
+        s = collapsible(b, "Erweitert")
+        field_row(s, "Modbus-Port der Hände", self.v_port, width=8)
+        field_row(s, "Gamepad-Name (evdev)", self.v_joy, width=24)
+        toggle_row(s, "LiDAR + Navigation", self.v_lidar,
+                   "experimentell: braucht Livox MID360 und das volle Image (make real-full)")
+        toggle_row(s, "Docker-Images neu bauen", self.v_rebuild,
+                   "nur nach Änderungen an Dockerfiles/Abhängigkeiten")
 
+        # 6) Sicherheit
         gate = tk.Frame(b, bg="#3a2326", bd=0)
         gate.pack(fill="x", padx=14, pady=8)
-        tk.Label(gate, text="⚠  ACHTUNG: ECHTER ROBOTER", bg="#3a2326", fg=RED,
+        tk.Label(gate, text="ACHTUNG: ECHTER ROBOTER", bg="#3a2326", fg=RED,
                  font=("TkDefaultFont", 11, "bold")).pack(anchor="w", padx=12, pady=(8, 0))
         tk.Label(gate,
-                 text=("Kein Auto-Start: der Roboter bewegt sich erst nach Streamdeck-\n"
-                       "Kommandos. E-STOP = Damp = Roboter sackt ZUSAMMEN (sichern!).\n"
+                 text=("Kein Auto-Start: der Roboter bewegt sich erst, wenn er in der\n"
+                       "Bedienoberfläche gestartet wird (Demo-GUI: »Roboter starten«,\n"
+                       "Streamdeck: START). NOT-HALT = Damp = Roboter sackt zusammen (sichern!).\n"
                        "Checkliste vorher: g1pilot/docs/70_echtroboter_anleitung.md"),
                  bg="#3a2326", fg=FG, justify="left",
                  font=("TkDefaultFont", 9)).pack(anchor="w", padx=12, pady=(2, 6))
@@ -802,15 +974,26 @@ class RealFrame(tk.Frame):
                        variable=self.v_confirm, bg="#3a2326", fg=FG, selectcolor=BG,
                        activebackground="#3a2326", activeforeground=FG,
                        command=self._sync_confirm).pack(anchor="w", padx=12, pady=(0, 8))
+        self._sync()
 
-    def _sync_hands(self) -> None:
-        state = "normal" if self.v_hands.get() else "disabled"
-        for child in self._hand_box.winfo_children():
-            for w in child.winfo_children():
-                try:
-                    w.configure(state=state)
-                except tk.TclError:
-                    pass
+    def _iface(self) -> str:
+        label = self.v_iface.get().strip()
+        return self._iface_map.get(label, label.split()[0] if label else "")
+
+    def _sync_lan(self, nics) -> None:
+        ip = dict(nics).get(self._iface(), "")
+        if ip.startswith("192.168.123."):
+            self._lan.configure(text=f"Im Roboter-LAN ({ip}).", fg=GREEN)
+        else:
+            self._lan.configure(text="Keine 192.168.123.x-Adresse auf diesem Interface — "
+                                     "Kabel/IP prüfen (Roboter-LAN).", fg=AMBER)
+
+    def _sync(self) -> None:
+        hands = self.v_hands.get()
+        streamdeck = self.v_gui.get() == "streamdeck"
+        set_row_state(self._hand_box, hands)
+        show_row(self._open_row, streamdeck)
+        show_row(self._hand_hint, not streamdeck)
 
     def _sync_confirm(self) -> None:
         self.start_btn.configure(state="normal" if self.v_confirm.get() else "disabled")
@@ -818,30 +1001,44 @@ class RealFrame(tk.Frame):
     def _start(self) -> None:
         if not self.v_confirm.get():
             return
-        iface_label = self.v_iface.get().strip()
-        iface = self._iface_map.get(iface_label, iface_label.split()[0] if iface_label else "")
+        iface = self._iface()
         if not iface:
             messagebox.showerror("Interface fehlt",
-                                 "Bitte ein Netzwerk-Interface waehlen oder eintippen.",
+                                 "Bitte ein Netzwerk-Interface wählen oder eintippen.",
                                  parent=self)
             return
+        hands = self.v_hands.get()
+        gui = self.v_gui.get()
+        vals = {
+            "iface": iface, "gui": gui, "hands": hands,
+            "left": self.v_left.get().strip() or "192.168.123.210",
+            "right": self.v_right.get().strip() or "192.168.123.211",
+            "port": self.v_port.get().strip() or "6000",
+            "open_guis": self.v_open_guis.get(), "rviz": self.v_rviz.get(),
+            "vx": self.v_vx.get().strip() or "0.4",
+            "vy": self.v_vy.get().strip() or "0.3",
+            "vyaw": self.v_vyaw.get().strip() or "0.4",
+            "joy": self.v_joy.get().strip() or "Wireless Controller",
+        }
+        save_settings("real", vals)
 
         env = os.environ.copy()
         env["G1_MODE"] = "real"
         env["G1_REAL_CONFIRM"] = "1"  # Sicherheits-Gate von start.sh im --yes-Modus
-        env["G1_GUI"] = "demo" if self.v_demo_gui.get() else "streamdeck"
         env["ROBOT_INTERFACE"] = iface
-        env["G1_INSPIRE_HANDS"] = "1" if self.v_hands.get() else "0"
-        env["OPEN_GUIS"] = "true" if (self.v_hands.get() and self.v_open_guis.get()) else "false"
-        env["G1_HAND_LEFT_HOST"] = self.v_left.get().strip() or "192.168.123.210"
-        env["G1_HAND_RIGHT_HOST"] = self.v_right.get().strip() or "192.168.123.211"
-        env["G1_HAND_PORT"] = self.v_port.get().strip() or "6000"
-        env["USE_RVIZ"] = "true" if self.v_rviz.get() else "false"
+        env["G1_GUI"] = gui
+        env["G1_INSPIRE_HANDS"] = "1" if hands else "0"
+        env["OPEN_GUIS"] = "true" if (hands and gui == "streamdeck"
+                                      and vals["open_guis"]) else "false"
+        env["G1_HAND_LEFT_HOST"] = vals["left"]
+        env["G1_HAND_RIGHT_HOST"] = vals["right"]
+        env["G1_HAND_PORT"] = vals["port"]
+        env["USE_RVIZ"] = "true" if vals["rviz"] else "false"
         env["G1_ENABLE_LIDAR"] = "1" if self.v_lidar.get() else "0"
-        env["JOYSTICK_NAME"] = self.v_joy.get().strip() or "Wireless Controller"
-        env["G1_MAX_VX"] = self.v_vx.get().strip() or "0.4"
-        env["G1_MAX_VY"] = self.v_vy.get().strip() or "0.3"
-        env["G1_MAX_VYAW"] = self.v_vyaw.get().strip() or "0.4"
+        env["JOYSTICK_NAME"] = vals["joy"]
+        env["G1_MAX_VX"] = vals["vx"]
+        env["G1_MAX_VY"] = vals["vy"]
+        env["G1_MAX_VYAW"] = vals["vyaw"]
 
         argv = ["bash", str(START_SH), "--yes"]
         if self.v_rebuild.get():
@@ -857,29 +1054,30 @@ class RealFrame(tk.Frame):
 # ════════════════════════════════════════════════════════════════════════
 class SceneFrame(tk.Frame):
     ephemeral = True
-    view_title = "Umgebungen bearbeiten"
+    view_title = "Umgebungen"
 
     def __init__(self, parent, app):
         super().__init__(parent, bg=BG)
         self.app = app
-        nav_header(self, app, "Umgebungen bearbeiten",
+        nav_header(self, app, "Umgebungen",
                    "Szenen aus scene_editor/scenes/ — dieselben, die beim Sim-Start "
-                   "waehlbar sind.")
+                   "wählbar sind.")
         body = ScrollableFrame(self)
         body.pack(fill="both", expand=True)
         self._body = body.body
-        self.v_hands = tk.BooleanVar(value=False)
+        # Wie beim Sim-Start (gleiche Voreinstellung bzw. letzte Sim-Auswahl).
+        self.v_hands = tk.BooleanVar(value=load_settings("sim").get("hands", True))
         if not scene_editor_ready():
             self._show_setup_needed()
             return
         self._build_editor_ui()
 
     def _show_setup_needed(self) -> None:
-        box = section(self._body, "Einmaliges Setup noetig")
+        box = section(self._body, "Einmaliges Setup nötig")
         tk.Label(box, text="Der Scene-Editor braucht ein virtualenv (scene_editor/.venv).\n"
-                           "Das wird einmalig eingerichtet (Internet noetig, danach gecacht).",
+                           "Das wird einmalig eingerichtet (Internet nötig, danach gecacht).",
                  bg=CARD, fg=FG, justify="left").pack(anchor="w", pady=(0, 8))
-        primary_button(box, "Setup jetzt ausfuehren", self._run_setup, ACCENT).pack(anchor="w")
+        primary_button(box, "Setup jetzt ausführen", self._run_setup, ACCENT).pack(anchor="w")
 
     def _run_setup(self) -> None:
         self.app.start_process("Scene-Editor Setup", ["bash", str(SETUP_SH)],
@@ -898,36 +1096,30 @@ class SceneFrame(tk.Frame):
         self.listbox.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
         self._reload_scenes()
+        tk.Button(s, text="Liste aktualisieren", command=self._reload_scenes,
+                  bg=BG, fg=FG, relief="flat", padx=10, pady=4).pack(anchor="w", pady=(6, 0))
 
-        toggle_row(s, "Beim Ansehen 'mit G1' die Inspire-Haende laden", self.v_hands)
-
-        act = section(self._body, "Aktion fuer die gewaehlte Umgebung")
+        act = section(self._body, "Aktion für die gewählte Umgebung")
         grid = tk.Frame(act, bg=CARD)
         grid.pack(fill="x")
-        primary_button(grid, "✎  Im Editor bearbeiten",
-                       lambda: self._run_scene("edit"), ACCENT).grid(
-            row=0, column=0, padx=4, pady=4, sticky="ew")
-        primary_button(grid, "👁  Nur Umgebung ansehen",
-                       lambda: self._run_scene("view"), CARD).grid(
-            row=0, column=1, padx=4, pady=4, sticky="ew")
-        primary_button(grid, "🤖  Mit G1 ansehen",
-                       lambda: self._run_scene("with-g1"), GREEN).grid(
-            row=1, column=0, padx=4, pady=4, sticky="ew")
-        tk.Button(grid, text="↻  Liste aktualisieren", command=self._reload_scenes,
-                  bg=CARD, fg=FG, relief="flat", padx=10, pady=8).grid(
-            row=1, column=1, padx=4, pady=4, sticky="ew")
-        grid.columnconfigure(0, weight=1)
-        grid.columnconfigure(1, weight=1)
+        for col, (text, cmd, color) in enumerate((
+                ("Im Editor bearbeiten", "edit", ACCENT),
+                ("Mit G1 ansehen", "with-g1", GREEN),
+                ("Nur Umgebung ansehen", "view", BG))):
+            primary_button(grid, text, lambda c=cmd: self._run_scene(c), color).grid(
+                row=0, column=col, padx=4, pady=4, sticky="ew")
+            grid.columnconfigure(col, weight=1)
+        toggle_row(act, "Bei »Mit G1 ansehen« die Inspire-Hände laden", self.v_hands)
 
         new = section(self._body, "Neue Umgebung")
         newrow = tk.Frame(new, bg=CARD)
         newrow.pack(fill="x")
-        primary_button(newrow, "＋  Leere Umgebung im Editor",
+        primary_button(newrow, "Leere Umgebung im Editor",
                        lambda: self._run_cmd(["new"], "Neue Umgebung", browser=True),
                        ACCENT).pack(side="left", padx=(0, 6))
-        tk.Button(newrow, text="✨  Aus Text-Prompt generieren", command=self._run_prompt,
-                  bg=CARD, fg=FG, relief="flat", padx=12, pady=8).pack(side="left")
-        tk.Label(new, text="Der Editor oeffnet einen lokalen Webserver (http://127.0.0.1:8080) "
+        primary_button(newrow, "Aus Text-Prompt generieren", self._run_prompt,
+                       BG).pack(side="left")
+        tk.Label(new, text="Der Editor öffnet einen lokalen Webserver (http://127.0.0.1:8080) "
                            "im Browser. Export landet automatisch in scenes/.",
                  bg=CARD, fg=MUTED, font=("TkDefaultFont", 9),
                  wraplength=560, justify="left").pack(anchor="w", pady=(6, 0))
@@ -949,7 +1141,7 @@ class SceneFrame(tk.Frame):
             return None
         sel = self.listbox.curselection()
         if not sel:
-            messagebox.showinfo("Keine Auswahl", "Bitte zuerst eine Umgebung waehlen.",
+            messagebox.showinfo("Keine Auswahl", "Bitte zuerst eine Umgebung wählen.",
                                 parent=self)
             return None
         return self._scenes[sel[0]]
@@ -989,7 +1181,7 @@ class SceneFrame(tk.Frame):
 # ════════════════════════════════════════════════════════════════════════
 class MenuFrame(tk.Frame):
     ephemeral = True
-    view_title = "Startmenue"
+    view_title = "Startmenü"
 
     def __init__(self, parent, app):
         super().__init__(parent, bg=BG)
@@ -999,7 +1191,7 @@ class MenuFrame(tk.Frame):
         head.pack(fill="x", padx=24, pady=(20, 4))
         tk.Label(head, text="G1 Robot Control", bg=BG, fg=FG,
                  font=("TkDefaultFont", 20, "bold")).pack(anchor="w")
-        tk.Label(head, text="Simulation, echter Roboter und Umgebungen — alles in einem Fenster.",
+        tk.Label(head, text="Was soll gestartet werden?",
                  bg=BG, fg=MUTED, font=("TkDefaultFont", 11)).pack(anchor="w")
 
         body = ScrollableFrame(self)
@@ -1008,16 +1200,17 @@ class MenuFrame(tk.Frame):
 
         wrap = tk.Frame(b, bg=BG)
         wrap.pack(fill="x", padx=24, pady=8)
-        big_button(wrap, "▶", "Simulation starten",
+        big_button(wrap, "Simulation",
                    "MuJoCo + Whole-Body-Policy — gefahrlos testen", GREEN, app.open_sim)
-        big_button(wrap, "🤖", "Echten Roboter starten",
-                   "G1 per LAN — Loco + Arme + Haende (Roboter bewegt sich!)", RED, app.open_real)
-        big_button(wrap, "🏗", "Umgebungen bearbeiten",
+        big_button(wrap, "Echter Roboter",
+                   "G1 per LAN — Loco + Arme + Hände (der Roboter bewegt sich!)", RED,
+                   app.open_real)
+        big_button(wrap, "Umgebungen",
                    "Szenen anlegen, bearbeiten und mit dem G1 ansehen", ACCENT, app.open_scenes)
 
         # Laufende / letzte Prozesse (damit nichts 'verloren' geht).
         if app.consoles:
-            s = section(b, "Laufende / letzte Prozesse")
+            s = section(b, "Prozesse")
             for c in app.consoles:
                 row = tk.Frame(s, bg=CARD)
                 row.pack(fill="x", pady=2)
@@ -1039,10 +1232,13 @@ class MenuFrame(tk.Frame):
         # Sekundaerzeile.
         sec = tk.Frame(b, bg=BG)
         sec.pack(fill="x", padx=24, pady=(6, 12))
-        tk.Button(sec, text="■  Laufende Stacks stoppen", command=app.stop_all,
+        tk.Button(sec, text="Alle Stacks stoppen", command=app.stop_all,
                   bg=CARD, fg=FG, relief="flat", padx=12, pady=6).pack(side="left")
-        docs_btn = ttk.Menubutton(sec, text="Dokumentation")
-        docmenu = tk.Menu(docs_btn, tearoff=0)
+        docs_btn = tk.Menubutton(sec, text="Dokumentation  ▾", bg=CARD, fg=FG,
+                                 activebackground=CARD, activeforeground=FG,
+                                 relief="flat", padx=12, pady=6)
+        docmenu = tk.Menu(docs_btn, tearoff=0, bg=CARD, fg=FG,
+                          activebackground=ACCENT, activeforeground="white")
         for label, path in DOCS:
             docmenu.add_command(label=label, command=lambda p=path: open_path(p))
         docs_btn["menu"] = docmenu
@@ -1062,10 +1258,12 @@ class MenuFrame(tk.Frame):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("G1 — Startmenue")
+        self.title("G1 — Startmenü")
         self.configure(bg=BG)
         self.geometry("900x760")
         self.minsize(700, 600)
+        # Kein heller Fokus-Rahmen um Knoepfe/Kaestchen (passt nicht zum dunklen Stil).
+        self.option_add("*highlightThickness", 0)
 
         self._quitting = False
         self._current = None
@@ -1094,7 +1292,7 @@ class App(tk.Tk):
                 self._current.destroy()
         self._current = frame
         frame.pack(fill="both", expand=True)
-        self.title(f"G1 — {getattr(frame, 'view_title', 'Startmenue')}")
+        self.title(f"G1 — {getattr(frame, 'view_title', 'Startmenü')}")
 
     def show_menu(self) -> None:
         self.show(MenuFrame(self.container, self))
@@ -1181,9 +1379,9 @@ class App(tk.Tk):
             os._exit(0)
 
     def refresh_status(self) -> None:
-        editor = "Scene-Editor: bereit" if scene_editor_ready() else "Scene-Editor: Setup noetig"
+        editor = "Scene-Editor: bereit" if scene_editor_ready() else "Scene-Editor: Setup nötig"
         scenes = f"Umgebungen: {len(list_scenes())}"
-        self.status.configure(text=f"  Docker: pruefe…   |   {editor}   |   {scenes}")
+        self.status.configure(text=f"  Docker: prüfe…   |   {editor}   |   {scenes}")
 
         def worker():
             docker = "Docker: ok" if docker_ready() else "Docker: nicht erreichbar"

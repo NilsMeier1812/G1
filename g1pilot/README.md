@@ -62,7 +62,7 @@ Details, Voraussetzungen und Windows/WSL2-Anleitung:
 [docs/01_installation.md](docs/01_installation.md).
 
 Alltäglicher Einstieg ist `./start.sh` — öffnet ein grafisches Startmenü
-(Simulation starten / Echten Roboter starten / Umgebungen bearbeiten), von
+(Simulation / Echter Roboter / Umgebungen), von
 dem aus auch die gesamte Dokumentation erreichbar ist.
 
 ## Nodes

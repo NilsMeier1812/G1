@@ -153,8 +153,8 @@ der Hand-Bridge (`hand_controller_viewer.html`, `inspire_hand_viewer.html`):
 ## Bedienen
 
 ```bash
-./start.sh   # grafisches Startmenü → Simulation → Schalter „Demo-Oberflaeche statt Streamdeck“
-./start.sh --menu         # Text-Menü: 2d) Bedienoberfläche → Demo
+./start.sh          # grafisches Startmenü → Simulation → Bedienoberfläche: Demo-GUI (Default)
+./start.sh --menu   # Text-Menü: 2) Bedienoberfläche → Demo-GUI
 ```
 
 Demo-Posen anlegen: GREIFEN → Erweitert → *Pose speichern …*, Name
