@@ -24,8 +24,8 @@ ergeben. Die Demo-GUI reduziert die Bedienung auf **eine Entscheidung zur Zeit**
 ├──────────────────────────────────────────────────────────────────┤
 │ 2 · STEUERUNG            Rahmen in der Farbe des aktiven Modus   │
 │                                                                  │
-│  GREIFEN:                                  [Ganze Demo abspielen]│
-│   [ Winken ] [ Zeigen ] [ Box greifen ] [ Ablegen ]              │
+│  GREIFEN:                 [ ARME | HÄNDE ]                       │
+│   Abläufe: [ Arbeitsplatz 1 ] [ Arbeitsplatz 2 ]                 │
 │   [Hände öffnen] [Hände schließen] [Grundstellung] [Stop]    │
 │   Erweitert ▸   (Pose anfahren … / Pose speichern … / Marker)    │
 │                                                                  │
@@ -35,7 +35,7 @@ ergeben. Die Demo-GUI reduziert die Bedienung auf **eine Entscheidung zur Zeit**
 │                          [▼]              [ Normal]              │
 ├──────────────────────────────────────────────────────────────────┤
 │ 3 · STATUS                                                       │
-│ ▌Fährt: Winken …             [Szene]   [Schubsen]      ( NOT-HALT ) │
+│ ▌Arbeitsplatz 1 · Schritt 2/5 …  [Szene] [Schubsen] ( NOT-HALT ) │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -104,12 +104,6 @@ GREIFEN ist ARME aktiv.
 
 *Seite ARME*
 
-- **Beispielbewegungen**: ein Knopf je Pose aus der Pose-Store-Kategorie
-  `Demo` (änderbar über `G1_DEMO_CATEGORY`), maximal 8, sortiert nach Namen. Das
-  Präfix `Demo_<n>_` wird ausgeblendet, aus `Demo_2_Winken` wird „Winken“. Diese
-  Konvention gilt auch für `demo_sequence.py`.
-  Gibt es die Kategorie noch nicht, erscheinen als Fallback alle Posen mit einem
-  Hinweis.
 - **Abläufe**: jede Pose-Store-Kategorie `Ablauf <Name>` wird ein eigener
   Knopf „<Name>“; ihre Posen laufen in Namensreihenfolge ab (`AP1_01_…`,
   `AP1_02_…`), die Statuszeile zeigt „Schritt n/m“. Ablauf-Posen erscheinen
@@ -118,11 +112,10 @@ GREIFEN ist ARME aktiv.
   Szene A5 (Arbeitsplatz 1: Zylinder links greifen und an rechts übergeben;
   Arbeitsplatz 2: blaue KLT mit beiden Händen anheben) installiert
   `python3 -m g1pilot.tools.install_example_sequences`; sie gelten für den
-  Roboter genau an der jeweiligen Station.
-- **Ganze Demo abspielen** fährt alle Demo-Posen nacheinander an. Der nächste
-  Schritt startet erst, wenn `/g1pilot/arm_command/status` `reached` meldet.
-  Bei `failed`/`rejected`/`cancelled` bricht die Folge ab und der Grund steht im
-  Status.
+  Roboter genau an der jeweiligen Station. Der nächste Schritt startet erst,
+  wenn `/g1pilot/arm_command/status` `reached` meldet. Bei
+  `failed`/`rejected`/`cancelled` bricht der Ablauf ab und der Grund steht im
+  Status. Gibt es noch keine Abläufe, erklärt ein Hinweis, wie man einen anlegt.
 - **Hände öffnen/schließen** (beide Hände gleichzeitig), **Grundstellung**
   (`/g1pilot/arms/home`) und **Bewegung stoppen** (`/g1pilot/pose_store/cancel`).
 - **Erweitert ▸** (eingeklappt) enthält die bisherigen Einzelfunktionen für den
@@ -153,7 +146,7 @@ der Hand-Bridge (`hand_controller_viewer.html`, `inspire_hand_viewer.html`):
 ### 3 · Status (unten)
 
 - **Statuszeile** in Klartext mit farbigem Balken, z. B. „Arme werden eingeklappt
-  …“, „Fährt: Winken …“, „Fertig ✓“ oder „Abgebrochen (failed) …“.
+  …“, „Arbeitsplatz 1 · Schritt 2/5: … “, „Fertig.“ oder „Abgebrochen (failed) …“.
 - **NOT-HALT** ist immer sichtbar, rund und rot. Er sendet dasselbe wie der
   Streamdeck. Beide Kacheln werden danach inaktiv.
 - **Szene zurücksetzen** (nur Sim).
@@ -168,8 +161,9 @@ der Hand-Bridge (`hand_controller_viewer.html`, `inspire_hand_viewer.html`):
 ./start.sh --menu   # Text-Menü: 2) Bedienoberfläche → Demo-GUI
 ```
 
-Demo-Posen anlegen: GREIFEN → Erweitert → *Pose speichern …*, Name
-`Demo_1_Winken`, `Demo_2_Zeigen`, …, Kategorie `Demo`.
+Ablauf anlegen: GREIFEN → Erweitert → *Pose speichern …*, Kategorie
+`Ablauf <Name>`, Posen in Reihenfolge benennen (`AP1_01_…`, `AP1_02_…`).
+Der Ablauf erscheint danach als Knopf „<Name>“.
 
 ## Technik
 

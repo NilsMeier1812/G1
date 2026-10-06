@@ -12,8 +12,8 @@ Streamdeck-Kacheln gibt es drei klar getrennte Bereiche:
   2) STEUERUNG (Mitte) : zeigt NUR die Bedienelemente des aktiven Modus.
                          GEHEN   -> Joystick-Knopf + Pfeiltasten + Drehen.
                          GREIFEN -> Umschalter ARME | HAENDE:
-                                    ARME   = Beispielbewegungen (Pose-Store-
-                                             Kategorie "Demo"), Grundstellung und
+                                    ARME   = Ablaeufe (Pose-Store-Kategorien
+                                             "Ablauf <Name>"), Grundstellung und
                                              eingeklappter "Erweitert"-Bereich.
                                     HAENDE = ganze Hand auf/zu, Griffkraft,
                                              Kraftzonen + einzelne Finger
@@ -66,14 +66,13 @@ MODE_TITLE = {WALK: "GEHEN", MANIP: "GREIFEN"}
 # Fuer Vorfuehrungen bewusst gedeckelt -- "Normal" ist nicht Vollgas.
 SPEEDS = {"Langsam": 0.3, "Normal": 0.6}
 
-# Pose-Store-Kategorie, deren Posen als Beispielbewegungen erscheinen.
+# Vorgeschlagene Kategorie im Dialog »Pose speichern« (auch demo_sequence.py).
 DEMO_CATEGORY = os.environ.get("G1_DEMO_CATEGORY", "Demo")
 # Ablaeufe: jede Kategorie "Ablauf <Name>" = eine Sequenz (Posen in Namens-
 # reihenfolge, z.B. AP1_01_..., AP1_02_...) -> ein Knopf "<Name>".
 SEQUENCE_PREFIX = "Ablauf "
 # Knopf "Grundstellung" faehrt diese gespeicherte Pose an.
 HOME_POSE = os.environ.get("G1_HOME_POSE", "Sichere_Pose")
-MAX_DEMO_BUTTONS = 8
 # WALK gilt als "angekommen", wenn arms/walk_ready kommt -- spaetestens nach
 # diesem Timeout (loco_sim laeuft dann ohnehin selbst los).
 WALK_SWITCH_TIMEOUT_MS = 16000   # > loco_sim walk_arm_timeout_s (15 s)
@@ -422,7 +421,7 @@ class WalkPanel(QWidget):
 # ── Bereich 2b: Greifen ──────────────────────────────────────────────────
 class ManipPanel(QWidget):
     """Umschalter ARME | HAENDE, darunter jeweils eine Seite.
-    ARME: Beispielbewegungen als grosse Knoepfe + 'Ganze Demo abspielen'.
+    ARME: Ablaeufe als grosse Knoepfe, Haende auf/zu, Grundstellung.
     Einzelfunktionen (Pose anfahren/speichern, Marker folgen) liegen
     eingeklappt unter 'Erweitert' -- fuer den Betreuer, nicht fuer Besucher.
     HAENDE: HandPanel (ganze Hand + umschaltbar einzelne Finger)."""
@@ -476,22 +475,9 @@ class ManipPanel(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(14)
 
-        head = QHBoxLayout()
-        head.addWidget(WalkPanel._caption("Beispielbewegungen"))
-        head.addStretch(1)
-        self.btn_play = big_button("Ganze Demo abspielen", "#2e7d32", height=60)
-        self.btn_play.setFixedWidth(320)
-        head.addWidget(self.btn_play)
-        lay.addLayout(head)
-
         self.seq_row = QHBoxLayout()
         self.seq_row.setSpacing(10)
         lay.addLayout(self.seq_row)
-        self.demo_grid = QGridLayout()
-        self.demo_grid.setSpacing(10)
-        lay.addLayout(self.demo_grid)
-        self.demo_hint = WalkPanel._caption("")
-        lay.addWidget(self.demo_hint)
 
         row = QHBoxLayout()
         self.btn_open = big_button("Hände öffnen")
@@ -540,6 +526,9 @@ class ManipPanel(QWidget):
             if w is not None:
                 w.deleteLater()
         if not sequences:
+            self.seq_row.addWidget(WalkPanel._caption(
+                f"Noch keine Abläufe — Posen in einer Kategorie »{SEQUENCE_PREFIX}<Name>« "
+                "speichern (Erweitert → Pose speichern)."))
             return
         self.seq_row.addWidget(WalkPanel._caption("Abläufe:"))
         for label, names in sequences:
@@ -547,17 +536,6 @@ class ManipPanel(QWidget):
             b.setToolTip(" → ".join(pretty_pose_name(n) for n in names))
             b.clicked.connect(lambda _, ns=list(names), lb=label: self.gui.run_poses(ns, lb))
             self.seq_row.addWidget(b)
-
-    def fill_demo_buttons(self, names, note=""):
-        while self.demo_grid.count():
-            self.demo_grid.takeAt(0).widget().deleteLater()
-        for i, name in enumerate(names[:MAX_DEMO_BUTTONS]):
-            b = big_button(pretty_pose_name(name), "#37474f", height=90)
-            b.clicked.connect(lambda _, n=name: self.gui.run_poses([n]))
-            self.demo_grid.addWidget(b, i // 4, i % 4)
-        self.demo_hint.setText(note)
-        self.demo_hint.setVisible(bool(note))
-        self.btn_play.setEnabled(bool(names))
 
 
 # ── Hauptfenster ─────────────────────────────────────────────────────────
@@ -694,7 +672,6 @@ class DemoGUI(QWidget):
         if n.stations:
             self.walk_panel.set_stations(sorted(n.stations))
 
-        mp.btn_play.clicked.connect(lambda: self.run_poses(self._demo_names()[0]))
         mp.btn_open.clicked.connect(lambda: mp.hand_panel.hand_action(None, "open"))
         mp.btn_close.clicked.connect(lambda: mp.hand_panel.hand_action(None, "close"))
         n.on_hand_status = mp.hand_panel.on_status
@@ -738,7 +715,7 @@ class DemoGUI(QWidget):
             n.publish_bool(n.pub_start_balancing, True)
             self.mode, self.pending = MANIP, None
             self._status("Greifen bereit — Bewegung auswählen.", MODE_COLOR[MANIP])
-            self._reload_demo_buttons()
+            self._reload_sequence_buttons()
         else:
             # WALK: Arme fahren erst in die Lauf-Pose -> "wechselt", bis
             # arms/walk_ready kommt (oder Timeout).
@@ -878,23 +855,6 @@ class DemoGUI(QWidget):
             self.node.get_logger().warn(f"Pose-Store nicht lesbar: {e}")
             return None
 
-    def _demo_names(self):
-        """-> (Posennamen, Hinweis). Kategorie DEMO_CATEGORY in Namensreihenfolge
-        (wie demo_sequence.py); fehlt sie, alle Posen als Fallback."""
-        store = self._pose_store()
-        if store is None:
-            return [], "Pose-Store nicht lesbar."
-        grouped = store.list_grouped()
-        names = sorted(grouped.get(DEMO_CATEGORY, []), key=str.lower)
-        if names:
-            return names, ""
-        all_names = sorted((n for cat, ns in grouped.items()
-                            if not cat.startswith(SEQUENCE_PREFIX) for n in ns), key=str.lower)
-        if not all_names:
-            return [], "Noch keine Posen gespeichert (Erweitert → Pose speichern)."
-        return all_names, (f"Keine Kategorie »{DEMO_CATEGORY}« — zeige alle Posen. "
-                           f"Posen in »{DEMO_CATEGORY}« speichern, um die Auswahl festzulegen.")
-
     def _sequences(self):
         store = self._pose_store()
         if store is None:
@@ -903,8 +863,7 @@ class DemoGUI(QWidget):
                 for cat, ns in sorted(store.list_grouped().items())
                 if cat.startswith(SEQUENCE_PREFIX) and ns]
 
-    def _reload_demo_buttons(self):
-        self.manip_panel.fill_demo_buttons(*self._demo_names())
+    def _reload_sequence_buttons(self):
         self.manip_panel.fill_sequence_buttons(self._sequences())
 
     def run_poses(self, names, label=None):
@@ -985,7 +944,7 @@ class DemoGUI(QWidget):
         self.node.publish_str(self.node.pub_pose_save, json.dumps(dlg.result_data()))
         self._status("Pose gespeichert.", "#66bb6a")
         # arm_controller schreibt die Datei asynchron -> kurz warten, dann neu laden.
-        QTimer.singleShot(1500, self._reload_demo_buttons)
+        QTimer.singleShot(1500, self._reload_sequence_buttons)
 
     # ── Sicherheit / Status ─────────────────────────────────────────────
     def _pulse(self, pub, duration=1000):
