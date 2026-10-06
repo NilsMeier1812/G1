@@ -14,6 +14,7 @@ from push_listener import PushListener
 from grasp_box import GraspBox
 from scene_state_publisher import SceneStatePublisher
 from scene_reset import SceneReset
+from gl_check import check_gl_renderer
 
 
 locker = threading.Lock()
@@ -88,6 +89,8 @@ scene_state = SceneStatePublisher(mj_model, config)
 # RESET SCENE: bewegliche Umgebungs-Objekte (z.B. heruntergefallene Box) per UDP
 # auf ihre Startpose zuruecksetzen, ohne den Roboter anzufassen.
 scene_reset = SceneReset(mj_model, config)
+
+check_gl_renderer()  # warnt laut bei CPU-Rendering (llvmpipe)
 
 if config.ENABLE_ELASTIC_BAND:
     elastic_band = ElasticBand()

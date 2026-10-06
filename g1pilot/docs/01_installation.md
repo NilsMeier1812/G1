@@ -26,7 +26,12 @@ Zwei Betriebsarten:
 - Ein laufendes X11-Display (für RViz und die MuJoCo-/Teleop-Fenster).
   Unter Wayland hilft in der Regel `xhost` über den XWayland-Layer; über SSH
   mit `ssh -X` verbinden.
-- Keine GPU/CUDA nötig — die Simulation ist rein CPU-basiert.
+- Keine GPU/CUDA nötig — die Physik läuft auf der CPU. Für flüssige FPS
+  sollten MuJoCo-Viewer und RViz aber auf der GPU rendern (sonst CPU-Rendering
+  per `llvmpipe`, das der Physik die Kerne wegnimmt). Intel/AMD-Grafik geht
+  über `/dev/dri` automatisch. **Bei einer NVIDIA-Karte ist zusätzlich das
+  NVIDIA Container Toolkit nötig** — `start.sh` / `make sim` warnen, wenn es
+  fehlt; Prüfung jederzeit mit `make gpu-check`.
 
 ## Schritt für Schritt (Linux)
 
@@ -353,5 +358,6 @@ erreichbar, sowie aus dem grafischen Startmenü über den Menüpunkt
 | `setup.sh`: `No matching distribution found for mujoco-scene-editor` / `Requires-Python <3.13` | Host-Python zu neu (Ubuntu 26.04: 3.14) → Python 3.12 per uv, siehe Schritt 5b. |
 | `setup.sh`: `No module named 'ensurepip'` | `sudo apt install python3-venv`, dann `rm -rf .venv && ./setup.sh`. |
 | Greif-Objekte fliegen weg, ständig `[scene-reset]` | `trimesh`/`vhacdx` fehlen im `scene_editor/.venv` → Schritt 5b. |
+| Sim läuft mit sehr wenigen FPS, Log zeigt `[gpu] WARNUNG: MuJoCo rendert auf der CPU (llvmpipe)` | Container hat keinen GPU-Zugriff. Häufigster Grund: NVIDIA-Karte ohne NVIDIA Container Toolkit. `make gpu-check` zeigt Ursache und Installationsbefehle; danach `sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker` und Sim neu starten. |
 | `make sim` baut jedes Mal neu | Normal, sofern sich Quellcode/Dockerfile geändert haben; Docker cached unveränderte Layer. |
 | Fenster öffnen sich, aber der Roboter reagiert auf nichts | Zunächst normal — siehe [30_loco_anleitung.md](30_loco_anleitung.md), der Roboter startet bewusst nicht automatisch. |

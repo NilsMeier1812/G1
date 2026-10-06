@@ -424,6 +424,11 @@ if [ -z "${COMPOSE_FILE:-}" ]; then
   export COMPOSE_FILE="$_cf"
   echo -e "${G}[start] Compose-Dateien: ${COMPOSE_FILE}${R}"
 fi
+# Laut warnen, wenn die Sim-Container keine GPU bekommen (z.B. NVIDIA ohne
+# Container Toolkit) -- sonst faellt das CPU-Rendering nur an den FPS auf.
+if [ "$PROFILE" = "sim" ]; then
+  bash docker/check_gpu.sh
+fi
 # PRIME Render Offload nur auf Hybrid-Systemen (Bildschirm an Intel/AMD).
 # Treibt die NVIDIA selbst den Bildschirm, bleibt das MuJoCo-Fenster mit
 # Offload schwarz. Siehe docker-compose.nvidia.yml.

@@ -32,15 +32,17 @@ export G1_NV_PRIME_OFFLOAD
 .PHONY: sim sim-bg real real-full stop \
         build-sim build-real build-real-full \
         build-mujoco build-g1pilot-sim build-g1pilot-real build-g1pilot-real-full \
-        logs status clean shell-sim shell-mujoco shell-real
+        logs status clean shell-sim shell-mujoco shell-real gpu-check
 
 # ─── SIMULATION ─────────────────────────────────────────────
 sim: build-g1pilot-sim build-mujoco
+	@bash docker/check_gpu.sh
 	@echo "🔵 Starte G1Pilot SIMULATION..."
 	@xhost +local:docker 2>/dev/null || true
 	DISPLAY=$(DISPLAY) docker compose --profile sim up
 
 sim-bg: build-g1pilot-sim build-mujoco
+	@bash docker/check_gpu.sh
 	@echo "🔵 Starte SIMULATION (Hintergrund)..."
 	@xhost +local:docker 2>/dev/null || true
 	DISPLAY=$(DISPLAY) docker compose --profile sim up -d
@@ -88,6 +90,10 @@ stop:
 	docker compose --profile real-full down --remove-orphans 2>/dev/null || true
 
 # ─── HILFS-COMMANDS ─────────────────────────────────────────
+# GPU-Zugriff der Sim-Container pruefen (warnt z.B. bei NVIDIA ohne Toolkit).
+gpu-check:
+	@bash docker/check_gpu.sh
+
 logs:
 	docker compose --profile sim logs -f
 
