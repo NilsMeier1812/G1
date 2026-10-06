@@ -153,6 +153,15 @@ der Hand-Bridge (`hand_controller_viewer.html`, `inspire_hand_viewer.html`):
 - **Roboter schubsen** (nur Sim): Störtest wie PUSH ROBOT im Streamdeck
   (400-ms-Impuls auf `/g1pilot/push`). Er zeigt, dass sich der Roboter in beiden
   Modi fängt.
+- **Sim beenden** (nur Sim): schließt den ganzen Sim-Stack (MuJoCo, RViz,
+  Demo-GUI) in unter einer Sekunde. Erster Klick schaltet scharf („Wirklich?
+  nochmal tippen“, gestrichelt), ein zweiter Klick innerhalb von 4 s beendet.
+  Die GUI legt dazu `.sim_shutdown_request` im gemounteten Repo an. Der
+  Host-Watcher `docker/sim_shutdown_watcher.sh` (von `./start.sh` und
+  `make sim` gestartet) macht daraufhin `docker compose kill` + `down`, also
+  sofort und ohne langsames Herunterfahren. Ohne Watcher (z. B. `make sim-bg`)
+  meldet die GUI nach 3 s, dass es nur mit `make stop` im Terminal geht.
+- Die **Statuszeile** steht über die volle Breite, die Knöpfe darunter.
 
 ## Bedienen
 

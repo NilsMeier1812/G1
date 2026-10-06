@@ -444,6 +444,14 @@ fi
 # ── Reste eines frueheren Laufs sauber entfernen ────────────────────────
 docker compose --profile "$PROFILE" down --remove-orphans
 
+# ── »Sim beenden« der Demo-GUI ──────────────────────────────────────────
+# Host-Watcher: stoppt den Sim-Stack sofort, sobald die Demo-GUI die
+# Trigger-Datei anlegt. $$ ist nach dem exec unten docker compose up -> der
+# Watcher endet mit dem Stack. Siehe docker/sim_shutdown_watcher.sh.
+if [ "$PROFILE" = "sim" ]; then
+  bash docker/sim_shutdown_watcher.sh $$ &
+fi
+
 # ── Hochfahren ──────────────────────────────────────────────────────────
 echo -e "${G}[start] docker compose --profile ${PROFILE} up ${PASSTHRU[*]}${R}"
 exec docker compose --profile "$PROFILE" up "${PASSTHRU[@]}"

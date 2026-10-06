@@ -86,6 +86,13 @@ NAV_OFF, NAV_WAIT, NAV_MOVING, NAV_ARRIVED = "off", "waiting", "moving", "arrive
 NAV_PLAN_TIMEOUT_MS = 5000
 NAV_DONE_COLOR = "#66bb6a"
 
+# »Sim beenden«: Trigger-Datei im bind-gemounteten Repo (docker-compose:
+# .:/ros2_ws/src/g1pilot). Der Host-Watcher docker/sim_shutdown_watcher.sh
+# (gestartet von start.sh / make sim) stoppt daraufhin den ganzen Sim-Stack.
+SIM_SHUTDOWN_TRIGGER = "/ros2_ws/src/g1pilot/.sim_shutdown_request"
+QUIT_CONFIRM_MS = 4000      # so lange gilt der erste Klick als »scharf«
+QUIT_ACK_TIMEOUT_MS = 3000  # Watcher loescht die Datei -> sonst Hinweis
+
 
 def _envflag(name):
     return os.environ.get(name, '0').strip().lower() in ('1', 'true', 'yes', 'on')
@@ -621,8 +628,8 @@ class DemoGUI(QWidget):
         bottom.setSpacing(14)
         self.status = QLabel()
         self.status.setWordWrap(True)
-        self.status.setMinimumHeight(70)
-        bottom.addWidget(self.status, 1)
+        self.status.setMinimumHeight(56)
+        bottom.addStretch(1)
         self.btn_reset_scene = big_button("Szene\nzurücksetzen", font=15, height=70)
         self.btn_reset_scene.setFixedWidth(170)
         self.btn_reset_scene.setVisible(self.sim_mode)
@@ -638,6 +645,13 @@ class DemoGUI(QWidget):
         self.btn_push.setFixedWidth(170)
         self.btn_push.setVisible(self.sim_mode)
         bottom.addWidget(self.btn_push)
+        # Nur Sim: ganzen Stack beenden (alle Fenster zu). Zweiter Klick bestaetigt.
+        self.btn_quit = big_button("Sim\nbeenden", "#37474f", font=15, height=70)
+        self.btn_quit.setFixedWidth(170)
+        self.btn_quit.setVisible(self.sim_mode)
+        self._quit_css = self.btn_quit.styleSheet()
+        self._quit_armed = 0        # >0: erster Klick erfolgt (Zaehler gegen alte Timer)
+        bottom.addWidget(self.btn_quit)
         self.btn_estop = QPushButton("NOT-HALT")
         self.btn_estop.setFixedSize(220, 90)
         self.btn_estop.setStyleSheet("""
@@ -647,6 +661,8 @@ class DemoGUI(QWidget):
         """)
         bottom.addWidget(self.btn_estop)
         root.addWidget(self._section_label("3  ·  STATUS"))
+        # Status ueber volle Breite (lange Meldungen), Knoepfe darunter.
+        root.addWidget(self.status)
         root.addLayout(bottom)
         self._status("Startet …", "#aaa")
 
@@ -667,6 +683,7 @@ class DemoGUI(QWidget):
         self.btn_reset_scene.clicked.connect(lambda: self._pulse(n.pub_scene_reset))
         self.btn_push.clicked.connect(self._push)
         self.btn_reset_robot.clicked.connect(self._reset_robot)
+        self.btn_quit.clicked.connect(self._quit_sim)
         self.walk_panel.on_station = self.go_to_station
         n.on_stations = self.walk_panel.set_stations
         if n.stations:
@@ -992,6 +1009,51 @@ class DemoGUI(QWidget):
         self._refresh()
         self._status("NOT-HALT aktiv — Roboter ist weich geschaltet. "
                      "Zum Fortsetzen oben einen Modus wählen.", "#ef5350")
+
+    def _quit_sim(self):
+        """Erster Klick: scharf schalten (Rueckfrage im Knopf). Zweiter Klick
+        innerhalb QUIT_CONFIRM_MS: Host-Watcher stoppt den Sim-Stack sofort."""
+        if not self._quit_armed:
+            self._quit_armed += 1
+            armed = self._quit_armed
+            self.btn_quit.setText("Wirklich?\nnochmal tippen")
+            self.btn_quit.setStyleSheet(state_css("#2a2a2a", "#ffb300",
+                                                  "4px dashed #ffb300", 15))
+            QTimer.singleShot(QUIT_CONFIRM_MS,
+                              lambda: armed == self._quit_armed and self._disarm_quit())
+            return
+        self._quit_armed = 0
+        self.btn_quit.setEnabled(False)
+        self.btn_quit.setText("Sim wird\nbeendet …")
+        try:
+            with open(SIM_SHUTDOWN_TRIGGER, "w") as f:
+                f.write("quit")
+        except OSError as e:
+            self._sim_quit_unavailable(f"Trigger-Datei nicht schreibbar ({e}).")
+            return
+        self._status("Sim wird beendet — alle Fenster schließen sich gleich.", "#ffb300")
+        QTimer.singleShot(QUIT_ACK_TIMEOUT_MS, self._check_quit_ack)
+
+    def _disarm_quit(self):
+        self._quit_armed = 0
+        self.btn_quit.setText("Sim\nbeenden")
+        self.btn_quit.setStyleSheet(self._quit_css)
+
+    def _check_quit_ack(self):
+        # Der Watcher loescht die Datei sofort -> existiert sie noch, laeuft keiner
+        # (z.B. per »docker compose up« oder »make sim-bg« gestartet).
+        if os.path.exists(SIM_SHUTDOWN_TRIGGER):
+            try:
+                os.remove(SIM_SHUTDOWN_TRIGGER)
+            except OSError:
+                pass
+            self._sim_quit_unavailable("Kein Host-Watcher aktiv.")
+
+    def _sim_quit_unavailable(self, reason):
+        self._disarm_quit()
+        self.btn_quit.setEnabled(True)
+        self._status(f"Sim beenden geht nur bei Start über ./start.sh oder make sim. "
+                     f"{reason} Im Terminal: make stop", "#ef5350")
 
     def _status(self, text, color):
         self.status.setText(text)

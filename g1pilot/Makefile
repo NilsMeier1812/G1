@@ -39,7 +39,8 @@ sim: build-g1pilot-sim build-mujoco
 	@bash docker/check_gpu.sh
 	@echo "🔵 Starte G1Pilot SIMULATION..."
 	@xhost +local:docker 2>/dev/null || true
-	DISPLAY=$(DISPLAY) docker compose --profile sim up
+	@# Watcher fuer »Sim beenden« der Demo-GUI (endet mit diesem Shell-Prozess).
+	bash docker/sim_shutdown_watcher.sh $$$$ & DISPLAY=$(DISPLAY) docker compose --profile sim up
 
 sim-bg: build-g1pilot-sim build-mujoco
 	@bash docker/check_gpu.sh
