@@ -95,11 +95,18 @@ NAV_DONE_COLOR = "#66bb6a"
 JOG_FRAME = "pelvis"
 JOG_TF = {"left": "left_hand_point_contact", "right": "right_hand_point_contact"}
 JOG_SIDES = {"Links": ("left",), "Rechts": ("right",), "Beide": ("left", "right")}
-JOG_SPEEDS = {"Langsam": 0.04, "Normal": 0.10}   # m/s bei Vollausschlag
-# Das Ziel laeuft der echten Hand hoechstens so weit voraus. Sonst wuerde es
-# weiterwandern, wenn der Arm nicht folgen kann (Gelenkgrenze, Tisch), und die
-# Hand liefe nach dem Loslassen nach bzw. reagierte beim Umkehren verzoegert.
-JOG_MAX_LEAD_M = 0.04
+# Tempo bei Vollausschlag: (Verschieben m/s, Drehen rad/s).
+JOG_SPEEDS = {"Langsam": (0.05, math.radians(20)),
+              "Normal":  (0.15, math.radians(45)),
+              "Schnell": (0.30, math.radians(90))}
+# Das Ziel laeuft der echten Hand hoechstens so weit voraus (JOG_LEAD_S x Tempo,
+# mindestens JOG_MIN_LEAD_*). Sonst wuerde es weiterwandern, wenn der Arm nicht
+# folgen kann (Gelenkgrenze, Tisch). Zu knapp darf es nicht sein: der
+# arm_controller glaettet Ziele (ik_goal_filter_alpha), die Hand haengt bei
+# hohem Tempo einige cm hinterher -- ein fester kleiner Vorlauf bremste sie aus.
+JOG_LEAD_S = 0.5
+JOG_MIN_LEAD_M = 0.04
+JOG_MIN_LEAD_RAD = math.radians(15)
 
 # »Sim beenden«: Trigger-Datei im bind-gemounteten Repo (docker-compose:
 # .:/ros2_ws/src/g1pilot). Der Host-Watcher docker/sim_shutdown_watcher.sh
@@ -107,6 +114,48 @@ JOG_MAX_LEAD_M = 0.04
 SIM_SHUTDOWN_TRIGGER = "/ros2_ws/src/g1pilot/.sim_shutdown_request"
 QUIT_CONFIRM_MS = 4000      # so lange gilt der erste Klick als »scharf«
 QUIT_ACK_TIMEOUT_MS = 3000  # Watcher loescht die Datei -> sonst Hinweis
+
+
+def _qmul(a, b):
+    ax, ay, az, aw = a
+    bx, by, bz, bw = b
+    return (aw * bx + ax * bw + ay * bz - az * by,
+            aw * by - ax * bz + ay * bw + az * bx,
+            aw * bz + ax * by - ay * bx + az * bw,
+            aw * bw - ax * bx - ay * by - az * bz)
+
+
+def _qconj(q):
+    return (-q[0], -q[1], -q[2], q[3])
+
+
+def _qfrom_rotvec(rx, ry, rz):
+    """Drehvektor (Achse * Winkel, rad) -> Quaternion."""
+    ang = math.sqrt(rx * rx + ry * ry + rz * rz)
+    if ang < 1e-12:
+        return (0.0, 0.0, 0.0, 1.0)
+    s = math.sin(ang / 2) / ang
+    return (rx * s, ry * s, rz * s, math.cos(ang / 2))
+
+
+def _qangle(a, b):
+    """Drehwinkel zwischen zwei Orientierungen (rad)."""
+    d = abs(sum(x * y for x, y in zip(a, b)))
+    return 2.0 * math.acos(min(1.0, d))
+
+
+def _qslerp(a, b, t):
+    d = sum(x * y for x, y in zip(a, b))
+    if d < 0.0:
+        b, d = tuple(-x for x in b), -d
+    if d > 0.9995:
+        q = tuple(x + t * (y - x) for x, y in zip(a, b))
+    else:
+        th = math.acos(d)
+        sa, sb = math.sin((1 - t) * th), math.sin(t * th)
+        q = tuple((sa * x + sb * y) / math.sin(th) for x, y in zip(a, b))
+    n = math.sqrt(sum(x * x for x in q))
+    return tuple(x / n for x in q)
 
 
 def _envflag(name):
@@ -164,20 +213,21 @@ class DemoNode(StreamDeck):
             for side in ("left", "right")}
 
     def hand_pose(self, side):
-        """-> ([x, y, z], Quaternion) der Hand im JOG_FRAME oder None (kein TF)."""
+        """-> ([x, y, z], (qx, qy, qz, qw)) der Hand im JOG_FRAME oder None (kein TF)."""
         try:
             t = self.tf_buffer.lookup_transform(JOG_FRAME, JOG_TF[side], rclpy.time.Time())
         except Exception:   # noqa: BLE001 -- Lookup/Connectivity/Extrapolation
             return None
-        tr = t.transform.translation
-        return [tr.x, tr.y, tr.z], t.transform.rotation
+        tr, r = t.transform.translation, t.transform.rotation
+        return [tr.x, tr.y, tr.z], (r.x, r.y, r.z, r.w)
 
     def publish_hand_goal(self, side, pos, rot):
         msg = PoseStamped()
         msg.header.frame_id = JOG_FRAME
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.pose.position.x, msg.pose.position.y, msg.pose.position.z = map(float, pos)
-        msg.pose.orientation = rot
+        o = msg.pose.orientation
+        o.x, o.y, o.z, o.w = map(float, rot)
         self.pub_hand_goal[side].publish(msg)
 
     def _nav_status(self, msg: String):
@@ -282,9 +332,10 @@ class VerticalRocker(QWidget):
     """Senkrechter Schieber, der zurueckfedert (Gegenstueck zum VirtualJoystick):
     nach oben ziehen -> value = +1 (hoch), nach unten -> -1, loslassen -> 0."""
 
-    def __init__(self, height=190, width=74):
+    def __init__(self, height=190, width=74, labels=("▲", "▼")):
         super().__init__()
         self.setFixedSize(width, height)
+        self._labels = labels
         self._travel = height / 2 - 24     # Knopf-Weg je Richtung (Pixel)
         self._knob = 0.0                   # Versatz vom Zentrum, + = nach unten
         self.value = 0.0
@@ -316,8 +367,8 @@ class VerticalRocker(QWidget):
         p.setPen(QPen(QColor("#333"), 1))
         p.drawLine(int(cx - 18), int(cy), int(cx + 18), int(cy))
         p.setPen(QPen(QColor("#666"), 1))
-        p.drawText(QRectF(0, 8, w, 20), Qt.AlignmentFlag.AlignCenter, "▲")
-        p.drawText(QRectF(0, h - 28, w, 20), Qt.AlignmentFlag.AlignCenter, "▼")
+        p.drawText(QRectF(0, 8, w, 20), Qt.AlignmentFlag.AlignCenter, self._labels[0])
+        p.drawText(QRectF(0, h - 28, w, 20), Qt.AlignmentFlag.AlignCenter, self._labels[1])
         active = abs(self.value) > 1e-3
         p.setBrush(QBrush(QColor("#4CAF50") if active else QColor("#3c3c3c")))
         p.setPen(QPen(QColor("#80ff80") if active else QColor("#666"), 2))
@@ -325,15 +376,21 @@ class VerticalRocker(QWidget):
 
 
 class ArmJogPanel(QWidget):
-    """Hand bewegen: Joystick = waagerecht (oben = vor, links = links, aus Sicht
-    des Roboters), Schieber = hoch/runter. Gedrueckt halten = Hand faehrt,
-    loslassen = Hand steht. velocity() -> (vx, vy, vz) in m/s im JOG_FRAME."""
+    """Hand bewegen, zwei Gruppen (beide gleichzeitig nutzbar), Richtungen aus
+    Sicht des Roboters (JOG_FRAME), Drehung um die Hand selbst:
+      VERSCHIEBEN  Joystick = vor/zurueck + links/rechts, Schieber = hoch/runter
+      DREHEN       Joystick = kippen (Finger hoch/runter) + schwenken
+                   (links/rechts), Schieber = rollen (um die Vorwaertsachse)
+    Gedrueckt halten = Hand faehrt, loslassen = Hand steht.
+    twist() -> ((vx, vy, vz) m/s, (wx, wy, wz) rad/s) im JOG_FRAME."""
+
+    STICK = 180
 
     def __init__(self):
         super().__init__()
         lay = QHBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(24)
+        lay.setSpacing(18)
 
         opts = QVBoxLayout()
         opts.setSpacing(6)
@@ -345,23 +402,37 @@ class ArmJogPanel(QWidget):
         opts.addStretch(1)
         lay.addLayout(opts)
 
-        stick = QVBoxLayout()
-        stick.addWidget(WalkPanel._caption("vor / zurück · links / rechts"),
-                        alignment=Qt.AlignmentFlag.AlignCenter)
-        self.joystick = VirtualJoystick(190)
-        stick.addWidget(self.joystick, alignment=Qt.AlignmentFlag.AlignCenter)
-        lay.addLayout(stick)
-
-        rocker = QVBoxLayout()
-        rocker.addWidget(WalkPanel._caption("hoch / runter"),
-                         alignment=Qt.AlignmentFlag.AlignCenter)
-        self.rocker = VerticalRocker(190)
-        rocker.addWidget(self.rocker, alignment=Qt.AlignmentFlag.AlignCenter)
-        lay.addLayout(rocker)
+        self.move_stick, self.move_rocker = self._group(
+            lay, "VERSCHIEBEN", "vor / zurück · links / rechts", "hoch / runter", ("▲", "▼"))
+        self.turn_stick, self.turn_rocker = self._group(
+            lay, "DREHEN", "kippen · schwenken", "rollen", ("⟲", "⟳"))
         lay.addStretch(1)
 
         self.set_side("Rechts")
-        self.set_speed("Langsam")
+        self.set_speed("Normal")
+
+    def _group(self, parent, title, stick_cap, rocker_cap, rocker_labels):
+        box = QVBoxLayout()
+        box.setSpacing(4)
+        head = QLabel(title)
+        head.setStyleSheet(f"color:{MODE_COLOR[MANIP]}; font-size:13px; font-weight:800;"
+                           "letter-spacing:1px;")
+        box.addWidget(head)
+        row = QHBoxLayout()
+        row.setSpacing(12)
+        col = QVBoxLayout()
+        col.addWidget(WalkPanel._caption(stick_cap), alignment=Qt.AlignmentFlag.AlignCenter)
+        stick = VirtualJoystick(self.STICK)
+        col.addWidget(stick, alignment=Qt.AlignmentFlag.AlignCenter)
+        row.addLayout(col)
+        col = QVBoxLayout()
+        col.addWidget(WalkPanel._caption(rocker_cap), alignment=Qt.AlignmentFlag.AlignCenter)
+        rocker = VerticalRocker(self.STICK, labels=rocker_labels)
+        col.addWidget(rocker, alignment=Qt.AlignmentFlag.AlignCenter)
+        row.addLayout(col)
+        box.addLayout(row)
+        parent.addLayout(box)
+        return stick, rocker
 
     @staticmethod
     def _choice_row(parent, choices, on_pick):
@@ -371,7 +442,7 @@ class ArmJogPanel(QWidget):
         for name in choices:
             b = big_button(name, font=15, height=44)
             b.setCheckable(True)
-            b.setFixedWidth(96)
+            b.setFixedWidth(92)
             b.clicked.connect(lambda _, n=name: on_pick(n))
             row.addWidget(b)
             btns[name] = b
@@ -385,20 +456,27 @@ class ArmJogPanel(QWidget):
             b.setChecked(n == name)
 
     def set_speed(self, name):
-        self.speed = JOG_SPEEDS[name]
+        self.lin_speed, self.ang_speed = JOG_SPEEDS[name]
         for n, b in self.speed_btns.items():
             b.setChecked(n == name)
 
     def sides(self):
         return JOG_SIDES[self.side]
 
-    def velocity(self):
-        s = self.speed
-        return self.joystick.vx * s, self.joystick.vy * s, self.rocker.value * s
+    def twist(self):
+        m, t = self.move_stick, self.turn_stick
+        lin = (m.vx * self.lin_speed, m.vy * self.lin_speed,
+               self.move_rocker.value * self.lin_speed)
+        # Joystick oben = Finger hoch: das ist eine NEGATIVE Drehung um y
+        # (positive dreht x nach -z). Links = positive Drehung um z.
+        ang = (self.turn_rocker.value * self.ang_speed,
+               -t.vx * self.ang_speed,
+               t.vy * self.ang_speed)
+        return lin, ang
 
     def reset(self):
-        self.joystick.mouseReleaseEvent(None)
-        self.rocker.mouseReleaseEvent(None)
+        for w in (self.move_stick, self.move_rocker, self.turn_stick, self.turn_rocker):
+            w.mouseReleaseEvent(None)
 
 
 # ── Bereich 2a: Gehen ────────────────────────────────────────────────────
@@ -1141,50 +1219,60 @@ class DemoGUI(QWidget):
 
     # ── Hand bewegen ────────────────────────────────────────────────────
     def _jog_tick(self):
-        """~30 Hz: solange Joystick/Schieber ausgelenkt sind, das Hand-Ziel mit
-        der eingestellten Geschwindigkeit verschieben (Orientierung bleibt).
-        Startpunkt ist die echte Hand (TF) beim Anfassen."""
+        """~30 Hz: solange ein Bedienelement ausgelenkt ist, das Hand-Ziel mit
+        dem eingestellten Tempo verschieben/drehen (Drehung um die Hand, Achsen
+        im JOG_FRAME). Startpunkt ist die echte Hand (TF) beim Anfassen."""
         now = time.monotonic()
         dt = min(0.1, now - self._jog_t)
         self._jog_t = now
         mp = self.manip_panel
-        v = mp.jog.velocity()
+        jog = mp.jog
+        lin, ang = jog.twist()
         active = (self.mode == MANIP and self.pending is None
                   and mp.views.currentWidget() is mp.arms_page
-                  and max(abs(c) for c in v) > 1e-3)
+                  and max(abs(c) for c in lin + ang) > 1e-4)
         if not active:
             if self._jog_targets:
                 self._jog_stop()
             return
         if not self._jog_targets:
             self._cancel_sequence()     # laufenden Ablauf beenden (Marker-Vorrang)
-            self._status(f"Hand bewegen: {mp.jog.side.lower()} …", MODE_COLOR[MANIP])
+            self._status(f"Hand bewegen: {jog.side.lower()} …", MODE_COLOR[MANIP])
+        lead_m = max(JOG_MIN_LEAD_M, jog.lin_speed * JOG_LEAD_S)
+        lead_rad = max(JOG_MIN_LEAD_RAD, jog.ang_speed * JOG_LEAD_S)
+        dq = _qfrom_rotvec(*(w * dt for w in ang))
         missing = []
-        for side in mp.jog.sides():
+        for side in jog.sides():
             hand = self.node.hand_pose(side)
             if hand is None:
                 missing.append(side)
                 continue
             pos, rot = hand
             tgt = self._jog_targets.setdefault(side, [list(pos), rot])
-            p = [tgt[0][i] + v[i] * dt for i in range(3)]
+            # Verschieben, Vorlauf zur echten Hand begrenzen
+            p = [tgt[0][i] + lin[i] * dt for i in range(3)]
             d = [p[i] - pos[i] for i in range(3)]
             n = math.sqrt(sum(c * c for c in d))
-            if n > JOG_MAX_LEAD_M:
-                p = [pos[i] + d[i] * JOG_MAX_LEAD_M / n for i in range(3)]
-            tgt[0] = p
-            self.node.publish_hand_goal(side, p, tgt[1])
+            if n > lead_m:
+                p = [pos[i] + d[i] * lead_m / n for i in range(3)]
+            # Drehen (feste Achsen -> von links multiplizieren), Vorlauf begrenzen
+            q = _qmul(dq, tgt[1])
+            err = _qangle(q, rot)
+            if err > lead_rad:
+                q = _qslerp(rot, q, lead_rad / err)
+            tgt[0], tgt[1] = p, q
+            self.node.publish_hand_goal(side, p, q)
         if missing:
             self._status("Hand bewegen: Handposition unbekannt (TF fehlt) — "
                          "läuft der Roboter-Zustand?", "#ffb300")
 
     def _jog_stop(self):
         """Losgelassen: Ziel auf die aktuelle Hand setzen -> Arm bleibt sofort
-        stehen statt den Vorlauf (bis JOG_MAX_LEAD_M) noch abzufahren."""
-        for side, (_, rot) in self._jog_targets.items():
+        stehen statt den Vorlauf noch abzufahren."""
+        for side in self._jog_targets:
             hand = self.node.hand_pose(side)
             if hand is not None:
-                self.node.publish_hand_goal(side, hand[0], rot)
+                self.node.publish_hand_goal(side, *hand)
         self._jog_targets = {}
         if self.mode == MANIP:
             self._status("Hand steht.", MODE_COLOR[MANIP])
