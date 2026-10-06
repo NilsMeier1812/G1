@@ -440,7 +440,12 @@ class ManipPanel(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(8)
 
-        seg = QHBoxLayout()
+        # Umschalter ARME | HAENDE: eigenes Widget -> DemoGUI setzt es in die
+        # Titelzeile neben »GREIFEN« (spart eine Zeile).
+        self.view_switch = QWidget()
+        self.view_switch.setFixedWidth(520)
+        seg = QHBoxLayout(self.view_switch)
+        seg.setContentsMargins(0, 0, 0, 0)
         seg.setSpacing(0)
         self.view_btns = {}
         for key, text, radius in (("arms", "ARME", "14px 0 0 14px"),
@@ -463,11 +468,6 @@ class ManipPanel(QWidget):
             b.clicked.connect(lambda _, k=key: self.show_view(k))
             seg.addWidget(b)
             self.view_btns[key] = b
-        seg_wrap = QHBoxLayout()
-        seg_wrap.addStretch(1)
-        seg_wrap.addLayout(seg, 4)
-        seg_wrap.addStretch(1)
-        outer.addLayout(seg_wrap)
 
         self.views = QStackedWidget()
         outer.addWidget(self.views, 1)
@@ -487,11 +487,11 @@ class ManipPanel(QWidget):
         lay.addLayout(self.seq_row)
 
         row = QHBoxLayout()
-        self.btn_open = big_button("Hände öffnen")
-        self.btn_close = big_button("Hände schließen")
+        # Haende auf/zu gibt es auf der Seite HAENDE.
+        self.btn_safe = big_button("Sichere Pose")
         self.btn_home = big_button("Grundstellung")
         self.btn_cancel = big_button("Bewegung stoppen", "#5d4037")
-        for b in (self.btn_open, self.btn_close, self.btn_home, self.btn_cancel):
+        for b in (self.btn_safe, self.btn_home, self.btn_cancel):
             row.addWidget(b)
         lay.addLayout(row)
 
@@ -610,14 +610,27 @@ class DemoGUI(QWidget):
         self.panel_frame.setObjectName("panel")
         pf = QVBoxLayout(self.panel_frame)
         pf.setContentsMargins(18, 14, 18, 14)
+        self.walk_panel = WalkPanel()
+        self.manip_panel = ManipPanel(self)
+        # Titelzeile: Modus-Titel + (nur GREIFEN) Umschalter ARME | HAENDE,
+        # zentriert im Platz rechts vom Titel. Darunter eine Trennlinie.
+        head = QHBoxLayout()
+        head.setContentsMargins(0, 0, 0, 0)
         self.panel_title = QLabel()
-        pf.addWidget(self.panel_title)
+        head.addWidget(self.panel_title)
+        head.addStretch(1)
+        head.addWidget(self.manip_panel.view_switch)
+        head.addStretch(1)
+        pf.addLayout(head)
+        self.panel_rule = QFrame()
+        self.panel_rule.setFixedHeight(2)
+        pf.addSpacing(4)
+        pf.addWidget(self.panel_rule)
+        pf.addSpacing(6)
         self.stack = QStackedWidget()
         self.idle_panel = QLabel("Bitte oben einen Modus wählen.")
         self.idle_panel.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.idle_panel.setStyleSheet("color:#666; font-size:22px;")
-        self.walk_panel = WalkPanel()
-        self.manip_panel = ManipPanel(self)
         for w in (self.idle_panel, self.walk_panel, self.manip_panel):
             self.stack.addWidget(w)
         pf.addWidget(self.stack, 1)
@@ -689,8 +702,7 @@ class DemoGUI(QWidget):
         if n.stations:
             self.walk_panel.set_stations(sorted(n.stations))
 
-        mp.btn_open.clicked.connect(lambda: mp.hand_panel.hand_action(None, "open"))
-        mp.btn_close.clicked.connect(lambda: mp.hand_panel.hand_action(None, "close"))
+        mp.btn_safe.clicked.connect(self._safe_pose)
         n.on_hand_status = mp.hand_panel.on_status
         mp.btn_home.clicked.connect(self._home)
         mp.btn_cancel.clicked.connect(self._cancel)
@@ -760,6 +772,9 @@ class DemoGUI(QWidget):
         color = MODE_COLOR.get(shown, "#333")
         self.panel_frame.setStyleSheet(
             f"QFrame#panel {{ border:3px solid {color}; border-radius:18px; }}")
+        self.manip_panel.view_switch.setVisible(self.mode == MANIP)
+        self.panel_rule.setVisible(self.mode is not None)
+        self.panel_rule.setStyleSheet(f"background:{color}; border:none; border-radius:1px;")
         if self.mode is None:
             self.stack.setCurrentWidget(self.idle_panel)
             self.panel_title.setText("")
@@ -927,6 +942,16 @@ class DemoGUI(QWidget):
         self._cancel_sequence()
         self.node.publish_bool(self.node.pub_pose_cancel, True)
         self._status("Bewegung gestoppt.", "#aaa")
+
+    def _safe_pose(self):
+        """Gespeicherte »Sichere Pose« (HOME_POSE) geplant anfahren."""
+        self._cancel_sequence()
+        store = self._pose_store()
+        if store is None or store.get(HOME_POSE) is None:
+            self._status(f"Pose »{pretty_pose_name(HOME_POSE)}« ist nicht gespeichert "
+                         "(Erweitert → Pose speichern).", "#ffb300")
+            return
+        self.run_poses([HOME_POSE], "Sichere Pose")
 
     def _home(self):
         """Grundstellung = Sichere Pose (Ellbogen hinten, Haende seitlich ueber

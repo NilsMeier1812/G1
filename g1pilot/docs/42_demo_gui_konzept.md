@@ -24,9 +24,10 @@ ergeben. Die Demo-GUI reduziert die Bedienung auf **eine Entscheidung zur Zeit**
 ├──────────────────────────────────────────────────────────────────┤
 │ 2 · STEUERUNG            Rahmen in der Farbe des aktiven Modus   │
 │                                                                  │
-│  GREIFEN:                 [ ARME | HÄNDE ]                       │
+│  GREIFEN              [ ARME | HÄNDE ]                           │
+│  ──────────────────────────────────────────────────────────────  │
 │   Abläufe: [ Arbeitsplatz 1 ] [ Arbeitsplatz 2 ]                 │
-│   [Hände öffnen] [Hände schließen] [Grundstellung] [Stop]    │
+│   [Sichere Pose]   [Grundstellung]   [Bewegung stoppen]          │
 │   Erweitert ▸   (Pose anfahren … / Pose speichern … / Marker)    │
 │                                                                  │
 │  GEHEN:                                                          │
@@ -98,9 +99,10 @@ damit die Zuordnung ohne Lesen klar ist.
 
 **GREIFEN**
 
-Oben im Panel schaltet ein Umschalter **ARME | HÄNDE** zwischen zwei
-Seiten um (beides braucht viel Platz, darum nie gleichzeitig). Beim Wechsel in
-GREIFEN ist ARME aktiv.
+In der Titelzeile neben „GREIFEN“ schaltet ein Umschalter **ARME | HÄNDE**
+zwischen zwei Seiten um (beides braucht viel Platz, darum nie gleichzeitig).
+Beim Wechsel in GREIFEN ist ARME aktiv. Eine Linie in Modusfarbe trennt die
+Titelzeile vom Inhalt (auch bei GEHEN).
 
 *Seite ARME*
 
@@ -116,8 +118,11 @@ GREIFEN ist ARME aktiv.
   wenn `/g1pilot/arm_command/status` `reached` meldet. Bei
   `failed`/`rejected`/`cancelled` bricht der Ablauf ab und der Grund steht im
   Status. Gibt es noch keine Abläufe, erklärt ein Hinweis, wie man einen anlegt.
-- **Hände öffnen/schließen** (beide Hände gleichzeitig), **Grundstellung**
-  (`/g1pilot/arms/home`) und **Bewegung stoppen** (`/g1pilot/pose_store/cancel`).
+- **Sichere Pose** fährt die gespeicherte Pose `Sichere_Pose` geplant an
+  (Hinweis, falls sie fehlt). **Grundstellung** fährt ebenfalls `Sichere_Pose`
+  an, ohne sie das alte Homing (`/g1pilot/arms/home`). **Bewegung stoppen**
+  sendet `/g1pilot/pose_store/cancel`. Hände öffnen/schließen liegt auf der
+  Seite HÄNDE.
 - **Erweitert ▸** (eingeklappt) enthält die bisherigen Einzelfunktionen für den
   Betreuer: Pose anfahren (Dialog), Pose speichern (Dialog, Kategorie `Demo`
   vorausgewählt) und Marker folgen. Die Dialoge werden aus `ui_interface.py`
