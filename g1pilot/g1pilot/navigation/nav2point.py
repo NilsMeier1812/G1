@@ -2,12 +2,12 @@
 import math
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile
+from rclpy.qos import QoSProfile, DurabilityPolicy
 from nav_msgs.msg import Odometry, Path
 from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import Joy
 from visualization_msgs.msg import Marker
-from std_msgs.msg import Header, Bool
+from std_msgs.msg import Header, Bool, String
 
 def yaw_from_quat(x, y, z, w):
     s = 2.0 * (w * z + x * y)
@@ -74,6 +74,15 @@ class Nav2Point(Node):
         self.pub_joy = self.create_publisher(Joy, self.joy_topic, qos)
         self.pub_wp_marker = self.create_publisher(Marker, '/g1pilot/waypoint_marker', qos)
         self.pub_goal_marker = self.create_publisher(Marker, '/g1pilot/goal_marker', qos)
+        # Fortschritt fuer die Bedienoberflaeche (demo_gui): Ereignisse
+        #   moving  = neuer Pfad, faehrt (sobald AUTO NAV an ist) zum Ziel
+        #   arrived = Ziel erreicht (inkl. Endausrichtung), Pfad verworfen
+        #   no_path = Planer hat keinen Weg gefunden (leerer Pfad)
+        #   idle    = noch kein Ziel seit Start
+        # TRANSIENT_LOCAL: eine spaeter startende GUI bekommt den letzten Stand.
+        qos_status = QoSProfile(depth=1)
+        qos_status.durability = DurabilityPolicy.TRANSIENT_LOCAL
+        self.pub_status = self.create_publisher(String, '/g1pilot/nav_status', qos_status)
         self.timer = self.create_timer(1.0 / self.rate, self.loop)
         self.min_axis = float(self.get_parameter('min_axis').value)
         self.min_yaw_axis = float(self.get_parameter('min_yaw_axis').value)
@@ -94,6 +103,17 @@ class Nav2Point(Node):
         self.logged_no_pose = False
         self.logged_no_path = False
         self.logged_end_path = False
+        self.publish_status('idle')
+
+    def publish_status(self, state):
+        self.pub_status.publish(String(data=state))
+
+    def publish_stop(self):
+        joy = Joy()
+        joy.header.stamp = self.get_clock().now().to_msg()
+        joy.axes = [0.0] * 8
+        joy.buttons = [0] * 14
+        self.pub_joy.publish(joy)
 
     def cb_odom(self, msg: Odometry):
         self.x = float(msg.pose.pose.position.x)
@@ -116,6 +136,12 @@ class Nav2Point(Node):
         self.logged_end_path = False
         if self.path:
             self.publish_goal_marker(self.path[-1][0], self.path[-1][1])
+            self.publish_status('moving')
+        else:
+            # Planer fand keinen Weg -> anhalten statt dem alten Pfad weiter
+            # zu folgen (sonst liefe der Roboter zum vorherigen Ziel).
+            self.publish_stop()
+            self.publish_status('no_path')
 
     def cb_goal_pose(self, msg: PoseStamped):
         o = msg.pose.orientation
@@ -234,6 +260,7 @@ class Nav2Point(Node):
                         self.pub_joy.publish(joy)     # axes/buttons = 0 -> Stop
                         self.path = []
                         self.aligning = False
+                        self.publish_status('arrived')
                         return
                     wz = max(-self.wz_lim, min(self.wz_lim, self.align_yaw_kp * yaw_err))
                     n = wz / self.wz_lim
@@ -248,6 +275,7 @@ class Nav2Point(Node):
                 self.pub_joy.publish(joy)
                 self.path = []
                 self.aligning = False
+                self.publish_status('arrived')
                 return
 
             # ── Anfahrt: holonom zum Zielpunkt, Yaw in Fahrtrichtung ──────────

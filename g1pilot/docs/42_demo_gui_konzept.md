@@ -84,6 +84,17 @@ damit die Zuordnung ohne Lesen klar ist.
   Beim Wechsel zu GREIFEN und bei NOT-HALT geht AUTO NAV automatisch aus. Der
   Knopf ist nur aktiv, wenn der Nav-Stack läuft (`G1_ENABLE_NAV` bzw.
   `G1_ENABLE_LIDAR`); sonst erklärt ein Hinweis, wie man ihn einschaltet.
+- **AUTO-NAV-Zustände** (aus `/g1pilot/nav_status` von `nav2point`): Der
+  Knopf zeigt *aus* → *AN, wartet auf Ziel* → *läuft …* (gestrichelter Rahmen,
+  wie beim Moduswechsel) → *AN, Ziel erreicht* (grün). Nach dem Ankommen bleibt
+  AUTO NAV an, das nächste Ziel aus RViz wird direkt angefahren. „Angekommen“
+  steht zusätzlich im STATUS-Bereich. Findet der Planer keinen Weg, meldet der
+  Status das, und der Roboter bleibt stehen.
+- **Zur Station** (Quickbefehle, ein Knopf je `station_<Name>` der Szene):
+  setzt das Ziel und schaltet AUTO NAV ein. Während des Laufens ist der
+  Stations-Knopf gestrichelt umrandet. Beim Ankommen schaltet sich AUTO NAV
+  **automatisch wieder aus**, und der Status zeigt „Angekommen an Station …“.
+  Ohne Weg (oder ohne Pfad nach 5 s) geht AUTO NAV ebenfalls wieder aus.
 
 **GREIFEN**
 

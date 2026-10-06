@@ -104,7 +104,7 @@ class DijkstraPlanner(Node):
     def cb_goal(self,msg):
         if not self.have_pose:
             self.get_logger().warn("No odom pose yet.")
-            return
+            self.publish_no_path(); return
         gx=float(msg.pose.position.x); gy=float(msg.pose.position.y)
         if self.map is None:
             self.publish_path(self.line_points(self.px,self.py,gx,gy,msg.header.frame_id or 'map'),msg.header.frame_id or 'map')
@@ -124,21 +124,21 @@ class DijkstraPlanner(Node):
             free=self.nearest_free(sx,sy)
             if free is None:
                 self.get_logger().warn("Start blockiert, keine freie Zelle in Reichweite -> kein Pfad.")
-                return
+                self.publish_no_path(); return
             sx,sy=free; start_snapped=True
             self.get_logger().info("Start im Sicherheitsabstand eines Objekts -> von naechster freier Zelle aus geplant.")
         if self.is_occ(gx_i,gy_i):
             free=self.nearest_free(gx_i,gy_i)
             if free is None:
                 self.get_logger().warn("Ziel blockiert, keine freie Zelle in Reichweite -> kein Pfad.")
-                return
+                self.publish_no_path(); return
             gx_i,gy_i=free
             goal_snapped=True
             self.get_logger().info("Ziel im Sicherheitsabstand eines Objekts -> auf naechste freie Stelle verschoben.")
         path_idx=self.dijkstra((sx,sy,self.pyaw),(gx_i,gy_i))
         if not path_idx:
-            self.get_logger().warn("Kein kollisionsfreier Pfad gefunden -> kein Pfad publiziert.")
-            return
+            self.get_logger().warn("Kein kollisionsfreier Pfad gefunden -> leerer Pfad (Stopp).")
+            self.publish_no_path(); return
         pts=[self.grid_to_world(ix,iy) for ix,iy in path_idx]
         if start_snapped:
             pts.insert(0,(self.px,self.py))   # vom echten Standort aus der Zone heraus
@@ -214,6 +214,11 @@ class DijkstraPlanner(Node):
             cur=(prev[cur][0],prev[cur][1])
         path.reverse()
         return path
+
+    def publish_no_path(self):
+        # Leerer Pfad = "kein Weg": nav2point haelt an (statt dem alten Pfad
+        # weiter zu folgen) und meldet no_path an die Bedienoberflaeche.
+        self.publish_path([],self.map_frame)
 
     def publish_path(self,pts,frame_id):
         path=Path()

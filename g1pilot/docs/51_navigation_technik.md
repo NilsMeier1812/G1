@@ -131,6 +131,21 @@ Zielgenauigkeit (fuer Stationen/Greifabläufe wichtig):
 - Kein Fortschritt `stall_s` (3 s) innerhalb `stall_dist` (0.35 m) →
   Endausrichtung trotzdem.
 
+Fortschritt meldet der Node als `std_msgs/String` auf `/g1pilot/nav_status`
+(TRANSIENT_LOCAL, Ereignisse):
+
+| Wert | Bedeutung |
+|---|---|
+| `idle` | seit dem Start noch kein Ziel |
+| `moving` | neuer Pfad empfangen; läuft, sobald `auto_enable` an ist |
+| `arrived` | Ziel inkl. Endausrichtung erreicht, Pfad verworfen |
+| `no_path` | Planer fand keinen Weg (leerer Pfad), Roboter wurde angehalten |
+
+`dijkstra_planner` publiziert bei Fehlschlag (keine Pose, Start/Ziel
+blockiert, kein kollisionsfreier Weg) einen **leeren Pfad**. `nav2point` hält
+dann an, statt dem vorherigen Pfad weiter zu folgen. Die Demo-GUI nutzt
+`nav_status` für die AUTO-NAV-Anzeige (siehe `42_demo_gui_konzept.md`).
+
 ### `sim_localization` (nur Sim) / MOLA + `mola_fixed` (nur Real)
 
 `sim_localization` liest die Basis-Position/-Geschwindigkeit aus

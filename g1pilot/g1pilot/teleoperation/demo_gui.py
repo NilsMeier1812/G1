@@ -80,6 +80,13 @@ WALK_SWITCH_TIMEOUT_MS = 16000   # > loco_sim walk_arm_timeout_s (15 s)
 
 TERMINAL = ("reached", "failed", "rejected", "cancelled")
 
+# AUTO-NAV-Anzeige: aus | an, wartet auf Ziel | laeuft (gestrichelt) | angekommen.
+NAV_OFF, NAV_WAIT, NAV_MOVING, NAV_ARRIVED = "off", "waiting", "moving", "arrived"
+# Stations-Knopf: kommt so lange kein Pfad (nav_status moving/no_path), gilt
+# das Ziel als unerreichbar (z.B. Planer laeuft nicht) -> AUTO NAV wieder aus.
+NAV_PLAN_TIMEOUT_MS = 5000
+NAV_DONE_COLOR = "#66bb6a"
+
 
 def _envflag(name):
     return os.environ.get(name, '0').strip().lower() in ('1', 'true', 'yes', 'on')
@@ -119,6 +126,16 @@ class DemoNode(StreamDeck):
         qos_scene = QoSProfile(depth=1)
         qos_scene.durability = DurabilityPolicy.TRANSIENT_LOCAL
         self.create_subscription(MarkerArray, "/scene_markers", self._scene_markers, qos_scene)
+        # Fortschritt der Navigation (nav2point): idle | moving | arrived | no_path.
+        # TRANSIENT_LOCAL wie bei nav2point -> letzter Stand auch nach GUI-Start.
+        self.nav_status = "idle"
+        self.on_nav_status = None
+        self.create_subscription(String, "/g1pilot/nav_status", self._nav_status, qos_scene)
+
+    def _nav_status(self, msg: String):
+        self.nav_status = msg.data
+        if self.on_nav_status:
+            self.on_nav_status(msg.data)
 
     def _scene_markers(self, msg: MarkerArray):
         stations = {}
@@ -204,6 +221,15 @@ def big_button(text, color="#2d2d2d", font=20, height=80):
     return b
 
 
+def state_css(bg, fg, border, font):
+    """Knopf-Stil fuer Zustaende (z.B. gestrichelt = laeuft, wie ModeTile)."""
+    return f"""
+        QPushButton {{ background:{bg}; color:{fg}; font-size:{font}px; font-weight:700;
+                       border:{border}; border-radius:14px; padding:8px; }}
+        QPushButton:disabled {{ background:#1c1c1c; color:#555; border:1px solid #2a2a2a; }}
+    """
+
+
 # ── Bereich 2a: Gehen ────────────────────────────────────────────────────
 class WalkPanel(QWidget):
     """Joystick-Knopf ODER Pfeiltasten (gedrueckt halten = laufen, loslassen =
@@ -273,6 +299,7 @@ class WalkPanel(QWidget):
         self.btn_auto_nav.setCheckable(True)
         self.btn_auto_nav.setFixedWidth(360)
         self.btn_auto_nav.setEnabled(NAV_AVAILABLE)
+        self._auto_nav_css = self.btn_auto_nav.styleSheet()
         nav.addWidget(self.btn_auto_nav)
         self.nav_hint = self._caption("")
         self.nav_hint.setWordWrap(True)
@@ -284,11 +311,13 @@ class WalkPanel(QWidget):
         self.station_row.setSpacing(10)
         self.station_row.addWidget(self._caption("Zur Station:"))
         self.station_btns = []
+        self.station_by_name = {}
+        self.nav_station = None   # Station, zu der gerade gelaufen wird
         self.on_station = None
         self.station_row.addStretch(1)
         outer.addLayout(self.station_row)
         self.set_stations([])
-        self.set_auto_nav_view(False)
+        self.set_nav_view(NAV_OFF)
 
     @staticmethod
     def _caption(text):
@@ -299,8 +328,10 @@ class WalkPanel(QWidget):
     def set_stations(self, names):
         for b in self.station_btns:
             self.station_row.removeWidget(b)
+            b.hide()            # deleteLater allein laesst es bis zum Loeschen sichtbar
             b.deleteLater()
         self.station_btns = []
+        self.station_by_name = {}
         if not names:
             b = QLabel("keine — in der Szene Objekte »station_<Name>« anlegen")
             b.setStyleSheet("color:#666; font-size:14px;")
@@ -312,8 +343,20 @@ class WalkPanel(QWidget):
             b.setMaximumWidth(240)
             b.setEnabled(NAV_AVAILABLE)
             b.clicked.connect(lambda _, n=name: self.on_station and self.on_station(n))
+            b.default_css = b.styleSheet()
             self.station_row.insertWidget(1 + i, b)
             self.station_btns.append(b)
+            self.station_by_name[name] = b
+        self._style_stations()
+
+    def _style_stations(self):
+        """Station, zu der gerade gelaufen wird: gestrichelt (wie »wechselt«)."""
+        for name, b in self.station_by_name.items():
+            if name == self.nav_station:
+                b.setStyleSheet(state_css("#2a2a2a", NAV_DONE_COLOR,
+                                          f"4px dashed {NAV_DONE_COLOR}", 15))
+            else:
+                b.setStyleSheet(b.default_css)
 
     def set_speed(self, name):
         self.speed = SPEEDS[name]
@@ -328,23 +371,45 @@ class WalkPanel(QWidget):
         clamp = lambda v: max(-1.0, min(1.0, v))   # noqa: E731
         return clamp(vx) * self.speed, clamp(vy) * self.speed, clamp(yaw) * self.speed
 
-    def set_auto_nav_view(self, on):
-        """Nur Anzeige: Knopf-Text/Haken, Hinweis, manuelle Steuerung sperren."""
+    def set_nav_view(self, phase, station=None):
+        """Nur Anzeige: AUTO-NAV-Knopf + Hinweis je Phase, Stations-Knopf
+        gestrichelt waehrend des Laufens, manuelle Steuerung sperren."""
+        on = phase != NAV_OFF
         self.btn_auto_nav.setChecked(on)
         self.manual.setEnabled(not on)
         # Gesperrt sichtbar machen (der gezeichnete Joystick kennt kein :disabled).
         fade = QGraphicsOpacityEffect(self.manual)
         fade.setOpacity(0.3 if on else 1.0)
         self.manual.setGraphicsEffect(fade)
+        self.nav_station = station if phase == NAV_MOVING else None
+        self._style_stations()
         if on:
             self.reset()
-            self.btn_auto_nav.setText("AUTO NAV  ● AN\nantippen zum Stoppen")
-            self.nav_hint.setText("Navigiert selbstständig zum Ziel. Ziel in RViz setzen "
-                                  "(»2D Goal Pose«). Manuelle Steuerung ist gesperrt.")
+        walk = MODE_COLOR[WALK]
+        to = f"zur Station »{sm.station_label(station)}«" if station else "zum Ziel"
+        if phase == NAV_MOVING:
+            self.btn_auto_nav.setText("AUTO NAV  ● läuft …\nantippen zum Stoppen")
+            self.btn_auto_nav.setStyleSheet(
+                state_css("#2a2a2a", walk, f"4px dashed {walk}", 20))
+            self.nav_hint.setText(f"Läuft selbstständig {to}. "
+                                  "Manuelle Steuerung ist gesperrt.")
+        elif phase == NAV_ARRIVED:
+            self.btn_auto_nav.setText("AUTO NAV  ● AN\nZiel erreicht")
+            self.btn_auto_nav.setStyleSheet(
+                state_css("#2e7d32", "white", "4px solid #80ff80", 20))
+            self.nav_hint.setText("Am Ziel angekommen. AUTO NAV bleibt an — nächstes "
+                                  "Ziel in RViz setzen oder antippen zum Stoppen.")
+        elif phase == NAV_WAIT:
+            self.btn_auto_nav.setStyleSheet(self._auto_nav_css)
+            self.btn_auto_nav.setText("AUTO NAV  ● AN\nwartet auf Ziel")
+            self.nav_hint.setText("Ziel in RViz setzen (»2D Goal Pose«) oder Station "
+                                  "wählen. Manuelle Steuerung ist gesperrt.")
         elif NAV_AVAILABLE:
+            self.btn_auto_nav.setStyleSheet(self._auto_nav_css)
             self.btn_auto_nav.setText("AUTO NAV\nselbst zum Ziel laufen")
             self.nav_hint.setText("Erst Ziel in RViz setzen, dann AUTO NAV einschalten.")
         else:
+            self.btn_auto_nav.setStyleSheet(self._auto_nav_css)
             self.btn_auto_nav.setText("AUTO NAV")
             self.nav_hint.setText("Navigation ist nicht gestartet — im Startmenü "
                                   "Ausstattung → »Navigation« aktivieren.")
@@ -510,9 +575,14 @@ class DemoGUI(QWidget):
         self.current_pose = None
         self._walk_req = 0          # verwirft veraltete WALK-Timeouts
         self.auto_nav = False
+        self.nav_phase = NAV_OFF
+        self.nav_station = None     # Quickbefehl-Ziel (Station) oder None = RViz-Ziel
+        self._nav_planning = False  # Station geklickt, Pfad noch nicht da
+        self._nav_req = 0           # verwirft veraltete Planungs-Timeouts
 
         node.on_walk_ready = self._on_walk_ready
         node.on_arm_status = self._on_arm_status
+        node.on_nav_status = self._on_nav_status
 
         self.setWindowTitle("G1 Demo — " + ("SIM" if self.sim_mode else "REAL"))
         self.setStyleSheet("QWidget { background:#111; }")
@@ -708,25 +778,85 @@ class DemoGUI(QWidget):
         """AUTO NAV an/aus. Aus sendet joy_mux einmal einen neutralen Stop."""
         on = bool(on) and NAV_AVAILABLE and self.mode == WALK
         if on == self.auto_nav:
-            self.walk_panel.set_auto_nav_view(on)
+            self._show_nav()
             return
         self.auto_nav = on
         self.node.publish_bool(self.node.pub_auto_enable, on)
-        self.walk_panel.set_auto_nav_view(on)
+        self._nav_req += 1
+        self._nav_planning = False
+        self.nav_station = None
         if on:
-            self._status("AUTO NAV: navigiert selbstständig zum Ziel …", MODE_COLOR[WALK])
-        elif self.mode == WALK:
-            self._status("AUTO NAV aus — manuelle Steuerung frei.", MODE_COLOR[WALK])
+            # Liegt schon ein Pfad an (Ziel vorher in RViz gesetzt), laeuft er sofort.
+            moving = self.node.nav_status == "moving"
+            self.nav_phase = NAV_MOVING if moving else NAV_WAIT
+            self._show_nav()
+            if moving:
+                self._status("AUTO NAV: läuft zum Ziel …", MODE_COLOR[WALK])
+            else:
+                self._status("AUTO NAV an — Ziel in RViz setzen (»2D Goal Pose«).",
+                             MODE_COLOR[WALK])
+        else:
+            self.nav_phase = NAV_OFF
+            self._show_nav()
+            if self.mode == WALK:
+                self._status("AUTO NAV aus — manuelle Steuerung frei.", MODE_COLOR[WALK])
+
+    def _show_nav(self):
+        self.walk_panel.set_nav_view(self.nav_phase, self.nav_station)
 
     def go_to_station(self, name):
-        """Stations-Knopf: Ziel setzen -> Planer plant -> AUTO NAV laeuft hin."""
+        """Quickbefehl: Ziel setzen -> Planer plant -> AUTO NAV laeuft hin und
+        schaltet sich nach dem Ankommen wieder aus."""
         st = self.node.stations.get(name)
         if st is None or self.mode != WALK:
             return
         self.node.publish_goal(*st)
         self.set_auto_nav(True)
+        self.nav_station = name
+        self._nav_planning = True   # 'arrived' eines alten Ziels ignorieren
+        self.nav_phase = NAV_MOVING
+        self._show_nav()
         self._status(f"AUTO NAV: läuft zur Station »{sm.station_label(name)}« …",
                      MODE_COLOR[WALK])
+        req = self._nav_req
+        QTimer.singleShot(NAV_PLAN_TIMEOUT_MS,
+                          lambda: req == self._nav_req and self._nav_planning
+                          and self._on_nav_status("no_path"))
+
+    def _on_nav_status(self, state):
+        """nav2point meldet moving / arrived / no_path -> Anzeige + Status."""
+        if not self.auto_nav:
+            return
+        station = self.nav_station
+        label = f"Station »{sm.station_label(station)}«" if station else "Ziel"
+        to = f"zur {label}" if station else "zum Ziel"
+        if state == "moving":
+            self._nav_planning = False
+            self.nav_phase = NAV_MOVING
+            self._show_nav()
+            self._status(f"AUTO NAV: läuft {to} …", MODE_COLOR[WALK])
+        elif state == "arrived":
+            if self._nav_planning:
+                return      # gehoert noch zum vorherigen Ziel
+            if station:
+                self.set_auto_nav(False)
+                self._status(f"Angekommen an {label}. AUTO NAV ist wieder aus.",
+                             NAV_DONE_COLOR)
+            else:
+                self.nav_phase = NAV_ARRIVED
+                self._show_nav()
+                self._status("Am Ziel angekommen. AUTO NAV bleibt an.", NAV_DONE_COLOR)
+        elif state == "no_path":
+            self._nav_planning = False
+            if station:
+                self.set_auto_nav(False)
+                self._status(f"Kein Weg {to} gefunden. AUTO NAV ist wieder aus.",
+                             "#ffb300")
+            else:
+                self.nav_phase = NAV_WAIT
+                self._show_nav()
+                self._status("AUTO NAV: kein Weg zum Ziel gefunden — anderes Ziel "
+                             "in RViz setzen.", "#ffb300")
 
     def _publish_cmd_vel(self):
         # Dauerhaft senden (wie ui_interface): ausserhalb von GEHEN immer 0.
