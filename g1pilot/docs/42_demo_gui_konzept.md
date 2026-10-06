@@ -146,7 +146,7 @@ der Hand-Bridge (`hand_controller_viewer.html`, `inspire_hand_viewer.html`):
 ### 3 · Status (unten)
 
 - **Statuszeile** in Klartext mit farbigem Balken, z. B. „Arme werden eingeklappt
-  …“, „Arbeitsplatz 1 · Schritt 2/5: … “, „Fertig.“ oder „Abgebrochen (failed) …“.
+  …“, „Arbeitsplatz 1 · Schritt 2/5: …“, „Fertig.“ oder „Abgebrochen (failed) …“.
 - **NOT-HALT** ist immer sichtbar, rund und rot. Er sendet dasselbe wie der
   Streamdeck. Beide Kacheln werden danach inaktiv.
 - **Szene zurücksetzen** (nur Sim).
