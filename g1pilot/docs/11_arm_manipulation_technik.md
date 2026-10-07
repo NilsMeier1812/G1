@@ -63,6 +63,39 @@ Planung) — sowohl der Positionsspeicher als auch die Live-Pose-Schnittstelle
 Ein Marker-Griff bricht **immer** eine laufende geplante Bewegung ab
 (`_abort_planned_motion("Marker bewegt")`) — manuelle Eingabe hat Vorrang.
 
+#### Ziel-Rückmeldung an den Marker (`/g1pilot/hand_goal_status`)
+
+Jedes Marker-Ziel wird je Seite verfolgt (`_track_marker_goal`), bis es
+abgeschlossen ist. `_update_marker_goals` läuft im `main_loop` mit
+`marker_goal_check_hz` (Default 25 Hz) und
+
+- füttert den Ziel-Filter erneut mit dem Endziel (`auto_reissue_goals`) —
+  sonst macht der Tiefpass nur einen Schritt pro eingehender Nachricht und der
+  Sollwert bleibt nach dem Loslassen vor dem Marker stehen,
+- meldet `reached`, sobald die FK der **kommandierten** Armstellung innerhalb
+  `goal_pos_tol` / `goal_ori_tol_deg` liegt,
+- meldet `unreachable`, wenn sich die kommandierte Armstellung
+  `marker_goal_stall_time_s` lang um weniger als `marker_goal_stall_tol_rad`
+  bewegt hat, ohne anzukommen (Reichweite, Kollisions-Gate, Gelenklimit).
+
+Homing, WALK, BALANCING, E-Stop, Enable/Disable und geplante Bewegungen melden
+offene Ziele als `cancelled`; Ziele, die wegen Homing/deaktivierter
+Manipulation verworfen werden, als `ignored`. Format (JSON in
+`std_msgs/String`):
+
+```json
+{"side": "right", "state": "reached", "goal_stamp": {"sec": 12, "nanosec": 345},
+ "pos_err_m": 0.006, "ori_err_deg": 1.2}
+```
+
+`goal_stamp` ist der `header.stamp` der Ziel-Nachricht. Der RViz-Marker
+(`interactive_marker.py`) bleibt nach dem Loslassen auf der Zielpose stehen und
+folgt erst wieder der Hand, wenn für **sein zuletzt gesendetes** Ziel eine
+Abschlussmeldung kommt (Sicherheitsnetz: `goal_timeout_s`, Default 30 s).
+Beide Seiten sind unabhängig — linken Marker setzen, rechten Marker setzen,
+beide Arme fahren gleichzeitig. Ein erneuter Griff während der Fahrt ersetzt
+das Ziel einfach.
+
 ### `main_loop()` — pro Tick
 
 Reihenfolge (vereinfacht):
@@ -205,6 +238,8 @@ des Solvers.
 | `ik_orientation_mode` | `full` / weitere Modi, siehe `set_orientation_mode` |
 | `ik_null_space_gain` | Stärke der Nullraum-Regularisierung |
 | `planned_motion_tolerance` | Toleranz [rad], ab der ein Wegpunkt als erreicht gilt |
+| `goal_pos_tol`, `goal_ori_tol_deg` | Ab hier gilt ein Marker-Ziel als erreicht (Default 1 cm / 3°) |
+| `marker_goal_stall_time_s`, `marker_goal_stall_tol_rad` | Stillstand ohne Ankunft → Marker-Ziel unerreichbar (Default 0.8 s / 0.01 rad) |
 | `arm_api_*` | Parameter der HTTP-Brücke, siehe [21_arm_api_technik.md](21_arm_api_technik.md) |
 
 ## Bekannte Einschränkungen

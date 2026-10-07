@@ -121,7 +121,8 @@ class ArmController(Node):
     ee_auto_calibrate : bool
         Enables end-effector offset auto-calibration.
     auto_reissue_goals : bool
-        Automatically reapply last goals after homing.
+        Das letzte Marker-Ziel periodisch erneut durch den Ziel-Filter schicken,
+        damit der gefilterte Sollwert wirklich am Marker ankommt.
     goal_pos_tol : float
         Tolerance (m) for position convergence check.
     goal_ori_tol_deg : float
@@ -237,6 +238,23 @@ class ArmController(Node):
         self.goal_pos_tol = float(self.get_parameter("goal_pos_tol").value)
         self.goal_ori_tol_deg = float(self.get_parameter("goal_ori_tol_deg").value)
 
+        # Marker-Ziel-Rueckmeldung (/g1pilot/hand_goal_status): je Seite wird das
+        # zuletzt per Marker gesetzte Ziel verfolgt, bis es erreicht ist
+        # (goal_pos_tol / goal_ori_tol_deg) oder als unerreichbar gilt -- d.h.
+        # der kommandierte Arm steht laenger als stall_time_s still (IK am
+        # Reichweitenrand, Kollisions-Gate, Gelenklimit), ohne angekommen zu
+        # sein. Der RViz-Marker bleibt so lange auf dem Ziel stehen.
+        self.declare_parameter("marker_goal_check_hz", 25.0)
+        self.declare_parameter("marker_goal_stall_time_s", 0.8)
+        self.declare_parameter("marker_goal_stall_tol_rad", 0.01)
+        self._marker_check_dt = 1.0 / max(1.0, float(self.get_parameter("marker_goal_check_hz").value))
+        self._marker_stall_time = float(self.get_parameter("marker_goal_stall_time_s").value)
+        self._marker_stall_tol = float(self.get_parameter("marker_goal_stall_tol_rad").value)
+        self._marker_check_last = 0.0
+        # side -> {"stamp": (sec, nanosec), "T": SE3 Endziel (mit Offsets),
+        #          "q_ref": 7 DOF, "t_ref": monotonic}  bzw. None
+        self._marker_goal = {"left": None, "right": None}
+
         def _pvec(name):
             v = self.get_parameter(name).value
             return np.array(v, dtype=float)
@@ -329,6 +347,8 @@ class ArmController(Node):
         self.ik_solver = G1IKSolver(debug=False)
         if hasattr(self.ik_solver, "set_orientation_mode"):
             self.ik_solver.set_orientation_mode(self.ik_orientation_mode)
+        # Eigener FK-Buffer fuer die Marker-Ziel-Pruefung (stoert self.data nicht).
+        self._marker_fk_data = pin.Data(self.ik_solver.model)
 
         # Kartesisches Speedlimit: ueberwachte Punkte = Hand-TCPs + Ellbogen
         # (der Ellbogen kann bei reiner Schulterdrehung schneller sein als die
@@ -430,6 +450,9 @@ class ArmController(Node):
         # ein API-Nutzer den Positionsspeicher-Namensraum kennen muss.
         self.create_subscription(Bool, "/g1pilot/arm_command/cancel", self._on_pose_cancel, 10)
         self.pub_cmd_status = self.create_publisher(String, "/g1pilot/arm_command/status", 10)
+        # Rueckmeldung zu Marker-Zielen (reached/unreachable/cancelled/ignored),
+        # damit der RViz-Marker weiss, wann er wieder der Hand folgen darf.
+        self.pub_marker_goal_status = self.create_publisher(String, "/g1pilot/hand_goal_status", 10)
         # Rueckkanal des Speicherns (POST /arm/save bzw. Streamdeck-Dialog):
         # sagt, WAS unter welchem Namen/Kategorie wirklich in der Datei landete.
         self.pub_save_status = self.create_publisher(
@@ -641,11 +664,15 @@ class ArmController(Node):
         return None
 
     def _apply_offsets_and_filters(self, side: str, T_goal_input: SE3):
-        """
-        Apply static and auto-calibrated offsets to an incoming goal and filter it.
+        """Offsets anwenden und filtern (siehe _goal_with_offsets/_filter_goal)."""
+        return self._filter_goal(side, self._goal_with_offsets(side, T_goal_input))
 
-        This function handles end-effector calibration (static + automatic),
-        goal smoothing, and orientation step limitation.
+    def _goal_with_offsets(self, side: str, T_goal_input: SE3):
+        """
+        Apply static and auto-calibrated offsets to an incoming goal.
+
+        This function handles end-effector calibration (static + automatic);
+        smoothing and orientation step limitation happen in _filter_goal.
 
         Parameters
         ----------
@@ -657,7 +684,7 @@ class ArmController(Node):
         Returns
         -------
         SE3
-            Adjusted and filtered goal for IK solver.
+            Goal with offsets applied (unfiltered).
         """
 
         T_static = self._T_off_right_static if side == 'right' else self._T_off_left_static
@@ -679,8 +706,13 @@ class ArmController(Node):
                     self.get_logger().info(f"[IK] auto-calibrated left: d=({t[0]:.3f},{t[1]:.3f},{t[2]:.3f})")
                 T_auto = T_auto_new
 
-        T_raw = T_goal_input * T_static * (T_auto if T_auto is not None else SE3.Identity())
+        return T_goal_input * T_static * (T_auto if T_auto is not None else SE3.Identity())
 
+    def _filter_goal(self, side: str, T_raw: SE3):
+        """Ziel (mit Offsets) tiefpassfiltern und den Orientierungsschritt
+        gegenueber der aktuellen Hand begrenzen. Der Filter macht pro Aufruf nur
+        einen Schritt -- deshalb ruft _update_marker_goals ihn periodisch mit
+        dem Endziel erneut auf, sonst bliebe der Sollwert vor dem Marker stehen."""
         if side == 'right':
             self._goal_right_filt = self._lowpass_goal(self._goal_right_filt, T_raw, self.ik_goal_filter_alpha)
             T_use = self._goal_right_filt
@@ -1037,6 +1069,7 @@ class ArmController(Node):
         self.homing_reached = False
         self.walk_mode = False
         self._abort_planned_motion()   # keine Ueberraschungsbewegung nach dem Quittieren
+        self._cancel_marker_goals("E-Stop")
         self._weight_state = "off"
         self._arm_sdk_weight = 1.0     # Autoritaet behalten (kein Onboard-Snap)
         self._publish_arm_slack()
@@ -1074,6 +1107,7 @@ class ArmController(Node):
                                    "START quittieren.")
             return
         self.arms_enabled = msg.data
+        self._cancel_marker_goals("Manipulation %s" % ("aktiviert" if msg.data else "deaktiviert"))
         # Reste einer geplanten Bewegung IMMER verwerfen (Enable UND Disable):
         # sonst feuerte ein waehrend disabled fertig gewordener Plan beim
         # naechsten Enable als Ueberraschung los -- gleiche Vorsicht wie beim
@@ -1199,6 +1233,7 @@ class ArmController(Node):
         self.homing_active = False
         self.homing_reached = False
         self._abort_planned_motion("WALK gestartet")
+        self._cancel_marker_goals("WALK gestartet")
         self._walk_ready_sent = False    # erst melden, wenn die Lauf-Pose erreicht ist
         self.get_logger().info("WALK-Modus: Arme in Lauf-Pose aufraeumen, dann walk_ready.")
         # NUR SIM: Ohne ENABLE MANIPULATION ueberspringt main_loop den WALK-Zweig
@@ -1229,6 +1264,7 @@ class ArmController(Node):
         if self._walk_ready_sent:
             self._walk_ready_sent = False
             self.walk_ready_publisher.publish(Bool(data=False))
+        self._cancel_marker_goals("BALANCING gestartet")
         self._align_ik_to_config(self._last_q_target[0:7], self._last_q_target[7:14])
         self.get_logger().info("BALANCING-Modus: Arme frei (rviz/Marker).")
 
@@ -1426,6 +1462,7 @@ class ArmController(Node):
         # wartender Aufrufer (arm_api) liefe in seinen Timeout.
         if self._planned_motion_active:
             self._abort_planned_motion("neues Ziel angefordert")
+        self._cancel_marker_goals(f"geplante Bewegung: {label}")
         self._cmd_req_id = req_id
         self._cmd_source = source
         self._cmd_ik_detail = None
@@ -1781,9 +1818,13 @@ class ArmController(Node):
         """
 
         if self.homing_active:
+            self._publish_marker_goal_status('right', msg.header.stamp, "ignored",
+                                             reason="Homing laeuft")
             return
 
         if not self.arms_enabled:
+            self._publish_marker_goal_status('right', msg.header.stamp, "ignored",
+                                             reason="Manipulation nicht aktiv")
             return
 
         # Mode-Mux (siehe g1pilot/docs/11_arm_manipulation_technik.md (Mode-Mux Marker vs. Positionsspeicher)): manueller
@@ -1819,9 +1860,11 @@ class ArmController(Node):
         T_goal_in = SE3(q.matrix(), np.array([p.x, p.y, p.z]))
 
         self._last_right_goal_raw = T_goal_in
-        T_goal_use = self._apply_offsets_and_filters('right', T_goal_in)
+        T_target = self._goal_with_offsets('right', T_goal_in)
+        T_goal_use = self._filter_goal('right', T_target)
         if T_goal_use is not None:
             self.ik_solver.set_goal("right", T_goal_use)
+        self._track_marker_goal('right', msg.header.stamp, T_target)
 
 
     def _left_goal_callback(self, msg: PoseStamped):
@@ -1842,9 +1885,13 @@ class ArmController(Node):
         """
 
         if self.homing_active:
+            self._publish_marker_goal_status('left', msg.header.stamp, "ignored",
+                                             reason="Homing laeuft")
             return
 
         if not self.arms_enabled:
+            self._publish_marker_goal_status('left', msg.header.stamp, "ignored",
+                                             reason="Manipulation nicht aktiv")
             return
 
         # Mode-Mux (siehe g1pilot/docs/11_arm_manipulation_technik.md (Mode-Mux Marker vs. Positionsspeicher)): manueller
@@ -1880,10 +1927,116 @@ class ArmController(Node):
         T_goal_in = SE3(q.matrix(), np.array([p.x, p.y, p.z]))
 
         self._last_left_goal_raw = T_goal_in
-        T_goal_use = self._apply_offsets_and_filters('left', T_goal_in)
+        T_target = self._goal_with_offsets('left', T_goal_in)
+        T_goal_use = self._filter_goal('left', T_target)
         if T_goal_use is not None:
             self.ik_solver.set_goal("left", T_goal_use)
+        self._track_marker_goal('left', msg.header.stamp, T_target)
 
+
+    # --------------------------------------------------------
+    # Marker-Ziele: erreicht / unerreichbar zurueckmelden
+    # --------------------------------------------------------
+
+    @staticmethod
+    def _stamp_tuple(stamp):
+        return (int(stamp.sec), int(stamp.nanosec))
+
+    def _publish_marker_goal_status(self, side: str, stamp, state: str, *,
+                                    pos_err=None, ori_err_deg=None, reason: str = ""):
+        """Status eines Marker-Ziels auf /g1pilot/hand_goal_status (JSON).
+        `goal_stamp` ist der header.stamp der Ziel-Nachricht -- daran erkennt
+        der Marker, ob die Meldung zu SEINEM letzten Ziel gehoert."""
+        sec, nsec = stamp if isinstance(stamp, tuple) else self._stamp_tuple(stamp)
+        payload = {"side": side, "state": state,
+                   "goal_stamp": {"sec": sec, "nanosec": nsec}}
+        if pos_err is not None:
+            payload["pos_err_m"] = round(float(pos_err), 4)
+        if ori_err_deg is not None:
+            payload["ori_err_deg"] = round(float(ori_err_deg), 2)
+        if reason:
+            payload["reason"] = reason
+        self.pub_marker_goal_status.publish(String(data=json.dumps(payload)))
+
+    def _track_marker_goal(self, side: str, stamp, T_target: SE3):
+        """Neues Marker-Ziel fuer `side` merken. Ein neues Ziel ersetzt das alte
+        einfach (Marker erneut gezogen) -- der Stillstand-Zaehler beginnt neu."""
+        q7 = self._last_q_target[0:7] if side == "left" else self._last_q_target[7:14]
+        self._marker_goal[side] = {
+            "stamp": self._stamp_tuple(stamp),
+            "T": T_target,
+            "q_ref": np.array(q7, dtype=float),
+            "t_ref": time.monotonic(),
+        }
+
+    def _cancel_marker_goals(self, reason: str):
+        """Laufende Marker-Ziele beider Seiten abbrechen (Homing, WALK, E-Stop,
+        geplante Bewegung, Enable/Disable) und das dem Marker melden."""
+        for side in ("left", "right"):
+            g = self._marker_goal.get(side)
+            if g is None:
+                continue
+            self._marker_goal[side] = None
+            self._publish_marker_goal_status(side, g["stamp"], "cancelled", reason=reason)
+
+    def _update_marker_goals(self):
+        """Mit marker_goal_check_hz: offene Marker-Ziele nachfuehren und pruefen.
+
+        * Ziel-Filter erneut mit dem Endziel fuettern (auto_reissue_goals),
+          damit der gefilterte Sollwert wirklich am Marker ankommt.
+        * erreicht: FK der KOMMANDIERTEN Armstellung innerhalb goal_pos_tol /
+          goal_ori_tol_deg.
+        * unerreichbar: kommandierte Armstellung bewegt sich seit
+          marker_goal_stall_time_s um weniger als marker_goal_stall_tol_rad."""
+        if self._marker_goal["left"] is None and self._marker_goal["right"] is None:
+            return
+        now = time.monotonic()
+        if now - self._marker_check_last < self._marker_check_dt:
+            return
+        self._marker_check_last = now
+
+        full = self._full_config_with_arms(self._last_q_target)
+        q_full = pin.neutral(self.ik_solver.model)
+        for jid_idx, ros_name in enumerate(self.ik_solver._ros_joint_names):
+            if ros_name in self.ik_solver._name_to_q_index:
+                q_full[self.ik_solver._name_to_q_index[ros_name]] = float(full[jid_idx])
+        data = self._marker_fk_data
+        pin.forwardKinematics(self.ik_solver.model, data, q_full)
+        pin.updateFramePlacements(self.ik_solver.model, data)
+
+        for side in ("left", "right"):
+            g = self._marker_goal[side]
+            if g is None:
+                continue
+            if self.auto_reissue_goals:
+                self._filter_goal(side, g["T"])
+            fid = self.ik_solver._fid_left if side == "left" else self.ik_solver._fid_right
+            if fid is None:
+                continue
+            M = data.oMf[fid]
+            pos_err = float(np.linalg.norm(g["T"].translation - M.translation))
+            ori_err = math.degrees(float(np.linalg.norm(pin.log3(M.rotation.T @ g["T"].rotation))))
+            if pos_err <= self.goal_pos_tol and ori_err <= self.goal_ori_tol_deg:
+                self._marker_goal[side] = None
+                # Rest-Versatz des Filters schliessen: Sollwert exakt aufs Ziel.
+                if side == "left":
+                    self._goal_left_filt = g["T"]
+                else:
+                    self._goal_right_filt = g["T"]
+                self._publish_marker_goal_status(side, g["stamp"], "reached",
+                                                 pos_err=pos_err, ori_err_deg=ori_err)
+                continue
+            q7 = self._last_q_target[0:7] if side == "left" else self._last_q_target[7:14]
+            if np.linalg.norm(q7 - g["q_ref"]) > self._marker_stall_tol:
+                g["q_ref"] = np.array(q7, dtype=float)
+                g["t_ref"] = now
+            elif now - g["t_ref"] >= self._marker_stall_time:
+                self._marker_goal[side] = None
+                self._publish_marker_goal_status(side, g["stamp"], "unreachable",
+                                                 pos_err=pos_err, ori_err_deg=ori_err)
+                self.get_logger().warn(
+                    f"[marker] {side}: Ziel nicht erreichbar "
+                    f"(Rest {pos_err * 100:.1f} cm / {ori_err:.1f} deg).")
 
     def _compute_dt(self) -> float:
         """
@@ -2173,6 +2326,10 @@ class ArmController(Node):
         # Selbstkollisions-Gate: nie in den eigenen Koerper fahren.
         q_smooth = self._apply_collision_gate(self._last_q_target, q_smooth)
         self._last_q_target = q_smooth.copy()
+
+        if not (self.walk_mode or self.homing_active or self.homing_reached
+                or self._planned_motion_active):
+            self._update_marker_goals()
 
         if self.use_robot:
             self.msg.mode_machine = self.get_mode_machine()

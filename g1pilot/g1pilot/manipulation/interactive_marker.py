@@ -2,12 +2,13 @@
 # -*- coding: utf-8 -*-
 
 import functools
+import json
 import math
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile
 from geometry_msgs.msg import PoseStamped, Pose
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, String
 from interactive_markers.interactive_marker_server import InteractiveMarkerServer
 from interactive_markers.menu_handler import MenuHandler
 from visualization_msgs.msg import (
@@ -47,6 +48,12 @@ class InteractiveMarkerEFF(Node):
         self.declare_parameter('follow_rate_hz', 10.0)
         self.declare_parameter('follow_deadband_m', 0.01)
         self.declare_parameter('follow_deadband_deg', 3.0)
+        # Nach dem Loslassen bleibt der Marker auf dem Ziel, bis der
+        # arm_controller "erreicht" / "nicht erreichbar" meldet
+        # (/g1pilot/hand_goal_status). Sicherheitsnetz, falls nie eine Meldung
+        # kommt (arm_controller laeuft nicht o.ae.): nach dieser Zeit [s] folgt
+        # der Marker wieder der Hand.
+        self.declare_parameter('goal_timeout_s', 30.0)
 
         self.fixed_frame = self.get_parameter('fixed_frame').get_parameter_value().string_value
         self.spawn_dt = 1.0 / float(self.get_parameter('spawn_rate_hz').value)
@@ -68,17 +75,18 @@ class InteractiveMarkerEFF(Node):
             float(self.get_parameter('follow_deadband_deg').value)) / 2.0)
         self._follow_prev = {"right": None, "left": None}
         self._follow_still = {"right": 0, "left": 0}
+        self.goal_timeout = float(self.get_parameter('goal_timeout_s').value)
 
         # Pro Seite merken, ob der Marker gerade mit der Maus gezogen wird, damit
         # der Follow-Update das Ziehen nicht ueberschreibt.
         self.dragging = {"right": False, "left": False}
-        # Nach dem Loslassen: Follow pausieren, bis der Arm das Ziel erreicht hat
-        # bzw. steht. Sonst springt der Marker auf die noch hinterherhinkende Hand
-        # zurueck (Arm bleibt dann mitten im Raum stehen).
+        # Nach dem Loslassen: Marker bleibt auf der Ziel-Pose, bis der
+        # arm_controller fuer GENAU dieses Ziel (header.stamp der letzten
+        # gesendeten Ziel-Nachricht) reached/unreachable/cancelled/ignored meldet.
+        # Erst dann folgt der Marker wieder der Hand. Beide Seiten unabhaengig.
         self._await_arrival = {"right": False, "left": False}
-        self._target_pose = {"right": None, "left": None}
-        self._still_count = {"right": 0, "left": 0}
-        self._prev_hand = {"right": None, "left": None}
+        self._await_since = {"right": None, "left": None}
+        self._last_goal_stamp = {"right": None, "left": None}
 
         self.server = InteractiveMarkerServer(self, "g1_ee_goal_markers")
         self.tf_buffer = Buffer()
@@ -92,6 +100,7 @@ class InteractiveMarkerEFF(Node):
         }
 
         self.publish_enabled = {"right": self.publish_default, "left": self.publish_default}
+        self.create_subscription(String, '/g1pilot/hand_goal_status', self._on_goal_status, 10)
 
         self.current_pose = {"right": None, "left": None}
 
@@ -164,7 +173,8 @@ class InteractiveMarkerEFF(Node):
     def _follow_update(self):
         """Marker auf die aktuelle Hand-TF nachfuehren -- aber:
           * nicht waehrend des Ziehens,
-          * nach dem Loslassen erst, wenn der Arm das Ziel erreicht hat ODER steht,
+          * nach dem Loslassen erst, wenn der arm_controller das Ziel als
+            erreicht oder unerreichbar gemeldet hat,
           * nur bei merklicher Aenderung (kein Dauer-Flackern im Stillstand)."""
         if not self.follow_ee:
             return
@@ -174,6 +184,16 @@ class InteractiveMarkerEFF(Node):
         for side, tf_frame in (("right", self.right_tf), ("left", self.left_tf)):
             if not self.marker_spawned[side] or self.dragging.get(side, False):
                 continue
+            # Nach dem Loslassen: Marker bleibt auf der Ziel-Pose stehen, bis
+            # der arm_controller das Ziel als erreicht/unerreichbar meldet.
+            if self._await_arrival.get(side, False):
+                since = self._await_since.get(side)
+                if since is None or (self._now_s() - since) < self.goal_timeout:
+                    continue
+                self._await_arrival[side] = False
+                self.get_logger().warn(
+                    f"[marker] {side}: keine Rueckmeldung vom arm_controller nach "
+                    f"{self.goal_timeout:.0f} s -- Marker folgt wieder der Hand.")
             try:
                 trans = self.tf_buffer.lookup_transform(
                     self.fixed_frame, tf_frame, rclpy.time.Time())
@@ -184,23 +204,6 @@ class InteractiveMarkerEFF(Node):
             hand.position.y = trans.transform.translation.y
             hand.position.z = trans.transform.translation.z
             hand.orientation = trans.transform.rotation
-
-            # Nach dem Loslassen: warten, bis der Arm angekommen ist / steht.
-            if self._await_arrival.get(side, False):
-                target = self._target_pose.get(side)
-                reached = target is not None and self._pose_close(
-                    hand, target, pos_tol=0.03, ori_tol=0.99)
-                prev = self._prev_hand.get(side)
-                if prev is not None and self._pose_close(hand, prev, pos_tol=0.002):
-                    self._still_count[side] += 1
-                else:
-                    self._still_count[side] = 0
-                self._prev_hand[side] = hand
-                stopped = self._still_count[side] >= still_needed
-                if reached or stopped:
-                    self._await_arrival[side] = False  # ab jetzt normal folgen
-                # Marker bleibt derweil auf der Ziel-Pose stehen -> nicht bewegen.
-                continue
 
             # Steht die Hand still (gegenueber dem letzten Tick)?
             prev = self._follow_prev[side]
@@ -225,6 +228,38 @@ class InteractiveMarkerEFF(Node):
             changed = True
         if changed:
             self.server.applyChanges()
+
+    def _now_s(self) -> float:
+        return self.get_clock().now().nanoseconds * 1e-9
+
+    def _on_goal_status(self, msg: String):
+        """Rueckmeldung des arm_controller zu einem Marker-Ziel. Nur die Meldung
+        zum ZULETZT gesendeten Ziel der Seite beendet das Warten -- Meldungen zu
+        Zwischenzielen waehrend des Ziehens werden ignoriert."""
+        try:
+            st = json.loads(msg.data)
+            side = st["side"]
+            state = st["state"]
+            stamp = (int(st["goal_stamp"]["sec"]), int(st["goal_stamp"]["nanosec"]))
+        except (ValueError, KeyError, TypeError):
+            return
+        if side not in self._await_arrival or state == "moving":
+            return
+        if stamp != self._last_goal_stamp.get(side):
+            return
+        if self.dragging.get(side, False) or not self._await_arrival.get(side, False):
+            return
+        self._await_arrival[side] = False
+        if state == "reached":
+            self.get_logger().info(f"[marker] {side}: Ziel erreicht.")
+        elif state == "unreachable":
+            self.get_logger().warn(
+                f"[marker] {side}: Ziel nicht erreichbar (Rest "
+                f"{st.get('pos_err_m', float('nan')) * 100:.1f} cm / "
+                f"{st.get('ori_err_deg', float('nan')):.1f} deg) -- Marker zurueck zur Hand.")
+        else:
+            self.get_logger().info(
+                f"[marker] {side}: Ziel {state} ({st.get('reason', '')}) -- Marker zurueck zur Hand.")
 
     def _build_menu_handler(self) -> MenuHandler:
         mh = MenuHandler()
@@ -328,7 +363,10 @@ class InteractiveMarkerEFF(Node):
     def _feedback_cb(self, feedback, ee_name: str):
         et = feedback.event_type
         if et == InteractiveMarkerFeedback.MOUSE_DOWN:
+            # Erneut gegriffen (auch waehrend der Arm noch faehrt): das neue
+            # Ziel ersetzt einfach das alte.
             self.dragging[ee_name] = True
+            self._await_arrival[ee_name] = False
 
         self.current_pose[ee_name] = feedback.pose
 
@@ -337,6 +375,7 @@ class InteractiveMarkerEFF(Node):
         # Feedback ein Ziel ausloesen -> Rueckkopplung (Arm faehrt -> Hand bewegt
         # sich -> Marker folgt -> Feedback -> ...) = Flackern/Springen.
         is_drag = self.dragging.get(ee_name, False) or et == InteractiveMarkerFeedback.MOUSE_UP
+        sent = False
         if self.publish_enabled.get(ee_name, True) and is_drag:
             pub = self.ee_publishers.get(ee_name)
             if pub is not None:
@@ -346,14 +385,16 @@ class InteractiveMarkerEFF(Node):
                 pose.header.stamp = self.get_clock().now().to_msg()
                 pose.pose = feedback.pose
                 pub.publish(pose)
+                self._last_goal_stamp[ee_name] = (pose.header.stamp.sec, pose.header.stamp.nanosec)
+                sent = True
 
         if et == InteractiveMarkerFeedback.MOUSE_UP:
             self.dragging[ee_name] = False
-            # Marker bleibt auf dieser Ziel-Pose, bis der Arm sie erreicht/steht.
-            self._await_arrival[ee_name] = True
-            self._target_pose[ee_name] = feedback.pose
-            self._still_count[ee_name] = 0
-            self._prev_hand[ee_name] = None
+            # Marker bleibt auf dieser Ziel-Pose, bis der arm_controller fuer
+            # genau dieses (zuletzt gesendete) Ziel eine Abschlussmeldung schickt.
+            # Ohne Publishing (grauer Marker) gibt es kein Ziel -> sofort folgen.
+            self._await_arrival[ee_name] = sent
+            self._await_since[ee_name] = self._now_s() if sent else None
 
     def _menu_cb(self, feedback):
         marker_name = feedback.marker_name or ""
@@ -380,6 +421,7 @@ class InteractiveMarkerEFF(Node):
             self.get_logger().info(f"[{side}] Publishing {'ENABLED' if new_state else 'DISABLED'}")
 
         elif entry_id == ids["reset"]:
+            self._await_arrival[side] = False
             tf_frame = self.right_tf if side == "right" else self.left_tf
             self._reset_marker_to_tf(side, tf_frame)
             self.server.applyChanges()
