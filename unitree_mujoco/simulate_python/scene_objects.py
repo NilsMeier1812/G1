@@ -281,13 +281,18 @@ def _hull_box_specs(col_body, meshes: dict, base_name: str):
     body_quat = _floats(col_body.get("quat"), (1.0, 0.0, 0.0, 0.0))
     specs = []
     for i, g in enumerate(col_body.findall("geom")):
-        info = meshes.get(g.get("mesh"))
-        aabb = _mesh_local_aabb(Path(info["file"])) if info else None
-        if aabb is None:
-            continue
-        sx, sy, sz = info["scale"]
-        center = (aabb[0][0] * sx, aabb[0][1] * sy, aabb[0][2] * sz)
-        half = [abs(aabb[1][0] * sx), abs(aabb[1][1] * sy), abs(aabb[1][2] * sz)]
+        if g.get("type") == "box":
+            # exakte Ablageflaeche (Tischplatte/Regalboden), siehe build_env_scene.py
+            center = _floats(g.get("pos"), (0.0, 0.0, 0.0))
+            half = _floats(g.get("size"), (0.0, 0.0, 0.0))
+        else:
+            info = meshes.get(g.get("mesh"))
+            aabb = _mesh_local_aabb(Path(info["file"])) if info else None
+            if aabb is None:
+                continue
+            sx, sy, sz = info["scale"]
+            center = (aabb[0][0] * sx, aabb[0][1] * sy, aabb[0][2] * sz)
+            half = [abs(aabb[1][0] * sx), abs(aabb[1][1] * sy), abs(aabb[1][2] * sz)]
         pos, quat = _compose_pose(body_pos, body_quat, center, (1.0, 0.0, 0.0, 0.0))
         specs.append({
             "name": f"{base_name}#{i:02d}",

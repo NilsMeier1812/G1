@@ -13,13 +13,13 @@
   </asset>
 
   <worldbody>
-    <geom name="asset_Beispiel_Arbeitsplatz_m.stl_0004" pos="1.00112 0.773992 -0.0570813" quat="0.718267 0.0149528 0.0154437 0.695436" type="mesh" mass="0" mesh="asset_Beispiel_Arbeitsplatz_m.stl_0004_mesh"/>
+    <geom name="asset_Beispiel_Arbeitsplatz_m.stl_0004" pos="1.01431 0.79059 -0.03568" quat="0.707107 0 0 0.707107" type="mesh" mass="0" mesh="asset_Beispiel_Arbeitsplatz_m.stl_0004_mesh"/>
     <geom name="asset_Standardwagen_gross_m.stl_0006" pos="-2.4756 -1.72583 0" quat="1 0 0 0" type="mesh" mass="0" mesh="asset_Standardwagen_gross_m.stl_0006_mesh"/>
-    <geom name="asset_Tisch_mit_Faechern_m.stl_0005" pos="-2.62654 0.232984 -0.0160931" quat="0.709628 0 0 -0.704576" type="mesh" mass="0" mesh="asset_Tisch_mit_Faechern_m.stl_0005_mesh"/>
-    <geom name="grasp_asset_KLT_300x200_m_stl_0010" pos="-2.09243 0.54817 0.761579" quat="1 0 0 0" type="mesh" mass="0.6" mesh="grasp_asset_KLT_300x200_m_stl_0010_mesh" rgba="0.1 0.3 0.8 1"/>   <!-- blue -->
-    <geom name="grasp_asset_KLT_300x200_m_stl_0010__rippe_links" type="box" size="0.09 0.0075 0.006" pos="-2.09243 0.39067 0.891" quat="1 0 0 0" rgba="0.1 0.3 0.8 1" mass="0.02"/>   <!-- Rippe: Finger greifen beim Anheben darunter -->
-    <geom name="grasp_asset_KLT_300x200_m_stl_0010__rippe_rechts" type="box" size="0.09 0.0075 0.006" pos="-2.09243 0.70567 0.891" quat="1 0 0 0" rgba="0.1 0.3 0.8 1" mass="0.02"/>   <!-- Rippe: Finger greifen beim Anheben darunter -->
-    <geom name="grasp_asset_KLT_400x300_m_stl_0009" pos="-2.14883 -0.26251 0.766759" quat="1 0 0 0" type="mesh" mass="1.0" mesh="grasp_asset_KLT_400x300_m_stl_0009_mesh" rgba="0.05 0.05 0.05 1"/> <!-- black -->
+    <geom name="asset_Tisch_mit_Faechern_m.stl_0005" pos="-2.62654 0.232984 -0.0160931" quat="0.707107 0 0 -0.707107" type="mesh" mass="0" mesh="asset_Tisch_mit_Faechern_m.stl_0005_mesh"/>
+    <geom name="grasp_asset_KLT_300x200_m_stl_0010" pos="-2.09243 0.54817 0.7475" quat="1 0 0 0" type="mesh" mass="0.6" mesh="grasp_asset_KLT_300x200_m_stl_0010_mesh" rgba="0.1 0.3 0.8 1"/>   <!-- blue -->
+    <geom name="grasp_asset_KLT_300x200_m_stl_0010__rippe_links" type="box" size="0.09 0.0075 0.006" pos="-2.09243 0.39067 0.8769" quat="1 0 0 0" rgba="0.1 0.3 0.8 1" mass="0.02"/>   <!-- Rippe: Finger greifen beim Anheben darunter -->
+    <geom name="grasp_asset_KLT_300x200_m_stl_0010__rippe_rechts" type="box" size="0.09 0.0075 0.006" pos="-2.09243 0.70567 0.8769" quat="1 0 0 0" rgba="0.1 0.3 0.8 1" mass="0.02"/>   <!-- Rippe: Finger greifen beim Anheben darunter -->
+    <geom name="grasp_asset_KLT_400x300_m_stl_0009" pos="-2.14883 -0.26251 0.7475" quat="1 0 0 0" type="mesh" mass="1.0" mesh="grasp_asset_KLT_400x300_m_stl_0009_mesh" rgba="0.05 0.05 0.05 1"/> <!-- black -->
     <geom name="grasp_asset_sample_ramp_stl_0007" pos="-2.62168 2.09493 -0.0118975" quat="0.999997 0 -0.00226904 0" type="mesh" mass="0" mesh="grasp_asset_sample_ramp_stl_0007_mesh"/>
     <geom name="station_Arbeitsplatz_1" type="box" size="0.15 0.1 0.01" pos="0 0 0.01" quat="1 0 0 0" rgba="0.1 0.8 0.3 0.5" mass="0"/>
     <geom name="station_Arbeitsplatz_2" type="box" size="0.15 0.1 0.01" pos="-1.73 0.548 0.01" quat="6.12323e-17 0 0 1" rgba="0.1 0.8 0.3 0.5" mass="0"/>
@@ -28,15 +28,15 @@
     <light pos="0 0 5"/>
     <body name="box_0001_body_0">
       <joint type="free"/>
-      <geom name="grasp_box_0001" size="0.05 0.05 0.05" pos="0.531067 -0.213428 0.852653" quat="0.999769 0 0.0214964 0" type="box" rgba="0.784314 0.392157 0.941176 1" mass="0.2"/>
+      <geom name="grasp_box_0001" size="0.05 0.05 0.05" pos="0.531067 -0.213428 0.8005" quat="1 0 0 0" type="box" rgba="0.784314 0.392157 0.941176 1" mass="0.2"/>
     </body>
     <body name="grasp_cylinder_0002_body_1">
       <joint type="free"/>
-      <geom name="grasp_cylinder_0002" size="0.05 0.1" pos="0.489769 0.51492 0.85443" quat="0.999769 0 0.0214964 0" type="cylinder" rgba="0.286275 0.207843 0.988235 1" mass="0.2"/>
+      <geom name="grasp_cylinder_0002" size="0.05 0.1" pos="0.489769 0.51492 0.8505" quat="1 0 0 0" type="cylinder" rgba="0.286275 0.207843 0.988235 1" mass="0.2"/>
     </body>
     <body name="grasp_cylinder_0003_body_2">
       <joint type="free"/>
-      <geom name="grasp_cylinder_0003" size="0.02 0.1" pos="0.514343 0.0873031 0.853373" quat="0.999769 0 0.0214964 0" type="cylinder" rgba="0.0352941 0.529412 0.0941176 1" mass="0.2"/>
+      <geom name="grasp_cylinder_0003" size="0.02 0.1" pos="0.514343 0.0873031 0.8505" quat="1 0 0 0" type="cylinder" rgba="0.0352941 0.529412 0.0941176 1" mass="0.2"/>
     </body>
   </worldbody>
 
