@@ -32,6 +32,17 @@ default_joint_pos: [-0.1, -0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3, 0.3, -0.2, -0
 stiffness:         [100.0, 100.0, 100.0, 100.0, 300.0, 100.0, 100.0, 300.0, 200.0, 200.0, 20.0, 20.0, 20.0, 20.0]
 damping:           [2.5, 2.5, 2.5, 2.5, 5.0, 2.5, 2.5, 5.0, 5.0, 5.0, 0.2, 0.2, 0.1, 0.1]
 
+# Stand-Pose der Policy (Beine, Unitree-Motorindizes 0..11: je Bein hip_pitch,
+# hip_roll, hip_yaw, knee, ankle_pitch, ankle_roll). Nicht aus der Trainings-Config,
+# sondern gemessen: so steht die Policy nach einigen Sekunden mit cmd = 0 in MuJoCo
+# (Mittel aus scene.xml und scene_inspire_ftp.xml, links/rechts symmetrisiert):
+# leichte Hocke mit breiter Spur (Fuesse ~0.41 m auseinander, Becken ~0.73 m).
+# Hip-, Knie- und Knoechel-Pitch summieren sich zu 0 -> Fuesse flach bei aufrechtem
+# Becken. loco_sim stellt den Roboter bei START BALANCING (aus HOLD) in diese Pose,
+# damit der Stand-Regler dort steht, wo die Policy beim Loslaufen anfaengt.
+stand_pose_legs: [-0.43, 0.16, -0.03, 0.81, -0.38, -0.13,
+                  -0.43, -0.16, 0.03, 0.81, -0.38, 0.13]
+
 # Nicht von der Policy gesteuert, im Training aber auf der Default-Pose gehalten
 # (kein Aktions-Term, nicht randomisiert). loco_sim haelt sie waehrend WALK.
 held_joints:

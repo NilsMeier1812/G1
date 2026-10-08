@@ -9,13 +9,14 @@ wollen. Für die Bedienung siehe [30_loco_anleitung.md](30_loco_anleitung.md).
 |---|---|
 | `g1pilot/navigation/loco_sim.py` | Sim-Stellvertreter für Stehen/Laufen (nur Simulation): ROS, Zustandsmaschine, DDS |
 | `g1pilot/navigation/walk_policy.py` | Lauf-Policy laden, Obs bauen, Aktion → Motor-Sollwerte (ohne ROS) |
-| `g1pilot/navigation/stand_balancer.py` | PD-Balancer und WALK→STAND-Übergabe (ohne ROS) |
+| `g1pilot/navigation/stand_balancer.py` | PD-Balancer mit Schwerpunkt-Führung, Kipp-Erkennung, WALK→STAND-Übergabe (ohne ROS) |
+| `g1pilot/navigation/com_model.py` | Schwerpunkt relativ zu den Füßen aus den Gelenkwinkeln (Pinocchio, MJCF-Modell der Sim) |
 | `g1pilot/navigation/loco_client.py` | Ansteuerung des Unitree-Onboard-Reglers (nur echter Roboter) |
 | `g1pilot/policies/agile_velocity_g1/` | **Standard:** Lauf-Policy NVIDIA WBC-AGILE „Velocity-G1-History-v0" (Apache-2.0, Herkunft in `ATTRIBUTION.md`) |
 | `g1pilot/policies/g1_wholebody/` | Alte Lauf-Policy (unitree_rl_mjlab G1 Velocity, Apache-2.0), per Parameter wählbar |
 | `g1pilot/test_agile_walk_sim.py` | Headless-MuJoCo-Test von Laufen, Stehen und Übergaben (ohne ROS) |
-| `g1pilot/test/test_walk_policy.py` | Unit-Tests: Obs-Layout, ONNX = Original, Übergabe-Logik |
-| `unitree_mujoco/simulate_python/unitree_sdk2py_bridge.py` | Mischt Bein-/Taillen-Kommandos (`rt/lowcmd`) mit Arm-Kommandos (`rt/arm_sdk`) |
+| `g1pilot/test/test_walk_policy.py` | Unit-Tests: Obs-Layout, ONNX = Original, Übergabe-Logik, Schwerpunkt-Modell, Kipp-Erkennung |
+| `unitree_mujoco/simulate_python/unitree_sdk2py_bridge.py` | Mischt Bein-/Taillen-Kommandos (`rt/lowcmd`) mit Arm-Kommandos (`rt/arm_sdk`); stellt den Roboter bei START BALANCING in die von `loco_sim` kommandierte Stand-Pose |
 
 ## Warum zwei völlig verschiedene Implementierungen?
 
@@ -33,8 +34,10 @@ funktioniert.
 ### Zwei kombinierte Regler
 
 - **STAND** (am Platz): modellbasierter Knöchel-/Hüft-PD-Regler. Hält die
-  Füße geplant und richtet die per IMU gemessene Neigung aktiv auf — Arm-
-  und Oberkörperstörungen werden ohne Schritte abgefangen.
+  Füße geplant, richtet die per IMU gemessene Neigung aktiv auf und schiebt
+  das Becken so, dass der Schwerpunkt über der Fußmitte bleibt. Arm-Bewegungen
+  und Lasten in den Händen fängt er ohne Schritte ab. Er steht in der
+  Stand-Pose der Lauf-Policy (AGILE: leichte Hocke mit breiter Spur).
 - **WALK** (laufen): eine vortrainierte, velocity-konditionierte ONNX-Policy.
   Standard ist NVIDIAs WBC-AGILE „Velocity-G1-History-v0"
   (`policies/agile_velocity_g1`). Sie steuert nur Beine und Taille
@@ -43,9 +46,12 @@ funktioniert.
   omnidirektional; bei `cmd=0` steht sie am Platz.
 
 Grund für die Kombination: Die Policy steht bei `cmd=0` zwar sicher, macht
-dabei aber kleine Ausgleichsschritte (Füße wandern einige Zentimeter, siehe
-Testergebnisse unten). Der PD-Regler hält die Füße wirklich fest. Also:
-Policy fürs Laufen, PD fürs stationäre Stehen.
+dabei aber kleine Ausgleichsschritte (Füße wandern einige Zentimeter, mit
+bewegten Armen bis über 20 cm, siehe Testergebnisse unten). Der PD-Regler hält
+die Füße wirklich fest. Also: Policy fürs Laufen, PD fürs stationäre Stehen.
+Nur wenn der PD den Roboter nicht mehr halten kann (ein Fuß hebt ab, z. B.
+nach einem Stoß), fängt die Policy mit Schritten ab und gibt danach wieder an
+den PD (siehe „Abfangen").
 
 Policy wechseln: Parameter `policy` von `loco_sim` (Ordnername unter
 `policies/`). Die alte Policy braucht die Arme in der Lauf-Pose, also dazu
@@ -63,19 +69,22 @@ WALK = "walk"    # ONNX-Policy
 DAMP = "damp"    # Emergency / Sturz: alle Motoren weich
 ```
 
-Übergänge **ausschließlich per Nutzer-Button/Topic**, kein automatisches
-Umschalten zwischen STAND und WALK:
+Übergänge per Nutzer-Button/Topic. Automatisch ist nur das Abfangen (STAND
+→ Policy → STAND, siehe unten) und der Sturz → DAMP:
 
-- `/g1pilot/start_balancing(True)` → STAND. Aus HOLD sofort
-  (`_enter_stand()`, Beine in die Standpose). Aus WALK erst nach dem
-  **Ausbremsen** (siehe „Übergabe WALK → STAND").
+- `/g1pilot/start_balancing(True)` → STAND. Aus HOLD/DAMP sofort
+  (`_enter_stand()`): `loco_sim` kommandiert die Stand-Pose, die Bridge stellt
+  den Roboter beim Wechsel genau dorthin (siehe „Stand-Pose"). Aus WALK erst
+  nach dem **Ausbremsen** (siehe „Übergabe WALK → STAND").
 - `/g1pilot/start_walking(True)` → `_enter_walk()`. Nur wenn die Policy eine
   feste Armpose braucht (`needs_arm_pose`, alte Policy `g1_wholebody`), wartet
   `loco_sim` vorher im STAND, bis der `arm_controller` die Arme in die
   Lauf-Pose gebracht hat (`/g1pilot/arms/walk_ready`) oder
   `walk_arm_timeout_s` abläuft. Die AGILE-Policy läuft sofort los. Ein
   START WALKING während WALK setzt die Policy nicht zurück; es bricht nur eine
-  laufende STAND-Übergabe ab.
+  laufende STAND-Übergabe oder ein Abfangen ab. Direkt aus HOLD sendet
+  `loco_sim` im ersten Takt die Stand-Pose (`_fresh_walk`), damit die Bridge
+  dort aufstellt, und startet die Policy erst im zweiten Takt.
 - `/g1pilot/emergency_stop(True)` → sofort `DAMP` + Arme deaktivieren.
 - `/g1pilot/start(True)` → `HOLD`.
 - Sturz-Erkennung (`_fallen`, IMU-Neigung über `fall_gz` für
@@ -105,26 +114,49 @@ jeweils `rt/lowcmd` und (über `_write`) einen Zustandscode in
 `motor_cmd[29].q` (`STATE_IDX`), den die Bridge zur Basis-Physik nutzt
 (`weld` im HOLD, frei sonst).
 
+### Stand-Pose
+
+Der PD steht dort, wo die Policy beim Loslaufen anfängt: in ihrer eigenen
+Stand-Pose (`stand_pose_legs` in `deploy.yaml`, gemessen: leichte Hocke,
+Becken ca. 0.73 m, Füße ca. 0.41 m auseinander). Policies ohne diesen Eintrag
+(alte `g1_wholebody`) bekommen die gerade Standpose `LEG_STAND_POSE`.
+
+Früher stand der PD gerade (Becken 0.78 m, Füße 0.24 m auseinander). Beim
+START WALKING suchte die Policy dann ihre Hocke und lief dabei 0.4–0.8 m nach
+vorn, auch bei cmd = 0. Vom geraden Stand in die Hocke kommt man nicht ohne
+Schritt, weil die Füße breiter stehen müssen; ein langsames Absinken im Stand
+ließ die Füße 7–12 cm rutschen. Deshalb stellt die Bridge den Roboter beim
+Wechsel nach RUN direkt in die Hocke: Sie übernimmt Beine/Taille aus dem
+umschaltenden `rt/lowcmd` (`LOCO_RESET_FROM_CMD`, Plausibilitätsprüfung: alle
+Bein-kp > 0, |q| < 3 rad, sonst die alte Config-Pose) und berechnet die
+Beckenhöhe so, dass die Füße genau auf dem Boden stehen
+(`LOCO_RESET_PELVIS_Z = None`). `StandBalancer.enter(goal)` kommandiert die
+Pose dafür schon im ersten Takt.
+
+Die Hand-/Greifhöhe im BALANCING liegt dadurch etwa 5 cm tiefer als früher.
+Nach einem Lauf-→-Stand-Wechsel stand der Roboter ohnehin schon in dieser
+Höhe.
+
 ### Übergabe WALK → STAND
 
-Die AGILE-Policy steht in leichter Hocke (Becken ca. 0.73 m statt 0.78 m,
-Knie ca. 0.8 rad) und lässt die Füße oft leicht versetzt stehen. Der frühere
-Wechsel zog die Beine sofort in die gestreckte Standpose. Dabei wandert das
-Becken nach vorn, und mit Armen vor dem Körper kippte der Roboter in der
-Headless-Sim zuverlässig nach vorn. Deshalb läuft der Wechsel jetzt in zwei
-Schritten (`stand_balancer.SettleGate`, `StandBalancer.enter(hold_pose=True)`):
+Die AGILE-Policy lässt die Füße beim Anhalten oft leicht versetzt stehen und
+steht nicht exakt in der Stand-Pose. Der frühere Wechsel zog die Beine sofort
+in die Standpose; dabei wanderte das Becken, und mit Armen vor dem Körper
+kippte der Roboter in der Headless-Sim zuverlässig nach vorn. Deshalb läuft
+der Wechsel in zwei Schritten (`stand_balancer.SettleGate`,
+`StandBalancer.enter()` ohne Ziel):
 
 1. START BALANCING im WALK setzt das Kommando auf 0, die Policy bremst aus.
 2. Sobald der Roboter ruhig steht (frühestens nach `settle_s`, dann
    `settle_quiet_s` lang |Gyro| < `settle_gyro_max` und alle Bein-|dq| <
    `settle_dq_max`; spätestens nach `settle_timeout_s`), übernimmt der PD und
-   **hält die vorgefundene Beinpose**, statt sie in die Standpose zu ziehen.
+   **hält die vorgefundene Beinpose**.
 
-In den Tests dauert das Ausbremsen 0.6 bis 1.1 s. Aus HOLD (START BALANCING
-nach dem Reset) bleibt alles wie bisher: Beine in die Standpose.
+In den Tests dauert das Ausbremsen 0.6 bis 1.4 s.
 
-### PD-Balancer (`_send_balance_pd`)
+### PD-Balancer (`_send_balance_pd`, `stand_balancer.py`)
 
+Posture-PD auf die Stand-Pose (Steifigkeit × `bal_kp_scale`) plus
 Feedforward-Drehmoment auf Knöchel (primär) und Hüfte (sekundär), berechnet
 aus der IMU-Neigung (`get_gravity_orientation`) und Gyroskop-Rate:
 
@@ -137,13 +169,58 @@ t_hip_yaw     = -kd*yaw_rate
 ```
 
 Ein Integral-Trim auf den Knöchel-Pitch (`bal_ki_pitch`) gleicht statische
-Schwerpunktversätze aus (z. B. schwerere Inspire-FTP-Hände verschieben den
-Schwerpunkt nach vorn) — ohne ihn bliebe eine Dauerneigung stehen. Ein
-sanfter Eintritts-Rampe (`bal_ramp_s`) blendet beim Wechsel aus WALK die
-aktuelle Beinpose zur Standardpose, damit der steife PD die Beine nicht aus
-der Lauf-Stellung reißt; aus HOLD ist die Rampe bewusst kurz (0.1 s), weil
-eine längere Weich-Phase den (durch Hände kopflastigeren) Roboter
-unaufholbar nach vorn kippen ließ.
+Neigung aus. Roll ist halb so steif wie Pitch (75/20 am Knöchel, 100/20 an der
+Hüfte): Mit den alten Werten (150/40, 200/40) schaukelte sich der Roboter in
+der breiten Hocke mit Inspire-Händen seitlich auf, die Füße rutschten 5–20 cm.
+Beim Wechsel aus WALK fährt eine Rampe (`bal_ramp_s`) die Steifigkeit weich
+hoch; aus HOLD ist sie bewusst kurz (0.1 s), weil eine längere Weich-Phase den
+Roboter unaufholbar nach vorn kippen ließ.
+
+**Schwerpunkt-Führung.** Der Neigungsregler allein hält nur das Becken
+aufrecht. Arme, Hände und Last verschieben aber den Schwerpunkt, und wandert
+der zur Ferse oder zu den Zehen, kippt der Roboter über die Fußkante. In der
+Policy-Hocke liegt der Schwerpunkt schon in Ruhe nur 7 cm vor der Ferse; mit
+Inspire-Händen kippte der Roboter bei mäßig bewegten Armen nach hinten. Darum:
+
+1. `com_model.py` rechnet den Schwerpunkt aus allen 29 Gelenkwinkeln
+   (Pinocchio, `buildModelFromMJCF` auf dasselbe MJCF, das die Sim simuliert;
+   Massen identisch mit MuJoCo). Ergebnis: Lage vor dem Knöchel im
+   Fuß-Koordinatensystem, ohne IMU.
+2. Der Balancer schiebt das Becken (Knöchel-Pitch −d, Hüft-Pitch +d, der
+   Oberkörper bleibt aufrecht), bis der Schwerpunkt bei `bal_com_target_m`
+   (3.5 cm vor dem Knöchel = Fußmitte) liegt. Zeitkonstante `bal_com_tau_s`,
+   Vorhalt auf die Schwerpunkt-Geschwindigkeit `bal_com_lead_s`, Begrenzung
+   0.5 rad/s und `bal_com_limit`.
+3. Lasten kennt das Modell nicht. Eine langsame Korrektur
+   (`bal_bias_tau_s`) zieht die Schätzung nach dem Druckpunkt aus dem eigenen
+   Knöchelmoment nach (τ / (m·g) vor dem Knöchel), nur im ruhigen Stand.
+   Direkt aus dem Knöchelmoment zu regeln, ohne Modell, funktioniert nicht:
+   Schiebt der Balancer das Becken, schlägt das Moment zuerst in die
+   Gegenrichtung aus, und das schaukelte sich in jedem Test auf.
+
+Das MJCF kommt im `g1pilot-sim`-Container per Mount aus `unitree_mujoco`
+(`docker-compose.yml`, Pfad `/unitree_mujoco/unitree_robots/g1`), das
+richtige Modell wählt `loco_sim` über `G1_INSPIRE_HANDS` oder den Parameter
+`robot_mjcf`. Braucht Pinocchio ≥ 3 (`Dockerfile.sim`). Fehlt das Modell,
+läuft der Balancer ohne Schwerpunkt-Führung weiter und `loco_sim` warnt beim
+Start.
+
+### Abfangen (STAND → Policy → STAND)
+
+`TipDetector` prüft in jedem PD-Takt, ob eine Fußsohle mehr als
+`rescue_foot_tilt_deg` (6°) gegen die Horizontale kippt, also abhebt, oder
+das Becken mehr als `rescue_tilt_max` kippt, jeweils `rescue_debounce_s`
+lang. Die Sohlen-Neigung kommt aus IMU-Quaternion und Bein-Encodern
+(`stand_balancer.foot_tilt`, Kette mit den ±10°-Drehungen im Hüft-/Knie-Link
+des MJCF). Im normalen Stand liegt sie unter 2°, auch mit Box und kräftig
+bewegten Armen.
+
+Dann gibt `loco_sim` an die Policy (History frisch, cmd = 0, Joystick wird
+ignoriert), die mit Schritten abfängt. Danach geht es wie bei START
+BALANCING im Laufen über die `SettleGate` zurück in den PD, der die neue Pose
+hält. Ein START WALKING während des Abfangens wird zu normalem Laufen. Der
+Bridge-Zustand bleibt dabei „aktiv" (Code 1), es gibt also keinen Reset.
+Abschalten: `rescue_enable:=false`.
 
 ### Policy (`_send_policy`, `walk_policy.py`)
 
@@ -173,6 +250,9 @@ Trainingsbereiche der Policy (`commands.base_velocity.ranges`).
 | `bal_kp_scale`, `bal_ramp_s` | Steifigkeit/Eintrittsrampe des PD-Balancers |
 | `bal_ki_pitch`, `bal_i_limit` | Integral-Trim gegen statische Neigung |
 | `bal_ankle_kp_pitch/roll`, `bal_hip_kp_pitch/roll`, `bal_yaw_kd` | PD-Gains je Achse |
+| `bal_com_target_m`, `bal_com_tau_s`, `bal_com_lead_s`, `bal_com_limit`, `bal_bias_tau_s` | Schwerpunkt-Führung (`bal_com_tau_s` 0 = aus) |
+| `robot_mjcf` | MJCF für das Schwerpunkt-Modell (leer = aus `G1_INSPIRE_HANDS`) |
+| `rescue_enable`, `rescue_foot_tilt_deg`, `rescue_tilt_max`, `rescue_debounce_s` | Abfangen mit der Policy |
 | `walk_arm_wait`, `walk_arm_timeout_s` | Warten auf Arm-Aufräumen vor WALK (nur alte Policy) |
 
 Live änderbar via `ros2 param set /loco_sim <name> <wert>`.
@@ -233,18 +313,18 @@ arm_controller-Ersatz (PD + Schwerkraftkompensation, 1.5 rad/s). Ebener Boden
 (die Sim-Szene hat ab x = 1 m Hindernisse). Exit-Code 0 = alle
 Pflicht-Szenarien bestanden; „Info"-Zeilen messen Grenzen.
 
-AGILE, Stand 2026-10-08 (Standard-Szene / Inspire-Szene):
+AGILE, Stand 2026-10-08 (Standard-Szene / Inspire-Szene, beide bestanden):
 
 | Szenario | Ergebnis |
 |---|---|
 | Laufen vor/zurück/seitlich/drehen | steht nie um; Ist ≈ 0.36 / −0.31 / ±0.30 m/s, Drehen 0.83 rad/s (Soll 0.5 / −0.4 / ±0.4 / 0.8); Nachlauf nach Stopp ≤ 1 cm |
-| Laufen mit freien Armen (hängend, ständig bewegt, Box 0.5 und 1.0 kg je Hand vor dem Körper) | alle stabil, auch beim Drehen; Neigung ≤ 0.12 |
-| Policy allein im Stand, 20 s (cmd = 0) | steht; Füße wandern 4–5 cm (Arme ruhig) bzw. 4 cm / 22 cm (Arme kräftig bewegt, Standard / Inspire) |
-| PD-Stand ab START BALANCING, Arme ruhig oder mäßig bewegt | Füße bleiben stehen (≤ 1 mm) |
-| WALK → STAND (8 feste + 20 zufällige Wechsel, auch direkt aus vollem Lauf, mit Box bis 1 kg je Hand) | 0 Stürze; PD übernimmt nach 0.6–1.1 s, danach Füße ≤ 1 cm |
-| *Info:* PD-Stand ab START BALANCING, Box 0.5 kg je Hand wird nach vorn gehoben | **fällt** (beide Szenen); nach einer Übergabe aus dem Laufen hält der PD 1.0 kg sicher (2.0 kg nicht zuverlässig), die Policy allein 2.0 kg |
-| *Info:* PD-Stand ab START BALANCING, Arme kräftig bewegt | Standard steht, Inspire **fällt** (bei mäßiger Bewegung steht er) |
-| *Info:* START WALKING mit cmd = 0 | aus dem geraden PD-Stand: 0.4–0.8 m Anlauf nach vorn; aus dem PD nach einer Übergabe: ca. 2 cm |
+| Laufen mit freien Armen (hängend, ständig bewegt, Box 0.5 und 1.0 kg je Hand vor dem Körper) | alle stabil, auch beim Drehen; Neigung ≤ 0.10 |
+| Policy allein im Stand, 20 s (cmd = 0), zum Vergleich | steht; Füße wandern 3 cm (Arme ruhig) bzw. 6 cm / 22 cm (Arme kräftig bewegt, Standard / Inspire) |
+| PD-Stand nach START BALANCING, 20 s: Arme ruhig, hängend, mäßig und kräftig bewegt, weit vor/zurück, Box 0.5 und 1.0 kg je Hand (auch mit bewegten Armen) | Füße bleiben stehen (≤ 3 mm), kein Abfangen nötig; Neigung ≤ 0.04 |
+| WALK → STAND (8 feste + 20 zufällige Wechsel, auch direkt aus vollem Lauf, mit Box bis 1 kg je Hand) | 0 Stürze, kein Abfangen; PD übernimmt nach 0.6–1.0 s, danach Füße ≤ 5 mm |
+| START WALKING mit cmd = 0, aus dem PD nach START BALANCING oder nach einer Übergabe | Becken bewegt sich höchstens 3.5 cm (früher aus dem geraden PD-Stand 0.4–0.8 m) |
+| Stöße 80 / 150 / 250 N für 0.12 s auf den Torso, vorn/hinten/seitlich/schräg | 0 Stürze. Seitlich bis 150 N und schräg mit 80 N hält der PD ohne Schritt; sonst fängt die Policy mit Schritten ab (Becken 0.1–0.3 m bei 80 N, bis 2.2 m bei 250 N) und gibt zurück an den PD |
+| *Info:* Box 2.0 kg je Hand | Inspire: PD hält. Standard: beim Anheben direkt nach START BALANCING einmal abgefangen (Becken 0.5 m). Nach einem Lauf-→-Stand-Wechsel in beiden Szenen einmal abgefangen. Kein Sturz |
 
 Die alte Policy (`--policy g1_wholebody`) läuft mit Armen in der Lauf-Pose gut,
 fällt aber mit hängenden Armen, mit Box und unter Arm-Bewegung im Stand.
@@ -258,14 +338,14 @@ fällt aber mit hängenden Armen, mit Box und unter Arm-Bewegung im Stand.
 - Die AGILE-Policy erreicht in MuJoCo etwa 75 % der kommandierten
   Geschwindigkeit (0.36 m/s bei 0.5 m/s vor, 0.3 m/s bei 0.4 m/s seitlich);
   Drehen trifft den Sollwert. Ursache ist der Sim-Unterschied zum Isaac-Lab-Training.
-- Ein driftfreier Stand kommt ausschließlich vom modellbasierten PD. Seine
-  Grenzen (Box vor dem Körper, kräftig bewegte Arme mit Inspire-Händen) stehen
-  in den Testergebnissen; die Policy allein hält dort noch.
-- Anlauf beim ersten Loslaufen: Die AGILE-Policy steht in einer etwa 5 cm
-  tieferen Hocke als der PD-Stand. Startet WALK aus dem geraden PD-Stand (also
-  direkt nach START BALANCING), sucht sie diese Hocke mit einigen Schritten und
-  wandert dabei 0.4–0.8 m nach vorn, auch bei cmd = 0. Nach einem
-  Lauf-→-Stand-Wechsel hält der PD die Hocke, dann startet WALK ruhig.
+- Ein driftfreier Stand kommt ausschließlich vom modellbasierten PD. Was er
+  nicht halten kann (Stöße, sehr schwere Lasten), fängt die Policy mit
+  Schritten ab; dabei verlässt der Roboter seinen Platz.
+- Die Schwerpunkt-Führung braucht das Sim-Modell (MJCF) und rechnet nur in
+  Längsrichtung. Lasten in den Händen kennt sie nicht; die Korrektur über das
+  Knöchelmoment ist bewusst langsam (Sekunden).
+- BALANCING steht in der Hocke der Policy, die Hände liegen dadurch etwa 5 cm
+  tiefer als beim früheren geraden Stand.
 - Die Taille (roll/pitch) bewegt sich beim Laufen mit der AGILE-Policy. Die
   Arm-IK rechnet mit fester Taille, darum verschiebt sich eine gehaltene
   Handpose beim Laufen um einige Zentimeter mit dem Oberkörper.

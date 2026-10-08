@@ -158,12 +158,19 @@ LOCO_STARTUP_HOLD_KD = 12.0
 #   0 = HOLD (Basis gehalten/Weld an), 1 = RUN (Basis frei + in Stand-Pose stellen),
 #   2 = DAMP (Basis frei, kein Reset -> sanftes Hinsetzen).
 # Beim Wechsel nach RUN setzt die Bridge den Roboter in eine saubere Stand-Pose
-# (Beine = default_angles, aufrecht, v=0) und loest den Weld -> die Policy startet aus
-# genau dem Zustand, in dem sie zuverlaessig balanciert. Das macht das Start-Timing
+# (Beine = von loco_sim kommandierte Stand-Pose, aufrecht, v=0) und loest den
+# Weld -> Balancer/Policy starten aus genau dem Zustand, in dem sie zuverlaessig
+# balancieren. Das macht das Start-Timing
 # (langsamer PC) egal und ersetzt das "Operator haelt den Roboter"-Schrittchen des
 # echten Roboters.
 LOCO_MANAGED_WELD = True
-LOCO_RESET_PELVIS_Z = 0.78   # Pelvis-Hoehe beim Aufstehen in die Stand-Pose (Fuesse am Boden)
+# Beinpose beim Aufstellen: die Pose, die loco_sim im umschaltenden rt/lowcmd
+# kommandiert (Stand-Pose seiner Lauf-Policy; AGILE: breite Hocke, deploy.yaml
+# stand_pose_legs). False -> immer LOCO_STARTUP_HOLD_POSE.
+LOCO_RESET_FROM_CMD = True
+# Pelvis-Hoehe beim Aufstellen. None -> aus der Beinpose berechnet, so dass die
+# Fuesse genau auf dem Boden stehen (gerade Pose: 0.784 m, AGILE-Hocke: 0.734 m).
+LOCO_RESET_PELVIS_Z = None
 # === LOCO MANAGED WELD END ===
 
 

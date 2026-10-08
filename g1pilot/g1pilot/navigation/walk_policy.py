@@ -83,6 +83,12 @@ class _VelocityPolicyBase:
         self.cmd_x = (float(rng["lin_vel_x"][0]), float(rng["lin_vel_x"][1]))
         self.cmd_y = (float(rng["lin_vel_y"][0]), float(rng["lin_vel_y"][1]))
         self.cmd_yaw = (float(rng["ang_vel_z"][0]), float(rng["ang_vel_z"][1]))
+        # Stand-Pose der Beine (Motoren 0..11), in der loco_sim den Roboter bei
+        # START BALANCING aufstellt. None -> Standard-Standpose des Balancers.
+        sp = dep.get("stand_pose_legs")
+        self.stand_leg_pose = None if sp is None else np.array(sp, dtype=np.float32)
+        if self.stand_leg_pose is not None and self.stand_leg_pose.shape != (12,):
+            raise ValueError("deploy.yaml: stand_pose_legs braucht 12 Werte (Motoren 0..11)")
         self.sess = _make_session(self.policy_path)
         self.in_name = self.sess.get_inputs()[0].name
         self.num_obs = int(self.sess.get_inputs()[0].shape[-1])

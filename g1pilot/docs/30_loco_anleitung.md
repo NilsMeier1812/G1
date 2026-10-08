@@ -24,7 +24,11 @@ eigener Onboard-Regler, angesprochen über `loco_client`.
 **Typischer Ablauf:**
 
 1. **START BALANCING** → der Roboter steht frei und balanciert; die Arme
-   lassen sich parallel über die Marker bewegen.
+   lassen sich parallel über die Marker bewegen. In der Sim bleiben die Füße
+   dabei stehen, auch mit bewegten Armen oder einer Box in den Händen. Erst
+   wenn er wirklich kippt (z. B. nach einem Stoß, ein Fuß hebt ab), fängt er
+   sich mit ein paar Schritten und steht danach wieder still. Er steht in der
+   leicht gebeugten Haltung des Lauf-Reglers, damit er ohne Satz loslaufen kann.
 2. **WALK** → der Bildschirm-Joystick (bzw. echter Controller auf real) gibt
    Vorwärts/Seitwärts/Drehen vor.
 3. Joystick loslassen → der Roboter bremst ab und bleibt stehen. In der Sim
@@ -77,4 +81,5 @@ bleibt stehen). Details und Sicherheitsablauf für echte Hardware:
 | WALK-Klick ohne Wirkung | Erst START BALANCING, dann WALK — WALK wird sonst mit Warnung ignoriert. |
 | Roboter fällt beim Eintritt in BALANCE | (Sim) Prüfen, ob `USE_JOYSTICK=0` gesetzt ist, sofern kein Gamepad im Container hängt. |
 | Roboter reagiert nicht auf den Joystick | Ist WALK aktiv (nicht nur BALANCING)? Kommt der `loco_cmd_vel`-Stream regelmäßig an (Deadman-Timeout)? |
+| (Sim) Roboter macht im BALANCING bei Arm-Bewegung Schritte | Im Log von `loco_sim` steht dann „Schwerpunkt-Modell nicht geladen": Der `g1pilot-sim`-Container sieht das Robotermodell nicht (Mount in `docker-compose.yml`) oder Pinocchio ist älter als 3. Container mit `--build` neu bauen. |
 | Arme hängen seltsam beim Loslaufen | Echter Roboter: normal für kurze Zeit, die Arme werden erst in eine definierte Lauf-Pose gebracht, bevor der Lauf-Regler startet. In der Sim bleiben die Arme frei und behalten ihre Stellung. |

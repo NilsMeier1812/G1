@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Unit-Tests der Lauf-Policy-Anbindung (walk_policy) und der WALK->STAND-Uebergabe
-(stand_balancer). Ohne ROS und ohne MuJoCo (numpy, onnxruntime, PyYAML, pytest).
+"""Unit-Tests der Lauf-Policy-Anbindung (walk_policy), des Stand-Balancers
+(stand_balancer: WALK->STAND-Uebergabe, Schwerpunkt-Fuehrung, Kipp-Erkennung) und
+des Schwerpunkt-Modells (com_model). Ohne ROS (numpy, onnxruntime, PyYAML, pytest;
+fuer die Modell-Tests zusaetzlich mujoco + pinocchio, sonst uebersprungen).
 
-Das Laufen selbst prueft der Headless-Sim-Test g1pilot/test_agile_walk_sim.py.
+Das Laufen/Stehen selbst prueft der Headless-Sim-Test g1pilot/test_agile_walk_sim.py.
 """
+import math
 import os
 
 import numpy as np
@@ -13,7 +16,8 @@ import pytest
 import yaml
 
 from g1pilot.navigation.stand_balancer import (
-    BalancerParams, SettleGate, SettleParams, StandBalancer, LEG_STAND_POSE)
+    BalancerParams, SettleGate, SettleParams, StandBalancer, TipDetector, TipParams,
+    foot_tilt, LEG_STAND_POSE)
 from g1pilot.navigation.walk_policy import (
     AgileHistoryPolicy, MjlabVelocityPolicy, load_walk_policy)
 from g1pilot.utils.joints_names import JOINT_NAMES_ROS
@@ -21,6 +25,7 @@ from g1pilot.utils.joints_names import JOINT_NAMES_ROS
 PKG = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AGILE_DIR = os.path.join(PKG, "policies", "agile_velocity_g1")
 LEGACY_DIR = os.path.join(PKG, "policies", "g1_wholebody")
+G1_MJCF_DIR = os.path.join(os.path.dirname(PKG), "unitree_mujoco", "unitree_robots", "g1")
 
 # Quelle laut export_onnx.py (sha256 der AGILE-TorchScript-Datei).
 SOURCE_SHA256 = "f58db6f61c7546941fe814ac6f571a11e894260e9e638f99eadd9125a4e8ab12"
@@ -59,6 +64,13 @@ def test_deploy_yaml_consistent(dep):
         assert len(dep[key]) == 14
     frame = sum(t["dim"] for t in dep["observations"])
     assert frame * dep["history_length"] == 255
+    # Stand-Pose: 12 Beinwerte, links/rechts gespiegelt, Pitch-Kette summiert zu 0
+    # (Fuesse flach bei aufrechtem Becken)
+    sp = np.array(dep["stand_pose_legs"])
+    assert sp.shape == (12,)
+    np.testing.assert_allclose(sp[[0, 3, 4]], sp[[6, 9, 10]])
+    np.testing.assert_allclose(sp[[1, 2, 5]], -sp[[7, 8, 11]])
+    assert abs(sp[0] + sp[3] + sp[4]) < 1e-6
 
 
 def test_onnx_provenance_and_shapes():
@@ -148,10 +160,12 @@ def test_reset_clears_history(policy):
 
 
 def test_loader_dispatch():
-    assert isinstance(load_walk_policy(AGILE_DIR), AgileHistoryPolicy)
-    assert load_walk_policy(AGILE_DIR).needs_arm_pose is False
+    agile = load_walk_policy(AGILE_DIR)
+    assert isinstance(agile, AgileHistoryPolicy) and agile.needs_arm_pose is False
+    assert agile.stand_leg_pose.shape == (12,)
     legacy = load_walk_policy(LEGACY_DIR)
     assert isinstance(legacy, MjlabVelocityPolicy) and legacy.needs_arm_pose is True
+    assert legacy.stand_leg_pose is None        # -> gerade Standpose des Balancers
 
 
 # ── WALK -> STAND ────────────────────────────────────────────────────────────
@@ -183,14 +197,129 @@ def test_settle_gate_timeout_and_cancel():
     assert not g.active and g.update(5.0, np.zeros(3), np.zeros(12), p) is None
 
 
-def test_balancer_hold_pose_keeps_entry_pose():
-    crouch = np.array([-0.47, 0.16, -0.02, 0.83, -0.38, -0.13,
-                       -0.44, -0.16, 0.02, 0.84, -0.41, 0.13], np.float32)
+CROUCH = np.array([-0.47, 0.16, -0.02, 0.83, -0.38, -0.13,
+                   -0.44, -0.16, 0.02, 0.84, -0.41, 0.13], np.float32)
+UP = np.array([0.0, 0.0, -1.0])
+Z12 = np.zeros(12, np.float32)
+
+
+def test_balancer_hold_vs_goal():
     p = BalancerParams()
-    up = np.array([0.0, 0.0, -1.0])
-    for hold, goal in ((True, crouch), (False, LEG_STAND_POSE)):
-        b = StandBalancer(0.02)
-        b.enter(hold_pose=hold)
-        b.step(crouch, up, np.zeros(3), 0.0, p)
-        c = b.step(crouch, up, np.zeros(3), 5.0, p)        # Rampe vorbei
-        np.testing.assert_allclose(c.leg_q, goal, atol=1e-6)
+    # ohne Ziel (Uebergabe aus WALK): vorgefundene Pose halten
+    b = StandBalancer(0.02)
+    b.enter()
+    b.step(CROUCH, Z12, UP, np.zeros(3), 0.0, p)
+    c = b.step(CROUCH, Z12, UP, np.zeros(3), 5.0, p)        # Rampe vorbei
+    np.testing.assert_allclose(c.leg_q, CROUCH, atol=1e-6)
+    # mit Ziel (aus HOLD): Ziel schon im ersten Befehl (die Bridge stellt dort auf)
+    b = StandBalancer(0.02)
+    b.enter(LEG_STAND_POSE)
+    c = b.step(CROUCH, Z12, UP, np.zeros(3), 0.0, p)
+    np.testing.assert_allclose(c.leg_q, LEG_STAND_POSE, atol=1e-6)
+
+
+def test_balancer_com_shift_direction_and_limit():
+    p = BalancerParams()
+    b = StandBalancer(0.02)
+    b.enter(CROUCH)
+    t = 0.0
+    for _ in range(200):                # Schwerpunkt 3 cm hinter dem Soll
+        c = b.step(CROUCH, Z12, UP, np.zeros(3), t, p, com_x=p.com_target_m - 0.03)
+        t += 0.02
+    # Becken nach vorn: Knoechel-Pitch kleiner, Hueft-Pitch groesser, Rest gleich
+    assert 0.0 < b.shift <= p.com_limit + 1e-9
+    np.testing.assert_allclose(c.leg_q[[4, 10]], CROUCH[[4, 10]] - b.shift, atol=1e-6)
+    np.testing.assert_allclose(c.leg_q[[0, 6]], CROUCH[[0, 6]] + b.shift, atol=1e-6)
+    np.testing.assert_allclose(c.leg_q[[1, 2, 3, 5]], CROUCH[[1, 2, 3, 5]], atol=1e-6)
+    for _ in range(500):                # dauerhaft weit daneben -> Begrenzung
+        b.step(CROUCH, Z12, UP, np.zeros(3), t, p, com_x=-1.0)
+        t += 0.02
+    assert b.shift == pytest.approx(p.com_limit)
+    # ohne Modell-Schwerpunkt keine Verschiebung
+    b2 = StandBalancer(0.02)
+    b2.enter(CROUCH)
+    for k in range(50):
+        c = b2.step(CROUCH, Z12, UP, np.zeros(3), 0.02 * k, p, com_x=None)
+    assert b2.shift == 0.0
+    np.testing.assert_allclose(c.leg_q, CROUCH, atol=1e-6)
+
+
+def _quat_from_euler(roll, pitch, yaw):
+    cr, sr = math.cos(roll / 2), math.sin(roll / 2)
+    cp, sp = math.cos(pitch / 2), math.sin(pitch / 2)
+    cy, sy = math.cos(yaw / 2), math.sin(yaw / 2)
+    return np.array([cr * cp * cy + sr * sp * sy, sr * cp * cy - cr * sp * sy,
+                     cr * sp * cy + sr * cp * sy, cr * cp * sy - sr * sp * cy])
+
+
+def test_foot_tilt_flat_stances_and_pelvis_tilt():
+    stand = load_walk_policy(AGILE_DIR).stand_leg_pose
+    # Die gemessene Policy-Hocke rollt die Sohlen um ~1.1 Grad nach aussen
+    # (Hueft-Roll 0.16 vs. Knoechel-Roll 0.13); die gerade Pose ist exakt flach.
+    for pose, tol in ((LEG_STAND_POSE, 1e-6), (stand, 0.02)):
+        assert np.all(foot_tilt([1, 0, 0, 0], pose) < tol)
+        # Becken gedreht um die Hochachse: Sohlen-Neigung unveraendert
+        np.testing.assert_allclose(foot_tilt(_quat_from_euler(0, 0, 1.0), pose),
+                                   foot_tilt([1, 0, 0, 0], pose), atol=1e-9)
+    # Ganzer Roboter steif 0.1 rad nach vorn gekippt -> Sohlen 0.1 rad schief
+    np.testing.assert_allclose(foot_tilt(_quat_from_euler(0, 0.1, 0), LEG_STAND_POSE), 0.1,
+                               atol=1e-6)
+
+
+def test_foot_tilt_matches_mujoco():
+    mujoco = pytest.importorskip("mujoco")
+    m = mujoco.MjModel.from_xml_path(os.path.join(G1_MJCF_DIR, "g1_29dof_inspire_ftp.xml"))
+    d = mujoco.MjData(m)
+    feet = [mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, f"{s}_ankle_roll_link")
+            for s in ("left", "right")]
+    rng = np.random.default_rng(3)
+    for _ in range(50):
+        legs = CROUCH + rng.normal(0, 0.15, 12)
+        quat = _quat_from_euler(*rng.normal(0, 0.2, 3))
+        d.qpos[:] = m.qpos0
+        d.qpos[3:7] = quat
+        d.qpos[7:19] = legs
+        mujoco.mj_kinematics(m, d)
+        ref = [math.acos(min(1.0, d.xmat[b][8])) for b in feet]
+        np.testing.assert_allclose(foot_tilt(quat, legs), ref, atol=1e-3)
+
+
+def test_tip_detector():
+    p = TipParams(foot_tilt_deg=6.0, tilt_max=0.2, debounce_s=0.04)
+    stand = load_walk_policy(AGILE_DIR).stand_leg_pose
+    td = TipDetector()
+    flat, tipped = [1, 0, 0, 0], _quat_from_euler(0, math.radians(8), 0)
+    g_up = np.array([0.0, 0.0, -1.0])
+    assert not td.update(0.00, flat, stand, g_up, p)
+    assert not td.update(0.02, tipped, stand, g_up, p)     # entprellt
+    assert td.update(0.06, tipped, stand, g_up, p)
+    assert not td.update(0.08, flat, stand, g_up, p)       # wieder flach -> zurueck
+    # starke Becken-Neigung allein reicht auch
+    assert not td.update(1.00, flat, stand, np.array([0.25, 0.0, -0.97]), p)
+    assert td.update(1.05, flat, stand, np.array([0.25, 0.0, -0.97]), p)
+
+
+def test_com_model_matches_mujoco():
+    mujoco = pytest.importorskip("mujoco")
+    pytest.importorskip("pinocchio")
+    from g1pilot.navigation.com_model import ComModel
+    for name in ("g1_29dof.xml", "g1_29dof_inspire_ftp.xml"):
+        path = os.path.join(G1_MJCF_DIR, name)
+        cm = ComModel(path)
+        m = mujoco.MjModel.from_xml_path(path)
+        d = mujoco.MjData(m)
+        assert cm.mass == pytest.approx(float(m.body_subtreemass[1]), rel=1e-6)
+        feet = [mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, f"{s}_ankle_roll_link")
+                for s in ("left", "right")]
+        adr = [m.jnt_qposadr[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, JOINT_NAMES_ROS[i])]
+               for i in range(29)]
+        rng = np.random.default_rng(5)
+        for _ in range(20):
+            q29 = rng.normal(0, 0.3, 29)
+            d.qpos[:] = m.qpos0
+            d.qpos[adr] = q29           # Inspire-MJCF: Fingergelenke liegen dazwischen
+            mujoco.mj_kinematics(m, d)
+            mujoco.mj_comPos(m, d)
+            mid = d.xpos[feet].mean(axis=0)
+            ref = d.xmat[feet[0]].reshape(3, 3).T @ (d.subtree_com[1] - mid)
+            np.testing.assert_allclose(cm.com_in_foot(q29), ref, atol=1e-6)
