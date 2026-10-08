@@ -1,0 +1,118 @@
+# Deploy-Config der AGILE-Lauf-Policy "Velocity-Height-G1-History-v0" (NVIDIA WBC-AGILE).
+# Alle Werte stammen aus der Trainings-Config im AGILE-Repo (Commit 6830cf9):
+#   agile/rl_env/tasks/locomotion_height/g1/velocity_height_env_cfg.py
+#     (G1VelocityHeightHistoryEnvCfg: Obs, Aktionen, Kommandos)
+#   agile/rl_env/assets/robots/unitree_g1.py  G1_29DOF (Default-Pose, kp/kd),
+#     G1_ACTION_SCALE_LOWER (Aktions-Skalierung)
+# und wurden gegen den offiziellen LEAPP-Export derselben Policy geprueft
+# (agile/data/policy/velocity_height_g1/leapp, ONNX mit eingebauter Obs-Verarbeitung):
+# gleiche Obs-History und gleiche Gelenk-Sollwerte. Herkunft/Lizenz: ATTRIBUTION.md.
+format: agile_height_history
+policy_file: policy.onnx
+step_dt: 0.02            # 50 Hz (controller_freq im Training)
+history_length: 5        # 5 Zeitschritte je Obs-Term
+
+# Von der Policy gesteuerte Gelenke (nur Beine) in der Reihenfolge der Policy
+# (Isaac-Lab-Artikulationsreihenfolge). Gilt fuer last_action und die Aktionen.
+joint_names:
+  - left_hip_pitch_joint
+  - right_hip_pitch_joint
+  - left_hip_roll_joint
+  - right_hip_roll_joint
+  - left_hip_yaw_joint
+  - right_hip_yaw_joint
+  - left_knee_joint
+  - right_knee_joint
+  - left_ankle_pitch_joint
+  - right_ankle_pitch_joint
+  - left_ankle_roll_joint
+  - right_ankle_roll_joint
+default_joint_pos: [-0.1, -0.1, 0.0, 0.0, 0.0, 0.0, 0.3, 0.3, -0.2, -0.2, 0.0, 0.0]
+stiffness:         [100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 200.0, 200.0, 20.0, 20.0, 20.0, 20.0]
+damping:           [2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 5.0, 5.0, 0.2, 0.2, 0.1, 0.1]
+# q_target = default_joint_pos + action_scale * clip(action, -action_clip, action_clip).
+# Huefte/Knie: 0.25 * effort_limit / stiffness (G1_ACTION_SCALE_LOWER). Knoechel: 1.0 --
+# G1_ACTION_SCALE_LOWER findet fuer die Knoechel keinen Eintrag (Regex-Schluessel), das
+# Training lief daher mit Isaac-Lab-Default 1.0 (so auch im LEAPP-Export).
+action_scale: [0.22, 0.22, 0.3475, 0.3475, 0.22, 0.22, 0.17375, 0.17375, 1.0, 1.0, 1.0, 1.0]
+action_clip: 6.0
+
+# Beobachtete Gelenke (joint_pos_rel, joint_vel_rel): ALLE 29 inkl. Taille und Arme,
+# Isaac-Lab-Reihenfolge. Die Policy sieht die Arme, steuert sie aber nicht (im
+# Training bewegte ein Zufallsgenerator Arme und Taille-Yaw im Stand).
+obs_joint_names:
+  - left_hip_pitch_joint
+  - right_hip_pitch_joint
+  - waist_yaw_joint
+  - left_hip_roll_joint
+  - right_hip_roll_joint
+  - waist_roll_joint
+  - left_hip_yaw_joint
+  - right_hip_yaw_joint
+  - waist_pitch_joint
+  - left_knee_joint
+  - right_knee_joint
+  - left_shoulder_pitch_joint
+  - right_shoulder_pitch_joint
+  - left_ankle_pitch_joint
+  - right_ankle_pitch_joint
+  - left_shoulder_roll_joint
+  - right_shoulder_roll_joint
+  - left_ankle_roll_joint
+  - right_ankle_roll_joint
+  - left_shoulder_yaw_joint
+  - right_shoulder_yaw_joint
+  - left_elbow_joint
+  - right_elbow_joint
+  - left_wrist_roll_joint
+  - right_wrist_roll_joint
+  - left_wrist_pitch_joint
+  - right_wrist_pitch_joint
+  - left_wrist_yaw_joint
+  - right_wrist_yaw_joint
+obs_default_joint_pos: [-0.1, -0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3, 0.3, 0.0, 0.0, -0.2, -0.2,
+                        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+# Taille: nicht von der Policy gesteuert, im Training auf 0 gehalten (roll/pitch fest,
+# yaw nur im Stand zufaellig). Gains wie G1_29DOF "waist". loco_sim haelt sie waehrend WALK.
+held_joints:
+  waist_yaw_joint:   {q: 0.0, kp: 300.0, kd: 5.0}
+  waist_roll_joint:  {q: 0.0, kp: 300.0, kd: 5.0}
+  waist_pitch_joint: {q: 0.0, kp: 300.0, kd: 5.0}
+
+# Obs-Vektor (400 = 5 x 80): Terme in dieser Reihenfolge, je Term die 5 Zeitschritte
+# alt -> neu hintereinander. Nach einem Reset fuellt der erste Messwert alle Slots.
+observations:
+  - {name: velocity_height_commands, dim: 4, scale: 1.0}  # vx, vy [m/s], vyaw [rad/s], Hoehe [m]
+  - {name: base_ang_vel, dim: 3, scale: 1.0}               # Gyro, Body-Frame
+  - {name: projected_gravity, dim: 3, scale: 1.0}          # aufrecht = [0, 0, -1]
+  - {name: joint_pos_rel, dim: 29, scale: 1.0}             # q - obs_default_joint_pos
+  - {name: joint_vel_rel, dim: 29, scale: 0.1}             # dq
+  - {name: last_action, dim: 12, scale: 1.0, clip: 10.0}   # letzte Roh-Aktion
+
+commands:
+  base_velocity:
+    ranges:
+      # Training: lin_vel_x [-0.5, 1.5]. Hier vorwaerts auf 1.0 m/s begrenzt (bis dahin
+      # in der Sim getestet; die Sim-Szene hat Hindernisse ab x = 1 m).
+      lin_vel_x: [-0.5, 1.0]
+      lin_vel_y: [-0.5, 0.5]
+      ang_vel_z: [-1.0, 1.0]
+    min_norm: 0.1           # ||cmd|| < 0.1 -> 0 (wie min_vel_norm im Training)
+  # Becken-Hoehen-Kommando. Beim Laufen trainiert mit 0.72 (DEFAULT_PELVIS_HEIGHT).
+  base_height: 0.72
+
+# Stand-Pose des PD (Beine, Unitree-Motorindizes 0..11): dieselbe Hocke wie bei der
+# AGILE-Velocity-Policy (policies/agile_velocity_g1, Becken ~0.73 m, Spur ~0.41 m).
+# Von dort laeuft diese Policy ohne grossen Anlauf-Satz los (sie ist auf Hoehen-
+# wechsel im Stand trainiert), und die Abfang-Policy (s.u.) startet in ihrer eigenen
+# Ruhepose. Getestet (test_agile_walk_sim.py): die eigene Ruhepose dieser Policy in
+# MuJoCo (tiefe Hocke, Becken ~0.66 m) kippte beim Loslaufen mit Last; aus der
+# geraden Standpose fing die Abfang-Policy harte Stoesse nicht sicher ab.
+stand_pose_legs: [-0.43, 0.16, -0.03, 0.81, -0.38, -0.13,
+                  -0.43, -0.16, 0.03, 0.81, -0.38, 0.13]
+
+# Policy, die im PD-Stand das Abfangen mit Schritten uebernimmt (loco_sim rescue_*).
+# Die AGILE-Velocity-Policy faengt harte Stoesse sicherer ab als diese (250 N vorn/
+# hinten: hier Sturz, dort abgefangen).
+rescue_policy: agile_velocity_g1

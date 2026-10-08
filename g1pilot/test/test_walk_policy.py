@@ -24,6 +24,7 @@ from g1pilot.utils.joints_names import JOINT_NAMES_ROS
 
 PKG = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AGILE_DIR = os.path.join(PKG, "policies", "agile_velocity_g1")
+VH_DIR = os.path.join(PKG, "policies", "agile_velocity_height_g1")
 LEGACY_DIR = os.path.join(PKG, "policies", "g1_wholebody")
 G1_MJCF_DIR = os.path.join(os.path.dirname(PKG), "unitree_mujoco", "unitree_robots", "g1")
 
@@ -39,6 +40,25 @@ GOLDEN = np.array([
      -0.194874, -0.556943, 1.63833, -0.801728, 0.128705, -0.662477, 0.792587],
     [-0.724532, -0.474245, -0.581359, -0.697533, 0.174046, 0.22435, -0.541976,
      0.117518, -1.514602, 0.938754, 0.958457, 0.147841, -3.694241, -0.431809],
+], dtype=np.float32)
+
+
+# Velocity-Height: sha256 der Quelle und Gelenk-Sollwerte des offiziellen LEAPP-Exports
+# (agile/data/policy/velocity_height_g1/leapp, ONNX MIT eingebauter Obs-Verarbeitung)
+# fuer die Zustandsfolge aus _vh_states() mit cmd (0.3, -0.1, 0.4), Hoehe 0.72; History
+# beim Start wie nach unserem Reset (erster Messwert in allen Slots, last_action 0).
+# Zeilen: Schritte 0, 1, 5, 11; Spalten in Policy-Reihenfolge (joint_names).
+VH_SOURCE_SHA256 = "240a5ce0b121837eba2f886a523d284a2a263dceb78d3132639eaf74ad7650f2"
+VH_GOLDEN_STEPS = (0, 1, 5, 11)
+VH_GOLDEN = np.array([
+    [-0.100355, -0.124496, 0.355736, -0.182847, -0.116640, 0.032075,
+     0.341258, 0.592636, 0.682159, 0.203977, -0.068031, 0.685486],
+    [-0.194713, -0.218778, 0.148193, 0.161302, -0.153555, -0.058706,
+     0.418095, 0.652873, 0.132189, 0.081751, -0.106180, -0.008398],
+    [-0.204136, -0.304631, 0.205264, 0.066978, -0.234623, -0.077577,
+     0.285383, 0.792328, 1.067904, -0.054477, -0.791941, 0.147921],
+    [-0.503712, -0.089088, 0.179239, -0.135192, -0.079549, 0.124522,
+     0.596612, 0.631218, 0.039025, 0.672070, -0.412682, -0.038520],
 ], dtype=np.float32)
 
 
@@ -163,9 +183,82 @@ def test_loader_dispatch():
     agile = load_walk_policy(AGILE_DIR)
     assert isinstance(agile, AgileHistoryPolicy) and agile.needs_arm_pose is False
     assert agile.stand_leg_pose.shape == (12,)
+    vh = load_walk_policy(VH_DIR)
+    assert isinstance(vh, AgileHistoryPolicy) and vh.needs_arm_pose is False
+    assert vh.stand_leg_pose.shape == (12,) and vh.num_obs == 400
+    assert vh.rescue_policy_name == "agile_velocity_g1"
+    assert agile.rescue_policy_name is None
     legacy = load_walk_policy(LEGACY_DIR)
     assert isinstance(legacy, MjlabVelocityPolicy) and legacy.needs_arm_pose is True
     assert legacy.stand_leg_pose is None        # -> gerade Standpose des Balancers
+
+
+# ── Velocity-Height-Policy ───────────────────────────────────────────────────
+
+def test_vh_deploy_yaml_consistent():
+    with open(os.path.join(VH_DIR, "deploy.yaml")) as f:
+        d = yaml.safe_load(f)
+    names = d["joint_names"]
+    assert len(names) == len(set(names)) == 12 and all("waist" not in n for n in names)
+    for key in ("default_joint_pos", "stiffness", "damping", "action_scale"):
+        assert len(d[key]) == 12
+    obs_names = d["obs_joint_names"]
+    assert sorted(obs_names) == sorted(JOINT_NAMES_ROS[i] for i in range(29))
+    assert len(d["obs_default_joint_pos"]) == 29
+    assert set(d["held_joints"]) == {"waist_yaw_joint", "waist_roll_joint", "waist_pitch_joint"}
+    frame = sum(t["dim"] for t in d["observations"])
+    assert frame * d["history_length"] == 400
+    # PD-Stand-Pose = Hocke der AGILE-Velocity-Policy, die auch abfaengt
+    with open(os.path.join(AGILE_DIR, "deploy.yaml")) as f:
+        agile = yaml.safe_load(f)
+    np.testing.assert_allclose(d["stand_pose_legs"], agile["stand_pose_legs"])
+    assert d["rescue_policy"] == "agile_velocity_g1"
+
+
+def test_vh_onnx_provenance_and_shapes():
+    model = onnx.load(os.path.join(VH_DIR, "policy.onnx"))
+    meta = {p.key: p.value for p in model.metadata_props}
+    assert meta["source_sha256"] == VH_SOURCE_SHA256
+    assert meta["task"] == "Velocity-Height-G1-History-v0"
+    (inp,), (out,) = model.graph.input, model.graph.output
+    assert inp.type.tensor_type.shape.dim[1].dim_value == 400
+    assert out.type.tensor_type.shape.dim[1].dim_value == 12
+
+
+def _vh_states(n=12, seed=7):
+    """Zufaellige, aber feste Zustaende (Unitree-Motorreihenfolge, Quaternion wxyz)."""
+    rng = np.random.default_rng(seed)
+    out = []
+    for _ in range(n):
+        q = rng.normal(0, 0.3, 29).astype(np.float32)
+        dq = rng.normal(0, 2.0, 29).astype(np.float32)
+        ax = rng.normal(0, 0.15, 3)
+        ang = float(np.linalg.norm(ax))
+        ax /= ang
+        quat = np.array([np.cos(ang / 2), *(np.sin(ang / 2) * ax)])
+        gyro = rng.normal(0, 0.5, 3).astype(np.float32)
+        out.append((q, dq, quat, gyro))
+    return out
+
+
+def test_vh_matches_official_leapp_export():
+    """Ganze Kette (Obs aus 29 Gelenken, History, Netz, Aktions-Skalierung je Gelenk,
+    Knoechel-Skalierung 1.0, Gelenk-Zuordnung) gegen den NVIDIA-Export."""
+    from g1pilot.navigation.walk_policy import get_gravity_orientation
+    vh = load_walk_policy(VH_DIR)
+    assert vh.base_height == pytest.approx(0.72)
+    vh.reset()
+    got = []
+    for q, dq, quat, gyro in _vh_states():
+        t = vh.step(q, dq, gyro, get_gravity_orientation(quat), [0.3, -0.1, 0.4])
+        got.append(t.q[:12].copy())
+        # Taille gehalten wie im Training
+        np.testing.assert_allclose(t.q[12:], 0.0)
+        np.testing.assert_allclose(t.kp[12:], 300.0)
+    np.testing.assert_allclose(np.array(got)[list(VH_GOLDEN_STEPS)], VH_GOLDEN, atol=2e-4)
+    # Gelenk-Zuordnung: Ausgabe i gehoert zu Motor JOINT_NAMES_ROS-Index von joint_names[i]
+    for k, name in enumerate(vh.joint_names):
+        assert JOINT_NAMES_ROS[int(t.idx[k])] == name
 
 
 # ── WALK -> STAND ────────────────────────────────────────────────────────────

@@ -61,6 +61,12 @@ setup(
         (f'share/{package_name}/policies/agile_velocity_g1',
             expand(['policies/agile_velocity_g1/*.onnx', 'policies/agile_velocity_g1/*.yaml',
                     'policies/agile_velocity_g1/*.md', 'policies/agile_velocity_g1/LICENSE'])),
+        # Alternative: NVIDIA WBC-AGILE Velocity-Height-G1-History (gleichmaessiger Gang).
+        (f'share/{package_name}/policies/agile_velocity_height_g1',
+            expand(['policies/agile_velocity_height_g1/*.onnx',
+                    'policies/agile_velocity_height_g1/*.yaml',
+                    'policies/agile_velocity_height_g1/*.md',
+                    'policies/agile_velocity_height_g1/LICENSE'])),
         # Legacy-Lauf-Policy (unitree_rl_mjlab G1 Velocity), per loco_sim policy:=g1_wholebody.
         (f'share/{package_name}/policies/g1_wholebody',
             expand(['policies/g1_wholebody/*.onnx', 'policies/g1_wholebody/*.yaml',

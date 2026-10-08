@@ -17,7 +17,8 @@ Schwerkraft-Feedforward auf eine Soll-Armpose je Szenario, mit dessen Gelenk-
 Speedlimit (arm_velocity_limit 1.5 rad/s). Der Reset setzt die Arme wie die Bridge
 in die Lauf-Pose; von dort fahren sie mit dem Speedlimit in die Szenario-Pose.
 
-Lauf:  python3 test_agile_walk_sim.py [--policy agile_velocity_g1] [--inspire] [--quick]
+Lauf:  python3 test_agile_walk_sim.py [--policy agile_velocity_g1] [--rescue-policy NAME]
+                                      [--inspire] [--quick]
 Exit-Code 0 = alle Pflicht-Szenarien bestanden.
 """
 import argparse
@@ -200,18 +201,22 @@ def com_model_for(scene):
     return _COM_MODELS[name]
 
 
-def run(policy, scene, schedule, t_end, arms_fn, payload_kg=0.0, push=None, rescue=True):
+def run(policy, scene, schedule, t_end, arms_fn, payload_kg=0.0, push=None, rescue=True,
+        rescue_policy=None):
     """schedule(t) -> (mode, cmd), mode in {"walk", "stand"} = vom Nutzer angeforderter
     Zustand. Ablauf wie loco_sim:
       * Start (aus HOLD): Bridge stellt den Roboter in die Stand-Pose der Policy;
         "stand" -> PD mit goal = Stand-Pose, "walk" -> ein Takt Stand-Pose, dann Policy.
       * "stand" aus WALK startet die SettleGate (Policy bremst mit cmd = 0), danach
         PD mit gehaltener Pose.
-      * Im PD: kippt der Roboter (TipDetector), faengt die Policy mit cmd = 0 ab und
-        gibt ueber die SettleGate zurueck (rescue=False: aus).
+      * Im PD: kippt der Roboter (TipDetector), faengt rescue_policy (None: die
+        Lauf-Policy) mit cmd = 0 ab und gibt ueber die SettleGate zurueck (rescue=False:
+        aus). Wird waehrend des Abfangens "walk" angefordert, geht es danach mit der
+        Lauf-Policy weiter (wie loco_sim).
     push = (t, fx, fy, dauer): Stoss auf torso_link. Gibt (Sturzzeit, Log, Abfang-
     Zeitpunkte) zurueck; im Log ist mode der tatsaechlich aktive Regler."""
     sim = Sim(scene, payload_kg)
+    rescue_policy = policy if rescue_policy is None else rescue_policy
     if push is not None:
         sim.push = push
     sp = policy.stand_leg_pose
@@ -258,12 +263,13 @@ def run(policy, scene, schedule, t_end, arms_fn, payload_kg=0.0, push=None, resc
             elif want == "walk" and mode == "stand":
                 policy.reset()
                 mode = "walk"
-            elif want == "walk" and not rescuing:
-                gate.cancel()                      # evtl. STAND-Uebergabe abbrechen
+            elif want == "walk" and (not rescuing or rescue_policy is policy):
+                gate.cancel()                      # STAND-Uebergabe/Abfangen abbrechen,
+                rescuing = False                   # weiterlaufen (wie loco_sim._enter_walk)
             elif mode == "walk" and not gate.active:   # STAND angefordert
                 gate.start(t)
             if mode == "stand" and rescue and tip.update(t, quat, q[LEG_IDX], g, tip_p):
-                policy.reset()                     # Abfangen: Policy mit cmd = 0
+                rescue_policy.reset()              # Abfangen: Policy mit cmd = 0
                 mode = "walk"
                 rescuing = True
                 gate.start(t)
@@ -271,9 +277,13 @@ def run(policy, scene, schedule, t_end, arms_fn, payload_kg=0.0, push=None, resc
             if mode == "walk" and gate.active:
                 cmd = [0.0, 0.0, 0.0]              # ausbremsen / abfangen
                 if gate.update(t, gyro, dq[LEG_IDX], settle) is not None:
-                    bal.enter()                    # PD haelt die vorgefundene Pose
-                    tip.reset()
-                    mode = "stand"
+                    if rescuing and want == "walk":    # loco_sim._walk_after_rescue
+                        policy.reset()
+                        cmd = [0.0, 0.0, 0.0]
+                    else:
+                        bal.enter()                # PD haelt die vorgefundene Pose
+                        tip.reset()
+                        mode = "stand"
                     rescuing = False
             cmd_tau[:] = 0.0
             if mode == "walk" and fresh_walk:      # loco_sim._fresh_walk
@@ -282,7 +292,8 @@ def run(policy, scene, schedule, t_end, arms_fn, payload_kg=0.0, push=None, resc
                 cmd_q[LEG_IDX], cmd_kp[LEG_IDX], cmd_kd[LEG_IDX] = stand_pose, LEG_KP, LEG_KD
                 cmd_q[WAIST_IDX], cmd_kp[WAIST_IDX], cmd_kd[WAIST_IDX] = WAIST_TARGET, WAIST_KP, WAIST_KD
             elif mode == "walk":
-                tg = policy.step(q, dq, gyro, g, np.asarray(cmd, np.float32))
+                active = rescue_policy if rescuing else policy
+                tg = active.step(q, dq, gyro, g, np.asarray(cmd, np.float32))
                 cmd_q[tg.idx] = tg.q
                 cmd_kp[tg.idx] = tg.kp
                 cmd_kd[tg.idx] = tg.kd
@@ -347,13 +358,23 @@ class Report:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--policy", default="agile_velocity_g1")
+    ap.add_argument("--rescue-policy", default="",
+                    help="Policy fuers Abfangen im PD-Stand (wie loco_sim rescue_policy; "
+                         "leer: wie in der deploy.yaml der Lauf-Policy)")
     ap.add_argument("--inspire", action="store_true", help="Szene mit Inspire-FTP-Haenden")
     ap.add_argument("--quick", action="store_true", help="nur Kernszenarien")
     a = ap.parse_args()
 
     scene = os.path.join(G1_DIR, "scene_inspire_ftp.xml" if a.inspire else "scene.xml")
     policy = load_walk_policy(os.path.join(HERE, "policies", a.policy))
-    print(f"Policy: {a.policy} ({type(policy).__name__})   Szene: {os.path.basename(scene)}")
+    rescue_name = a.rescue_policy or policy.rescue_policy_name or a.policy
+    rescue_policy = (policy if rescue_name == a.policy else
+                     load_walk_policy(os.path.join(HERE, "policies", rescue_name)))
+    print(f"Policy: {a.policy} ({type(policy).__name__}), Abfangen: {rescue_name}   "
+          f"Szene: {os.path.basename(scene)}")
+
+    def run(*args, **kw):
+        return globals()["run"](*args, rescue_policy=rescue_policy, **kw)
     R = Report()
     walk_arms = (lambda t: ARMS_WALK)
 

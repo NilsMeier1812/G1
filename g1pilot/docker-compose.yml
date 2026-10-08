@@ -99,6 +99,9 @@ services:
       # Navigation (g1pilot-Ansatz) in der Sim mitstarten: dijkstra_planner +
       # nav2point + Sim-Glue (sim_localization, joy_to_cmdvel). Siehe g1pilot/docs/50_navigation_anleitung.md.
       - G1_ENABLE_NAV=${G1_ENABLE_NAV:-0}
+      # Lauf-Policy von loco_sim (Ordner unter g1pilot/policies): agile_velocity_g1
+      # (Default) | agile_velocity_height_g1 | g1_wholebody. Siehe g1pilot/docs/31_loco_technik.md.
+      - G1_WALK_POLICY=${G1_WALK_POLICY:-agile_velocity_g1}
       # Bedienoberflaeche: streamdeck (Default) | demo (vereinfachte Demo-GUI,
       # siehe g1pilot/docs/42_demo_gui_konzept.md).
       - G1_GUI=${G1_GUI:-streamdeck}

@@ -124,6 +124,9 @@ class LocoSim(Node):
         self.declare_parameter("rescue_foot_tilt_deg", 6.0)
         self.declare_parameter("rescue_tilt_max", 0.2)
         self.declare_parameter("rescue_debounce_s", 0.04)
+        # Policy fuers Abfangen (policies/<name>). Leer -> wie in der deploy.yaml der
+        # Lauf-Policy (rescue_policy), sonst die Lauf-Policy selbst.
+        self.declare_parameter("rescue_policy", "")
         # Sim-Modell fuer die Schwerpunkt-Fuehrung (com_model.py). Leer -> aus
         # G1_INSPIRE_HANDS abgeleitet (/unitree_mujoco/... im g1pilot-sim-Container).
         # Nicht ladbar -> Balancer ohne Schwerpunkt-Fuehrung (Warnung).
@@ -189,7 +192,8 @@ class LocoSim(Node):
             "1", "true", "yes", "on")
         self._state_seq = 0
 
-        self._load_policy(policy_name)
+        self._load_policy(policy_name,
+                          self.get_parameter("rescue_policy").get_parameter_value().string_value)
         self._load_com_model(self.get_parameter("robot_mjcf").get_parameter_value().string_value)
 
         init_dds(interface, self.get_logger())
@@ -225,6 +229,7 @@ class LocoSim(Node):
         self.settle = SettleGate()         # WALK->STAND: erst ausbremsen lassen
         self.tip = TipDetector()           # STAND: kippt er trotz PD? -> Policy faengt ab
         self._rescue = False               # WALK nur zum Abfangen (cmd = 0, dann zurueck)
+        self._walk_after_rescue = False    # START WALKING waehrend des Abfangens
         self._fresh_walk = False           # WALK aus HOLD/DAMP: erst Stand-Pose senden
         self._walk_pending = False         # WALK angefordert, warte auf Arme
         self._walk_pending_t0 = 0.0
@@ -256,11 +261,22 @@ class LocoSim(Node):
             f"START WALKING / loco_cmd_vel -> WALK (Policy).")
 
     # ── Setup ────────────────────────────────────────────────────────────────
-    def _load_policy(self, policy_name):
+    def _load_policy(self, policy_name, rescue_name):
         share = get_package_share_directory("g1pilot")
         pdir = os.path.join(share, "policies", policy_name)
         self.walk_policy = load_walk_policy(pdir)
         self.control_dt = self.walk_policy.step_dt
+        # Abfang-Policy: eigene Instanz nur, wenn sie sich von der Lauf-Policy
+        # unterscheidet (beide im selben Regeltakt).
+        rescue_name = rescue_name or self.walk_policy.rescue_policy_name
+        if not rescue_name or rescue_name == policy_name:
+            self.rescue_policy = self.walk_policy
+        else:
+            self.rescue_policy = load_walk_policy(os.path.join(share, "policies", rescue_name))
+            if abs(self.rescue_policy.step_dt - self.control_dt) > 1e-9:
+                raise ValueError(f"rescue_policy '{rescue_name}' hat step_dt "
+                                 f"{self.rescue_policy.step_dt}, Lauf-Policy {self.control_dt}")
+            self.get_logger().info(f"Abfang-Policy: {self.rescue_policy.policy_path}")
         # Stand-Pose des PD aus HOLD: die der Policy (AGILE: breite Hocke), sonst
         # die gerade Standpose. Dort startet die Policy ohne Anlauf-Satz.
         sp = self.walk_policy.stand_leg_pose
@@ -318,7 +334,7 @@ class LocoSim(Node):
         self.balancer.enter(None if hold_pose else self.stand_pose)
         self.settle.cancel()
         self.tip.reset()
-        self._rescue = False
+        self._rescue = self._walk_after_rescue = False
         self._fall_since = None
         self._walk_pending = False          # ein STAND bricht eine WALK-Anforderung ab
         self.state = STAND
@@ -330,6 +346,12 @@ class LocoSim(Node):
             self.get_logger().warn(f"Kann nicht WALK ({reason}): keine rt/lowstate.")
             return
         if self.state == WALK:
+            if self._rescue and self.rescue_policy is not self.walk_policy:
+                # Abfangen laeuft mit einer anderen Policy: nicht mitten im Fangschritt
+                # wechseln. Danach direkt weiter nach WALK statt in den PD.
+                self._walk_after_rescue = True
+                self.get_logger().info(f"{reason}: Abfangen laeuft, danach WALK.")
+                return
             # Laeuft schon: Policy-History NICHT zuruecksetzen (waere ein Ruck), nur
             # eine evtl. laufende STAND-Uebergabe abbrechen.
             if self.settle.active:
@@ -345,6 +367,7 @@ class LocoSim(Node):
         self.walk_policy.reset()
         self.settle.cancel()
         self._rescue = False
+        self._walk_after_rescue = False
         self._fall_since = None
         self._walk_pending = False
         self.state = WALK
@@ -353,8 +376,9 @@ class LocoSim(Node):
     def _enter_rescue(self):
         """STAND -> Policy faengt mit Schritten ab (cmd = 0), danach zurueck in den
         PD ueber die SettleGate (wie START BALANCING im Laufen)."""
-        self.walk_policy.reset()
+        self.rescue_policy.reset()
         self._rescue = True
+        self._walk_after_rescue = False
         self._fresh_walk = False
         self._fall_since = None
         self.state = WALK
@@ -405,7 +429,7 @@ class LocoSim(Node):
         if msg.data:
             self.state = DAMP
             self._walk_pending = False
-            self._rescue = False
+            self._rescue = self._walk_after_rescue = False
             self.settle.cancel()
             self.arms_enabled_pub.publish(Bool(data=False))
             self.get_logger().warn("EMERGENCY STOP -> DAMP + Arme aus.")
@@ -414,7 +438,7 @@ class LocoSim(Node):
         if msg.data:
             self.state = HOLD
             self._walk_pending = False
-            self._rescue = False
+            self._rescue = self._walk_after_rescue = False
             self.settle.cancel()
             self.get_logger().info("START -> Standby (HOLD).")
 
@@ -634,7 +658,7 @@ class LocoSim(Node):
         if self._fallen(gravity):
             self.state = DAMP
             self.settle.cancel()
-            self._rescue = False
+            self._rescue = self._walk_after_rescue = False
             self.arms_enabled_pub.publish(Bool(data=False))
             self.get_logger().warn("STURZ erkannt (Walk) -> DAMP + Arme aus.")
             return self._send_damp()
@@ -661,15 +685,23 @@ class LocoSim(Node):
                 if done == "timeout":
                     self.get_logger().warn("STAND-Uebergabe: nicht ganz ruhig geworden "
                                            "-> Timeout, PD uebernimmt trotzdem.")
-                self._enter_stand("Abgefangen" if self._rescue else "START BALANCING",
-                                  hold_pose=True)
-                return self._send_balance_pd()
+                if self._rescue and self._walk_after_rescue:
+                    # START WALKING kam waehrend des Abfangens: jetzt mit der
+                    # Lauf-Policy weiter (frische History aus dem ruhigen Stand).
+                    self.walk_policy.reset()
+                    self._rescue = self._walk_after_rescue = False
+                    self.get_logger().info("Abgefangen -> WALK (Policy).")
+                else:
+                    self._enter_stand("Abgefangen" if self._rescue else "START BALANCING",
+                                      hold_pose=True)
+                    return self._send_balance_pd()
 
         # KEIN Auto-Umschalten: bei cmd=0 STEHT die Policy einfach am Platz. Zu
         # wirklich stationaer (Fuesse geplant) wechselt nur der Nutzer per
         # START BALANCING. Die Policy aktuiert nur Beine + Taille (0..14); die
         # Arme (15..28) bleiben dem arm_controller (rt/arm_sdk).
-        t = self.walk_policy.step(q, dq, gyro, gravity, cmd)
+        policy = self.rescue_policy if self._rescue else self.walk_policy
+        t = policy.step(q, dq, gyro, gravity, cmd)
         self._set_motors(t.idx, t.q, t.kp, t.kd)
         self._write()
 

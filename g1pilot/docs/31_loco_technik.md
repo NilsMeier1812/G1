@@ -13,6 +13,7 @@ wollen. Für die Bedienung siehe [30_loco_anleitung.md](30_loco_anleitung.md).
 | `g1pilot/navigation/com_model.py` | Schwerpunkt relativ zu den Füßen aus den Gelenkwinkeln (Pinocchio, MJCF-Modell der Sim) |
 | `g1pilot/navigation/loco_client.py` | Ansteuerung des Unitree-Onboard-Reglers (nur echter Roboter) |
 | `g1pilot/policies/agile_velocity_g1/` | **Standard:** Lauf-Policy NVIDIA WBC-AGILE „Velocity-G1-History-v0" (Apache-2.0, Herkunft in `ATTRIBUTION.md`) |
+| `g1pilot/policies/agile_velocity_height_g1/` | Alternative: NVIDIA WBC-AGILE „Velocity-Height-G1-History-v0" (Apache-2.0), gleichmäßiger Gang; fängt mit der Standard-Policy ab |
 | `g1pilot/policies/g1_wholebody/` | Alte Lauf-Policy (unitree_rl_mjlab G1 Velocity, Apache-2.0), per Parameter wählbar |
 | `g1pilot/test_agile_walk_sim.py` | Headless-MuJoCo-Test von Laufen, Stehen und Übergaben (ohne ROS) |
 | `g1pilot/test/test_walk_policy.py` | Unit-Tests: Obs-Layout, ONNX = Original, Übergabe-Logik, Schwerpunkt-Modell, Kipp-Erkennung |
@@ -53,12 +54,46 @@ Nur wenn der PD den Roboter nicht mehr halten kann (ein Fuß hebt ab, z. B.
 nach einem Stoß), fängt die Policy mit Schritten ab und gibt danach wieder an
 den PD (siehe „Abfangen").
 
-Policy wechseln: Parameter `policy` von `loco_sim` (Ordnername unter
-`policies/`). Die alte Policy braucht die Arme in der Lauf-Pose, also dazu
+Policy wechseln: Umgebungsvariable `G1_WALK_POLICY` beim Start
+(`docker-compose.yml` → `launch/bringup_sim.launch.py` → Parameter `policy`
+von `loco_sim`, Ordnername unter `policies/`):
+
+| `G1_WALK_POLICY` | Gang | Arme beim Laufen |
+|---|---|---|
+| `agile_velocity_g1` (Standard) | sehr robust, aber Fangschritte ohne festen Rhythmus (siehe „Gangbild") | frei |
+| `agile_velocity_height_g1` | gleichmäßig, trifft das Tempo, bis 1 m/s | frei |
+| `g1_wholebody` (alt) | gleichmäßig | fest in der Lauf-Pose |
+
+Die alte Policy braucht die Arme in der Lauf-Pose, also dazu
 `walk_park_arms:=true` für die Manipulation (siehe
-[11_arm_manipulation_technik.md](11_arm_manipulation_technik.md)); beides
-steht in `launch/bringup_sim.launch.py`. Welche Logik eine Policy braucht,
-erkennt `walk_policy.load_walk_policy()` am Feld `format` in `deploy.yaml`.
+[11_arm_manipulation_technik.md](11_arm_manipulation_technik.md), steht in
+`launch/bringup_sim.launch.py`). Welche Logik eine Policy braucht, erkennt
+`walk_policy.load_walk_policy()` am Feld `format` in `deploy.yaml`.
+
+### Gangbild
+
+Gemessen mit `test_agile_walk_sim.py`-Aufbau, geradeaus, Arme in Lauf-Pose,
+Standard-Szene, Mittel über 9 s (Schwankung der Schrittabstände als
+Variationskoeffizient):
+
+| Policy | Tempo Soll → Ist | Schritte/s | Schwankung | beide Füße am Boden | Becken-Nicken |
+|---|---|---|---|---|---|
+| `agile_velocity_g1` | 0.4 → 0.30 m/s | 2.0 | ±42 % | 66 % | ±1.2° |
+| `agile_velocity_g1` | 0.2 → 0.13 m/s | 1.0 | ±69 % | 85 % | ±1.2° |
+| `agile_velocity_height_g1` | 0.4 → 0.38 m/s | 2.9 | < 1 % | 35 % | ±0.1° |
+| `agile_velocity_height_g1` | 0.3 → 0.28 m/s | 3.1 | ±1 % | 40 % | ±0.0° |
+| `agile_velocity_height_g1` | 1.0 → 1.01 m/s | 2.8 | ±1 % | 27 % | ±0.5° |
+| `g1_wholebody` | 0.4 → 0.41 m/s | 3.2 | ±5 % | 13 % | ±0.8° |
+
+Die Standard-Policy kippt das Becken leicht nach vorn und setzt dann einen
+schnellen Fangschritt: im Training (AGILE `velocity_history_env_cfg.py`) gibt
+es nur Belohnungen für Tempo, flache Haltung und Regularisierung, aber keinen
+Gang-Term (Schrittrhythmus, Schwungzeit). Mehr Dämpfung (im Trainingsbereich
+bis 2×), die MuJoCo-Einstellungen aus NVIDIAs eigenem Sim2MuJoCo-Test
+(Armature 0.02, Gelenkreibung 0.1) oder hängende Arme ändern daran nichts.
+`agile_velocity_height_g1` geht unter 0.25 m/s ebenfalls unregelmäßig (Tippel-
+schritte); sie läuft mit leicht nach hinten geneigtem Oberkörper (≈ 3°) und
+mit etwa 2–3 cm Fußhub.
 
 ### Zustandsmaschine
 
@@ -215,12 +250,18 @@ lang. Die Sohlen-Neigung kommt aus IMU-Quaternion und Bein-Encodern
 des MJCF). Im normalen Stand liegt sie unter 2°, auch mit Box und kräftig
 bewegten Armen.
 
-Dann gibt `loco_sim` an die Policy (History frisch, cmd = 0, Joystick wird
-ignoriert), die mit Schritten abfängt. Danach geht es wie bei START
+Dann gibt `loco_sim` an die Abfang-Policy (History frisch, cmd = 0, Joystick
+wird ignoriert), die mit Schritten abfängt. Danach geht es wie bei START
 BALANCING im Laufen über die `SettleGate` zurück in den PD, der die neue Pose
-hält. Ein START WALKING während des Abfangens wird zu normalem Laufen. Der
-Bridge-Zustand bleibt dabei „aktiv" (Code 1), es gibt also keinen Reset.
-Abschalten: `rescue_enable:=false`.
+hält. Der Bridge-Zustand bleibt dabei „aktiv" (Code 1), es gibt also keinen
+Reset. Abschalten: `rescue_enable:=false`.
+
+Abfang-Policy ist die Lauf-Policy selbst, außer ihre `deploy.yaml` nennt eine
+andere (`rescue_policy`) oder der Parameter `rescue_policy` ist gesetzt.
+`agile_velocity_height_g1` fängt mit `agile_velocity_g1` ab: allein stürzte
+sie bei 150 N von hinten und 250 N von vorn/hinten. Ein START WALKING während
+des Abfangens wird zu normalem Laufen; bei einer eigenen Abfang-Policy erst,
+wenn das Abfangen fertig ist (kein Policy-Wechsel mitten im Fangschritt).
 
 ### Policy (`_send_policy`, `walk_policy.py`)
 
@@ -233,6 +274,18 @@ Gelenkabweichung, Gelenkgeschwindigkeit × 0.05, letzte Aktion), Term für Term,
 `policies/agile_velocity_g1/deploy.yaml` und `ATTRIBUTION.md`. Kommandos mit
 ‖cmd‖ < 0.1 werden wie im Training zu 0.
 
+**AGILE Velocity-Height** (`AgileHistoryPolicy`, `format:
+agile_height_history`, `policies/agile_velocity_height_g1`): 400 Obs = 6
+Terme × 5 Zeitschritte (Kommando vx/vy/vyaw + Becken-Höhe 0.72 m, Gyro,
+projizierte Gravitation, Abweichung und Geschwindigkeit × 0.1 **aller 29
+Gelenke inkl. Arme**, letzte Aktion). 12 Aktionen nur für die Beine,
+Skalierung je Gelenk (Hüfte/Knie 0.25 · Momentgrenze / kp, Knöchel 1.0),
+Aktion auf ±6 begrenzt; die Taille hält `loco_sim` auf 0. Geprüft gegen
+NVIDIAs LEAPP-Export derselben Policy (ONNX mit eingebauter Obs-Verarbeitung),
+siehe `ATTRIBUTION.md` dort. Ihre eigene Ruhepose ist in MuJoCo eine tiefe
+Hocke (Becken ≈ 0.66 m); der PD steht trotzdem in der Hocke der
+Standard-Policy (Begründung in der `deploy.yaml`).
+
 **Alt** (`MjlabVelocityPolicy`, `g1_wholebody`): 98 Obs mit Gait-Phase
 sin/cos (0 bei ‖cmd‖ < 0.1), 29 Aktionen, davon nur Beine + Taille aktuiert.
 
@@ -243,7 +296,7 @@ Trainingsbereiche der Policy (`commands.base_velocity.ranges`).
 
 | Parameter | Bedeutung |
 |---|---|
-| `policy` | Ordner der Lauf-Policy unter `policies/` (Standard `agile_velocity_g1`) |
+| `policy` | Ordner der Lauf-Policy unter `policies/` (Standard `agile_velocity_g1`, im Bringup aus `G1_WALK_POLICY`) |
 | `settle_s`, `settle_quiet_s`, `settle_gyro_max`, `settle_dq_max`, `settle_timeout_s` | Übergabe WALK → STAND |
 | `fall_gz`, `fall_debounce_s` | Sturz-Erkennungsschwelle/-Entprellung |
 | `hold_kd_scale` | Dämpfungsfaktor der Beine im HOLD |
@@ -253,6 +306,7 @@ Trainingsbereiche der Policy (`commands.base_velocity.ranges`).
 | `bal_com_target_m`, `bal_com_tau_s`, `bal_com_lead_s`, `bal_com_limit`, `bal_bias_tau_s` | Schwerpunkt-Führung (`bal_com_tau_s` 0 = aus) |
 | `robot_mjcf` | MJCF für das Schwerpunkt-Modell (leer = aus `G1_INSPIRE_HANDS`) |
 | `rescue_enable`, `rescue_foot_tilt_deg`, `rescue_tilt_max`, `rescue_debounce_s` | Abfangen mit der Policy |
+| `rescue_policy` | Abfang-Policy (leer = `rescue_policy` aus der `deploy.yaml`, sonst die Lauf-Policy) |
 | `walk_arm_wait`, `walk_arm_timeout_s` | Warten auf Arm-Aufräumen vor WALK (nur alte Policy) |
 
 Live änderbar via `ros2 param set /loco_sim <name> <wert>`.
@@ -306,7 +360,7 @@ zum DDS-Merge in [02_architektur.md](02_architektur.md).
 
 ## Testergebnisse (Headless-MuJoCo)
 
-`python3 test_agile_walk_sim.py [--inspire] [--policy g1_wholebody]` fährt
+`python3 test_agile_walk_sim.py [--inspire] [--policy NAME] [--rescue-policy NAME]` fährt
 denselben Regler-Code wie `loco_sim` (`walk_policy`, `stand_balancer`) in
 MuJoCo nach: 1 ms Physik, 50 Hz Lockstep, Reset wie die Bridge, Arme per
 arm_controller-Ersatz (PD + Schwerkraftkompensation, 1.5 rad/s). Ebener Boden
@@ -326,6 +380,19 @@ AGILE, Stand 2026-10-08 (Standard-Szene / Inspire-Szene, beide bestanden):
 | Stöße 80 / 150 / 250 N für 0.12 s auf den Torso, vorn/hinten/seitlich/schräg | 0 Stürze. Seitlich bis 150 N und schräg mit 80 N hält der PD ohne Schritt; sonst fängt die Policy mit Schritten ab (Becken 0.1–0.3 m bei 80 N, bis 2.2 m bei 250 N) und gibt zurück an den PD |
 | *Info:* Box 2.0 kg je Hand | Inspire: PD hält. Standard: beim Anheben direkt nach START BALANCING einmal abgefangen (Becken 0.5 m). Nach einem Lauf-→-Stand-Wechsel in beiden Szenen einmal abgefangen. Kein Sturz |
 
+`agile_velocity_height_g1` (Abfangen mit `agile_velocity_g1`), Stand
+2026-10-08, Standard-Szene / Inspire-Szene, beide bestanden:
+
+| Szenario | Ergebnis |
+|---|---|
+| Laufen vor/zurück/seitlich/drehen | Ist 0.48 / −0.31 / ±0.38 m/s, Drehen 0.78 rad/s (Soll 0.5 / −0.4 / ±0.4 / 0.8); Nachlauf ≤ 1 cm |
+| Laufen mit freien Armen (hängend, ständig bewegt, Box 0.5 und 1.0 kg je Hand) | alle stabil, Tempo 0.38–0.40 m/s bei Soll 0.4; Neigung ≤ 0.14 |
+| Policy allein im Stand, 20 s (cmd = 0) | Becken ≤ 6 cm, Füße 4–8 cm (setzt sich zuerst in ihre Hocke) |
+| PD-Stand (wie oben, 8 Fälle) | Füße ≤ 3 mm, kein Abfangen |
+| WALK → STAND (8 feste + 20 zufällige Wechsel) | 0 Stürze, kein Abfangen; PD nach 0.6–0.9 s, danach Füße ≤ 6 mm |
+| START WALKING mit cmd = 0 aus dem PD | Becken ≤ 2.1 cm nach START BALANCING, ≤ 4.9 cm nach einer Übergabe |
+| Stöße 80 / 150 / 250 N | 0 Stürze, wie oben |
+
 Die alte Policy (`--policy g1_wholebody`) läuft mit Armen in der Lauf-Pose gut,
 fällt aber mit hängenden Armen, mit Box und unter Arm-Bewegung im Stand.
 
@@ -335,6 +402,9 @@ fällt aber mit hängenden Armen, mit Box und unter Arm-Bewegung im Stand.
   Balance-/Lauf-Strategie ist eigens für die Simulation gebaut und teils auf
   simulationsinterne Größen angewiesen (z. B. Basisgeschwindigkeit/Fußkraft
   in `reserve[]` der Bridge) — sie ist **nicht** für den Realeinsatz gedacht.
+- Die Standard-Policy `agile_velocity_g1` läuft mit Fangschritten ohne
+  festen Rhythmus (siehe „Gangbild"); das ist ihr Trainingsergebnis, kein
+  Fehler der Anbindung.
 - Die AGILE-Policy erreicht in MuJoCo etwa 75 % der kommandierten
   Geschwindigkeit (0.36 m/s bei 0.5 m/s vor, 0.3 m/s bei 0.4 m/s seitlich);
   Drehen trifft den Sollwert. Ursache ist der Sim-Unterschied zum Isaac-Lab-Training.

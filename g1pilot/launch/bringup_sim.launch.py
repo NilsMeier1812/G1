@@ -41,6 +41,12 @@ def generate_launch_description():
     #  Nav-Stack ueber bringup_real (G1_ENABLE_LIDAR=1) mit MOLA + loco_client.
     enable_nav = os.environ.get('G1_ENABLE_NAV', '0').strip().lower() in ('1', 'true', 'yes', 'on')
 
+    #  G1_WALK_POLICY : Lauf-Policy von loco_sim (Ordner unter policies/).
+    #  agile_velocity_g1 (Default, sehr robust, Gang mit Fangschritten) |
+    #  agile_velocity_height_g1 (gleichmaessiger Gang, Arme frei) | g1_wholebody
+    #  (alt; dann walk_park_arms 'true' unten). Siehe docs/31_loco_technik.md.
+    walk_policy = os.environ.get('G1_WALK_POLICY', '').strip() or 'agile_velocity_g1'
+
     # Navigation OHNE RViz waere blind (Karte/Pfad/Ziel-Werkzeug leben in RViz,
     # es gibt kein eigenes Nav-Fenster) -> bei Nav RViz erzwingen.
     if enable_nav:
@@ -116,7 +122,7 @@ def generate_launch_description():
         # ── 4. loco_sim: Whole-Body-Loco-/Balance-Controller (ersetzt das Onboard-
         #    High-Level, das es in MuJoCo nicht gibt). Liest rt/lowstate, schreibt
         #    rt/lowcmd (Beine + Taille). Velocity-konditionierte Lauf-Policy
-        #    NVIDIA WBC-AGILE (policies/agile_velocity_g1, Arme frei);
+        #    NVIDIA WBC-AGILE (G1_WALK_POLICY, Default agile_velocity_g1, Arme frei);
         #    START BALANCING -> PD-Stand, START WALKING + loco_cmd_vel -> laufen.
         #    Real-Bringup nutzt weiter loco_client (Unitree-High-Level).
         Node(
@@ -126,7 +132,7 @@ def generate_launch_description():
             output='screen',
             parameters=[{
                 'interface': 'lo',
-                'policy':    'agile_velocity_g1',
+                'policy':    walk_policy,
             }]
         ),
     ]

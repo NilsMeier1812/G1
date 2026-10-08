@@ -50,6 +50,23 @@ ros2 topic pub --once /g1pilot/loco_cmd_vel geometry_msgs/msg/Twist "{linear: {x
 `linear.y` = seitwärts, `angular.z` = drehen. Die tatsächliche
 Geschwindigkeit ergibt sich aus den konfigurierten Limits (siehe unten).
 
+### Lauf-Regler wählen (nur Sim)
+
+Welche Lauf-Policy die Sim benutzt, legt `G1_WALK_POLICY` beim Start fest:
+
+```bash
+G1_WALK_POLICY=agile_velocity_height_g1 ./start.sh   # gleichmäßiger Gang
+```
+
+| Wert | Wirkung |
+|---|---|
+| `agile_velocity_g1` (Standard) | sehr robust, Arme frei; der Gang sieht aber nach Stolpern aus (Fangschritte ohne festen Rhythmus) |
+| `agile_velocity_height_g1` | gleichmäßiger Gang, trifft das Tempo, bis 1 m/s vorwärts, Arme frei; Stöße im Stand fängt weiter `agile_velocity_g1` ab |
+| `g1_wholebody` | alte Policy: gleichmäßiger Gang, aber die Arme müssen beim Laufen in der Lauf-Pose stehen |
+
+Stand-Regler, Stand-Haltung und Übergaben sind bei beiden AGILE-Policies gleich.
+Vergleichswerte stehen in [31_loco_technik.md](31_loco_technik.md#gangbild).
+
 ## Sim ↔ Real
 
 | Aspekt | Simulation | Echter Roboter |

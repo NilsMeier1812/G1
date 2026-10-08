@@ -11,7 +11,11 @@ geladen wird, entscheidet  format:  in der deploy.yaml des Policy-Ordners:
       NVIDIA WBC-AGILE "Velocity-G1-History-v0". Steuert NUR Beine + Taille
       roll/pitch (14 Gelenke) und SIEHT die Arme nicht. Im Training wurden die
       Arme auch beim Laufen staendig zufaellig bewegt -> die Arme sind beim
-      Laufen frei (arm_controller/Marker), keine Lauf-Pose noetig.
+      Laufen frei (arm_controller/Marker), keine Lauf-Pose noetig. Gang: Fang-
+      schritte ohne festen Rhythmus (kein Gang-Term im Training), sehr robust.
+  * agile_height_history (policies/agile_velocity_height_g1)
+      NVIDIA WBC-AGILE "Velocity-Height-G1-History-v0". Steuert NUR die Beine
+      (12), SIEHT alle 29 Gelenke inkl. Arme. Gleichmaessiger Gang, Arme frei.
   * mjlab_velocity (Legacy, policies/g1_wholebody)
       unitree_rl_mjlab G1 Velocity. Ganzkoerper-Obs (29 Gelenke inkl. Arme) ->
       laeuft nur stabil mit Armen nahe ihrer Default-Pose.
@@ -20,6 +24,7 @@ Gemeinsame Schnittstelle:
   reset()                                  vor dem ersten step() nach WALK-Eintritt
   step(q, dq, gyro, gravity, cmd)          -> MotorTargets fuer die geregelten Motoren
   scale_command(nx, ny, nz)                normierte [-1, 1] -> phys. Sollwert
+  stand_leg_pose, rescue_policy_name       aus der deploy.yaml (None, wenn nicht gesetzt)
 Eingaben in Unitree-Motorreihenfolge (29), gyro im Body-Frame, gravity = projizierte
 Gravitation (aufrecht [0, 0, -1]), cmd = [vx, vy, vyaw].
 """
@@ -89,6 +94,8 @@ class _VelocityPolicyBase:
         self.stand_leg_pose = None if sp is None else np.array(sp, dtype=np.float32)
         if self.stand_leg_pose is not None and self.stand_leg_pose.shape != (12,):
             raise ValueError("deploy.yaml: stand_pose_legs braucht 12 Werte (Motoren 0..11)")
+        # Policy fuers Abfangen im PD-Stand (Ordnername unter policies/). None -> diese.
+        self.rescue_policy_name = dep.get("rescue_policy") or None
         self.sess = _make_session(self.policy_path)
         self.in_name = self.sess.get_inputs()[0].name
         self.num_obs = int(self.sess.get_inputs()[0].shape[-1])
@@ -113,28 +120,55 @@ class _VelocityPolicyBase:
 
 
 class AgileHistoryPolicy(_VelocityPolicyBase):
-    """WBC-AGILE Velocity-G1-History-v0 (siehe policies/agile_velocity_g1/deploy.yaml)."""
+    """WBC-AGILE-Policies mit Obs-History (Isaac-Lab-Export):
+      * Velocity-G1-History-v0        (policies/agile_velocity_g1, format agile_history)
+      * Velocity-Height-G1-History-v0 (policies/agile_velocity_height_g1,
+                                       format agile_height_history)
+    Beide bauen die Obs gleich: je Term ein History-Puffer, Term fuer Term
+    hintereinander. Welche Terme in welcher Reihenfolge, welche Gelenke die Policy
+    steuert und welche sie sieht, steht in der deploy.yaml."""
 
-    # Erwartete Obs-Terme in Vektor-Reihenfolge. Die deploy.yaml dokumentiert sie;
-    # hier wird geprueft, dass beide uebereinstimmen (kein stilles Auseinanderlaufen).
-    needs_arm_pose = False   # Arme im Training auch beim Laufen randomisiert
+    needs_arm_pose = False   # Arme im Training randomisiert, keine Lauf-Pose noetig
 
-    _TERMS = ("base_ang_vel", "projected_gravity", "velocity_commands",
-              "joint_pos_rel", "joint_vel_rel", "last_action")
+    # Bekannte Obs-Terme -> Groesse (None: Anzahl Gelenke des Terms).
+    _KNOWN_TERMS = {
+        "base_ang_vel": 3, "projected_gravity": 3,
+        "velocity_commands": 3,           # vx, vy, vyaw
+        "velocity_height_commands": 4,    # vx, vy, vyaw, Becken-Hoehe
+        "joint_pos_rel": None, "joint_vel_rel": None, "last_action": None,
+    }
 
     def __init__(self, pdir, dep):
         super().__init__(pdir, dep)
+        # Gesteuerte Gelenke (Aktionen, last_action)
         self.joint_names = list(dep["joint_names"])
         self.idx = _motor_indices(self.joint_names)
         n = len(self.idx)
         self.default = np.array(dep["default_joint_pos"], dtype=np.float32)
         self.kp = np.array(dep["stiffness"], dtype=np.float32)
         self.kd = np.array(dep["damping"], dtype=np.float32)
-        self.action_scale = float(dep["action_scale"])
-        self.history = int(dep["history_length"])
-        self.min_norm = float(dep["commands"]["base_velocity"].get("min_norm", 0.0))
         if not (len(self.default) == len(self.kp) == len(self.kd) == n):
             raise ValueError("deploy.yaml: joint_names/default/stiffness/damping ungleich lang")
+        # action_scale: eine Zahl oder je Gelenk; action_clip: Roh-Aktion begrenzen
+        sc = np.atleast_1d(np.array(dep["action_scale"], dtype=np.float32))
+        if sc.size not in (1, n):
+            raise ValueError("deploy.yaml: action_scale braucht 1 oder len(joint_names) Werte")
+        self.action_scale = sc if sc.size == n else np.full(n, sc[0], dtype=np.float32)
+        clip = dep.get("action_clip")
+        self.action_clip = None if clip is None else float(clip)
+        # Beobachtete Gelenke (joint_pos_rel/joint_vel_rel). Fehlt obs_joint_names,
+        # sieht die Policy genau die gesteuerten Gelenke.
+        if "obs_joint_names" in dep:
+            self.obs_idx = _motor_indices(list(dep["obs_joint_names"]))
+            self.obs_default = np.array(dep["obs_default_joint_pos"], dtype=np.float32)
+            if len(self.obs_default) != len(self.obs_idx):
+                raise ValueError("deploy.yaml: obs_joint_names/obs_default_joint_pos ungleich lang")
+        else:
+            self.obs_idx, self.obs_default = self.idx, self.default
+        self.history = int(dep["history_length"])
+        self.min_norm = float(dep["commands"]["base_velocity"].get("min_norm", 0.0))
+        # Feste Becken-Hoehe fuer velocity_height_commands [m]
+        self.base_height = float(dep["commands"].get("base_height", 0.0))
 
         held = dep.get("held_joints", {}) or {}
         self.held_idx = _motor_indices(list(held.keys()))
@@ -143,17 +177,26 @@ class AgileHistoryPolicy(_VelocityPolicyBase):
         self.held_kd = np.array([float(v["kd"]) for v in held.values()], dtype=np.float32)
 
         terms = dep["observations"]
-        names = tuple(t["name"] for t in terms)
-        if names != self._TERMS:
-            raise ValueError(f"deploy.yaml: Obs-Terme {names}, erwartet {self._TERMS}")
-        self.term_dims = [int(t["dim"]) for t in terms]
-        self.term_scales = [float(t["scale"]) for t in terms]
+        self.term_names = [t["name"] for t in terms]
+        joint_dim = {"joint_pos_rel": len(self.obs_idx), "joint_vel_rel": len(self.obs_idx),
+                     "last_action": n}
+        self.term_dims, self.term_scales, self.term_clips = [], [], []
+        for t in terms:
+            name = t["name"]
+            if name not in self._KNOWN_TERMS:
+                raise ValueError(f"deploy.yaml: unbekannter Obs-Term {name}")
+            want = self._KNOWN_TERMS[name] or joint_dim[name]
+            if int(t["dim"]) != want:
+                raise ValueError(f"deploy.yaml: Obs-Term {name} hat dim {t['dim']}, erwartet {want}")
+            self.term_dims.append(want)
+            self.term_scales.append(float(t.get("scale", 1.0)))
+            self.term_clips.append(None if t.get("clip") is None else float(t["clip"]))
+        if "velocity_height_commands" in self.term_names and self.base_height <= 0.0:
+            raise ValueError("deploy.yaml: velocity_height_commands braucht commands.base_height")
         frame = sum(self.term_dims)
         if frame * self.history != self.num_obs:
             raise ValueError(f"ONNX erwartet {self.num_obs} Obs, deploy.yaml ergibt "
                              f"{self.history} x {frame}")
-        if self.term_dims[3:] != [n, n, n]:
-            raise ValueError("deploy.yaml: Gelenk-Terme passen nicht zu joint_names")
 
         self.out_idx = np.concatenate([self.idx, self.held_idx])
         self.obs = np.zeros((1, self.num_obs), dtype=np.float32)
@@ -171,20 +214,30 @@ class AgileHistoryPolicy(_VelocityPolicyBase):
         cmd = np.asarray(cmd, dtype=np.float32)
         return cmd if float(np.linalg.norm(cmd)) >= self.min_norm else np.zeros(3, np.float32)
 
+    def _term_value(self, name, q, dq, gyro, gravity, cmd):
+        if name == "base_ang_vel":
+            return np.asarray(gyro, dtype=np.float32)
+        if name == "projected_gravity":
+            return np.asarray(gravity, dtype=np.float32)
+        if name == "velocity_commands":
+            return self.command_for_policy(cmd)
+        if name == "velocity_height_commands":
+            return np.append(self.command_for_policy(cmd), np.float32(self.base_height))
+        if name == "joint_pos_rel":
+            return q[self.obs_idx] - self.obs_default
+        if name == "joint_vel_rel":
+            return dq[self.obs_idx]
+        return self.last_action                      # last_action
+
     def build_obs(self, q, dq, gyro, gravity, cmd):
-        """Obs-Vektor (1, 255) aus dem aktuellen Zustand bauen und die History fortschreiben."""
+        """Obs-Vektor (1, num_obs) aus dem aktuellen Zustand bauen und die History fortschreiben."""
         q = np.asarray(q, dtype=np.float32)
         dq = np.asarray(dq, dtype=np.float32)
-        frame = (
-            np.asarray(gyro, dtype=np.float32),
-            np.asarray(gravity, dtype=np.float32),
-            self.command_for_policy(cmd),
-            q[self.idx] - self.default,
-            dq[self.idx],
-            self.last_action,
-        )
         off = 0
-        for k, (buf, val) in enumerate(zip(self._hist, frame)):
+        for k, buf in enumerate(self._hist):
+            val = self._term_value(self.term_names[k], q, dq, gyro, gravity, cmd)
+            if self.term_clips[k] is not None:       # Isaac Lab: clip vor scale
+                val = np.clip(val, -self.term_clips[k], self.term_clips[k])
             val = val * self.term_scales[k]
             if self._fresh:
                 buf[:] = val                 # wie Isaac Lab: erster Wert fuellt die History
@@ -201,7 +254,9 @@ class AgileHistoryPolicy(_VelocityPolicyBase):
         obs = self.build_obs(q, dq, gyro, gravity, cmd)
         action = self._run(obs)
         self.last_action = action
-        q_tgt = self.default + self.action_scale * action
+        a = action if self.action_clip is None else np.clip(action, -self.action_clip,
+                                                            self.action_clip)
+        q_tgt = self.default + self.action_scale * a
         return MotorTargets(
             idx=self.out_idx,
             q=np.concatenate([q_tgt, self.held_q]),
@@ -264,6 +319,7 @@ class MjlabVelocityPolicy(_VelocityPolicyBase):
 
 _FORMATS = {
     "agile_history": AgileHistoryPolicy,
+    "agile_height_history": AgileHistoryPolicy,
     "mjlab_velocity": MjlabVelocityPolicy,
 }
 
