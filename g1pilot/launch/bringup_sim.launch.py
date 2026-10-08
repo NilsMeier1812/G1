@@ -88,6 +88,10 @@ def generate_launch_description():
                 'ee_velocity_limit': '0.5',
                 'planned_motion_alpha': '1.0',
                 'hand_only_settle_s': '1.5',
+                # Sim: Lauf-Policy AGILE braucht keine Lauf-Pose -> Arme beim
+                # Laufen frei (Marker bleiben). Zurueck zur alten Policy:
+                # 'true' hier + 'policy': 'g1_wholebody' bei loco_sim.
+                'walk_park_arms': 'false',
             }.items()
         ),
 
@@ -111,8 +115,9 @@ def generate_launch_description():
 
         # ── 4. loco_sim: Whole-Body-Loco-/Balance-Controller (ersetzt das Onboard-
         #    High-Level, das es in MuJoCo nicht gibt). Liest rt/lowstate, schreibt
-        #    rt/lowcmd (alle 29 Gelenke). Velocity-konditionierte Policy:
-        #    START BALANCING -> stehen (cmd=0), loco_cmd_vel -> laufen.
+        #    rt/lowcmd (Beine + Taille). Velocity-konditionierte Lauf-Policy
+        #    NVIDIA WBC-AGILE (policies/agile_velocity_g1, Arme frei);
+        #    START BALANCING -> PD-Stand, START WALKING + loco_cmd_vel -> laufen.
         #    Real-Bringup nutzt weiter loco_client (Unitree-High-Level).
         Node(
             package='g1pilot',
@@ -121,7 +126,7 @@ def generate_launch_description():
             output='screen',
             parameters=[{
                 'interface': 'lo',
-                'policy':    'g1_wholebody',
+                'policy':    'agile_velocity_g1',
             }]
         ),
     ]

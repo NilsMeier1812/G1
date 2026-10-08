@@ -46,7 +46,7 @@ Zwei große Kacheln, **genau eine** ist aktiv:
 
 | Kachel | Bedeutung | Topics |
 |---|---|---|
-| GEHEN (blau) | Lauf-Policy, Arme eingeklappt | `/g1pilot/start_walking` |
+| GEHEN (blau) | Lauf-Regler; real: Arme eingeklappt, Sim: Arme frei | `/g1pilot/start_walking` |
 | GREIFEN (orange) | Stand mit geplanten Füßen, Arme frei | `/g1pilot/arms/enabled` + `/g1pilot/start_balancing` |
 
 Jede Kachel hat drei klar unterscheidbare Zustände:
@@ -55,7 +55,7 @@ Jede Kachel hat drei klar unterscheidbare Zustände:
 - **wechselt …**: gestrichelter Rand in Modusfarbe. Das gibt es nur beim Wechsel
   zu GEHEN, weil die Arme erst in die Lauf-Pose fahren. Bestätigt wird der Wechsel
   durch `/g1pilot/arms/walk_ready`, spätestens nach 6 s (Timeout, wie in
-  `loco_sim`).
+  `loco_sim`). In der Sim bleiben die Arme frei, `walk_ready` kommt sofort.
 - **inaktiv**: dunkelgrau, „antippen zum Wechseln“
 
 Auf dem echten Roboter sind die Kacheln gesperrt, bis „Roboter starten“

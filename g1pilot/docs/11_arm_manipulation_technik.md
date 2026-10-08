@@ -14,7 +14,7 @@ HTTP-Brücke siehe [21_arm_api_technik.md](21_arm_api_technik.md).
 | `g1pilot/manipulation/arm_planner.py` | Gelenkraum-Wegplaner (OMPL RRTConnect + Fallback) für den Positionsspeicher |
 | `g1pilot/manipulation/pose_store.py` | Dateibasierte Ablage gespeicherter Posen |
 | `g1pilot/manipulation/arm_command.py` | Wire-Format der Live-Pose-Schnittstelle (gemeinsam mit `arm_api.py`) |
-| `g1pilot/manipulation/interactive_marker.py` | RViz-Marker, Leader-Follower-Verhalten; im WALK ausgeblendet, bei BALANCING an der Hand-TF neu erzeugt |
+| `g1pilot/manipulation/interactive_marker.py` | RViz-Marker, Leader-Follower-Verhalten; im WALK ausgeblendet (`hide_in_walk`, Sim: sichtbar), bei BALANCING an der Hand-TF neu erzeugt |
 | `g1pilot/utils/joints_names.py` | Gelenk-Indizes, -Limits, -Namen (einzige Quelle der Wahrheit) |
 
 ## Node: `arm_controller`
@@ -35,8 +35,12 @@ Der Node hält mehrere unabhängige, aber interagierende Zustände:
   an den Onboard-Regler zurückzugeben (siehe unten, „E-Stop").
 - `homing_active` / `homing_reached` — Fahrt zur Home-Pose.
 - `walk_mode` — während `WALK` (siehe [31_loco_technik.md](31_loco_technik.md))
-  hält der Controller die Arme in einer definierten Lauf-Pose, damit die
-  Lauf-Policy stabil bleibt.
+  hält der Controller die Arme in einer definierten Lauf-Pose. Nur mit
+  `walk_park_arms=true` (Standard, real immer). In der Sim setzt
+  `bringup_sim` `walk_park_arms=false`: Die AGILE-Lauf-Policy braucht keine
+  Armpose, `walk_mode` bleibt aus, die Arme halten ihre Stellung und bleiben
+  bedienbar, und `/g1pilot/arms/walk_ready` kommt sofort (die Demo-GUI wartet
+  darauf). `walk_park_arms=false` außerhalb der Sim wird mit Warnung ignoriert.
 - `_planned_motion_active` — eine geplante Bewegung (Positionsspeicher /
   Live-Kommando) fährt gerade eine vorab berechnete Wegpunktliste ab.
 

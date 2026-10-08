@@ -60,6 +60,10 @@ def generate_launch_description():
         DeclareLaunchArgument("marker_publish_default", default_value="true"),
         # Leader-Follower: Marker folgt der Hand im Idle (per Streamdeck/Topic schaltbar).
         DeclareLaunchArgument("marker_follow_ee", default_value="true"),
+        # Arme beim Laufen in die Lauf-Pose parken (true, real immer) oder frei
+        # lassen (false: Sim mit der AGILE-Lauf-Policy, setzt bringup_sim). Steuert
+        # arm_controller walk_park_arms und interactive_marker hide_in_walk.
+        DeclareLaunchArgument("walk_park_arms", default_value="true"),
         # Live-Pose-Schnittstelle (siehe g1pilot/docs/21_arm_api_technik.md): HTTP-JSON-Bruecke, damit
         # fremde Projekte OHNE ROS Zielposen einspielen koennen. Bind bewusst auf
         # 127.0.0.1 -- der Container laeuft mit network_mode: host, ein Prozess
@@ -100,6 +104,8 @@ def generate_launch_description():
                 'kd_low': ParameterValue(LaunchConfiguration("kd_low"), value_type=float),
                 'kp_wrist': ParameterValue(LaunchConfiguration("kp_wrist"), value_type=float),
                 'kd_wrist': ParameterValue(LaunchConfiguration("kd_wrist"), value_type=float),
+                'walk_park_arms': ParameterValue(
+                    LaunchConfiguration("walk_park_arms"), value_type=bool),
             }],
             output='screen'
         ),
@@ -129,6 +135,8 @@ def generate_launch_description():
                     LaunchConfiguration("marker_publish_default"), value_type=bool),
                 'marker_follow_ee': ParameterValue(
                     LaunchConfiguration("marker_follow_ee"), value_type=bool),
+                'hide_in_walk': ParameterValue(
+                    LaunchConfiguration("walk_park_arms"), value_type=bool),
             }],
             output='screen'
         ),

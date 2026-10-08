@@ -1,0 +1,58 @@
+# Deploy-Config der AGILE-Lauf-Policy "Velocity-G1-History-v0" (NVIDIA WBC-AGILE).
+# Alle Werte stammen aus der Trainings-Config im AGILE-Repo (Commit 6830cf9):
+#   agile/rl_env/tasks/locomotion/g1/velocity_history_env_cfg.py  (Obs, Aktionen, Kommandos)
+#   agile/rl_env/assets/robots/unitree_g1.py  G1_29DOF_DELAYED_DC_MOTOR (Default-Pose, kp/kd)
+# Herkunft, Lizenz und Konvertierung: siehe ATTRIBUTION.md.
+format: agile_history
+policy_file: policy.onnx
+step_dt: 0.02            # 50 Hz (controller_freq im Training)
+history_length: 5        # 5 Zeitschritte je Obs-Term
+action_scale: 0.5        # q_target = default_joint_pos + action_scale * action
+
+# Von der Policy gesteuerte Gelenke in der Reihenfolge der Policy (= Isaac-Lab-
+# Artikulationsreihenfolge des G1). Gilt fuer joint_pos_rel, joint_vel_rel,
+# last_action und die Aktionen. Die Zuordnung zu den Unitree-Motorindizes
+# macht der Loader ueber die Gelenknamen (g1pilot.utils.joints_names).
+joint_names:
+  - left_hip_pitch_joint
+  - right_hip_pitch_joint
+  - left_hip_roll_joint
+  - right_hip_roll_joint
+  - waist_roll_joint
+  - left_hip_yaw_joint
+  - right_hip_yaw_joint
+  - waist_pitch_joint
+  - left_knee_joint
+  - right_knee_joint
+  - left_ankle_pitch_joint
+  - right_ankle_pitch_joint
+  - left_ankle_roll_joint
+  - right_ankle_roll_joint
+default_joint_pos: [-0.1, -0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3, 0.3, -0.2, -0.2, 0.0, 0.0]
+stiffness:         [100.0, 100.0, 100.0, 100.0, 300.0, 100.0, 100.0, 300.0, 200.0, 200.0, 20.0, 20.0, 20.0, 20.0]
+damping:           [2.5, 2.5, 2.5, 2.5, 5.0, 2.5, 2.5, 5.0, 5.0, 5.0, 0.2, 0.2, 0.1, 0.1]
+
+# Nicht von der Policy gesteuert, im Training aber auf der Default-Pose gehalten
+# (kein Aktions-Term, nicht randomisiert). loco_sim haelt sie waehrend WALK.
+held_joints:
+  waist_yaw_joint: {q: 0.0, kp: 300.0, kd: 5.0}
+
+# Obs-Vektor (255 = 5 x 51): Terme in dieser Reihenfolge, je Term die 5 Zeitschritte
+# alt -> neu hintereinander (AGILE flatten_observation_group: Term fuer Term,
+# (N, 5, dim) -> (N, 5*dim)). Nach einem Reset ist die History mit dem ersten
+# Messwert gefuellt (Isaac-Lab-CircularBuffer).
+observations:
+  - {name: base_ang_vel, dim: 3, scale: 0.2}        # Gyro, Body-Frame
+  - {name: projected_gravity, dim: 3, scale: 1.0}   # aufrecht = [0, 0, -1]
+  - {name: velocity_commands, dim: 3, scale: 1.0}   # vx, vy [m/s], vyaw [rad/s]
+  - {name: joint_pos_rel, dim: 14, scale: 1.0}      # q - default_joint_pos
+  - {name: joint_vel_rel, dim: 14, scale: 0.05}     # dq
+  - {name: last_action, dim: 14, scale: 1.0}        # letzte Roh-Aktion
+
+commands:
+  base_velocity:
+    ranges:                 # Trainingsbereich (UniformNullVelocityCommandCfg)
+      lin_vel_x: [-0.5, 0.5]
+      lin_vel_y: [-0.5, 0.5]
+      ang_vel_z: [-1.0, 1.0]
+    min_norm: 0.1           # ||cmd|| < 0.1 -> 0 (wie min_vel_norm im Training)

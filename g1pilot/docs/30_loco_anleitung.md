@@ -27,8 +27,11 @@ eigener Onboard-Regler, angesprochen über `loco_client`.
    lassen sich parallel über die Marker bewegen.
 2. **WALK** → der Bildschirm-Joystick (bzw. echter Controller auf real) gibt
    Vorwärts/Seitwärts/Drehen vor.
-3. Joystick loslassen → der Roboter bremst ab und geht zurück in den
-   stationären Stand.
+3. Joystick loslassen → der Roboter bremst ab und bleibt stehen. In der Sim
+   steht dann die Lauf-Policy am Platz und macht kleine Ausgleichsschritte.
+   Für den stationären Stand mit geplanten Füßen **START BALANCING** drücken:
+   Die Sim lässt die Policy erst ausbremsen und übergibt nach etwa einer
+   Sekunde an den Stand-Regler.
 
 Über die Kommandozeile:
 
@@ -74,4 +77,4 @@ bleibt stehen). Details und Sicherheitsablauf für echte Hardware:
 | WALK-Klick ohne Wirkung | Erst START BALANCING, dann WALK — WALK wird sonst mit Warnung ignoriert. |
 | Roboter fällt beim Eintritt in BALANCE | (Sim) Prüfen, ob `USE_JOYSTICK=0` gesetzt ist, sofern kein Gamepad im Container hängt. |
 | Roboter reagiert nicht auf den Joystick | Ist WALK aktiv (nicht nur BALANCING)? Kommt der `loco_cmd_vel`-Stream regelmäßig an (Deadman-Timeout)? |
-| Arme hängen seltsam beim Loslaufen | Normal für kurze Zeit: die Arme werden erst in eine definierte Lauf-Pose gebracht, bevor der Lauf-Regler startet. |
+| Arme hängen seltsam beim Loslaufen | Echter Roboter: normal für kurze Zeit, die Arme werden erst in eine definierte Lauf-Pose gebracht, bevor der Lauf-Regler startet. In der Sim bleiben die Arme frei und behalten ihre Stellung. |

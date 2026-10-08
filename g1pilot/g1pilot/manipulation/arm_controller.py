@@ -382,6 +382,18 @@ class ArmController(Node):
         self.walk_left  = np.array(self.get_parameter("walk_left").value,  dtype=float)
         self.walk_right = np.array(self.get_parameter("walk_right").value, dtype=float)
         self.walk_mode = False
+        # walk_park_arms=false (Sim mit der AGILE-Lauf-Policy, siehe bringup_sim):
+        # Arme beim Laufen NICHT in die Lauf-Pose parken. Die Policy wurde mit
+        # staendig bewegten Armen trainiert und braucht keine bestimmte Armpose ->
+        # die Arme halten ihre Stellung und bleiben per Marker/Kommando bedienbar
+        # (z.B. eine Box tragen). walk_ready kommt dann sofort.
+        # NUR SIM: Real fuehrt beim Laufen Unitrees Onboard-Regler -- dort bleibt
+        # es immer beim Parken, egal was der Parameter sagt.
+        self.declare_parameter("walk_park_arms", True)
+        self.walk_park_arms = bool(self.get_parameter("walk_park_arms").value)
+        if not self.walk_park_arms and not is_sim_mode():
+            self.get_logger().warn("walk_park_arms=false gilt nur in der Sim -> real: Arme parken.")
+            self.walk_park_arms = True
         # Sobald die Arme die Lauf-Pose erreicht haben, meldet der Controller das per
         # /g1pilot/arms/walk_ready -> loco_sim laeuft erst DANN los (Arme aufgeraeumt).
         # Toleranz etwas lockerer als die Homing-Toleranz (die Haltepose muss nicht
@@ -1195,6 +1207,15 @@ class ArmController(Node):
         werden waehrend WALK ignoriert), damit die Lauf-Policy stabil bleibt."""
         if not msg.data or self.walk_mode:
             return
+        if not self.walk_park_arms:
+            # Arme frei (Sim, AGILE-Policy): nichts parken, Marker/Kommandos wirken
+            # weiter. Arme aktiv halten (sonst haelt die Bridge sie in der Null-
+            # Pose) und sofort walk_ready melden (Demo-GUI wartet darauf).
+            self._sim_auto_enable_arms("WALK")
+            self._walk_ready_sent = True
+            self.walk_ready_publisher.publish(Bool(data=True))
+            self.get_logger().info("WALK-Modus: Arme bleiben frei (walk_park_arms=false).")
+            return
         self.walk_mode = True
         self.homing_active = False
         self.homing_reached = False
@@ -1221,7 +1242,14 @@ class ArmController(Node):
     def _on_balance_mode(self, msg: Bool):
         """BALANCING: Arme wieder freigeben (rviz/Marker). Sie HALTEN ihre aktuelle
         Stellung, bis der Nutzer einen Marker zieht."""
-        if not msg.data or not self.walk_mode:
+        if not msg.data:
+            return
+        if not self.walk_mode:
+            # Arme waren beim Laufen frei (walk_park_arms=false): nur walk_ready
+            # zuruecknehmen, damit das naechste START WALKING wieder neu meldet.
+            if self._walk_ready_sent:
+                self._walk_ready_sent = False
+                self.walk_ready_publisher.publish(Bool(data=False))
             return
         self.walk_mode = False
         self.homing_active = False

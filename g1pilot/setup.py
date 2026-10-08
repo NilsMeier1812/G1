@@ -57,7 +57,11 @@ setup(
         (f'share/{package_name}/pipelines',
             expand(['pipelines/*.yaml'])),
 
-        # Whole-Body-Loco-Policy fuer loco_sim (unitree_rl_mjlab G1 Velocity).
+        # Lauf-Policy fuer loco_sim (Default): NVIDIA WBC-AGILE Velocity-G1-History.
+        (f'share/{package_name}/policies/agile_velocity_g1',
+            expand(['policies/agile_velocity_g1/*.onnx', 'policies/agile_velocity_g1/*.yaml',
+                    'policies/agile_velocity_g1/*.md', 'policies/agile_velocity_g1/LICENSE'])),
+        # Legacy-Lauf-Policy (unitree_rl_mjlab G1 Velocity), per loco_sim policy:=g1_wholebody.
         (f'share/{package_name}/policies/g1_wholebody',
             expand(['policies/g1_wholebody/*.onnx', 'policies/g1_wholebody/*.yaml',
                     'policies/g1_wholebody/*.md', 'policies/g1_wholebody/LICENSE'])),

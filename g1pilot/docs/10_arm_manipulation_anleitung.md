@@ -47,16 +47,28 @@ Solange ein Marker nicht gezogen wird, folgt er standardmäßig der Hand
 (Leader-Follower) — nach einer fremden Bewegung (Homing, Positionsspeicher)
 "springt" er also nicht, sondern schleicht sich unauffällig nach.
 
-Im Gehen-Modus (`/g1pilot/start_walking`) sind die Marker ausgeblendet — die
-Arme gehören dann der Lauf-Pose, und die schwingenden Hände würden die Marker
-nur hinterherspringen lassen. Beim Wechsel zu Greifen bzw. START BALANCING
-(`/g1pilot/start_balancing`) erscheinen sie wieder an der aktuellen Handposition.
+Im Gehen-Modus (`/g1pilot/start_walking`) kommt es auf den Lauf-Regler an:
+
+- **Simulation** (Lauf-Policy AGILE): Die Arme bleiben frei. Sie behalten ihre
+  Stellung, die Marker bleiben sichtbar und ziehbar, man kann also z. B. eine
+  Box halten und dabei gehen. Nur das Nachführen der Marker pausiert, bis man
+  wieder zu Greifen wechselt. Die Taille bewegt sich beim Laufen mit, die Hände
+  wandern dadurch um einige Zentimeter mit dem Oberkörper.
+- **Echter Roboter** (Unitree-Onboard-Regler): Die Arme fahren in die Lauf-Pose
+  und die Marker sind ausgeblendet. Beim Wechsel zu Greifen bzw. START
+  BALANCING (`/g1pilot/start_balancing`) erscheinen sie wieder an der aktuellen
+  Handposition.
+
+Gesteuert wird das über das Launch-Argument `walk_park_arms` von
+`manipulation_launcher.launch.py` (`bringup_sim` setzt `false`, real gilt
+immer `true`).
 
 **3. Home-Position**
 
 Button **HOMING ARMS** (Demo-GUI: **Grundstellung**) fährt beide Arme geplant
 in die Lauf-Pose: Arme neben dem Körper, Hände auf Hüfthöhe (nur bei aktiver
-Manipulation). Es ist dieselbe Pose, die die Arme beim Gehen halten.
+Manipulation). Es ist dieselbe Pose, die die Arme auf dem echten Roboter beim
+Gehen halten.
 
 **4. Positionsspeicher — Posen sichern und wieder anfahren**
 
