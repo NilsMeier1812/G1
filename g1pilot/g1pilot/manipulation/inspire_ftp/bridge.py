@@ -118,17 +118,18 @@ class InspireFtpBridge(Node):
         # ── Positionsspeicher-Anbindung (siehe manipulation/arm_controller.py) ──
         #  hand_state: aktuelle 6 Fingerwinkel je Hand (angle_act, 0..1000) RAUS,
         #  damit arm_controller sie beim Speichern einer Pose mitnehmen kann.
-        #  hand_goal: gespeicherte 6 Winkel je Hand REIN, zum Wiederherstellen.
+        #  finger_goal: gespeicherte 6 Winkel je Hand REIN, zum Wiederherstellen.
+        #  (Nicht hand_goal: das ist das PoseStamped-Armziel des Markers.)
         self.hand_state_pub = {
             "left":  self.create_publisher(Float32MultiArray, "/g1pilot/hand_state/left", 10),
             "right": self.create_publisher(Float32MultiArray, "/g1pilot/hand_state/right", 10),
         }
         self.create_subscription(
-            Float32MultiArray, "/g1pilot/hand_goal/left",
-            lambda m: self._on_hand_goal("left", m), 10)
+            Float32MultiArray, "/g1pilot/finger_goal/left",
+            lambda m: self._on_finger_goal("left", m), 10)
         self.create_subscription(
-            Float32MultiArray, "/g1pilot/hand_goal/right",
-            lambda m: self._on_hand_goal("right", m), 10)
+            Float32MultiArray, "/g1pilot/finger_goal/right",
+            lambda m: self._on_finger_goal("right", m), 10)
 
         # ── ROS-Pendant zum Controller-WebSocket (fuer die Qt-Demo-GUI) ──────
         #  hand_cmd: dieselben JSON-Befehle wie ws://…:8766 (set_angle, set_force,
@@ -262,14 +263,14 @@ class InspireFtpBridge(Node):
             out[side] = st
         self.hand_status_pub.publish(String(data=json.dumps(out)))
 
-    def _on_hand_goal(self, side: str, msg: Float32MultiArray):
+    def _on_finger_goal(self, side: str, msg: Float32MultiArray):
         """Gespeicherte Handstellung wiederherstellen: 6 Sollwinkel (0..1000)
         setzen (siehe arm_controller._publish_hand_goals). Hand wird dazu
         aktiviert."""
         vals = list(msg.data)
         if len(vals) != 6:
             self.get_logger().warn(
-                f"hand_goal/{side} ignoriert: erwarte 6 Werte, bekam {len(vals)}.")
+                f"finger_goal/{side} ignoriert: erwarte 6 Werte, bekam {len(vals)}.")
             return
         hand = self.models["right"] if side == "right" else self.models["left"]
         hand.set_enabled(True)
