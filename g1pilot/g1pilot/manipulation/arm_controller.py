@@ -436,7 +436,9 @@ class ArmController(Node):
             String, "/g1pilot/pose_store/save/status", 10)
 
         # Hand-Ist-Zustand von der inspire-Bridge (nur zum SPEICHERN der
-        # Handposition) und Hand-Ziel zurueck (zum Wiederherstellen). Laeuft die
+        # Handposition) und Finger-Ziel zurueck (zum Wiederherstellen). Eigenes
+        # Topic finger_goal: /g1pilot/hand_goal/<side> ist das PoseStamped-
+        # Armziel (Marker), ein zweiter Nachrichtentyp darauf kollidiert. Laeuft die
         # Bridge nicht, bleibt _hand_state None -> Handposition wird uebersprungen.
         self.create_subscription(
             Float32MultiArray, "/g1pilot/hand_state/left",
@@ -444,9 +446,9 @@ class ArmController(Node):
         self.create_subscription(
             Float32MultiArray, "/g1pilot/hand_state/right",
             lambda m: self._on_hand_state("right", m), 10)
-        self.pub_hand_goal = {
-            "left": self.create_publisher(Float32MultiArray, "/g1pilot/hand_goal/left", 10),
-            "right": self.create_publisher(Float32MultiArray, "/g1pilot/hand_goal/right", 10),
+        self.pub_finger_goal = {
+            "left": self.create_publisher(Float32MultiArray, "/g1pilot/finger_goal/left", 10),
+            "right": self.create_publisher(Float32MultiArray, "/g1pilot/finger_goal/right", 10),
         }
 
         self._init_robot_interface()
@@ -1313,13 +1315,13 @@ class ArmController(Node):
 
     def _publish_hand_goals(self, hand_goals: dict) -> None:
         """Gespeicherte Handstellungen an die inspire-Bridge senden (setzt dort
-        alle 6 DOF je Hand, siehe bridge.py /g1pilot/hand_goal)."""
+        alle 6 DOF je Hand, siehe bridge.py /g1pilot/finger_goal)."""
         for side, vals in hand_goals.items():
             if vals is None:
                 continue
             m = Float32MultiArray()
             m.data = [float(v) for v in vals]
-            self.pub_hand_goal[side].publish(m)
+            self.pub_finger_goal[side].publish(m)
             self.get_logger().info(f"Handposition ({side}) wiederhergestellt.")
 
     def _publish_save_status(self, state: str, *, req_id: str = "", **kw) -> None:
