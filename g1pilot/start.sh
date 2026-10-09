@@ -254,6 +254,13 @@ else
   export G1_INSPIRE_HANDS="$REPLY_VALUE"
   ask_hand_browser 3b
 
+  # ── 3c) PS4-Controller fuer den Oberkoerper (Arme + Haende, kein Laufen) ─
+  #   Siehe docs/43_ps4_controller.md. Braucht /dev/input auf dem Host.
+  ask_menu "3c) PS4-Controller fuer Arme + Haende? (kein Laufen)" 2 "${G1_PS4_ARMS:-}" \
+    "Ja   — Controller steuert Haende (Steuerkreuz waehlt die Hand)|1" \
+    "Nein — ohne Controller|0"
+  export G1_PS4_ARMS="$REPLY_VALUE"
+
   # ── 4) Navigation ─────────────────────────────────────────────────────
   ask_menu "4) Navigation mitstarten? (Planer + Stationen / AUTO NAV)" 2 "${G1_ENABLE_NAV:-}" \
     "Ja   — Nav-Stack an (erzwingt RViz)|1" \
@@ -306,6 +313,8 @@ else
   _nav_lbl=$( [ "${G1_ENABLE_NAV}" = "1" ] && echo "an (dijkstra + nav2point + Sim-Glue)" || echo "aus" )
   echo -e "   Navigation     : ${G}G1_ENABLE_NAV=${G1_ENABLE_NAV}${R} ${DIM}(${_nav_lbl})${R}"
   echo -e "   Oberflaeche    : ${G}G1_GUI=${G1_GUI}${R}"
+  _ps4_lbl=$( [ "${G1_PS4_ARMS}" = "1" ] && echo "an (Arme + Haende, kein Laufen)" || echo "aus" )
+  echo -e "   PS4-Controller : ${G}G1_PS4_ARMS=${G1_PS4_ARMS}${R} ${DIM}(${_ps4_lbl})${R}"
   [ "${#PASSTHRU[@]}" -gt 0 ] && echo -e "   compose-Args   : ${G}${PASSTHRU[*]}${R}"
   echo
 fi
@@ -423,6 +432,20 @@ if [ -z "${COMPOSE_FILE:-}" ]; then
   fi
   export COMPOSE_FILE="$_cf"
   echo -e "${G}[start] Compose-Dateien: ${COMPOSE_FILE}${R}"
+fi
+# PS4-Controller (nur Sim): Container braucht /dev/input -> Zusatz-Datei.
+if [ "$PROFILE" = "sim" ] && [ "${G1_PS4_ARMS:-0}" = "1" ]; then
+  if [ -d /dev/input ]; then
+    case ":$COMPOSE_FILE:" in
+      *:docker-compose.ps4.yml:*) ;;
+      *) export COMPOSE_FILE="$COMPOSE_FILE:docker-compose.ps4.yml" ;;
+    esac
+    echo -e "${G}[start] PS4-Controller: ${COMPOSE_FILE}${R}"
+    ls /dev/input/by-id/*event-joystick >/dev/null 2>&1 || \
+      echo -e "${Y}[start] Hinweis: noch kein Controller sichtbar -- jetzt koppeln/anstecken geht auch spaeter.${R}"
+  else
+    echo -e "${Y}[start] WARN: /dev/input fehlt (WSL?) -- PS4-Controller nicht verfuegbar.${R}"
+  fi
 fi
 # Laut warnen, wenn die Sim-Container keine GPU bekommen (z.B. NVIDIA ohne
 # Container Toolkit) -- sonst faellt das CPU-Rendering nur an den FPS auf.

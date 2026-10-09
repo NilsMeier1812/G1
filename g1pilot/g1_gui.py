@@ -768,6 +768,7 @@ class SimFrame(tk.Frame):
         self.v_gui = tk.StringVar(value=st.get("gui", "demo"))
         self.v_hands = tk.BooleanVar(value=st.get("hands", True))
         self.v_nav = tk.BooleanVar(value=st.get("nav", False))
+        self.v_ps4 = tk.BooleanVar(value=st.get("ps4", False))
         self.v_rviz = tk.BooleanVar(value=st.get("rviz", False))
         self._rviz_own = None   # eigene RViz-Wahl, solange Navigation RViz erzwingt
         self.v_open_guis = tk.BooleanVar(value=st.get("open_guis", False))
@@ -793,6 +794,8 @@ class SimFrame(tk.Frame):
         self._open_row, self._hand_hint = hand_gui_rows(hand_box, self.v_open_guis)
         toggle_row(s, "Navigation", self.v_nav,
                    "Planer + Stationen / AUTO NAV in der Demo-GUI")
+        toggle_row(s, "PS4-Controller", self.v_ps4,
+                   "steuert Arme + Hände (kein Laufen); Belegung: docs/43_ps4_controller.md")
         self._rviz_row = toggle_row(s, "RViz", self.v_rviz,
                                     "Zusatzfenster mit TF/Markern; MuJoCo-Fenster kommt immer")
         for v in (self.v_hands, self.v_gui, self.v_nav):
@@ -838,7 +841,7 @@ class SimFrame(tk.Frame):
         save_settings("sim", {
             "env": env_name, "gui": gui, "hands": hands, "nav": self.v_nav.get(),
             "rviz": self.v_rviz.get() if self._rviz_own is None else self._rviz_own,
-            "open_guis": self.v_open_guis.get(), "rt": rt,
+            "open_guis": self.v_open_guis.get(), "rt": rt, "ps4": self.v_ps4.get(),
         })
 
         env = os.environ.copy()
@@ -849,6 +852,7 @@ class SimFrame(tk.Frame):
         env["OPEN_GUIS"] = "true" if (hands and gui == "streamdeck"
                                       and self.v_open_guis.get()) else "false"
         env["G1_ENABLE_NAV"] = "1" if self.v_nav.get() else "0"
+        env["G1_PS4_ARMS"] = "1" if self.v_ps4.get() else "0"
         env["USE_RVIZ"] = "true" if self.v_rviz.get() else "false"
         env["SIM_REALTIME_FACTOR"] = rt
 

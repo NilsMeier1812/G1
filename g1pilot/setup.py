@@ -88,6 +88,11 @@ setup(
             'ui_interface = g1pilot.teleoperation.ui_interface:main',
             # Vereinfachte Demo-Oberflaeche (Konzept), Auswahl via G1_GUI=demo.
             'demo_gui = g1pilot.teleoperation.demo_gui:main',
+            # PS4-Controller fuer den Oberkoerper (nur Arme/Haende, kein Laufen):
+            # evdev -> /g1pilot/ps4/joy (feste Belegung) -> Hand-Ziele/Hand-Aktionen.
+            # Siehe g1pilot/docs/43_ps4_controller.md, Start via G1_PS4_ARMS=1.
+            'ps4_joystick = g1pilot.teleoperation.ps4_joystick:main',
+            'ps4_arm_teleop = g1pilot.teleoperation.ps4_arm_teleop:main',
 
             # Navigation Nodes
             'loco_client = g1pilot.navigation.loco_client:main',

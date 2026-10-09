@@ -57,6 +57,9 @@ from g1pilot.teleoperation.ui_interface import (
     StreamDeck, VirtualJoystick, PoseSaveDialog, PoseLoadDialog,
 )
 from g1pilot.teleoperation.hand_panel import HandPanel
+from g1pilot.teleoperation.hand_jog import (
+    JOG_FRAME, JOG_TF, JOG_SPEEDS, lead_limits, jog_step,
+)
 
 WALK = "walk"
 MANIP = "manip"
@@ -91,22 +94,10 @@ NAV_DONE_COLOR = "#66bb6a"
 
 # »Hand bewegen« (Joystick + Hoch/Runter-Schieber): kartesische Hand-Ziele im
 # pelvis-Frame auf /g1pilot/hand_goal/<side> -- dieselbe Schnittstelle wie der
-# RViz-Marker; der arm_controller loest per IK (inkl. Kollisions-Gate).
-JOG_FRAME = "pelvis"
-JOG_TF = {"left": "left_hand_point_contact", "right": "right_hand_point_contact"}
+# RViz-Marker; der arm_controller loest per IK (inkl. Kollisions-Gate). Tempo,
+# Vorlauf und Jog-Mathematik teilt sich die GUI mit dem PS4-Controller
+# (teleoperation/hand_jog.py).
 JOG_SIDES = {"Links": ("left",), "Rechts": ("right",), "Beide": ("left", "right")}
-# Tempo bei Vollausschlag: (Verschieben m/s, Drehen rad/s).
-JOG_SPEEDS = {"Langsam": (0.05, math.radians(20)),
-              "Normal":  (0.15, math.radians(45)),
-              "Schnell": (0.30, math.radians(90))}
-# Das Ziel laeuft der echten Hand hoechstens so weit voraus (JOG_LEAD_S x Tempo,
-# mindestens JOG_MIN_LEAD_*). Sonst wuerde es weiterwandern, wenn der Arm nicht
-# folgen kann (Gelenkgrenze, Tisch). Zu knapp darf es nicht sein: der
-# arm_controller glaettet Ziele (ik_goal_filter_alpha), die Hand haengt bei
-# hohem Tempo einige cm hinterher -- ein fester kleiner Vorlauf bremste sie aus.
-JOG_LEAD_S = 0.5
-JOG_MIN_LEAD_M = 0.04
-JOG_MIN_LEAD_RAD = math.radians(15)
 
 # »Sim beenden«: Trigger-Datei im bind-gemounteten Repo (docker-compose:
 # .:/ros2_ws/src/g1pilot). Der Host-Watcher docker/sim_shutdown_watcher.sh
@@ -114,48 +105,6 @@ JOG_MIN_LEAD_RAD = math.radians(15)
 SIM_SHUTDOWN_TRIGGER = "/ros2_ws/src/g1pilot/.sim_shutdown_request"
 QUIT_CONFIRM_MS = 4000      # so lange gilt der erste Klick als »scharf«
 QUIT_ACK_TIMEOUT_MS = 3000  # Watcher loescht die Datei -> sonst Hinweis
-
-
-def _qmul(a, b):
-    ax, ay, az, aw = a
-    bx, by, bz, bw = b
-    return (aw * bx + ax * bw + ay * bz - az * by,
-            aw * by - ax * bz + ay * bw + az * bx,
-            aw * bz + ax * by - ay * bx + az * bw,
-            aw * bw - ax * bx - ay * by - az * bz)
-
-
-def _qconj(q):
-    return (-q[0], -q[1], -q[2], q[3])
-
-
-def _qfrom_rotvec(rx, ry, rz):
-    """Drehvektor (Achse * Winkel, rad) -> Quaternion."""
-    ang = math.sqrt(rx * rx + ry * ry + rz * rz)
-    if ang < 1e-12:
-        return (0.0, 0.0, 0.0, 1.0)
-    s = math.sin(ang / 2) / ang
-    return (rx * s, ry * s, rz * s, math.cos(ang / 2))
-
-
-def _qangle(a, b):
-    """Drehwinkel zwischen zwei Orientierungen (rad)."""
-    d = abs(sum(x * y for x, y in zip(a, b)))
-    return 2.0 * math.acos(min(1.0, d))
-
-
-def _qslerp(a, b, t):
-    d = sum(x * y for x, y in zip(a, b))
-    if d < 0.0:
-        b, d = tuple(-x for x in b), -d
-    if d > 0.9995:
-        q = tuple(x + t * (y - x) for x, y in zip(a, b))
-    else:
-        th = math.acos(d)
-        sa, sb = math.sin((1 - t) * th), math.sin(t * th)
-        q = tuple((sa * x + sb * y) / math.sin(th) for x, y in zip(a, b))
-    n = math.sqrt(sum(x * x for x in q))
-    return tuple(x / n for x in q)
 
 
 def _envflag(name):
@@ -1238,29 +1187,16 @@ class DemoGUI(QWidget):
         if not self._jog_targets:
             self._cancel_sequence()     # laufenden Ablauf beenden (Marker-Vorrang)
             self._status(f"Hand bewegen: {jog.side.lower()} …", MODE_COLOR[MANIP])
-        lead_m = max(JOG_MIN_LEAD_M, jog.lin_speed * JOG_LEAD_S)
-        lead_rad = max(JOG_MIN_LEAD_RAD, jog.ang_speed * JOG_LEAD_S)
-        dq = _qfrom_rotvec(*(w * dt for w in ang))
+        lead_m, lead_rad = lead_limits(jog.lin_speed, jog.ang_speed)
         missing = []
         for side in jog.sides():
             hand = self.node.hand_pose(side)
             if hand is None:
                 missing.append(side)
                 continue
-            pos, rot = hand
-            tgt = self._jog_targets.setdefault(side, [list(pos), rot])
-            # Verschieben, Vorlauf zur echten Hand begrenzen
-            p = [tgt[0][i] + lin[i] * dt for i in range(3)]
-            d = [p[i] - pos[i] for i in range(3)]
-            n = math.sqrt(sum(c * c for c in d))
-            if n > lead_m:
-                p = [pos[i] + d[i] * lead_m / n for i in range(3)]
-            # Drehen (feste Achsen -> von links multiplizieren), Vorlauf begrenzen
-            q = _qmul(dq, tgt[1])
-            err = _qangle(q, rot)
-            if err > lead_rad:
-                q = _qslerp(rot, q, lead_rad / err)
-            tgt[0], tgt[1] = p, q
+            p, q = jog_step(self._jog_targets.get(side), hand, lin, ang, dt,
+                            lead_m, lead_rad)
+            self._jog_targets[side] = [p, q]
             self.node.publish_hand_goal(side, p, q)
         if missing:
             self._status("Hand bewegen: Handposition unbekannt (TF fehlt) — "

@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 470" font-family="Helvetica, Arial, sans-serif" font-size="14">
+  <rect width="900" height="470" fill="#ffffff"/>
+  <!-- Gehaeuse -->
+  <path d="M250 150 Q450 120 650 150 Q720 160 740 240 L770 360 Q780 410 735 415 Q700 418 670 370 L620 300 L280 300 L230 370 Q200 418 165 415 Q120 410 130 360 L160 240 Q180 160 250 150 Z"
+        fill="#eceff1" stroke="#37474f" stroke-width="2"/>
+  <!-- Schultertasten -->
+  <rect x="215" y="118" width="90" height="22" rx="8" fill="#cfd8dc" stroke="#37474f"/>
+  <text x="260" y="134" text-anchor="middle" font-weight="bold">L1</text>
+  <rect x="595" y="118" width="90" height="22" rx="8" fill="#cfd8dc" stroke="#37474f"/>
+  <text x="640" y="134" text-anchor="middle" font-weight="bold">R1</text>
+  <!-- Steuerkreuz -->
+  <g transform="translate(260,210)" stroke="#37474f">
+    <rect x="-12" y="-38" width="24" height="26" fill="#1565c0" opacity="0.15"/>
+    <rect x="-12" y="12" width="24" height="26" fill="#1565c0" opacity="0.15"/>
+    <rect x="-38" y="-12" width="26" height="24" fill="#1565c0" opacity="0.15"/>
+    <rect x="12" y="-12" width="26" height="24" fill="#1565c0" opacity="0.15"/>
+  </g>
+  <text x="260" y="183" text-anchor="middle" font-size="12">▲</text>
+  <text x="260" y="246" text-anchor="middle" font-size="12">▼</text>
+  <text x="234" y="215" text-anchor="middle" font-size="12">◀</text>
+  <text x="286" y="215" text-anchor="middle" font-size="12">▶</text>
+  <!-- Symboltasten -->
+  <circle cx="640" cy="180" r="15" fill="#fff" stroke="#37474f"/><text x="640" y="185" text-anchor="middle" fill="#2e7d32">△</text>
+  <circle cx="672" cy="210" r="15" fill="#fff" stroke="#37474f"/><text x="672" y="215" text-anchor="middle" fill="#c62828">○</text>
+  <circle cx="608" cy="210" r="15" fill="#fff" stroke="#37474f"/><text x="608" y="215" text-anchor="middle" fill="#ad1457">□</text>
+  <circle cx="640" cy="240" r="15" fill="#fff" stroke="#37474f"/><text x="640" y="245" text-anchor="middle" fill="#1565c0">✕</text>
+  <!-- Mitte -->
+  <rect x="345" y="168" width="34" height="14" rx="5" fill="#cfd8dc" stroke="#37474f"/>
+  <rect x="521" y="168" width="34" height="14" rx="5" fill="#cfd8dc" stroke="#37474f"/>
+  <circle cx="450" cy="262" r="12" fill="#263238"/><text x="450" y="266" text-anchor="middle" fill="#fff" font-size="10">PS</text>
+  <rect x="385" y="160" width="130" height="60" rx="8" fill="#b0bec5" stroke="#37474f"/>
+  <!-- Sticks -->
+  <circle cx="350" cy="275" r="30" fill="#455a64"/><circle cx="350" cy="275" r="18" fill="#607d8b"/>
+  <circle cx="550" cy="275" r="30" fill="#455a64"/><circle cx="550" cy="275" r="18" fill="#607d8b"/>
+
+  <!-- Beschriftungen links -->
+  <g fill="#263238">
+    <text x="20" y="40" font-weight="bold" font-size="16">PS4-Controller → Arme + Hände (kein Laufen)</text>
+    <text x="20" y="128" font-weight="bold">L1</text><text x="50" y="128">Tempo langsamer</text>
+    <text x="20" y="175" font-weight="bold">Steuerkreuz</text>
+    <text x="20" y="193">◀ links · ▶ rechts</text>
+    <text x="20" y="211">▲ beide · ▼ gespiegelt</text>
+    <text x="20" y="440" font-weight="bold">Linker Stick</text>
+    <text x="20" y="458">Verschieben: vor/zurück + links/rechts · Drehen: kippen + schwenken</text>
+    <text x="362" y="92" text-anchor="middle" font-weight="bold" font-size="12">Share (1 s halten): Grundstellung</text>
+  </g>
+  <!-- Beschriftungen rechts -->
+  <g fill="#263238">
+    <text x="700" y="128" font-weight="bold">R1</text><text x="725" y="128">Tempo schneller</text>
+    <text x="700" y="178"><tspan font-weight="bold">△</tspan> Verschieben ↔ Drehen</text>
+    <text x="700" y="203"><tspan font-weight="bold">○</tspan> Hand öffnen</text>
+    <text x="538" y="92" text-anchor="middle" font-weight="bold" font-size="12">Options: Greifen-Modus</text>
+    <text x="700" y="228"><tspan font-weight="bold">□</tspan> Hand schließen</text>
+    <text x="700" y="253"><tspan font-weight="bold">✕</tspan> Stopp</text>
+    <text x="520" y="440" font-weight="bold">Rechter Stick</text>
+    <text x="520" y="458">Verschieben: hoch/runter · Drehen: rollen</text>
+    <text x="395" y="330" font-weight="bold" fill="#c62828">PS: NOT-HALT</text>
+  </g>
+  <line x1="450" y1="274" x2="450" y2="316" stroke="#c62828"/>
+  <line x1="350" y1="305" x2="200" y2="425" stroke="#90a4ae"/>
+  <line x1="550" y1="305" x2="600" y2="425" stroke="#90a4ae"/>
+  <line x1="362" y1="97" x2="362" y2="166" stroke="#90a4ae"/>
+  <line x1="538" y1="97" x2="538" y2="166" stroke="#90a4ae"/>
+</svg>
