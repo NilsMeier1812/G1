@@ -10,8 +10,10 @@ HTTP-Brücke siehe [21_arm_api_technik.md](21_arm_api_technik.md).
 | Datei | Rolle |
 |---|---|
 | `g1pilot/manipulation/arm_controller.py` | Hauptregler-Node (250 Hz), IK-Anwendung, Sicherheitsgates, State-Machine |
-| `g1pilot/utils/ik_solver.py` | `G1IKSolver`: Pinocchio-basierte IK, Kollisionsprüfung |
-| `g1pilot/manipulation/arm_planner.py` | Gelenkraum-Wegplaner (OMPL RRTConnect + Fallback) für den Positionsspeicher |
+| `g1pilot/utils/ik_solver.py` | `G1IKSolver`: Pinocchio-basierte IK, Selbstkollisionsprüfung (Meshes) |
+| `g1pilot/manipulation/arm_geometry.py` | Kugelmodell der Arme, Abstandsfunktion zu Objekten (Planer + Laufzeit-Gate) |
+| `g1pilot/manipulation/arm_planner.py` | Eigener Bahnplaner (Optimierung mit ortsabhängigem Abstand, RRT-Rückfall, Zeitparametrierung) |
+| `g1pilot/manipulation/arm_planner_process.py` | Planer als eigener Prozess (Zeitlimit, Abbruch, Neustart) |
 | `g1pilot/manipulation/pose_store.py` | Dateibasierte Ablage gespeicherter Posen |
 | `g1pilot/manipulation/arm_command.py` | Wire-Format der Live-Pose-Schnittstelle (gemeinsam mit `arm_api.py`) |
 | `g1pilot/manipulation/interactive_marker.py` | RViz-Marker, Leader-Follower-Verhalten; im WALK ausgeblendet, bei BALANCING an der Hand-TF neu erzeugt |
@@ -82,19 +84,15 @@ Reihenfolge (vereinfacht):
    still sein.
 5. Zielkonfiguration `q_target` je nach aktivem Modus bestimmen: `walk_mode`
    ohne `_walk_transition` (Lauf-Pose halten) > `homing_active`/`homing_reached`
-   (Home-Pose) > `_planned_motion_active` (nächster Wegpunkt der geplanten
-   Bahn) > `_walk_transition` (Weg in die Lauf-Pose wird noch geplant →
+   (Home-Pose) > `_planned_motion_active` (Sollwert der zeitparametrierten
+   Bahn zur aktuellen Bahnzeit) > `_walk_transition` (Weg in die Lauf-Pose wird noch geplant →
    stillhalten) > sonst IK-Ergebnis aus dem reaktiven Servoing
    (`ik_solver.get_joint_targets`).
 6. Geschwindigkeitslimit (`arm_velocity_limit`) + exponentielle Glättung
    (`ik_alpha`).
 7. Kartesisches Geschwindigkeitslimit (`_limit_cartesian_speed`, überwacht
    Hand-TCPs + Ellbogen).
-8. Kollisions-Gate (`_apply_collision_gate`) — hält bei Kollision auf der
-   vorherigen Position an. Steckt der aktuelle Zustand schon echt in einem
-   Umgebungs-Objekt (z.B. Roboter seit dem Anfahren näher an den Tisch
-   geraten), sind Schritte erlaubt, die nicht tiefer hineinführen
-   (`_escaping_environment`, Maß: `ik_solver.environment_violation`).
+8. Kollisions-Gate (`_apply_collision_gate`), siehe unten „Laufzeit-Gate".
 9. Schreiben: bei `use_robot=true` `rt/arm_sdk` mit
    Schwerkraft-Feedforward-Drehmoment (`_arm_gravity_tau`,
    Parameter `gravity_comp`), sonst `/joint_states`.
@@ -137,18 +135,23 @@ den Latch (`estop_active`); die Arme bleiben schlaff, bis
   „Planungs-Generation" (`_plan_gen`) und startet `_plan_pose_worker` in
   einem **Hintergrund-Thread** (Planung kann Sekunden dauern, darf den
   250-Hz-Regelkreis nie blockieren).
-- `_plan_pose_worker`: löst bei kartesischen Zielen zuerst die IK
-  (`ik_solver.solve_pose`), plant dann mit `arm_planner.plan_arms_joint_path`
-  einen kollisionsfreien Pfad und glättet ihn (`shortcut_path`). Ergebnis
-  geht über `DataBuffer` (threadsicher) zurück.
+- `_plan_pose_worker` (Hintergrund-Thread) schickt die Anfrage an den
+  **Planer-Prozess** (`arm_planner_process.PlannerProcess`) und wartet dort
+  blockierend (gibt das GIL frei). Kartesische Ziele löst der Prozess zuerst
+  per IK (`ik_solver.solve_pose`). Ergebnis (zeitparametrierte Trajektorie
+  `t`, `q`) geht über `DataBuffer` zurück.
 - `_poll_plan_result()`: aktiviert nur Ergebnisse der **aktuellen**
   Generation — ein Abbruch während der Planung (E-Stop, neuer Marker-Griff,
-  DISABLE) entwertet ein später eintreffendes Ergebnis race-frei.
+  DISABLE) entwertet ein später eintreffendes Ergebnis race-frei und bricht
+  die Planung im Prozess ab (`PlannerProcess.cancel`).
 - Ein/beide Arme werden **gemeinsam** als ein 7- bzw. 14-DOF-Problem
-  geplant, damit Arm-gegen-Arm-Kollision an jedem Zwischenzustand geprüft
-  ist und beide Arme später synchron über **eine geteilte Wegpunktliste**
-  abgefahren werden (`_planned_sides`, `_planned_waypoints`,
-  `_planned_wp_idx`, gemeinsamer Index im `main_loop`).
+  geplant (Arm-gegen-Arm an jedem Zwischenzustand geprüft) und über **eine
+  gemeinsame Bahnuhr** synchron abgefahren (`_planned_time`,
+  `_traj_sample`). Die Uhr läuft mit der echten Zeit, aber nur, solange das
+  Kommando der Bahn folgt (Abweichung < 0,05 rad) — hält das Laufzeit-Gate
+  an, steht auch die Bahn. Steht sie länger als 3 s, wird die Bewegung mit
+  `failed` („blockiert") beendet. Beim Abschluss loggt der Controller
+  Bahnzeit, tatsächliche Fahrzeit, Haltezeit und Regeltakt.
 
 ### `pose_store.py`
 
@@ -179,61 +182,110 @@ Pinocchio-basierter, gedämpfter Pseudo-Inverse-Löser mit:
   Körper geklappten IK-Zweig fällt,
 - Selbstkollisions-Gate (Convex-Hulls, konfigurierbare Marge,
   `arm_command_in_collision`),
-- Umgebungs-Kollisions-Gate gegen Objekte aus `/scene_markers`
-  (`environment_command_in_collision`, `sync_environment` — siehe
-  [51_navigation_technik.md](51_navigation_technik.md), Abschnitt
-  Szenen-Brücke). Geprüft werden Punkte gegen orientierte Boxen:
-  - Arm auf der Link-Achse (2× Oberarm, Ellbogen, 2× Unterarm): Marge
-    `arm_env_margin` 6 cm, hart 3 cm (≈ Linkradius), gegen **alle** Objekte.
-  - Hand-Achse (Handgelenk, Mitte, TCP): Marge 3 cm, hart 1 cm.
-  - Hand-**Oberfläche**: 80 Punkte je Hand per Farthest-Point-Sampling aus
-    den Kollisions-Meshes von Handballen und Fingern (`_sample_hand_surface`,
-    Finger in Neutralstellung, starr im `wrist_yaw_link`-Frame). Marge 3 cm,
-    hart 0,5 cm (`hand_surface_env_hard_margin` — die Punkte liegen schon auf
-    der Haut). Ohne sie sah der Check weder Finger noch Handbreite, und der
-    Planer hielt Wege für frei, auf denen die Finger mehrere cm in der
-    Tischplatte steckten.
-  - Hand-Punkte gelten nur gegen Hindernisse; Greif-Objekte darf die Hand
-    berühren (ACM, gewollt).
-  - Objekte, deren nächster Punkt weiter als `ENV_REACH_RADIUS` (1,5 m) vom
-    Becken liegt, werden schon in `sync_environment` aussortiert; die
-    Punkt-Box-Rechnung ist ein einziges Matrixprodukt (~0,4 ms je Check).
 - `solve_pose(side, T_goal, current_all)` — Einzelaufruf-Variante (kein
   gemeinsamer Solver-Zustand), genutzt vom Planungs-Thread, damit dieser
   nicht mit dem reaktiven 250-Hz-Servoing um denselben mutablen
   Pinocchio-Zustand konkurriert.
 
+## Kugelmodell (`arm_geometry.py`)
+
+Grundlage von Planer und Laufzeit-Gate gegen die Umgebung. Beim Start
+werden aus den Kollisions-Meshes der Arme Kugeln angepasst (k-means-
+Überdeckung, `fit_spheres`):
+
+- **fein** für den Abstand zu Objekten: Hand (Handballen + Finger in
+  Neutralstellung) Radius ≤ 2,2 cm, Arm ≤ 4 cm, 87 Kugeln je Arm,
+- **grob** (≤ 5 cm, ab Ellbogen, 16 Kugeln) für die Selbstkollision im Planer,
+- Körper (Rumpf, Becken, Beine) ~39 Kugeln ≤ 9 cm.
+
+Die Vorwärtskinematik der 7er-Ketten ist vektorisiert (viele
+Konfigurationen auf einmal, gegen pinocchio geprüft). Objekte aus
+`/scene_markers` sind orientierte Boxen (`Environment`); `env_dist` liefert
+den **vorzeichenbehafteten Abstand** jeder Kugel zu jeder Box samt
+Gradient. `reachable()` sortiert Objekte aus, die ein Arm von der Schulter
+aus gar nicht erreichen kann (Arbeitsplatz-Szene: 44 Teile → 4-8).
+
+Hand-Kugeln ignorieren **Greif-Objekte** (Klasse `grasp`, gewollt
+berührbar, ohne Unterscheidung nach Zielobjekt); Arm-Kugeln nicht.
+
 ## `arm_planner.py`
 
-Plant im 7- oder 14-DOF-Gelenkraum. Primäres Backend: **OMPL RRTConnect**
-(falls die Python-Bindings verfügbar sind), Fallback: ein
-handgeschriebener RRT-Connect (`_plan_rrt_connect_builtin`) — beide nutzen
-exakt dieselbe Kollisionsprüfung wie der reaktive Pfad
-(`ik_solver.arm_command_in_collision` /
-`environment_command_in_collision`), damit ein gefundener Pfad garantiert
-dieselben Sicherheitsschranken erfüllt. Ein von OMPL gelieferter Pfad wird
-zusätzlich mit derselben Segmentprüfung wie der Fallback nachvalidiert
-(`_path_segments_valid`); schlägt das fehl, springt der Aufruf auf den
-Fallback um. `shortcut_path()` glättet das Ergebnis danach zufällig
-(Shortcut-Sampling), unabhängig vom verwendeten Backend.
+Eigenes System (kein MoveIt/OMPL). Leitidee: **in der Mitte der Bewegung
+Abstand, an Start und Ziel darf es eng werden** — die Hand darf am Ende auf
+dem Tisch liegen und am Anfang dort starten, ohne dass die Bahn deshalb
+erst weit weg, dann zurück und zum Schluss auf einer Geraden fährt.
 
-Gegen die Umgebung prüft der Planer nur die **geplanten** Arme
-(`sides`-Argument von `environment_command_in_collision`): der stehende Arm
-ändert sich entlang des Pfads nicht, und läge seine Hand im Margenband am
-Tisch, wäre sonst jeder Zwischenzustand ungültig. Arm-gegen-Arm und
-Arm-gegen-Körper prüft weiterhin die Selbstkollision über die volle
-Konfiguration.
+**Abstandsbedarf je Kugel, Objekt und Bahnpunkt** (`_Problem.requirement`):
 
-Start und Ziel dürfen im Margenband liegen (nahe daran gilt dann nur die
-harte Prüfung, `BAND_RELAX_RADIUS`). Steckt der **Start** echt in einem
-Umgebungs-Objekt, darf der Pfad nahe am Start nur nicht tiefer hinein
-(`_make_escape_validity_fn`) — sonst käme der Arm dort nie heraus. Ein Ziel
-in echter Kollision wird weiter mit `goal_in_collision` abgelehnt.
+    w     = smoothstep( min(|c - c_start|, |c - c_ziel|) / relax_radius )
+    boden = min(0, Abstand derselben Kugel am näheren Endpunkt)
+    bedarf = boden + w · (clearance - boden)
 
-Da der Planungsthread parallel zum reaktiven 250-Hz-Loop auf demselben
-`ik_solver`-Objekt arbeitet, holt sich `_make_state_validity_fn` **eigene**
-Scratch-Puffer (`ik_solver.make_scratch_buffers()`) statt der Live-Puffer
-des Solvers.
+Um Start und Ziel jeder Armkugel liegt also ein glatter „Trichter"
+(`relax_radius`, Default 15 cm): dort reicht, was die Endpose selbst hat
+(Berührung, sogar leicht drin), weiter weg gilt `clearance` (Default 5 cm).
+Da der Bedarf stetig ist, entsteht keine Knickstelle in der Bahn.
+
+**Optimierung** (CHOMP-artig, `_Problem.optimize`): 24 Stützpunkte im
+Gelenkraum, Kosten = Glattheit (Geschwindigkeit + Beschleunigung) +
+TCP-Weglänge + quadratische Strafe für Unterschreitung des Bedarfs
+(Umgebung, Körper, Arm-gegen-Arm) + Anfahr-/Abfahrrichtung. Vorkonditioniert
+mit der inversen Glattheitsmatrix (Schritte bleiben glatt), Trust-Region,
+Backtracking, Strafgewicht-Fortsetzung (×5 bis zu 4×), es gewinnt die beste
+gültige Iteration.
+
+**Anfahrrichtung:** liegt das Ziel nahe an einem Hindernis (Tisch), soll
+die Hand auf den letzten `approach_len` (10 cm) entlang der Handachse
+ankommen; ist das nicht möglich, von oben. Abfahrt vom Start analog.
+
+**Rückfallkette:** (1) Gerade im Gelenkraum direkt gültig → fertig.
+(2) Optimierung von mehreren Startbahnen (gerade, angehoben,
+zurückgezogen). (3) Eigener vektorisierter RRT-Connect als Startbahn, dann
+Glättung mit schrittweise erhöhtem Abstand. (4) Reduzierter Abstand
+(×0,6 bis `min_clearance`) und Startbahn über die Lauf-Pose. Ziel in harter
+Selbstkollision oder > 2 cm in einem Objekt → `goal_in_collision`.
+
+**Abschlussprüfung:** dicht nachabgetastet (Kugelmodell) plus exakte
+Mesh-Selbstkollision (coal).
+
+**Zeitparametrierung** (`time_parameterize`): Gelenk- und kartesische
+Geschwindigkeits-/Beschleunigungsgrenzen, nahe an Objekten langsamer
+(`slow_dist`, `slow_factor`), Abtastung 0,02 s.
+
+**Zeitbudget:** `time_budget_s` (2,5 s) als **Rechenzeit** des
+Planer-Prozesses, plus Wandzeit-Obergrenze 3× Budget. Typisch 20-500 ms
+(Arbeitsplatz-Szenen), schwierige Fälle mit RRT ~2,5 s.
+
+### Planer-Prozess (`arm_planner_process.py`)
+
+Reines Python/numpy — im Controller-Prozess hielte es das GIL und der
+250-Hz-Regelkreis bekäme Aussetzer. Deshalb eigener Prozess (`spawn`), der
+beim Start dasselbe URDF lädt (IK + Kugelmodell). Ein noch ladender Prozess
+wird nicht abgebrochen (auf einem ausgelasteten Rechner dauert das Laden
+deutlich länger); eine Anfrage in dieser Zeit endet mit „Planer startet
+noch". Hängt oder stirbt er, wird er nach dem Zeitlimit beendet und beim
+nächsten Aufruf neu gestartet. `cancel()` setzt ein geteiltes Event, das
+der Planer in seinen Schleifen prüft.
+
+## Laufzeit-Gate (`_apply_collision_gate`)
+
+Pro Tick auf dem kommandierten Schritt, für Marker-Steuerung UND geplante
+Bahn:
+
+- **Umgebung (Kugelmodell, Abstände):** ein Paar (Armkugel, Objekt) unter
+  seiner Untergrenze darf sich **nicht weiter annähern** — alles andere ist
+  erlaubt. Untergrenze: Hand `gate_hand_floor` (0 = aufsetzen erlaubt),
+  Arm `gate_arm_floor` (1 cm), Hand gegen Greif-Objekte keine. Während einer
+  geplanten Fahrt zusätzlich so tief wie Start bzw. Ziel der Bahn. Ein
+  verletzender Schritt wird auf die erlaubte Richtung **projiziert** — die
+  Hand gleitet an der Oberfläche entlang, statt einzufrieren. Ein Start
+  dicht am oder minimal im Tisch blockiert damit keine Bewegung mehr (auch
+  nicht die Marker-Steuerung). Marker-Steuerung wird unter `gate_slow_dist`
+  (5 cm) verlangsamt (bis 25 %), damit die Hand sanft aufsetzt. Ein
+  billiger Vorab-Test (`_env_near`) überspringt die volle Prüfung, wenn
+  nichts in der Nähe ist.
+- **Selbstkollision (exakte Meshes, coal):** hart → halten; im Margenband
+  (3 cm) nur geplante Bahn oder Herausfahren.
 
 ## Konfiguration (Auszug, vollständige Liste in `manipulation_launcher.launch.py`)
 
@@ -243,7 +295,12 @@ des Solvers.
 | `ik_alpha`, `ik_goal_filter_alpha` | Glättung Servoing-Pfad |
 | `ik_orientation_mode` | `full` / weitere Modi, siehe `set_orientation_mode` |
 | `ik_null_space_gain` | Stärke der Nullraum-Regularisierung |
-| `planned_motion_tolerance` | Toleranz [rad], ab der ein Wegpunkt als erreicht gilt |
+| `planned_motion_tolerance` | Toleranz [rad], ab der das Bahnende als erreicht gilt |
+| `planner_clearance` / `planner_min_clearance` | Abstand in der Bahnmitte (5 cm) / Untergrenze beim Reduzieren (1,5 cm) |
+| `planner_relax_radius` | Größe des Trichters um Start und Ziel (15 cm) |
+| `planner_time_budget_s` | Rechenzeit-Budget einer Planung (2,5 s) |
+| `planner_vel_limit` / `planner_cart_vel_limit` | Tempo der geplanten Fahrt (rad/s, m/s) |
+| `gate_hand_floor` / `gate_arm_floor` / `gate_slow_dist` | Laufzeit-Gate, siehe oben |
 | `arm_api_*` | Parameter der HTTP-Brücke, siehe [21_arm_api_technik.md](21_arm_api_technik.md) |
 
 ## Bekannte Einschränkungen
