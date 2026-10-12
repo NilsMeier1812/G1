@@ -202,6 +202,7 @@ class UnitreeSdk2Bridge:
         self._have_foot_sensing = (
             self._foot_floor_gid >= 0 and self._foot_lbody >= 0 and self._foot_rbody >= 0)
         self._contact_force6 = np.zeros(6, dtype=np.float64)
+        self._foot_cache = (0.0, 0.0, 0.0, 0.0)
         if self._have_foot_sensing:
             print("[BRIDGE] Fuss-Kontakt + Basis-Geschwindigkeit -> reserve[] "
                   "(fuer loco_sim Stepping-Stop).", flush=True)
@@ -454,6 +455,13 @@ class UnitreeSdk2Bridge:
             else:
                 self.mj_data.ctrl[i] = 0.0
 
+    def cache_foot_state(self):
+        """Von der Sim-Schleife UNTER dem Lock nach jedem Schritt aufrufen
+        (freilaufender Modus): Fusskraefte/Basis-Geschwindigkeit fuer den
+        lowstate-Thread zwischenspeichern."""
+        if self._have_foot_sensing:
+            self._foot_cache = self._foot_forces_and_base_vel()
+
     def _foot_forces_and_base_vel(self):
         """Normalkraft links/rechts [N] aus den MuJoCo-Kontakten (Fuss<->Boden) +
         Basis-Linear-Geschwindigkeit (Welt) aus qvel. Genau das, was am echten G1
@@ -535,7 +543,14 @@ class UnitreeSdk2Bridge:
                 ]
 
             if self._have_foot_sensing:
-                fl, fr, vx, vy = self._foot_forces_and_base_vel()
+                # Freilaufend (weld) laeuft dieser Thread PARALLEL zu mj_step:
+                # mj_contactForce auf halb aktualisierten Kontakten -> Segfault
+                # (reproduzierbar nach ~20 s). Dort nur den Wert lesen, den die
+                # Sim-Schleife unter dem Lock nach jedem Schritt cached.
+                if self.lockstep:
+                    fl, fr, vx, vy = self._foot_forces_and_base_vel()
+                else:
+                    fl, fr, vx, vy = self._foot_cache
                 self.low_state.reserve[0] = int(min(max(fl, 0.0), 4.0e6))
                 self.low_state.reserve[1] = int(min(max(fr, 0.0), 4.0e6))
                 self.low_state.reserve[2] = int(round((min(max(vx, -10.0), 10.0) + 10.0) * 1000.0))

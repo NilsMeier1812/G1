@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import time, threading, math, json
+import os, time, threading, math, json
 import numpy as np
 import rclpy
 from rclpy.node import Node
@@ -30,7 +30,9 @@ from g1pilot.utils.ik_solver import G1IKSolver
 from g1pilot.navigation import scene_markers as sm
 from g1pilot.manipulation.pose_store import PoseStore
 from g1pilot.manipulation import arm_command as ac
-from g1pilot.manipulation.arm_planner import plan_arms_joint_path, shortcut_path
+from g1pilot.manipulation.arm_geometry import ArmGeometry, Environment, HAND_LINK_MIN
+from g1pilot.manipulation.arm_planner_process import PlannerProcess
+from g1pilot.manipulation.arm_planner import DEFAULTS as PLANNER_DEFAULTS
 
 from unitree_sdk2py.core.channel import ChannelPublisher, ChannelSubscriber
 from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowCmd_ , LowState_
@@ -160,15 +162,36 @@ class ArmController(Node):
         # bei Verletzung haelt der Arm an, statt in den Koerper zu fahren.
         self.declare_parameter("self_collision_gate", True)
         # Umgebungs-Kollisions-Gate: dieselbe Pruefung, aber gegen die Objekte
-        # aus /scene_markers (Hindernisse -> ausweichen, Greif-Objekte -> Hand
-        # darf ran, siehe ik_solver.environment_command_in_collision). Eigener
+        # aus /scene_markers, ueber das Kugelmodell (arm_geometry.py): Hand darf
+        # aufsetzen, Hand ignoriert Greif-Objekte, ein Armpunkt unter seinem
+        # Mindestabstand darf sich nicht weiter annaehern. Eigener
         # Schalter, unabhaengig von self_collision_gate (siehe g1pilot/
         # g1pilot/docs/11_arm_manipulation_technik.md (Umgebungs-Kollisionsgate)).
         self.declare_parameter("environment_collision_gate", True)
-        # Toleranz [rad], ab der ein Wegpunkt der GEPLANTEN Bewegung
-        # (Positionsspeicher, siehe g1pilot/docs/11_arm_manipulation_technik.md (Positionsspeicher)) als erreicht
-        # gilt und der naechste Wegpunkt drankommt.
+        # Toleranz [rad], ab der das Ende einer GEPLANTEN Bewegung (siehe
+        # g1pilot/docs/11_arm_manipulation_technik.md (Armplaner)) als erreicht gilt.
         self.declare_parameter("planned_motion_tolerance", 0.02)
+        # Armplaner (manipulation/arm_planner.py): Abstand zu Objekten in der
+        # MITTE einer Bewegung [m]; nahe Start und Ziel klingt er auf 0 ab
+        # (Hand darf am Ende aufliegen). Geht er nicht, wird bis
+        # planner_min_clearance reduziert.
+        self.declare_parameter("planner_clearance", float(PLANNER_DEFAULTS["clearance"]))
+        self.declare_parameter("planner_min_clearance", float(PLANNER_DEFAULTS["min_clearance"]))
+        # Abstand [m] von Start-/Zielposition eines Armpunkts, ab dem der volle
+        # Abstand gilt (Groesse des "Trichters" um Start und Ziel).
+        self.declare_parameter("planner_relax_radius", float(PLANNER_DEFAULTS["relax_radius"]))
+        self.declare_parameter("planner_time_budget_s", float(PLANNER_DEFAULTS["time_budget_s"]))
+        # Tempo der geplanten Fahrt (Gelenk rad/s, kartesisch m/s je Armpunkt).
+        self.declare_parameter("planner_vel_limit", float(PLANNER_DEFAULTS["vel_limit"]))
+        self.declare_parameter("planner_cart_vel_limit", float(PLANNER_DEFAULTS["cart_vel_limit"]))
+        # Laufzeit-Gate gegen Objekte (Kugelmodell): naeher als das [m] darf ein
+        # Armpunkt nur, wenn er sich dabei nicht weiter annaehert. Hand 0 =
+        # aufsetzen erlaubt; Arm (Ellbogen/Unterarm) etwas Abstand.
+        self.declare_parameter("gate_hand_floor", 0.0)
+        self.declare_parameter("gate_arm_floor", 0.01)
+        # Marker-Steuerung: unter diesem Abstand [m] wird die Annaeherung an ein
+        # Objekt verlangsamt (bis 25 %), damit die Hand sanft aufsetzt.
+        self.declare_parameter("gate_slow_dist", 0.05)
         # Reine Hand-Posen (nur left_hand/right_hand): so lange nach dem Senden
         # warten, bis "reached" gemeldet wird (Inspire schliesst voll in ~1.3 s).
         self.declare_parameter("hand_only_settle_s", 1.8)
@@ -293,9 +316,9 @@ class ArmController(Node):
         self._reset_after_home = False
         self._initialized = False
 
-        # Positionsspeicher (plan-execute, siehe g1pilot/docs/51_navigation_technik.md
-        # Abschnitt 9): Endpunkt wird gespeichert, die Bahn dorthin JEDES MAL
-        # neu geplant (arm_planner.plan_arms_joint_path), weil Startpose und
+        # Positionsspeicher (plan-execute, siehe g1pilot/docs/11_arm_manipulation_technik.md
+        # (Armplaner)): Endpunkt wird gespeichert, die Bahn dorthin JEDES MAL
+        # neu geplant (arm_planner.plan_arms im Planer-Prozess), weil Startpose und
         # Umgebung sich seit dem Speichern geaendert haben koennen.
         # Ablage liegt im bind-gemounteten Repo -> ueberlebt Container-Neustarts
         # (siehe pose_store.default_store_path); Pfad loggen, damit man beim
@@ -309,14 +332,17 @@ class ArmController(Node):
         self._pose_store = PoseStore()
         self.get_logger().info(f"Positionsspeicher: {self._pose_store.path}")
         self._planned_motion_active = False
-        # Gleichzeitige Ausfuehrung: EINE geteilte Wegpunktliste ueber die
-        # geplanten Arme (7 DOF je Seite, in _planned_sides-Reihenfolge
-        # konkateniert). Ein gemeinsamer Index -> beide Arme ruecken synchron
-        # weiter (siehe main_loop). _planned_sides == [] bedeutet: keine
-        # Arm-Bewegung (z.B. nur Handposition wiederherstellen).
+        # Gleichzeitige Ausfuehrung: EINE zeitparametrierte Trajektorie ueber
+        # die geplanten Arme (7 DOF je Seite, in _planned_sides-Reihenfolge
+        # konkateniert), abgetastet nach Zeit (siehe main_loop) -> beide Arme
+        # fahren synchron. _planned_sides == [] bedeutet: keine Arm-Bewegung.
         self._planned_sides = []                      # z.B. ["left","right"] oder ["right"]
-        self._planned_waypoints = None                # Liste np.ndarray(7*len(sides))
-        self._planned_wp_idx = 0
+        self._planned_traj_t = None                   # (M,) Zeitstempel [s]
+        self._planned_traj_q = None                   # (M, 7*len(sides))
+        self._planned_time = 0.0                      # Fortschritt auf der Trajektorie [s]
+        self._planned_stall_s = 0.0                   # wie lange die Uhr schon steht
+        self._planned_last_tick = None                # time.monotonic() des letzten Ticks
+        self._planned_stats = {"t0": 0.0, "ticks": 0, "held_s": 0.0}
         self._planned_pose_name = None
         self._planning_thread = None
         # Zuletzt empfangener Hand-Ist-Zustand (6 Inspire-DOF je Hand, 0..1000)
@@ -344,7 +370,21 @@ class ArmController(Node):
         self._auto_done_right = False
         self._auto_done_left = False
 
-        self.ik_solver = G1IKSolver(debug=False)
+        from ament_index_python.packages import get_package_share_directory
+        pkg_share = get_package_share_directory('g1pilot')
+        urdf_path = os.path.join(pkg_share, 'description_files', 'urdf', 'g1_29dof_inspire_ftp.urdf')
+        mesh_dir = os.path.join(pkg_share, 'description_files', 'meshes')
+        self.ik_solver = G1IKSolver(urdf_path=urdf_path, mesh_dir=mesh_dir, debug=False)
+        # Kugelmodell der Arme (Abstaende zu Objekten, siehe arm_geometry.py) fuer
+        # das Laufzeit-Gate; der Planer-Prozess baut sich dasselbe Modell.
+        self.arm_geom = ArmGeometry(self.ik_solver.model, self.ik_solver.collision_model)
+        self._env_objects = []
+        # Waehrend einer geplanten Fahrt: Start- und Zielkonfiguration (2,14) --
+        # dort darf das Gate so tief wie die Enden selbst (gleiche Regel wie
+        # der Planer). None = Marker-Betrieb.
+        self._gate_end_q14 = None
+        self._env_near_cache = (None, np.inf, None)
+        self._gate_end_cache = (None, {})
         if hasattr(self.ik_solver, "set_orientation_mode"):
             self.ik_solver.set_orientation_mode(self.ik_orientation_mode)
         # Eigener FK-Buffer fuer die Marker-Ziel-Pruefung (stoert self.data nicht).
@@ -393,6 +433,14 @@ class ArmController(Node):
             self.ik_solver.set_rest_posture("right", self.home_right)
         self.ik_solver.null_space_gain = float(self.get_parameter("ik_null_space_gain").value)
 
+        # Armplaner als EIGENER Prozess (hielte im Regelprozess das GIL und
+        # braechte den 250-Hz-Takt aus dem Tritt). Startet im Hintergrund.
+        self._planner = PlannerProcess(
+            urdf_path, mesh_dir,
+            rest={"left": self.home_left, "right": self.home_right},
+            null_space_gain=self.ik_solver.null_space_gain, logger=self.get_logger())
+        self._planner.start_async()
+
         # WALK-Pose: waehrend WALK haelt der arm_controller die Arme HIER (= Policy-
         # Default-Armpose des g1_wholebody-Policy). Headless validiert: die Lauf-Policy
         # laeuft mit fixen Armen NUR stabil, wenn sie nahe dieser Pose sind (Arme unten
@@ -414,6 +462,10 @@ class ArmController(Node):
         if not self.walk_park_arms and not is_sim_mode():
             self.get_logger().warn("walk_park_arms=false gilt nur in der Sim -> real: Arme parken.")
             self.walk_park_arms = True
+        # Uebergang in die Lauf-Pose laeuft noch als GEPLANTE Bewegung (um Tisch/
+        # Hindernisse herum, wie HOMING). Erst danach haelt der WALK-Zweig in
+        # main_loop die Lauf-Pose und meldet walk_ready.
+        self._walk_transition = False
         # Sobald die Arme die Lauf-Pose erreicht haben, meldet der Controller das per
         # /g1pilot/arms/walk_ready -> loco_sim laeuft erst DANN los (Arme aufgeraeumt).
         # Toleranz etwas lockerer als die Homing-Toleranz (die Haltepose muss nicht
@@ -927,59 +979,174 @@ class ArmController(Node):
             return q_new
         return q_prev + dq * (lim / disp)
 
-    def _in_collision(self, full: np.ndarray, hard: bool = False) -> bool:
-        """Kombinierter Kollisions-Check: Selbstkollision (self_collision_gate)
-        UND/ODER Umgebungskollision (environment_collision_gate, Hindernisse +
-        Greif-ACM -- siehe ik_solver.environment_command_in_collision). Zwei
-        getrennte Schalter: ein Operator kann z.B. nur die Umgebungspruefung
-        testweise abschalten, ohne die Selbstkollisionspruefung zu verlieren.
-        (ik_solver.arm_command_in_collision gibt selbst False zurueck, wenn
-        das Gate nicht bereit ist -- kein doppelter Readiness-Check noetig.)"""
-        ik = self.ik_solver
-        if self.self_collision_gate and ik.arm_command_in_collision(full, hard=hard):
-            return True
-        if self.environment_collision_gate and ik.environment_command_in_collision(full, hard=hard):
-            return True
-        return False
+    def _self_in_collision(self, full: np.ndarray, hard: bool = False) -> bool:
+        """Selbstkollision (exakte Mesh-Pruefung, coal) der 29-DOF-Konfiguration.
+        hard=False: unter der Sicherheitsmarge (ik_solver.collision_margin)."""
+        return bool(self.self_collision_gate
+                    and self.ik_solver.arm_command_in_collision(full, hard=hard))
+
+    def _env_pairs(self, q14_rows: np.ndarray):
+        """Kugel-Objekt-Abstaende beider Arme fuer die Zeilen von q14_rows.
+        -> dict side -> (d (R,S,N), n (R,S,N,3), fk) oder {} ohne Objekte."""
+        g = self.arm_geom
+        if not self.environment_collision_gate or g.env.n == 0:
+            return {}
+        fk = g.fk(q14_rows, ["left", "right"])
+        out = {}
+        for side in ("left", "right"):
+            ei = g.env_idx(side)
+            d, n = g.env_dist(fk[side]["c"][:, ei], g.radii(side)[ei])
+            out[side] = (d, n, fk[side])
+        return out
+
+    def _env_floor(self, side: str) -> np.ndarray:
+        """Untergrenze je (Kugel, Objekt): Hand gate_hand_floor (aufsetzen
+        erlaubt), Arm gate_arm_floor; Hand gegen Greif-Objekte unbegrenzt
+        (ACM). Waehrend einer geplanten Fahrt zusaetzlich so tief wie Start
+        bzw. Ziel der Bahn (dieselbe Regel wie im Planer)."""
+        g = self.arm_geom
+        ei = g.env_idx(side)
+        hand = g.links(side)[ei] >= HAND_LINK_MIN
+        fl = np.where(hand, float(self.get_parameter("gate_hand_floor").value),
+                      float(self.get_parameter("gate_arm_floor").value))[:, None]
+        fl = np.repeat(fl, g.env.n, axis=1)
+        fl[hand[:, None] & g.env.is_grasp[None, :]] = -np.inf
+        ends = self._gate_end_q14
+        if ends is not None:
+            key = (id(g.env), id(ends))
+            if self._gate_end_cache[0] != key:
+                pairs = self._env_pairs(ends)
+                self._gate_end_cache = (key, {sd: p[0].min(axis=0) for sd, p in pairs.items()})
+            d_end = self._gate_end_cache[1].get(side)
+            if d_end is not None and d_end.shape == fl.shape:
+                fl = np.minimum(fl, d_end - 0.003)
+        return fl
+
+    def _env_near(self, q_prev: np.ndarray, q_new: np.ndarray) -> bool:
+        """Schneller Vorab-Test fuer den 250-Hz-Tick: ist irgendein Armpunkt
+        so nah an seiner Untergrenze, dass dieser Schritt sie erreichen (oder
+        die Verlangsamung greifen) koennte? Sonst entfaellt die volle Pruefung.
+        Abstaende an q_prev werden gecacht (q_prev = Ergebnis des letzten Ticks)."""
+        key = (q_prev.tobytes(), id(self._gate_end_q14))
+        if self._env_near_cache[0] != key or self._env_near_cache[2] is not self.arm_geom.env:
+            pairs = self._env_pairs(q_prev[None])
+            gap = min((float(np.min(d[0] - self._env_floor(sd))) for sd, (d, _, _) in pairs.items()
+                       if d.size), default=np.inf)
+            self._env_near_cache = (key, gap, self.arm_geom.env)
+        gap = self._env_near_cache[1]
+        # Obere Schranke fuer die Verschiebung eines Armpunkts in diesem Schritt
+        # (7 Gelenke, Hebel <= Armreichweite).
+        step = 7.0 * float(np.max(np.abs(q_new - q_prev))) * 0.75
+        return gap < float(self.get_parameter("gate_slow_dist").value) + step + 0.01
+
+    def _env_gate(self, q_prev: np.ndarray, q_new: np.ndarray):
+        """Gate gegen Umgebungs-Objekte auf Abstandsbasis (Kugelmodell).
+
+        Ein Paar (Armkugel, Objekt) unter seiner Untergrenze darf sich nicht
+        weiter annaehern -- alles andere ist erlaubt. Damit blockiert ein
+        Start dicht am oder minimal im Tisch NICHT mehr jede Bewegung: weg
+        vom Tisch und entlang der Platte geht immer, nur tiefer hinein nicht.
+        Wuerde der Schritt ein Paar verletzen, wird er auf die erlaubte
+        Richtung projiziert (die Hand gleitet an der Oberflaeche entlang,
+        statt einzufrieren). -> (q, gehalten?)"""
+        pairs = self._env_pairs(np.stack([q_prev, q_new]))
+        if not pairs:
+            return q_new, False
+        dq = q_new - q_prev
+        blocked = []          # (side, Gradient dd/dq14) je verletzendem Paar
+        g = self.arm_geom
+        for k, side in enumerate(("left", "right")):
+            d, n, fk = pairs[side]
+            fl = self._env_floor(side)
+            bad = (d[1] < fl) & (d[1] < d[0] - 1e-5)
+            if not np.any(bad):
+                continue
+            ei = g.env_idx(side)
+            links = g.links(side)
+            fk0 = {kk: v[0] for kk, v in fk.items()}
+            for si, oi in zip(*np.nonzero(bad)):
+                F = np.zeros((len(links), 3))
+                F[ei[si]] = n[0, si, oi]
+                grad7 = g.forces_to_q(fk0, links, F)
+                grad = np.zeros(14)
+                grad[7 * k:7 * k + 7] = grad7
+                blocked.append(grad)
+        if not blocked:
+            return q_new, False
+        # Annaehernde Anteile entfernen (zwei Durchlaeufe genuegen praktisch).
+        for _ in range(2):
+            for gr in blocked:
+                gg = float(gr @ gr)
+                proj = float(gr @ dq)
+                if gg > 1e-12 and proj < 0.0:
+                    dq = dq - (proj / gg) * gr
+        q_slide = q_prev + dq
+        pairs = self._env_pairs(np.stack([q_prev, q_slide]))
+        for side in ("left", "right"):
+            d = pairs[side][0]
+            if np.any((d[1] < self._env_floor(side)) & (d[1] < d[0] - 1e-5)):
+                return q_prev, True
+        return q_slide, False
+
+    def _env_slowdown(self, q_prev: np.ndarray, q_new: np.ndarray) -> np.ndarray:
+        """Marker-Steuerung: naehert sich ein Armpunkt einem Objekt auf weniger
+        als gate_slow_dist, wird der Schritt verkleinert (bis 25 %) -> die Hand
+        setzt sanft auf, statt mit vollem Tempo anzuschlagen."""
+        slow = float(self.get_parameter("gate_slow_dist").value)
+        if slow <= 0.0:
+            return q_new
+        pairs = self._env_pairs(np.stack([q_prev, q_new]))
+        factor = 1.0
+        for side, (d, _, _) in pairs.items():
+            fl = self._env_floor(side)
+            gap = d - np.where(np.isfinite(fl), fl, -np.inf)[None]
+            approaching = (d[1] < d[0]) & np.isfinite(gap[0]) & (gap[0] < slow)
+            if np.any(approaching):
+                factor = min(factor, max(0.25, float(gap[0][approaching].min()) / slow))
+        return q_prev + (q_new - q_prev) * factor
 
     def _apply_collision_gate(self, q_prev: np.ndarray, q_new: np.ndarray) -> np.ndarray:
-        """Kollisions-Gate (Selbst + Umgebung) auf dem KOMMANDIERTEN Schritt:
-          * Kandidat frei                      -> senden.
-          * Kandidat in HARTER Kollision       -> halten (q_prev).
-          * Kandidat im Margenband, aktueller Zustand auch -> zulassen
-            (Rueckzug aus dem Band muss moeglich sein; Tempo ist ohnehin
-            durch das kartesische Limit gedeckelt).
-          * Kandidat faehrt NEU ins Band       -> halten (q_prev).
+        """Kollisions-Gate auf dem KOMMANDIERTEN Schritt, pro Tick, fuer JEDEN
+        Sollwert (Marker-Servoing UND geplante Bahn -- auch eine geplante Bahn
+        bekommt so ein Sicherheitsnetz, falls sich die Umgebung bewegt hat).
 
-        Laeuft unconditional fuer JEDEN q_target (Marker-Servoing UND geplante
-        Bewegung) -- auch eine bereits kollisionsfrei GEPLANTE Bahn bekommt so
-        denselben Laufzeit-Sicherheitsnetz-Check pro Tick (falls sich die
-        Umgebung seit dem Planen bewegt hat)."""
+        Selbstkollision (exakte Meshes, coal):
+          * frei -> ok; HART -> halten.
+          * im Margenband: geplante Bahn ok (vom Planer geprueft), sonst nur,
+            wenn der aktuelle Zustand auch schon im Band ist (Herausfahren).
+        Umgebung (Kugelmodell, Abstaende): siehe _env_gate."""
         if float(np.max(np.abs(q_new - q_prev))) < 1e-9:
             return q_new
         try:
+            if (self.environment_collision_gate and self.arm_geom.env.n
+                    and self._env_near(q_prev, q_new)):
+                if not self._planned_motion_active:
+                    q_new = self._env_slowdown(q_prev, q_new)
+                q_new, held = self._env_gate(q_prev, q_new)
+                if held:
+                    self._gate_warn("Umgebung")
+                    return q_prev
             full_new = self._full_config_with_arms(q_new)
-            if not self._in_collision(full_new):
-                return q_new
-            if not self._in_collision(full_new, hard=True):
-                if self._planned_motion_active:
-                    # Geplante Bahn: vom Planer schon mit Marge geprueft; ins Band
-                    # darf sie nur nahe Start/Ziel (gespeicherte Pose am Torso/Tisch,
-                    # siehe arm_planner.BAND_RELAX_RADIUS). Sonst hielte der Gate
-                    # kurz vor so einem Ziel an. Echte Kollision haelt weiterhin.
-                    return q_new
-                if self._in_collision(self._full_config_with_arms(q_prev)):
-                    return q_new     # schon im Band -> langsames Herausfahren erlaubt
+            if self._self_in_collision(full_new, hard=True):
+                self._gate_warn("Koerper")
+                return q_prev
+            if (self._self_in_collision(full_new) and not self._planned_motion_active
+                    and not self._self_in_collision(self._full_config_with_arms(q_prev))):
+                self._gate_warn("Koerper")
+                return q_prev
+            return q_new
         except Exception as e:
             self.get_logger().warn(f"Kollisions-Gate-Fehler: {e} -- halte Pose.")
             return q_prev
+
+    def _gate_warn(self, what: str) -> None:
         now = time.time()
         if now - self._gate_last_warn > 1.0:
             self._gate_last_warn = now
             self.get_logger().warn(
-                "Kollisions-Gate: Zielbewegung wuerde in Koerper/Hindernis "
-                "fahren -- Arm haelt an (Marker zurueckziehen).")
-        return q_prev
+                f"Kollisions-Gate ({what}): Zielbewegung wuerde in "
+                f"{'Koerper' if what == 'Koerper' else 'ein Objekt'} fahren -- "
+                "Arm haelt an (Marker zurueckziehen).")
 
     def _advance_arm_weight(self, dt: float) -> float:
         """arm_sdk-Gewicht (motor_cmd[29].q) einen Tick weiterfahren.
@@ -1192,10 +1359,12 @@ class ArmController(Node):
                 self.get_logger().warn("HOMING ignoriert: Manipulation nicht "
                                        "aktiv (erst ENABLE MANIPULATION).")
                 return
-            self._abort_planned_motion("HOMING gestartet")
             if self.walk_mode:
+                # VOR dem Abbruch pruefen: sonst wuerde ein ignoriertes Homing
+                # den geplanten Weg in die Lauf-Pose abwuergen.
                 self.get_logger().warn("HOMING ignoriert: WALK aktiv (Arme in Lauf-Pose).")
                 return
+            self._abort_planned_motion("HOMING gestartet")
             # Home-Pose GEPLANT anfahren (wie POSE ANFAHREN): um Tisch/Hindernisse
             # und den eigenen Koerper herum. Die fruehere direkte Gelenkfahrt lief
             # stur auf geradem Weg -- steht der Roboter am Tisch, fuhr sie die
@@ -1266,6 +1435,16 @@ class ArmController(Node):
         # Also fuer WALK die Arme selbst uebernehmen. Real bleibt unveraendert:
         # dort fuehrt Unitrees Onboard-Regler die Arme beim Laufen.
         self._sim_auto_enable_arms("WALK")
+        # Den Weg in die Lauf-Pose PLANEN (um Tisch/Hindernisse herum). Die
+        # fruehere direkte Gelenkfahrt lief auf gerader Linie -- steht der
+        # Roboter am Tisch, fuhren die Finger in die Platte und das Gate hielt
+        # die Arme nur an (walk_ready kam dann erst per loco_sim-Timeout).
+        if self.arms_enabled and not self.estop_active:
+            self._walk_transition = True
+            self._start_planned_motion(
+                "Lauf-Pose (WALK)", ["left", "right"],
+                {"left": self.walk_left.copy(), "right": self.walk_right.copy()},
+                {}, source="walk")
 
     def _sim_auto_enable_arms(self, what: str) -> None:
         """NUR SIM: Arme automatisch aktivieren, wenn eine Aktion sie braucht
@@ -1289,6 +1468,8 @@ class ArmController(Node):
                 self.walk_ready_publisher.publish(Bool(data=False))
             return
         self.walk_mode = False
+        if self._walk_transition:
+            self._abort_planned_motion("BALANCING gestartet")
         self.homing_active = False
         self.homing_reached = False
         if self._walk_ready_sent:
@@ -1325,14 +1506,14 @@ class ArmController(Node):
     def _on_scene_markers(self, msg: MarkerArray):
         """Umgebungs-Objekte (/scene_markers, i.d.R. Frame 'map') EINMAL pro
         Update in den IK-World-Frame (self.frame, Default 'pelvis') transformieren
-        und in den IK-Solver einspeisen (sync_environment). Nur EIN TF-Lookup
+        und ins Kugelmodell (Gate) bzw. an den Planer geben. Nur EIN TF-Lookup
         pro Update (nicht pro Marker) -- alle Marker teilen sich denselben
         Quell-Frame, do_transform_pose_stamped() je Marker ist reine Pose-Arithmetik,
         keine erneute TF-Baum-Abfrage."""
         add_markers = [m for m in msg.markers
                        if m.action == Marker.ADD and sm.is_collision_marker(m)]
         if not add_markers:
-            self.ik_solver.sync_environment([])
+            self._set_environment([])
             return
         frame_id = add_markers[0].header.frame_id or "map"
         try:
@@ -1363,7 +1544,22 @@ class ArmController(Node):
                 })
             except Exception as e:
                 self.get_logger().warn(f"[scene] Marker uebersprungen: {e}")
-        self.ik_solver.sync_environment(objects)
+        self._set_environment(objects)
+
+    def _set_environment(self, objects: list) -> None:
+        """Umgebungs-Objekte (Posen im IK-World-Frame) uebernehmen: Gate
+        (Kugelmodell) sofort, der Planer bekommt sie mit jeder Anfrage."""
+        self._env_objects = list(objects)
+        # Taille/Beine aus der Messung (Arm-Ketten haengen an der Taille).
+        try:
+            if self.use_robot:
+                self.arm_geom.set_base(self.get_current_motor_q())
+        except Exception:
+            pass
+        # Gate: nur, was ein Arm ueberhaupt erreichen kann (spart Rechenzeit
+        # im 250-Hz-Tick bei grossen Szenen).
+        self.arm_geom.set_environment(
+            self.arm_geom.reachable(Environment(self._env_objects), ["left", "right"], margin=0.05))
 
     # --------------------------------------------------------
     # Positionsspeicher (plan-execute), siehe g1pilot/docs/11_arm_manipulation_technik.md (Positionsspeicher)
@@ -1459,6 +1655,12 @@ class ArmController(Node):
 
     def _on_pose_cancel(self, msg: Bool):
         if not msg.data:
+            return
+        if self.walk_mode:
+            # Ein Abbruch liesse die Arme auf GERADEM Weg in die Lauf-Pose fahren
+            # (WALK braucht sie dort) -- schlechter als der geplante Weg.
+            self.get_logger().info("POSE ABBRECHEN ignoriert: WALK aktiv "
+                                   "(Arme fahren geplant in die Lauf-Pose).")
             return
         self._abort_planned_motion("POSE ABBRECHEN")
 
@@ -1629,28 +1831,6 @@ class ArmController(Node):
                      else self._T_off_left_static)
         return T
 
-    def _resolve_ik_targets(self, sides: list, ik_targets: dict,
-                            base_current_all: np.ndarray):
-        """Kartesische Ziele -> Gelenkziele (7 DOF je Seite). Laeuft im
-        Planungs-Thread; solve_pose() ist dafuer gebaut (eigene Buffer, kein
-        gemeinsamer Solver-Zustand). -> (goals, detail) oder (None, detail) wenn
-        eine Seite unerreichbar ist."""
-        goals, detail, failed = {}, {}, []
-        for side in sides:
-            res = self.ik_solver.solve_pose(side, ik_targets[side], base_current_all)
-            detail[side] = {
-                "pos_err_m": round(float(res["pos_err_m"]), 5),
-                "ori_err_deg": round(float(res["ori_err_deg"]), 2),
-                "converged": bool(res["converged"]),
-            }
-            if res["q"] is None or not res["converged"]:
-                failed.append(side)
-            else:
-                goals[side] = np.asarray(res["q"], dtype=float)
-        if failed:
-            return None, detail
-        return goals, detail
-
     def _on_pose_goto(self, msg: String):
         name = (msg.data or "").strip()
         if not name:
@@ -1700,66 +1880,94 @@ class ArmController(Node):
         self._start_planned_motion(f"Pose '{name}'", sides, goals, hand_goals,
                                    req_id="", source="pose_store")
 
+    def _planner_params(self) -> dict:
+        gp = lambda n: float(self.get_parameter(n).value)   # noqa: E731
+        return {
+            "clearance": gp("planner_clearance"),
+            "min_clearance": gp("planner_min_clearance"),
+            "relax_radius": gp("planner_relax_radius"),
+            "time_budget_s": gp("planner_time_budget_s"),
+            "vel_limit": min(gp("planner_vel_limit"), 0.95 * self.arm_velocity_limit),
+            "cart_vel_limit": (gp("planner_cart_vel_limit") if self.ee_velocity_limit <= 0.0
+                               else min(gp("planner_cart_vel_limit"),
+                                        0.95 * self.ee_velocity_limit)),
+        }
+
     def _plan_pose_worker(self, name: str, gen: int, sides: list, goals: dict,
                           ik_targets: dict = None):
-        """Laeuft in einem Hintergrund-Thread (Planung kann Sekunden dauern) --
-        blockt NIE den 250-Hz-Regelkreis. Plant die AUSGEWAEHLTEN Arme
-        GEMEINSAM (7 DOF je Seite -> bei beiden Armen ein 14-DOF-Problem), sodass
-        Arm-zu-Arm an jedem Zwischenzustand geprueft ist und beide Arme spaeter
-        SYNCHRON abgefahren werden koennen (siehe main_loop). Ergebnis (mit
-        Generation `gen`) geht per DataBuffer (thread-sicher) an main_loop.
-
-        Sind `ik_targets` (SE3 je Seite) gesetzt, wird ZUERST die IK geloest --
-        auch das gehoert hierher und nicht in den Callback: eine auskonvergierte
-        IK kostet zu viel fuer den 250-Hz-Tick."""
+        """Laeuft in einem Hintergrund-Thread und wartet dort auf den Planer-
+        PROZESS (arm_planner_process.py) -- der Regelkreis bleibt unberuehrt.
+        Die gewaehlten Arme werden GEMEINSAM geplant (7 DOF je Seite -> bei
+        beiden Armen ein 14-DOF-Problem: Arm-zu-Arm ist an jedem Zwischen-
+        zustand geprueft, beide fahren synchron). Kartesische Ziele
+        (`ik_targets`, SE3 je Seite) loest der Planer-Prozess zuerst per IK.
+        Ergebnis (mit Generation `gen`) geht per DataBuffer an main_loop."""
         try:
             base_current_all = (self.get_current_motor_q() if self.use_robot
                                 else self._assemble_full_from_last())
-
-            if ik_targets:
-                goals, ik_detail = self._resolve_ik_targets(
-                    sides, ik_targets, base_current_all)
-                if goals is None:
-                    why = ("Ziel-Pose fuer " + "/".join(
-                        s for s in sides if not ik_detail[s]["converged"])
-                        + " nicht erreichbar (IK konvergiert nicht -- "
-                          "Restfehler siehe detail).")
-                    self._plan_result.SetData(("failed", name, gen, sides, why))
-                    self._publish_cmd_status(ac.ST_FAILED, reason=why, sides=sides,
-                                             detail=ik_detail)
-                    self.get_logger().warn(f"IK fuer {name} fehlgeschlagen: {why}")
-                    return
-                self.get_logger().info(
-                    f"IK fuer {name} geloest: "
-                    + ", ".join(f"{s}: {ik_detail[s]['pos_err_m'] * 1000:.1f} mm / "
-                                f"{ik_detail[s]['ori_err_deg']:.1f} deg" for s in sides))
-                self._cmd_ik_detail = ik_detail
-
-            # Start/Ziel/Limits ueber die Seiten in FESTER Reihenfolge konkatenieren.
-            q_start, q_goal, limits = [], [], []
+            base_current_all = base_current_all.copy()
+            q_start, limits = [], []
             for side in sides:
                 sl = slice(0, 7) if side == "left" else slice(7, 14)
                 idx_list = LEFT_JOINT_INDICES_LIST if side == "left" else RIGHT_JOINT_INDICES_LIST
                 q_start.append(self._last_q_target[sl].copy())
-                q_goal.append(goals[side])
                 limits += [JOINT_LIMITS_RAD[i] for i in idx_list]
-            q_start = np.concatenate(q_start)
-            q_goal = np.concatenate(q_goal)
+            # Nicht geplante Gelenke: Arme auf dem kommandierten Stand (der
+            # stehende Arm ist statisches Hindernis), Beine/Taille gemessen.
+            for i, jidx in enumerate(LEFT_JOINT_INDICES_LIST):
+                base_current_all[jidx] = self._last_q_target[i]
+            for i, jidx in enumerate(RIGHT_JOINT_INDICES_LIST):
+                base_current_all[jidx] = self._last_q_target[7 + i]
+            request = {
+                "sides": list(sides),
+                "base_full": base_current_all,
+                "q_start": np.concatenate(q_start),
+                "q_goal": (np.concatenate([goals[s] for s in sides]) if not ik_targets else None),
+                "ik_targets": ({s: np.array(ik_targets[s].homogeneous) for s in sides}
+                               if ik_targets else None),
+                "limits": limits,
+                "env": list(self._env_objects) if self.environment_collision_gate else [],
+                "self_collision": self.self_collision_gate,
+                "params": self._planner_params(),
+                "walk_pose": {"left": self.walk_left, "right": self.walk_right},
+            }
+            budget = request["params"]["time_budget_s"]
+            res = self._planner.plan(request, timeout_s=budget + 10.0)
 
-            path, reason = plan_arms_joint_path(
-                self.ik_solver, sides, base_current_all, q_start, q_goal, limits)
-            if path is None:
-                self._plan_result.SetData(("failed", name, gen, sides, reason))
-                self._publish_cmd_status(ac.ST_FAILED, reason=f"Planung: {reason}",
-                                         sides=sides)
-                self.get_logger().warn(
-                    f"Planung zu {name} ({'+'.join(sides)}) fehlgeschlagen: {reason}")
+            if res.get("ik_detail"):
+                self._cmd_ik_detail = res["ik_detail"]
+            if res.get("reason") == "ik_failed":
+                why = ("Ziel-Pose fuer " + "/".join(res.get("failed_sides", []))
+                       + " nicht erreichbar (IK konvergiert nicht -- Restfehler siehe detail).")
+                self._plan_result.SetData(("failed", name, gen, sides, why))
+                self._publish_cmd_status(ac.ST_FAILED, reason=why, sides=sides,
+                                         detail=res["ik_detail"])
+                self.get_logger().warn(f"IK fuer {name} fehlgeschlagen: {why}")
                 return
-            waypoints = shortcut_path(self.ik_solver, sides, base_current_all, path)
-            self._plan_result.SetData(("ok", name, gen, sides, waypoints))
+            if res.get("ik_detail"):
+                self.get_logger().info(
+                    f"IK fuer {name} geloest: "
+                    + ", ".join(f"{s}: {d['pos_err_m'] * 1000:.1f} mm / "
+                                f"{d['ori_err_deg']:.1f} deg" for s, d in res["ik_detail"].items()))
+            if not res.get("ok"):
+                reason = res.get("reason", "unbekannt")
+                if gen != self._plan_gen:
+                    return      # abgebrochen -- Status kam schon von _abort_planned_motion
+                self._plan_result.SetData(("failed", name, gen, sides, reason))
+                self._publish_cmd_status(ac.ST_FAILED, reason=f"Planung: {reason}", sides=sides)
+                self.get_logger().warn(
+                    f"Planung zu {name} ({'+'.join(sides)}) fehlgeschlagen: {reason} "
+                    f"({res.get('plan_time_s', '?')} s)")
+                if res.get("traceback"):
+                    self.get_logger().error(res["traceback"])
+                return
+            traj = {"t": np.asarray(res["t"], dtype=float), "q": np.asarray(res["q"], dtype=float),
+                    "q_start": request["q_start"], "q_goal": np.asarray(res["q_goal"], dtype=float)}
+            self._plan_result.SetData(("ok", name, gen, sides, traj))
             self.get_logger().info(
-                f"Planung zu {name} erfolgreich ({len(waypoints)} Wegpunkte, "
-                f"{'+'.join(sides)}).")
+                f"Planung zu {name} ({'+'.join(sides)}): {res['reason']} in "
+                f"{res['plan_time_s']:.2f} s, Abstand Mitte {res['clearance'] * 100:.1f} cm, "
+                f"Fahrzeit {traj['t'][-1]:.1f} s.")
         except Exception as e:
             self._plan_result.SetData(("failed", name, gen, sides, str(e)))
             self._publish_cmd_status(ac.ST_FAILED, reason=str(e), sides=sides)
@@ -1778,13 +1986,23 @@ class ArmController(Node):
         if result[2] != self._plan_gen:
             return   # veraltet: abgebrochen oder von einer neueren Planung ueberholt.
         if result[0] != "ok":
-            return   # Fehlschlag wurde schon vom Worker geloggt -- Arm haelt einfach.
+            # Fehlschlag wurde schon vom Worker geloggt -- Arm haelt einfach.
+            # Ausnahme WALK: die Lauf-Pose muss trotzdem angefahren werden
+            # (sonst kein walk_ready) -> wie frueher direkt, das Laufzeit-Gate
+            # haelt bei Kollision weiterhin an.
+            if self._walk_transition:
+                self._walk_transition = False
+                self.get_logger().warn(
+                    "WALK: kein kollisionsfreier Weg in die Lauf-Pose gefunden -- "
+                    "fahre direkt (Kollisions-Gate haelt bei Beruehrung an).")
+            return
         # Defense-in-depth: sind die Arme seit dem Planungsstart gesperrt worden
         # (E-Stop, DISABLE, Homing, WALK)? Dann verwerfen. Normalerweise hat ein
         # solcher Wechsel _plan_gen bereits erhoeht (Abbruch); diese Pruefung
         # faengt Restfaelle ab.
         if (self.estop_active or not self.arms_enabled
-                or self.homing_active or self.walk_mode):
+                or self.homing_active
+                or (self.walk_mode and not self._walk_transition)):
             self._publish_cmd_status(
                 ac.ST_CANCELLED, reason="Arme waehrend der Planung gesperrt "
                                         "(E-Stop/DISABLE/Homing/WALK).",
@@ -1793,11 +2011,24 @@ class ArmController(Node):
                 f"Geplante Bewegung zu {result[1]} verworfen "
                 f"(Arme nicht mehr bereit -- erneut anfordern).")
             return
-        _, name, _gen, sides, waypoints = result
+        _, name, _gen, sides, traj = result
         self._planned_pose_name = name
         self._planned_sides = list(sides)
-        self._planned_waypoints = waypoints
-        self._planned_wp_idx = 0
+        self._planned_traj_t = traj["t"]
+        self._planned_traj_q = traj["q"]
+        self._planned_time = 0.0
+        self._planned_stall_s = 0.0
+        self._planned_last_tick = None
+        self._planned_stats = {"t0": time.monotonic(), "ticks": 0, "held_s": 0.0}
+        # Laufzeit-Gate: an Start und Ziel der Bahn darf der Arm so nah an
+        # Objekte wie dort geplant (Hand auf dem Tisch) -- Endpunkt-Boeden.
+        ends = []
+        for qend in (traj["q"][0], traj["q"][-1]):
+            q14 = self._last_q_target.copy()
+            for k, side in enumerate(sides):
+                q14[slice(0, 7) if side == "left" else slice(7, 14)] = qend[7 * k:7 * k + 7]
+            ends.append(q14)
+        self._gate_end_q14 = ends
         self._planned_motion_active = True
         self.homing_active = False
         self.homing_reached = False
@@ -1809,6 +2040,25 @@ class ArmController(Node):
                                  detail=self._cmd_ik_detail or None)
         self.get_logger().info(f"Fahre geplante Bewegung zu {name} ab.")
 
+    def destroy_node(self):
+        try:
+            self._planner.shutdown()
+        except Exception:
+            pass
+        return super().destroy_node()
+
+    def _traj_sample(self, t: float) -> np.ndarray:
+        """Geplante Trajektorie zur Zeit t (lineare Interpolation zwischen den
+        0.02-s-Stuetzstellen)."""
+        tt, qq = self._planned_traj_t, self._planned_traj_q
+        if t <= tt[0]:
+            return qq[0].copy()
+        if t >= tt[-1]:
+            return qq[-1].copy()
+        i = int(np.searchsorted(tt, t)) - 1
+        u = (t - tt[i]) / max(1e-9, tt[i + 1] - tt[i])
+        return (1.0 - u) * qq[i] + u * qq[i + 1]
+
     def _abort_planned_motion(self, reason: str = "") -> None:
         """Laufende geplante Bewegung abbrechen UND jede noch laufende Planung
         entwerten: durch Erhoehen von _plan_gen wird ein spaeter eintreffendes
@@ -1819,10 +2069,15 @@ class ArmController(Node):
         was_planning = (self._planning_thread is not None
                         and self._planning_thread.is_alive())
         self._planned_motion_active = False
+        self._walk_transition = False   # WALK faellt auf die direkte Lauf-Pose zurueck
         self._planned_sides = []
-        self._planned_waypoints = None
+        self._planned_traj_t = None
+        self._planned_traj_q = None
+        self._gate_end_q14 = None
         self._pending_hand_goals = {}
         self._plan_gen += 1     # invalidiert jedes in-flight/pending Planungs-Ergebnis
+        if was_planning:
+            self._planner.cancel()   # Planer-Prozess bricht ab (reason 'cancelled')
         if was_active or was_planning:
             # Wartet ein Aufrufer auf das Ergebnis (arm_api), muss er den Abbruch
             # erfahren -- sonst laeuft er in seinen Timeout.
@@ -1861,8 +2116,10 @@ class ArmController(Node):
         # Marker hat IMMER Vorrang -- ein laufender ODER gerade geplanter Plan
         # (Positionsspeicher) wird sofort verworfen, kein Kaempfen zweier
         # Geschwindigkeitsquellen.
-        if self._planned_motion_active or (
-                self._planning_thread is not None and self._planning_thread.is_alive()):
+        # Waehrend WALK ignoriert main_loop die Marker ohnehin -- den Uebergang
+        # in die Lauf-Pose also nicht abbrechen.
+        if not self.walk_mode and (self._planned_motion_active or (
+                self._planning_thread is not None and self._planning_thread.is_alive())):
             self._abort_planned_motion("Marker bewegt -- manueller Vorrang")
 
         if self._reset_after_home:
@@ -1928,8 +2185,10 @@ class ArmController(Node):
         # Marker hat IMMER Vorrang -- ein laufender ODER gerade geplanter Plan
         # (Positionsspeicher) wird sofort verworfen, kein Kaempfen zweier
         # Geschwindigkeitsquellen.
-        if self._planned_motion_active or (
-                self._planning_thread is not None and self._planning_thread.is_alive()):
+        # Waehrend WALK ignoriert main_loop die Marker ohnehin -- den Uebergang
+        # in die Lauf-Pose also nicht abbrechen.
+        if not self.walk_mode and (self._planned_motion_active or (
+                self._planning_thread is not None and self._planning_thread.is_alive())):
             self._abort_planned_motion("Marker bewegt -- manueller Vorrang")
 
         if self._reset_after_home:
@@ -2183,7 +2442,7 @@ class ArmController(Node):
             # in self.msg geschrieben -- die gehoeren nicht in rt/arm_sdk.)
             return
 
-        if self.walk_mode:
+        if self.walk_mode and not self._walk_transition:
             # WALK: Arme auf die Lauf-Pose halten (Marker ignoriert). Die
             # Geschwindigkeitsbegrenzung unten faehrt sie sanft dorthin (kein Teleport).
             q_target = np.concatenate((self.walk_left, self.walk_right))
@@ -2253,43 +2512,72 @@ class ArmController(Node):
             q_target = np.concatenate((self.home_left, self.home_right))
 
         elif self._planned_motion_active:
-            # Positionsspeicher: geplante Bahn abfahren -- die ausgewaehlten Arme
-            # GLEICHZEITIG ueber EINE geteilte Wegpunktliste (7 DOF je Seite, in
-            # _planned_sides-Reihenfolge konkateniert). Ein gemeinsamer Index ->
-            # beide Arme ruecken erst weiter, wenn BEIDE den aktuellen Wegpunkt
-            # erreicht haben (bleiben also synchron; die 14-DOF-Planung hat den
-            # gemeinsamen Pfad Arm-zu-Arm-sicher geprueft). Marker-Beruehrung
-            # bricht das ueber _planned_motion_active=False in *_goal_callback ab.
+            # Geplante Bahn abfahren: der Planer liefert eine ZEITPARAMETRIERTE
+            # Trajektorie (t, q) fuer die gewaehlten Arme (7 DOF je Seite, in
+            # _planned_sides-Reihenfolge). Beide Arme laufen ueber dieselbe Uhr
+            # -> synchron. Fortschritts-Waechter: die Uhr laeuft nur weiter,
+            # solange das Kommando der Bahn folgt (haelt das Laufzeit-Gate an,
+            # bleibt auch die Bahn stehen statt davonzulaufen). Marker-Griff
+            # bricht ueber _abort_planned_motion ab.
             q_target = self._last_q_target.copy()
-            wps = self._planned_waypoints
             sides = self._planned_sides
-            if not sides or wps is None:
+            tt, qq = self._planned_traj_t, self._planned_traj_q
+            if not sides or tt is None:
                 self._planned_motion_active = False
             else:
-                idx = self._planned_wp_idx
-                wp = wps[idx]
-                # (spalten-slice im Wegpunkt, ziel-slice in q_target) je Seite
                 slices = [(slice(7 * k, 7 * k + 7),
                            slice(0, 7) if side == "left" else slice(7, 14))
                           for k, side in enumerate(sides)]
-                reached_wp = all(
-                    np.linalg.norm(wp[col] - self._last_q_target[tgt])
-                    < self.planned_motion_tolerance
-                    for col, tgt in slices)
-                if reached_wp and idx + 1 < len(wps):
-                    idx += 1
-                    self._planned_wp_idx = idx
-                    wp = wps[idx]
-                    reached_wp = False
+                q_now = np.concatenate([self._last_q_target[tgt] for _, tgt in slices])
+                q_ref = self._traj_sample(self._planned_time)
+                lag = float(np.max(np.abs(q_ref - q_now)))
+                # Echte Zeit seit dem letzten Tick (der Regelkreis haelt seine
+                # Rate unter Last nicht immer), begrenzt gegen Spruenge.
+                now = time.monotonic()
+                tick = (1.0 / self.rate_hz if self._planned_last_tick is None
+                        else min(0.05, max(0.0, now - self._planned_last_tick)))
+                self._planned_last_tick = now
+                st = self._planned_stats
+                st["ticks"] += 1
+                if lag < 0.05:
+                    self._planned_time = min(tt[-1], self._planned_time + tick)
+                    self._planned_stall_s = 0.0
+                else:
+                    self._planned_stall_s += tick
+                    st["held_s"] += tick
+                q_ref = self._traj_sample(self._planned_time)
                 for col, tgt in slices:
-                    q_target[tgt] = wp[col]
-                if reached_wp and idx == len(wps) - 1:
+                    q_target[tgt] = q_ref[col]
+                done = (self._planned_time >= tt[-1]
+                        and float(np.max(np.abs(qq[-1] - q_now))) < self.planned_motion_tolerance)
+                if done:
                     self._planned_motion_active = False
+                    self._walk_transition = False   # WALK-Zweig haelt ab jetzt
+                    self._gate_end_q14 = None
                     self._align_ik_to_config(q_target[0:7], q_target[7:14])
                     self._publish_cmd_status(ac.ST_REACHED, sides=sides,
                                              detail=self._cmd_ik_detail or None)
+                    wall = time.monotonic() - st["t0"]
                     self.get_logger().info(
-                        f"Geplante Bewegung zu {self._planned_pose_name} abgeschlossen.")
+                        f"Geplante Bewegung zu {self._planned_pose_name} abgeschlossen "
+                        f"(Bahn {tt[-1]:.1f} s, gefahren {wall:.1f} s, davon angehalten "
+                        f"{st['held_s']:.1f} s, Regeltakt {st['ticks'] / max(wall, 1e-3):.0f} Hz).")
+                elif self._planned_stall_s > 3.0:
+                    # Gate haelt dauerhaft an (Szene hat sich geaendert?) ->
+                    # stehen bleiben und melden statt ewig zu warten.
+                    name = self._planned_pose_name
+                    self._planned_motion_active = False   # -> kein 'cancelled' zusaetzlich
+                    self._abort_planned_motion("")
+                    self._publish_cmd_status(
+                        ac.ST_FAILED, reason="Bewegung blockiert (Kollisions-Gate haelt an) "
+                                             "-- Szene geaendert? Neu anfordern.", sides=sides)
+                    self.get_logger().warn(
+                        f"Geplante Bewegung zu {name} blockiert -- abgebrochen.")
+                    q_target = self._last_q_target.copy()
+
+        elif self._walk_transition:
+            # WALK: Weg in die Lauf-Pose wird noch geplant -> stillhalten.
+            q_target = self._last_q_target.copy()
 
         else:
             # IK-Seed: Arm-Gelenke aus dem LETZTEN ZIEL (deterministisch), nicht

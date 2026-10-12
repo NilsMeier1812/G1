@@ -176,43 +176,9 @@ class G1IKSolver:
         # Arm dauerhaft in der gestreckten Singulaeritaet.
         self.reach_margin = 0.97
 
-        # Ueberwachte Punkte je Arm fuer die UMGEBUNGS-Kollision (Hindernisse/
-        # Greif-Objekte, siehe sync_environment()/environment_command_in_collision()
-        # unten): Ellbogen, Handgelenk, Hand-TCP + Zwischenpunkte auf Unterarm und
-        # Hand. Nur Ellbogen + TCP liessen den ~25 cm langen Unterarm unbewacht --
-        # geplante Bahnen schnitten dann z.B. durch eine Tischkante. Repraesentative
-        # Punkte statt voller Mesh-Kollision (billig genug fuer den Planer).
-        self._fid_env_elbow = {}
-        self._fid_env_wrist = {}
-        for side in ("left", "right"):
-            for store, link in ((self._fid_env_elbow, "elbow_link"),
-                                (self._fid_env_wrist, "wrist_roll_link")):
-                try:
-                    store[side] = self.model.getFrameId(f"{side}_{link}")
-                except Exception:
-                    store[side] = None
-        # Arm-Punkte (Ellbogen/Unterarm/Handgelenk) brauchen mehr Abstand als der
-        # TCP: der Unterarm hat ~4 cm Radius. Die Hand selbst behaelt
-        # collision_margin, damit sie z.B. eine Box auf dem Tisch erreicht.
-        self.arm_env_margin = 0.06
-        # "Hart" (echte Durchdringung) fuer die Arm-Punkte = Linkradius: die
-        # Punkte liegen auf der Unterarm-ACHSE, bei Abstand 0 steckte die
-        # Oberflaeche schon ~3 cm im Hindernis. Hand-Punkte: 1 cm (eine auf der
-        # Tischplatte aufliegende Hand zaehlt als Kollision, nicht als "Band").
-        self.arm_env_hard_margin = 0.03
-        self.hand_env_hard_margin = 0.01
-
-        # Umgebungs-Objekte (Hindernisse + Greif-Objekte), gesetzt ueber
-        # sync_environment(). Alle Posen MUESSEN bereits im world_frame dieses
-        # Solvers stehen (Default 'pelvis') -- der Aufrufer (arm_controller.py)
-        # transformiert /scene_markers (Frame 'map') per TF dorthin, BEVOR er
-        # sync_environment() aufruft.
-        self._env_objects = {}
-        self._env_arrays = None
-        # Eigenes pin.Data fuer den Umgebungs-Check (analog zu _gate_data oben):
-        # die FK hier darf NICHT self.data (Solver-Zustand, von solve()/anderen
-        # Aufrufern im selben Tick genutzt) ueberschreiben.
-        self._env_data = pin.Data(self.model)
+        # Umgebungs-Kollision (Hindernisse/Greif-Objekte) liegt NICHT mehr hier,
+        # sondern im Kugelmodell manipulation/arm_geometry.py (Abstaende statt
+        # Ja/Nein, genutzt vom Planer und vom Laufzeit-Gate im arm_controller).
 
         # State buffers
         self._goal_right = None
@@ -322,133 +288,13 @@ class G1IKSolver:
         print(f"[IK] Kollisions-Gate aktiv: {len(cm.collisionPairs)} Paare, "
               f"Marge {self.collision_margin*100:.0f} cm.", flush=True)
 
-    # --------------------------------------------------------
-    # Umgebungs-Kollision (Hindernisse + Greif-Objekte)
-    # --------------------------------------------------------
-    #
-    # Bewusst KEINE hppfcl/pinocchio-GeometryModel-Erweiterung (anders als das
-    # Selbstkollisions-Gate oben): die genaue Konstruktor-Signatur von
-    # pin.GeometryObject/hppfcl-Shapes variiert zwischen Pinocchio-Versionen
-    # (siehe schon der hasattr-Abwaegung in _init_collision_gate), und ein
-    # falscher Aufruf wuerde erst zur LAUFZEIT im 250-Hz-Regelkreis auffliegen.
-    # Stattdessen: einfache, klar nachrechenbare Punkt-zu-orientierter-Box-
-    # Distanz (Ellbogen + Hand-TCP je Arm gegen jedes Umgebungs-Objekt) -- exakt
-    # dieselbe "ein paar Punkte statt volle Mesh-Kollision"-Faustregel wie beim
-    # kartesischen Speedlimit im arm_controller.
-
-    def sync_environment(self, objects) -> None:
-        """Ersetzt die bekannten Umgebungs-Objekte durch `objects` (Iterable von
-        dicts: name, cls ('obstacle'|'grasp'), half_extents (hx,hy,hz), pos
-        (3,), quat (4, w-x-y-z)) -- ALLE Posen bereits in self.world_frame
-        (Default 'pelvis'). Wird von arm_controller.py bei jedem /scene_markers-
-        Update aufgerufen (nach TF-Transformation map->pelvis)."""
-        new_objects = {}
-        for o in objects:
-            try:
-                name = o["name"]
-                pos = np.asarray(o["pos"], dtype=float).reshape(3)
-                quat = np.asarray(o["quat"], dtype=float).reshape(4)
-                half = np.asarray(o["half_extents"], dtype=float).reshape(3)
-                R = quat_wxyz_to_matrix(quat)
-            except (KeyError, ValueError, TypeError):
-                continue
-            new_objects[name] = {
-                "cls": o.get("cls", "obstacle"),
-                "pos": pos, "R": R, "half": half,
-            }
-        self._env_objects = new_objects
-        # Dieselben Objekte als Arrays fuer den vektorisierten Check (der Planer
-        # ruft ihn tausendfach auf; ein zerlegter Arbeitsplatz hat ~65 Boxen).
-        objs = list(new_objects.values())
-        self._env_arrays = None if not objs else (
-            np.stack([o["pos"] for o in objs]),
-            np.stack([o["R"] for o in objs]),
-            np.stack([o["half"] for o in objs]),
-            np.array([o["cls"] == "grasp" for o in objs]),
-        )
-
-    @staticmethod
-    def _point_obb_distance(p: np.ndarray, obj: dict) -> float:
-        """Kuerzeste Distanz von Punkt p zur Oberflaeche der orientierten Box
-        `obj` (0.0, wenn p INNERHALB liegt). Standardformel: Punkt in
-        Box-lokale Achsen drehen, Ueberschuss je Achse ueber die Halbextents
-        clippen, Norm des Rests = Abstand."""
-        local = obj["R"].T @ (p - obj["pos"])
-        excess = np.maximum(np.abs(local) - obj["half"], 0.0)
-        return float(np.linalg.norm(excess))
-
-    def environment_command_in_collision(self, current_all, hard=False, data=None) -> bool:
-        """True, wenn die 29-DOF-Konfiguration current_all (ROS-Gelenkreihen-
-        folge) einen ueberwachten Arm-Punkt (Ellbogen, Unterarm, Handgelenk,
-        Hand, Hand-TCP) zu nah an ein Umgebungs-Objekt bringt (hard=True: echte
-        Durchdringung -- arm_env_hard_margin bzw. hand_env_hard_margin; sonst
-        arm_env_margin bzw. collision_margin).
-
-        ACM (Allowed-Collision, siehe g1pilot/docs/11_arm_manipulation_technik.md (Umgebungs-Kollisionsgate)):
-        fuer Greif-Objekte (cls='grasp') werden NUR die Hand-Punkte ausgenommen
-        (die Hand darf ans Greifziel heran) -- Ellbogen/Unterarm/Handgelenk
-        bleiben gegen JEDES Objekt (auch Greif-Objekte) geprueft, und
-        Hindernisse (cls='obstacle') werden fuer ALLE Punkte geprueft.
-
-        `data`: optionaler eigener pin.Data-Scratch-Puffer (Default:
-        self._env_data). Aufrufer, die VIELE Checks aus einem ANDEREN Thread
-        machen (z.B. arm_planner.py waehrend der Bahnplanung), sollten ihren
-        eigenen Puffer uebergeben (siehe make_scratch_buffers()) -- sonst
-        wuerden sie sich mit dem 250-Hz-Regelkreis denselben mutable Zustand
-        teilen (Pinocchio-Kontrakt: Model ist threadsicher/read-only, Data
-        ist mutabler Scratch-Zustand pro Aufrufer)."""
-        if not self._env_objects:
-            return False
-        data = data if data is not None else self._env_data
-        q = pin.neutral(self.model)
-        for jid_idx, ros_name in enumerate(self._ros_joint_names):
-            if ros_name in self._name_to_q_index:
-                q[self._name_to_q_index[ros_name]] = float(current_all[jid_idx])
-        pin.forwardKinematics(self.model, data, q)
-        pin.updateFramePlacements(self.model, data)
-
-        # Punkte sammeln: (Position, Marge, gilt_gegen_Greif-Objekte).
-        # Arm (Ellbogen, 2x Unterarm): gegen ALLE Objekte, groessere Marge.
-        # Hand (Handgelenk, Handgelenk->TCP-Mitte, TCP): collision_margin und nur
-        # gegen Hindernisse -- an ein Greif-Objekt darf die Hand heran (ACM).
-        arm_margin = self.arm_env_hard_margin if hard else self.arm_env_margin
-        hand_margin = self.hand_env_hard_margin if hard else self.collision_margin
-        pts, margins, vs_grasp = [], [], []
-        for side, fid_hand in (("left", self._fid_left), ("right", self._fid_right)):
-            fe, fw = self._fid_env_elbow.get(side), self._fid_env_wrist.get(side)
-            p_e = data.oMf[fe].translation if fe is not None else None
-            p_w = data.oMf[fw].translation if fw is not None else None
-            p_h = data.oMf[fid_hand].translation if fid_hand is not None else None
-            arm = [p_e] if p_e is not None else []
-            if p_e is not None and p_w is not None:
-                arm += [p_e + (p_w - p_e) * t for t in (1.0 / 3.0, 2.0 / 3.0)]
-            hand = [p for p in (p_w, p_h) if p is not None]
-            if p_w is not None and p_h is not None:
-                hand.append(0.5 * (p_w + p_h))
-            for p in arm:
-                pts.append(p); margins.append(arm_margin); vs_grasp.append(True)
-            for p in hand:
-                pts.append(p); margins.append(hand_margin); vs_grasp.append(False)
-        if not pts or self._env_arrays is None:
-            return False
-
-        P, R, H, is_grasp = self._env_arrays
-        pts = np.asarray(pts)                                   # (M,3)
-        # Punkte in die Box-Achsen drehen: local[m,n] = R[n]^T (p[m] - P[n])
-        local = np.einsum("nji,mnj->mni", R, pts[:, None, :] - P[None, :, :])
-        excess = np.maximum(np.abs(local) - H[None, :, :], 0.0)
-        dist = np.linalg.norm(excess, axis=2)                   # (M,N)
-        hit = dist < np.asarray(margins)[:, None]
-        hit &= ~(~np.asarray(vs_grasp)[:, None] & is_grasp[None, :])   # Hand vs Greif-Objekt erlaubt
-        return bool(hit.any())
-
     def make_scratch_buffers(self) -> dict:
         """Eigener, unabhaengiger FK-/Kollisions-Scratch-Zustand (eigenes
         pin.Data + eigene GeometryData mit derselben Margen-Konfiguration wie
-        das Selbstkollisions-Gate) -- fuer Aufrufer, die (wie arm_planner.py)
-        VIELE Kollisionschecks aus einem ANDEREN Thread machen, ohne die
-        laufzeitkritischen Puffer dieses Solvers (self.data/self._gate_data/
-        self._env_data, vom 250-Hz-Regelkreis genutzt) anzufassen. Pinocchio-
+        das Selbstkollisions-Gate) -- fuer Aufrufer, die (wie der Planer-
+        Prozess) VIELE Kollisionschecks machen, ohne die laufzeitkritischen
+        Puffer dieses Solvers (self.data/self._gate_data, vom 250-Hz-Regelkreis
+        genutzt) anzufassen. Pinocchio-
         Kontrakt: Model/GeometryModel sind read-only und threadsicher teilbar,
         nur Data/GeometryData sind mutabler Scratch-Zustand -- jeder
         nebenlaeufige Aufrufer braucht also SEINE EIGENEN."""
@@ -463,7 +309,6 @@ class G1IKSolver:
                 cdata_margin = cdata_hard
         return {
             "data": pin.Data(self.model),
-            "env_data": pin.Data(self.model),
             "cdata_margin": cdata_margin,
             "cdata_hard": cdata_hard,
         }
@@ -475,8 +320,7 @@ class G1IKSolver:
         immer False (Verhalten wie bisher, aber der Controller loggt das).
 
         `data`/`cdata`: optionale eigene Scratch-Puffer (siehe
-        make_scratch_buffers()/environment_command_in_collision() fuer die
-        Begruendung -- Nebenlaeufigkeit mit dem 250-Hz-Regelkreis)."""
+        make_scratch_buffers() fuer die Begruendung -- Nebenlaeufigkeit mit dem 250-Hz-Regelkreis)."""
         if not self._gate_ready:
             return False
         q = pin.neutral(self.model)

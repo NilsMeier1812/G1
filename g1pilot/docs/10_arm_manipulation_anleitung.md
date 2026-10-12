@@ -63,7 +63,8 @@ Im Gehen-Modus (`/g1pilot/start_walking`) kommt es auf den Lauf-Regler an:
   wandern dadurch um einige Zentimeter mit dem Oberkörper.
 - **Echter Roboter** (Unitree-Onboard-Regler) **und Simulation mit der alten
   Policy** (Standard): Die Arme fahren in die Lauf-Pose
-  und die Marker sind ausgeblendet. Beim Wechsel zu Greifen bzw. START
+  und die Marker sind ausgeblendet. Der Weg in die Lauf-Pose wird geplant (um
+  Tisch und Hindernisse herum), genau wie bei Grundstellung und Pose anfahren. Beim Wechsel zu Greifen bzw. START
   BALANCING (`/g1pilot/start_balancing`) erscheinen sie wieder an der aktuellen
   Handposition.
 
@@ -90,9 +91,13 @@ Kategorien ("Ordner").
   die verrauschte Messung).
 - **POSE ANFAHREN** zeigt alle gespeicherten Posen gruppiert nach Kategorie,
   inklusive der enthaltenen Komponenten. Beim Anfahren wird die Bahn dorthin
-  **jedes Mal neu geplant** — kollisionsfrei um Hindernisse und den eigenen
-  Körper, da sich Startpose und Umgebung seit dem Speichern geändert haben
-  können.
+  **jedes Mal neu geplant** (meist in 0,02-0,5 s) — kollisionsfrei um
+  Hindernisse und den eigenen Körper, da sich Startpose und Umgebung seit
+  dem Speichern geändert haben können. In der Mitte der Bewegung hält der
+  Arm 5 cm Abstand zu Objekten; nahe am Start und am Ziel darf er näher
+  heran, am Ziel auch aufliegen (Hand auf den Tisch legen geht). Greif-Objekte
+  darf die Hand immer berühren. Nahe am Tisch kommt die Hand entlang ihrer
+  Handachse an (geht das nicht: von oben).
 - **POSE ABBRECHEN** bricht eine laufende geplante Bewegung ab. Das passiert
   auch automatisch, sobald ein Marker manuell angefasst wird — manuelle
   Eingabe hat immer Vorrang.
@@ -117,9 +122,11 @@ Inspire-FTP-Hände, sofern eingerichtet — siehe
 ## Sicherheitsverhalten (was der Anwender wissen sollte)
 
 - **Kollisions-Gate:** Eine kommandierte Zielpose, die den Arm in den
-  eigenen Körper oder ein bekanntes Hindernis fahren würde, wird
-  zurückgehalten — der Arm bleibt stehen, statt hineinzufahren. Marker
-  einfach zurückziehen.
+  eigenen Körper fahren würde, wird zurückgehalten. Gegen Objekte zählt der
+  Abstand: die Hand darf bis zur Berührung heran (auf den Tisch legen geht,
+  in der Nähe wird sie langsamer), aber nicht hinein; ein weiterer Schritt in
+  das Objekt wird so umgelenkt, dass die Hand an der Oberfläche entlang
+  gleitet. Liegt die Hand schon am Tisch, kann man sie jederzeit wegziehen.
 - **Geschwindigkeitslimits:** Kartesisch 0,25 m/s an Hand und Ellbogen
   (Industriewert für Betrieb mit Personen im Schutzraum), zusätzlich
   1,5 rad/s je Gelenk.
@@ -141,6 +148,8 @@ oder live via `ros2 param set /arm_controller <name> <wert>`):
 | `ee_velocity_limit` | 0.25 m/s | Kartesisches Limit an Hand + Ellbogen |
 | `self_collision_gate` | an | Selbstkollisionsprüfung vor jedem Kommando |
 | `environment_collision_gate` | an | Prüfung gegen Hindernisse/Greif-Objekte |
+| `planner_clearance` | 0.05 m | Abstand zu Objekten in der Mitte einer geplanten Bewegung |
+| `planner_time_budget_s` | 2.5 s | Rechenzeit, die eine Planung höchstens bekommt |
 | `kp_low` / `kd_low` | 150/12 (Sim) · 60/1.5 (Real) | PD-Gains der Armgelenke |
 | `arm_weight_ramp_up_s` / `_down_s` | 0.0 (Sim) · 2.0 s (Real) | Übergangsrampe beim (De-)Aktivieren |
 
@@ -150,6 +159,9 @@ oder live via `ros2 param set /arm_controller <name> <wert>`):
 |---|---|
 | Arm bewegt sich nicht | Manipulation aktiviert? (`ENABLE MANIPULATION`) |
 | Arm hält vor einem Hindernis an | Kollisions-Gate hat gegriffen — Marker zurückziehen; siehe Log „Kollisions-Gate: ...". |
+| Pose anfahren meldet „no_path_found" / „goal_in_collision" | Kein Weg mit mindestens 1,5 cm Abstand gefunden bzw. Zielpose steckt im Körper oder > 2 cm in einem Objekt (Roboter steht anders als beim Speichern?). |
+| Pose anfahren meldet „Planer startet noch" | Der Planer-Prozess lädt nach dem Start noch das Modell (einige Sekunden) — kurz warten, erneut anfahren. |
+| Arbeitsplatz-Objekte wirken nicht (Sim) | Die Objekte brauchen den Frame `map` — in der Sim nur mit Navigation (Startmenü Frage 4). |
 | Marker springt nach Homing | Erwartetes Verhalten: nach Homing/Positionsspeicher wird die IK auf die neue Ist-Pose ausgerichtet. |
 | Pose lässt sich nicht speichern | Mindestens eine Komponente auswählen; bei Händen muss die Inspire-Bridge laufen (sonst „skipped"). |
 | Positionsspeicher-Datei weg nach Neustart | Läuft der Container ohne Bind-Mount des Repos? Prüfen mit `G1_POSE_STORE` bzw. Log-Zeile „Positionsspeicher: ...". |
