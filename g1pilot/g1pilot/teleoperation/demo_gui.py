@@ -755,6 +755,7 @@ class DemoGUI(QWidget):
         self.pending = None         # angeforderter, noch nicht bestaetigter Modus
         self.started = self.sim_mode
         self._estop_unacked = False   # Sim: NOT-HALT noch nicht per START quittiert
+        self._estop_shown = False     # NOT-HALT angezeigt, noch nicht quittiert
         self.queue = []             # verbleibende Posen einer laufenden Sequenz
         self.current_pose = None
         self._walk_req = 0          # verwirft veraltete WALK-Timeouts
@@ -769,6 +770,7 @@ class DemoGUI(QWidget):
         node.on_walk_ready = self._on_walk_ready
         node.on_arm_status = self._on_arm_status
         node.on_nav_status = self._on_nav_status
+        node.on_emergency_stop = self._external_estop
 
         self.setWindowTitle("G1 Demo — " + ("SIM" if self.sim_mode else "REAL"))
         self.setStyleSheet("QWidget { background:#111; }")
@@ -921,6 +923,7 @@ class DemoGUI(QWidget):
         self.started = True
         self.btn_start.setVisible(False)
         self._estop_unacked = False
+        self._estop_shown = False
         self._status("Gestartet. Jetzt einen Modus wählen.", "#aaa")
         self._refresh()
 
@@ -940,6 +943,7 @@ class DemoGUI(QWidget):
             # erst kurz danach senden, sonst kaeme er evtl. vor dem START an.
             n.publish_bool(n.pub_start, True)
             self._estop_unacked = False
+            self._estop_shown = False
             self._status("NOT-HALT quittiert …", "#aaa")
             QTimer.singleShot(300, lambda: self.request_mode(mode))
             return
@@ -1260,6 +1264,7 @@ class DemoGUI(QWidget):
             n.publish_bool(pub, False)
         n.publish_bool(n.pub_start, True)
         self._estop_unacked = False
+        self._estop_shown = False
         self.mode = self.pending = None
         self.started = True
         self._refresh()
@@ -1268,14 +1273,27 @@ class DemoGUI(QWidget):
 
     def emergency_stop(self):
         n = self.node
-        self._cancel_sequence()
-        self.set_auto_nav(False)
-        self.walk_panel.reset()
-        self.manip_panel.jog.reset()
         for pub in (n.pub_start, n.pub_start_balancing, n.pub_start_walking,
                     n.pub_arms_enabled, n.pub_arms_home):
             n.publish_bool(pub, False)
         n.publish_bool(n.pub_emergency_stop, True)
+        self._enter_estop()
+
+    def _external_estop(self):
+        """NOT-HALT von aussen (PS-Taste am PS4-Controller): GUI wechselt in
+        denselben Zustand wie beim eigenen Knopf, ohne erneut zu publizieren --
+        sonst bliebe sie im alten Modus haengen und koennte nicht quittieren
+        (Real: »Roboter starten« waere versteckt). Der eigene NOT-HALT kommt
+        hier ebenfalls an und ist dann schon angezeigt."""
+        if not self._estop_shown:
+            self._enter_estop()
+
+    def _enter_estop(self):
+        self._estop_shown = True
+        self._cancel_sequence()
+        self.set_auto_nav(False)
+        self.walk_panel.reset()
+        self.manip_panel.jog.reset()
         self._estop_unacked = self.sim_mode
         self.mode = self.pending = None
         # REAL: nach NOT-HALT wieder bewusst ueber START gehen.

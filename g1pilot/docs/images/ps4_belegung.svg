@@ -49,7 +49,7 @@
     <text x="700" y="128" font-weight="bold">R1</text><text x="725" y="128">Tempo schneller</text>
     <text x="700" y="178"><tspan font-weight="bold">△</tspan> Verschieben ↔ Drehen</text>
     <text x="700" y="203"><tspan font-weight="bold">○</tspan> Hand öffnen</text>
-    <text x="538" y="92" text-anchor="middle" font-weight="bold" font-size="12">Options: Greifen-Modus</text>
+    <text x="538" y="92" text-anchor="middle" font-weight="bold" font-size="12">Options: Arme übernehmen</text>
     <text x="700" y="228"><tspan font-weight="bold">□</tspan> Hand schließen</text>
     <text x="700" y="253"><tspan font-weight="bold">✕</tspan> Stopp</text>
     <text x="520" y="440" font-weight="bold">Rechter Stick</text>

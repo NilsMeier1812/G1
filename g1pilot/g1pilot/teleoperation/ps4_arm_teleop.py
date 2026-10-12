@@ -10,7 +10,7 @@ arm_controller bzw. in der Inspire-Bridge:
   /g1pilot/hand_goal/<side>     PoseStamped  kartesisches Hand-Ziel (pelvis)
   /g1pilot/hand_action/<side>   String       "open" / "close"
   /g1pilot/arms/enabled         Bool         Arme uebernehmen
-  /g1pilot/start_balancing      Bool         Greifen-Modus (stehen, Arme frei)
+  /g1pilot/start_balancing      Bool         Greifen-Modus (stehen, Arme frei; nur Sim)
   /g1pilot/arms/home            Bool         Grundstellung (Impuls)
   /g1pilot/pose_store/cancel    Bool         laufende geplante Bewegung abbrechen
   /g1pilot/emergency_stop       Bool         NOT-HALT (wie in den GUIs)
@@ -28,9 +28,10 @@ Belegung (Details: g1pilot/docs/43_ps4_controller.md):
   L1 / R1      Tempo langsamer / schneller (Langsam, Normal, Schnell)
   Kreis / Viereck  Hand oeffnen / schliessen (ausgewaehlte Hand/Haende)
   Kreuz        Stopp: Hand haelt sofort an, geplante Bewegung abbrechen
-  Options      Greifen-Modus: stehen + Arme uebernehmen
+  Options      Arme uebernehmen (Sim: + Greifen-Modus/stehen, siehe
+               options_starts_balancing -- real aus)
   Share (1 s halten)  Grundstellung
-  PS           NOT-HALT
+  PS           NOT-HALT (ps_estop=false: nur Stopp wie Kreuz)
 """
 import json
 import math
@@ -90,13 +91,19 @@ class ArmTeleopLogic:
     """
 
     def __init__(self, deadzone=0.12, expo=0.4, speed="Normal", home_hold_s=1.0,
-                 selection="right"):
+                 selection="right", max_speed="Schnell", ps_estop=True):
         self.deadzone = float(deadzone)
         self.expo = float(expo)
         self.home_hold_s = float(home_hold_s)
         self.selection = selection
         self.mode = "move"
-        self.speed_idx = JOG_SPEED_ORDER.index(speed) if speed in JOG_SPEED_ORDER else 1
+        # Hoechstes per R1 erreichbares Tempo (Real: "Normal", siehe bringup_real).
+        self.max_idx = (JOG_SPEED_ORDER.index(max_speed) if max_speed in JOG_SPEED_ORDER
+                        else len(JOG_SPEED_ORDER) - 1)
+        idx = JOG_SPEED_ORDER.index(speed) if speed in JOG_SPEED_ORDER else 1
+        self.speed_idx = min(idx, self.max_idx)
+        # PS: True = NOT-HALT (wie die GUIs), False = nur Stopp wie Kreuz.
+        self.ps_estop = bool(ps_estop)
         self.estop = False
         self._prev = [0] * L.NUM_BUTTONS
         self._share_since = None
@@ -136,6 +143,13 @@ class ArmTeleopLogic:
             return True
         return False
 
+    def latch_estop(self):
+        """NOT-HALT von aussen (GUI/Streamdeck): Controller sperren wie bei PS."""
+        if not self.estop:
+            self.estop = True
+            return True
+        return False
+
     # ── Eingabe ─────────────────────────────────────────────────────────
     def update(self, axes, buttons, now):
         b = list(buttons) + [0] * max(0, L.NUM_BUTTONS - len(buttons))
@@ -144,7 +158,7 @@ class ArmTeleopLogic:
         out = []
 
         # NOT-HALT zuerst und unabhaengig von allem anderen.
-        if rise[L.PS]:
+        if rise[L.PS] and self.ps_estop:
             out.append(("hold", ("left", "right")))
             out.append(("estop",))
             if not self.estop:
@@ -170,7 +184,7 @@ class ArmTeleopLogic:
         if rise[L.L1] and self.speed_idx > 0:
             self.speed_idx -= 1
             out.append(("changed",))
-        if rise[L.R1] and self.speed_idx < len(JOG_SPEED_ORDER) - 1:
+        if rise[L.R1] and self.speed_idx < self.max_idx:
             self.speed_idx += 1
             out.append(("changed",))
 
@@ -179,7 +193,7 @@ class ArmTeleopLogic:
         if rise[L.SQUARE]:
             out.extend(("hand", s, "close") for s in self.sides)
 
-        if rise[L.CROSS]:
+        if rise[L.CROSS] or (rise[L.PS] and not self.ps_estop):
             out.append(("hold", ("left", "right")))
             out.append(("cancel",))
         if rise[L.OPTIONS]:
@@ -245,17 +259,26 @@ def main(args=None):
             self.declare_parameter("deadzone", 0.12)
             self.declare_parameter("expo", 0.4)
             self.declare_parameter("speed", "Normal")
+            # Hoechstes Tempo per R1 (Real: "Normal" -- 15 cm/s bleibt unter
+            # dem EE-Limit des arm_controllers von 0.25 m/s).
+            self.declare_parameter("max_speed", "Schnell")
+            # PS = NOT-HALT wie in den GUIs (Real: Damp, Roboter sackt
+            # zusammen). false -> PS wirkt nur wie Kreuz (Stopp).
+            self.declare_parameter("ps_estop", True)
             self.declare_parameter("home_hold_s", 1.0)
             # Bleibt der Joy-Stream laenger aus (Funkabriss, Akku leer), haelt
             # die Hand an -- der ps4_joystick publiziert nur bei Verbindung.
             self.declare_parameter("joy_timeout_s", 0.5)
             # Options = Greifen-Modus: zusaetzlich start_balancing senden (wie die
             # Kachel GREIFEN der Demo-GUI). false -> nur Arme uebernehmen.
+            # Real: false -- der Controller aendert den Zustand der Beine nie
+            # (Aufstehen/Balancing bleibt eine Aktion in GUI/Streamdeck).
             self.declare_parameter("options_starts_balancing", True)
             gp = lambda n: self.get_parameter(n).value   # noqa: E731
 
             self.logic = ArmTeleopLogic(gp("deadzone"), gp("expo"), gp("speed"),
-                                        gp("home_hold_s"))
+                                        gp("home_hold_s"), max_speed=gp("max_speed"),
+                                        ps_estop=gp("ps_estop"))
             self.joy_timeout = float(gp("joy_timeout_s"))
             self.options_balancing = bool(gp("options_starts_balancing"))
             self.axes, self.t_joy = [], None
@@ -286,13 +309,18 @@ def main(args=None):
             self.create_subscription(Joy, gp("joy_topic"), self._on_joy, 10)
             # START (GUI/Streamdeck) quittiert den NOT-HALT im arm_controller.
             self.create_subscription(Bool, "/g1pilot/start", self._on_start, 10)
+            # NOT-HALT aus GUI/Streamdeck sperrt auch den Controller (LED rot).
+            self.create_subscription(Bool, "/g1pilot/emergency_stop", self._on_estop, 10)
 
             self.create_timer(1.0 / float(gp("rate_hz")), self._tick)
             self.create_timer(0.2, self._publish_markers)
             self.create_timer(1.0, self._publish_status)
             self._send_feedback(rumble_ms=0)
             self.get_logger().info(
-                f"PS4-Arm-Steuerung bereit ({gp('joy_topic')}): {self.logic.label()}")
+                f"PS4-Arm-Steuerung bereit ({gp('joy_topic')}): {self.logic.label()} "
+                f"(max. {JOG_SPEED_ORDER[self.logic.max_idx]}, PS="
+                f"{'NOT-HALT' if self.logic.ps_estop else 'Stopp'}, Options"
+                f"{' + start_balancing' if self.options_balancing else ' = nur Arme'})")
 
         # ── Eingaenge ──────────────────────────────────────────────────
         def _on_joy(self, msg):
@@ -310,6 +338,14 @@ def main(args=None):
                 self.get_logger().info("NOT-HALT quittiert (START) -- PS4 wieder aktiv.")
                 self._changed()
 
+        def _on_estop(self, msg):
+            if msg.data and self.logic.latch_estop():
+                self._hold(("left", "right"))
+                self.get_logger().warn("NOT-HALT (von aussen) -- PS4 gesperrt bis START.")
+                self._send_feedback(rumble_ms=600, strong=1.0, weak=1.0)
+                self._publish_status()
+                self._publish_markers()
+
         def _run(self, cmd):
             kind = cmd[0]
             if kind == "hold":
@@ -322,7 +358,8 @@ def main(args=None):
                 if self.options_balancing:
                     self.pub_balance.publish(Bool(data=True))
                 self.pub_enable.publish(Bool(data=True))
-                self.get_logger().info("Greifen-Modus: Arme uebernommen.")
+                self.get_logger().info("Options: Arme uebernommen"
+                                       + (" (Greifen-Modus)." if self.options_balancing else "."))
                 self._send_feedback(rumble_ms=150)
             elif kind == "home":
                 self._hold(("left", "right"))

@@ -209,6 +209,38 @@ def test_estop_wins_over_other_buttons_same_packet():
     assert not any(c[0] == "hand" for c in out) and lg.selection == "right"
 
 
+# ── Real-Einstellungen (bringup_real) ──────────────────────────────────────
+def test_max_speed_caps_r1_and_start_speed():
+    lg = ArmTeleopLogic(speed="Langsam", max_speed="Normal")
+    assert lg.speed == "Langsam"
+    assert press(lg, L.R1) == [("changed",)] and lg.speed == "Normal"
+    assert press(lg, L.R1) == [] and lg.speed == "Normal"     # nicht Schnell
+    a, b = joy(LY=1.0)
+    v = max(abs(c) for c in lg.twist(a)["right"][0])
+    assert v == pytest.approx(0.15) and v < 0.25               # < EE-Limit real
+    # Start-Tempo oberhalb des Maximums wird gekappt
+    assert ArmTeleopLogic(speed="Schnell", max_speed="Normal").speed == "Normal"
+    # unbekannter Wert -> kein Deckel (Sim-Default)
+    assert ArmTeleopLogic(max_speed="??").max_idx == 2
+
+
+def test_ps_without_estop_acts_like_cross():
+    lg = ArmTeleopLogic(ps_estop=False)
+    out = press(lg, L.PS)
+    assert out == [("hold", ("left", "right")), ("cancel",)]
+    assert not lg.estop
+    assert press(lg, L.CIRCLE) == [("hand", "right", "open")]   # nicht gesperrt
+
+
+def test_external_estop_latches_once():
+    lg = ArmTeleopLogic()
+    assert lg.latch_estop() and lg.estop
+    assert not lg.latch_estop()                                # schon gesperrt
+    assert press(lg, L.CIRCLE) == [] and lg.twist(joy(LY=1.0)[0]) == {}
+    assert lg.label().startswith("PS4 · NOT-HALT")
+    assert lg.clear_estop() and not lg.estop
+
+
 # ── Logik: Bewegung ───────────────────────────────────────────────────────
 def test_shape_axis_deadzone_and_expo():
     assert shape_axis(0.1, 0.12, 0.4) == 0.0

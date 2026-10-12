@@ -179,6 +179,14 @@ if [ "$G1_MODE" = "real" ]; then
   export G1_HAND_RIGHT_HOST="${G1_HAND_RIGHT_HOST:-192.168.123.211}"
   ask_hand_browser R3b
 
+  # ── R3c) Wofuer der PS4-Controller? ───────────────────────────────────
+  #   Gehen = bisheriger Weg (joystick -> loco_client, Deadman Button 8).
+  #   Arme + Haende = ps4_arm_teleop, KEIN Laufen (docs/43_ps4_controller.md).
+  ask_menu "R3c) PS4-Controller steuert …" 1 "${G1_PS4_ARMS:-}" \
+    "Gehen          — wie bisher (Deadman + Sticks -> loco_client)|0" \
+    "Arme + Haende  — Steuerkreuz waehlt die Hand, KEIN Laufen|1"
+  export G1_PS4_ARMS="$REPLY_VALUE"
+
   # ── R4) RViz ──────────────────────────────────────────────────────────
   ask_menu "R4) RViz mitstarten?" 1 "${USE_RVIZ:-}" \
     "Ja   — empfohlen: Arm-Marker + Zustand sichtbar|true" \
@@ -200,6 +208,10 @@ if [ "$G1_MODE" = "real" ]; then
   echo -e "   Oberflaeche    : ${G}G1_GUI=${G1_GUI}${R}"
   echo -e "   RViz           : ${G}USE_RVIZ=${USE_RVIZ}${R}"
   echo -e "   Geh-Limits     : ${G}vx=${G1_MAX_VX:-0.4} vy=${G1_MAX_VY:-0.3} vyaw=${G1_MAX_VYAW:-0.4}${R}"
+  _ps4_lbl=$( [ "${G1_PS4_ARMS}" = "1" ] \
+    && echo "Arme + Haende, kein Laufen; Tempo ${G1_PS4_SPEED:-Langsam}, max ${G1_PS4_MAX_SPEED:-Normal}" \
+    || echo "Gehen mit Deadman" )
+  echo -e "   PS4-Controller : ${G}G1_PS4_ARMS=${G1_PS4_ARMS}${R} ${DIM}(${_ps4_lbl})${R}"
   echo -e "   ${DIM}Kein Auto-Start: Der Roboter bewegt sich erst, wenn er in der${R}"
   echo -e "   ${DIM}Bedienoberflaeche gestartet wird (Demo-GUI: 'Roboter starten', Streamdeck: START).${R}"
   echo -e "   ${Y}NOT-HALT / E-STOP = Damp = Roboter sackt ZUSAMMEN (sichern!).${R}"
