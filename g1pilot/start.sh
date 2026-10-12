@@ -12,8 +12,8 @@
 #  Allererste Frage: SIMULATION oder ECHTER ROBOTER.
 #
 #  SIM  : MuJoCo + loco_sim (Whole-Body-Policy, Lockstep immer an).
-#         Umgebung -> Bedienoberflaeche -> Inspire-Haende -> Navigation
-#         -> RViz -> Rebuild.
+#         Umgebung -> Bedienoberflaeche -> Inspire-Haende -> Lauf-Policy
+#         -> Navigation -> RViz -> Rebuild.
 #  REAL : Unitree-Loco-Controller (loco_client) + Arm-Manipulation +
 #         Inspire-Haende via Modbus TCP. Netzwerk-Interface (Auto-
 #         Erkennung) -> Bedienoberflaeche -> Haende + IPs -> RViz ->
@@ -254,24 +254,33 @@ else
   export G1_INSPIRE_HANDS="$REPLY_VALUE"
   ask_hand_browser 3b
 
-  # ── 4) Navigation ─────────────────────────────────────────────────────
-  ask_menu "4) Navigation mitstarten? (Planer + Stationen / AUTO NAV)" 2 "${G1_ENABLE_NAV:-}" \
+  # ── 4) Lauf-Policy von loco_sim (Ordner unter policies/) ──────────────
+  #   Arme beim Laufen: g1_wholebody parkt sie in der Lauf-Pose, die beiden
+  #   AGILE-Policies lassen sie frei (bringup_sim liest das aus der deploy.yaml).
+  ask_menu "4) Lauf-Policy?" 1 "${G1_WALK_POLICY:-}" \
+    "Alt (g1_wholebody)        — natuerlicher Gang, Arme beim Laufen geparkt|g1_wholebody" \
+    "AGILE Velocity            — sehr robust, Gang mit Fangschritten, Arme frei|agile_velocity_g1" \
+    "AGILE Velocity-Height     — gleichmaessiger Gang, Arme frei|agile_velocity_height_g1"
+  export G1_WALK_POLICY="$REPLY_VALUE"
+
+  # ── 5) Navigation ─────────────────────────────────────────────────────
+  ask_menu "5) Navigation mitstarten? (Planer + Stationen / AUTO NAV)" 2 "${G1_ENABLE_NAV:-}" \
     "Ja   — Nav-Stack an (erzwingt RViz)|1" \
     "Nein — ohne Navigation|0"
   export G1_ENABLE_NAV="$REPLY_VALUE"
 
-  # ── 5) RViz (bei Navigation Pflicht: Karte/Ziel-Werkzeug leben dort) ───
+  # ── 6) RViz (bei Navigation Pflicht: Karte/Ziel-Werkzeug leben dort) ───
   if [ "$G1_ENABLE_NAV" = "1" ]; then
     export USE_RVIZ=true
   else
-    ask_menu "5) RViz mitstarten? (MuJoCo-Fenster kommt immer)" 2 "${USE_RVIZ:-}" \
+    ask_menu "6) RViz mitstarten? (MuJoCo-Fenster kommt immer)" 2 "${USE_RVIZ:-}" \
       "Ja   — Zusatzfenster mit TF/Markern|true" \
       "Nein — nur MuJoCo-Fenster|false"
     export USE_RVIZ="$REPLY_VALUE"
   fi
 
-  # ── 6) Rebuild ────────────────────────────────────────────────────────
-  ask_rebuild 6
+  # ── 7) Rebuild ────────────────────────────────────────────────────────
+  ask_rebuild 7
 
   # ── Umgebung erzeugen (braucht G1_INSPIRE_HANDS, darum erst hier) ───────
   if [ -n "$G1_ENV" ]; then
@@ -301,6 +310,7 @@ else
   echo -e "   RViz           : ${G}USE_RVIZ=${USE_RVIZ}${R}"
   _hands_lbl=$( [ "${G1_INSPIRE_HANDS}" = "1" ] && echo "Inspire-FTP" || echo "Rubber-Hand" )
   echo -e "   Haende         : ${G}G1_INSPIRE_HANDS=${G1_INSPIRE_HANDS}${R} ${DIM}(${_hands_lbl})${R}"
+  echo -e "   Lauf-Policy    : ${G}G1_WALK_POLICY=${G1_WALK_POLICY}${R}"
   [ "${OPEN_GUIS}" = "true" ] && echo -e "   Hand-Browser   : ${G}OPEN_GUIS=${OPEN_GUIS}${R}"
   echo -e "   Sim-Tempo      : ${G}SIM_REALTIME_FACTOR=${SIM_REALTIME_FACTOR}${R} ${DIM}(Lockstep, gedeckelt)${R}"
   _nav_lbl=$( [ "${G1_ENABLE_NAV}" = "1" ] && echo "an (dijkstra + nav2point + Sim-Glue)" || echo "aus" )

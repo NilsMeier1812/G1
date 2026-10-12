@@ -47,6 +47,10 @@ class InteractiveMarkerEFF(Node):
         self.declare_parameter('follow_rate_hz', 10.0)
         self.declare_parameter('follow_deadband_m', 0.01)
         self.declare_parameter('follow_deadband_deg', 3.0)
+        # GEHEN: Marker ausblenden (Default, Arme in der Lauf-Pose geparkt). Mit
+        # freien Armen beim Laufen (Sim + AGILE-Policy, arm_controller
+        # walk_park_arms:=false) bleiben sie sichtbar und ziehbar.
+        self.declare_parameter('hide_in_walk', True)
 
         self.fixed_frame = self.get_parameter('fixed_frame').get_parameter_value().string_value
         self.spawn_dt = 1.0 / float(self.get_parameter('spawn_rate_hz').value)
@@ -113,6 +117,10 @@ class InteractiveMarkerEFF(Node):
         # order") und initialisiert die Marker staendig neu (Springen). Der
         # arm_controller ignoriert Marker im WALK ohnehin. Bei BALANCING (Greifen)
         # werden sie an der aktuellen Hand-TF neu erzeugt.
+        # Mit hide_in_walk=false bleiben die Marker beim Gehen stehen; nur das
+        # Nachfuehren (follow_ee) pausiert, weil die Taille beim Laufen staendig
+        # nickt/rollt und die Hand im pelvis-Frame wandert -> sonst Update-Strom.
+        self.hide_in_walk = bool(self.get_parameter('hide_in_walk').value)
         self.walk_mode = False
         self.create_subscription(Bool, '/g1pilot/start_walking', self._on_walk_mode, 10)
         self.create_subscription(Bool, '/g1pilot/start_balancing', self._on_balance_mode, 10)
@@ -126,6 +134,9 @@ class InteractiveMarkerEFF(Node):
         if not msg.data or self.walk_mode:
             return
         self.walk_mode = True
+        if not self.hide_in_walk:
+            self.get_logger().info("[marker] GEHEN: Marker bleiben (Arme frei), Nachfuehren pausiert.")
+            return
         for side in ("right", "left"):
             if self.marker_spawned[side]:
                 self.server.erase(f"{side}_hand_goal")
@@ -139,6 +150,9 @@ class InteractiveMarkerEFF(Node):
         if not msg.data or not self.walk_mode:
             return
         self.walk_mode = False
+        if not self.hide_in_walk:
+            self.get_logger().info("[marker] GREIFEN: Nachfuehren wieder aktiv.")
+            return
         # Sofort an der aktuellen Hand-TF neu erzeugen (sonst spaetestens per
         # Spawn-Timer). Publishing-Zustand (Menue) bleibt erhalten.
         self._try_spawn_missing()
@@ -166,7 +180,7 @@ class InteractiveMarkerEFF(Node):
           * nicht waehrend des Ziehens,
           * nach dem Loslassen erst, wenn der Arm das Ziel erreicht hat ODER steht,
           * nur bei merklicher Aenderung (kein Dauer-Flackern im Stillstand)."""
-        if not self.follow_ee:
+        if not self.follow_ee or self.walk_mode:
             return
         # Anzahl ruhiger Ticks, ab denen der Arm als "steht" gilt (~0.5 s).
         still_needed = max(1, int(0.5 / self.follow_dt))
@@ -236,7 +250,7 @@ class InteractiveMarkerEFF(Node):
         return mh
 
     def _try_spawn_missing(self):
-        if self.walk_mode:
+        if self.walk_mode and self.hide_in_walk:
             return
         if not self.marker_spawned["right"]:
             self._try_spawn_one("right", self.right_tf, self.right_scale)

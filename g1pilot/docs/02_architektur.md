@@ -23,7 +23,7 @@ Freiheitsgrade (Beine, Taille, zwei 7-DOF-Arme).
 │   │   └── utils/                IK-Solver, Joint-Tabellen, gemeinsame Hilfsfunktionen
 │   ├── launch/                   ROS-2-Launchdateien (Sim-/Real-Bringup + Bausteine)
 │   ├── docker/, docker-compose.yml   Container-Definitionen
-│   ├── policies/g1_wholebody/    RL-Lauf-Policy (ONNX) + deploy.yaml
+│   ├── policies/                 RL-Lauf-Policies (ONNX) + deploy.yaml: g1_wholebody (Standard), agile_velocity_g1, agile_velocity_height_g1
 │   └── docs/                     diese Dokumentation
 ├── unitree_mujoco/               MuJoCo-Simulation (Unitree-Original, angepasst)
 │   └── simulate_python/

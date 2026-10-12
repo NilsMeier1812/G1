@@ -99,6 +99,10 @@ services:
       # Navigation (g1pilot-Ansatz) in der Sim mitstarten: dijkstra_planner +
       # nav2point + Sim-Glue (sim_localization, joy_to_cmdvel). Siehe g1pilot/docs/50_navigation_anleitung.md.
       - G1_ENABLE_NAV=${G1_ENABLE_NAV:-0}
+      # Lauf-Policy von loco_sim (Ordner unter g1pilot/policies), im Startmenue
+      # waehlbar: g1_wholebody (Default, alt) | agile_velocity_g1 |
+      # agile_velocity_height_g1. Siehe g1pilot/docs/31_loco_technik.md.
+      - G1_WALK_POLICY=${G1_WALK_POLICY:-g1_wholebody}
       # Bedienoberflaeche: streamdeck (Default) | demo (vereinfachte Demo-GUI,
       # siehe g1pilot/docs/42_demo_gui_konzept.md).
       - G1_GUI=${G1_GUI:-streamdeck}
@@ -113,6 +117,10 @@ services:
       # liegt nur im mujoco-sim-Container). Fixer Pfad, den scene_bridge.py als
       # mesh_resource_prefix-Default erwartet.
       - ../unitree_mujoco/scene_editor/meshes:/scene_meshes:ro
+      # Robotermodell der Sim (MJCF) read-only: loco_sim rechnet daraus den
+      # Schwerpunkt fuer den Stand-Balancer (navigation/com_model.py, Parameter
+      # robot_mjcf). Fixer Pfad = loco_sim-Default.
+      - ../unitree_mujoco/unitree_robots/g1:/unitree_mujoco/unitree_robots/g1:ro
     command: >
       bash -c "cd /ros2_ws &&
                source /opt/ros/humble/setup.bash &&

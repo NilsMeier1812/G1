@@ -16,6 +16,8 @@ from launch_ros.actions import Node
 from launch.actions import IncludeLaunchDescription
 import os
 
+from g1pilot.navigation.walk_policy import policy_needs_arm_pose
+
 def generate_launch_description():
     pkg_share = FindPackageShare('g1pilot').find('g1pilot')
 
@@ -40,6 +42,16 @@ def generate_launch_description():
     #  (Joy->loco_cmd_vel, weil loco_sim keinen Joy liest). Real laeuft derselbe
     #  Nav-Stack ueber bringup_real (G1_ENABLE_LIDAR=1) mit MOLA + loco_client.
     enable_nav = os.environ.get('G1_ENABLE_NAV', '0').strip().lower() in ('1', 'true', 'yes', 'on')
+
+    #  G1_WALK_POLICY : Lauf-Policy von loco_sim (Ordner unter policies/), im
+    #  Startmenue waehlbar. g1_wholebody (Default, alte Policy, Arme beim Laufen
+    #  in der Lauf-Pose) | agile_velocity_g1 (sehr robust, Gang mit Fangschritten,
+    #  Arme frei) | agile_velocity_height_g1 (gleichmaessiger Gang, Arme frei).
+    #  Siehe docs/31_loco_technik.md.
+    walk_policy = os.environ.get('G1_WALK_POLICY', '').strip() or 'g1_wholebody'
+    #  Arme beim Laufen parken, wenn die Policy ihre Lauf-Pose braucht (aus der
+    #  deploy.yaml, siehe walk_policy.needs_arm_pose).
+    park_arms = policy_needs_arm_pose(os.path.join(pkg_share, 'policies', walk_policy))
 
     # Navigation OHNE RViz waere blind (Karte/Pfad/Ziel-Werkzeug leben in RViz,
     # es gibt kein eigenes Nav-Fenster) -> bei Nav RViz erzwingen.
@@ -88,6 +100,9 @@ def generate_launch_description():
                 'ee_velocity_limit': '0.5',
                 'planned_motion_alpha': '1.0',
                 'hand_only_settle_s': '1.5',
+                # Sim: Arme beim Laufen nur parken, wenn die Lauf-Policy ihre
+                # Lauf-Pose braucht (g1_wholebody); bei AGILE bleiben sie frei.
+                'walk_park_arms': 'true' if park_arms else 'false',
             }.items()
         ),
 
@@ -111,8 +126,9 @@ def generate_launch_description():
 
         # ── 4. loco_sim: Whole-Body-Loco-/Balance-Controller (ersetzt das Onboard-
         #    High-Level, das es in MuJoCo nicht gibt). Liest rt/lowstate, schreibt
-        #    rt/lowcmd (alle 29 Gelenke). Velocity-konditionierte Policy:
-        #    START BALANCING -> stehen (cmd=0), loco_cmd_vel -> laufen.
+        #    rt/lowcmd (Beine + Taille). Velocity-konditionierte Lauf-Policy
+        #    (G1_WALK_POLICY, Default g1_wholebody, siehe oben);
+        #    START BALANCING -> PD-Stand, START WALKING + loco_cmd_vel -> laufen.
         #    Real-Bringup nutzt weiter loco_client (Unitree-High-Level).
         Node(
             package='g1pilot',
@@ -121,7 +137,7 @@ def generate_launch_description():
             output='screen',
             parameters=[{
                 'interface': 'lo',
-                'policy':    'g1_wholebody',
+                'policy':    walk_policy,
             }]
         ),
     ]

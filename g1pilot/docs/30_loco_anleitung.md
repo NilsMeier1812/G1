@@ -24,11 +24,18 @@ eigener Onboard-Regler, angesprochen über `loco_client`.
 **Typischer Ablauf:**
 
 1. **START BALANCING** → der Roboter steht frei und balanciert; die Arme
-   lassen sich parallel über die Marker bewegen.
+   lassen sich parallel über die Marker bewegen. In der Sim bleiben die Füße
+   dabei stehen, auch mit bewegten Armen oder einer Box in den Händen. Erst
+   wenn er wirklich kippt (z. B. nach einem Stoß, ein Fuß hebt ab), fängt er
+   sich mit ein paar Schritten und steht danach wieder still. Er steht in der
+   leicht gebeugten Haltung des Lauf-Reglers, damit er ohne Satz loslaufen kann.
 2. **WALK** → der Bildschirm-Joystick (bzw. echter Controller auf real) gibt
    Vorwärts/Seitwärts/Drehen vor.
-3. Joystick loslassen → der Roboter bremst ab und geht zurück in den
-   stationären Stand.
+3. Joystick loslassen → der Roboter bremst ab und bleibt stehen. In der Sim
+   steht dann die Lauf-Policy am Platz und macht kleine Ausgleichsschritte.
+   Für den stationären Stand mit geplanten Füßen **START BALANCING** drücken:
+   Die Sim lässt die Policy erst ausbremsen und übergibt nach etwa einer
+   Sekunde an den Stand-Regler.
 
 Über die Kommandozeile:
 
@@ -42,6 +49,26 @@ ros2 topic pub --once /g1pilot/loco_cmd_vel geometry_msgs/msg/Twist "{linear: {x
 `loco_cmd_vel` ist normiert `[-1, 1]`; `linear.x` = vorwärts/rückwärts,
 `linear.y` = seitwärts, `angular.z` = drehen. Die tatsächliche
 Geschwindigkeit ergibt sich aus den konfigurierten Limits (siehe unten).
+
+### Lauf-Regler wählen (nur Sim)
+
+Welche Lauf-Policy die Sim benutzt, wählt man im Startmenü
+(Simulation → „Lauf-Policy"); die Wahl wird gemerkt. Im Text-Menü ist es
+Frage 4, ohne Menü die Umgebungsvariable `G1_WALK_POLICY`:
+
+```bash
+G1_WALK_POLICY=agile_velocity_height_g1 ./start.sh --yes   # gleichmäßiger AGILE-Gang
+```
+
+| Wert | Wirkung |
+|---|---|
+| `g1_wholebody` (Standard, „Alt") | natürlicher, gleichmäßiger Gang; die Arme fahren beim Laufen automatisch in die Lauf-Pose |
+| `agile_velocity_g1` („AGILE Velocity") | sehr robust, Arme frei; der Gang sieht aber nach Stolpern aus (Fangschritte ohne festen Rhythmus) |
+| `agile_velocity_height_g1` („AGILE Velocity-Height") | gleichmäßiger Gang, trifft das Tempo, bis 1 m/s vorwärts, Arme frei; Stöße im Stand fängt `agile_velocity_g1` ab |
+
+Ob die Arme beim Laufen geparkt werden, stellt der Sim-Start passend zur
+Policy ein. Im Stand hält bei allen dreien derselbe Stand-Regler die Füße fest.
+Vergleichswerte stehen in [31_loco_technik.md](31_loco_technik.md#gangbild).
 
 ## Sim ↔ Real
 
@@ -74,4 +101,5 @@ bleibt stehen). Details und Sicherheitsablauf für echte Hardware:
 | WALK-Klick ohne Wirkung | Erst START BALANCING, dann WALK — WALK wird sonst mit Warnung ignoriert. |
 | Roboter fällt beim Eintritt in BALANCE | (Sim) Prüfen, ob `USE_JOYSTICK=0` gesetzt ist, sofern kein Gamepad im Container hängt. |
 | Roboter reagiert nicht auf den Joystick | Ist WALK aktiv (nicht nur BALANCING)? Kommt der `loco_cmd_vel`-Stream regelmäßig an (Deadman-Timeout)? |
-| Arme hängen seltsam beim Loslaufen | Normal für kurze Zeit: die Arme werden erst in eine definierte Lauf-Pose gebracht, bevor der Lauf-Regler startet. |
+| (Sim) Roboter macht im BALANCING bei Arm-Bewegung Schritte | Im Log von `loco_sim` steht dann „Schwerpunkt-Modell nicht geladen": Der `g1pilot-sim`-Container sieht das Robotermodell nicht (Mount in `docker-compose.yml`) oder Pinocchio ist älter als 3. Container mit `--build` neu bauen. |
+| Arme hängen seltsam beim Loslaufen | Echter Roboter: normal für kurze Zeit, die Arme werden erst in eine definierte Lauf-Pose gebracht, bevor der Lauf-Regler startet. In der Sim bleiben die Arme frei und behalten ihre Stellung. |
