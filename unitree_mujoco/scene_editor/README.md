@@ -369,3 +369,12 @@ Mehr dazu in `meshes/README.md`.
   erneut ausfuehren (braucht genug freien Diskspeicher!) und danach die
   betroffene(n) Szene(n) neu bauen (`python3 build_env_scene.py --env
   scenes/<name>.xml`, oder einfach `g1pilot/start.sh` neu starten).
+- **Objekte rutschen ueber lange Zeit vom Tisch / liegen sichtbar ueber der
+  Platte** – die V-HACD-Huellen sind voxelbasiert (bei einem 5 m breiten
+  Arbeitsplatz ~4 cm pro Voxel) und stehen ueber der echten Tischplatte, mit
+  leicht schraegen Oberseiten. `build_env_scene.py` erkennt darum grosse,
+  ebene, waagrechte Rechtecke im Mesh (Tischplatten, Regalboeden), schneidet
+  die Huellen dort knapp ueber der Platte aus und legt die Platte als exakte
+  Box an (im Viewer Gruppe 3: gruen = Ablageflaeche, rot = Huellen). Zusaetzlich
+  das Moebel selbst gerade stellen: in der Szene nur um z drehen, keine
+  Neigung um x/y -- schon 1-2 Grad reichen, damit Boxen langsam wandern.
