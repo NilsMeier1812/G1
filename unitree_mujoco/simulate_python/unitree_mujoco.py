@@ -154,6 +154,7 @@ def SimulationThread():
         # der Integration -> sonst publiziert der lowStateThread einen Schritt alte
         # Geschwindigkeiten (dq/gyro), an denen eine RL-Policy kippt. Siehe Lockstep.
         mujoco.mj_forward(mj_model, mj_data)
+        unitree.cache_foot_state()   # Fusskraefte fuer den lowstate-Thread (nicht parallel zu mj_step lesen)
 
         scene_state.maybe_publish(mj_data)   # intern ratenbegrenzt (SCENE_PUBLISH_HZ)
 
