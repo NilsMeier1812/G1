@@ -47,6 +47,13 @@ Solange ein Marker nicht gezogen wird, folgt er standardmäßig der Hand
 (Leader-Follower) — nach einer fremden Bewegung (Homing, Positionsspeicher)
 "springt" er also nicht, sondern schleicht sich unauffällig nach.
 
+Nach dem Loslassen bleibt der Marker auf der Zielposition stehen, bis der Arm
+dort angekommen ist oder das Ziel als nicht erreichbar erkannt wurde (Log:
+`Ziel nicht erreichbar`); erst dann kehrt er zur Hand zurück. Während der
+Fahrt kann man ihn erneut greifen und weiterziehen (z.B. erst hoch, dann nach
+vorne) — das neue Ziel ersetzt das alte. Linker und rechter Marker sind
+unabhängig, beide Arme können also gleichzeitig fahren.
+
 Im Gehen-Modus (`/g1pilot/start_walking`) kommt es auf den Lauf-Regler an:
 
 - **Simulation mit einer AGILE-Lauf-Policy** (im Startmenü wählbar): Die Arme bleiben frei. Sie behalten ihre
