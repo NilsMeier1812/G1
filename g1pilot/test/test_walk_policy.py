@@ -19,7 +19,7 @@ from g1pilot.navigation.stand_balancer import (
     BalancerParams, SettleGate, SettleParams, StandBalancer, TipDetector, TipParams,
     foot_tilt, LEG_STAND_POSE)
 from g1pilot.navigation.walk_policy import (
-    AgileHistoryPolicy, MjlabVelocityPolicy, load_walk_policy)
+    AgileHistoryPolicy, MjlabVelocityPolicy, load_walk_policy, policy_needs_arm_pose)
 from g1pilot.utils.joints_names import JOINT_NAMES_ROS
 
 PKG = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -191,6 +191,9 @@ def test_loader_dispatch():
     legacy = load_walk_policy(LEGACY_DIR)
     assert isinstance(legacy, MjlabVelocityPolicy) and legacy.needs_arm_pose is True
     assert legacy.stand_leg_pose is None        # -> gerade Standpose des Balancers
+    # bringup_sim leitet walk_park_arms daraus ab, ohne das ONNX zu laden
+    for pdir, pol in ((AGILE_DIR, agile), (VH_DIR, vh), (LEGACY_DIR, legacy)):
+        assert policy_needs_arm_pose(pdir) is pol.needs_arm_pose
 
 
 # ── Velocity-Height-Policy ───────────────────────────────────────────────────

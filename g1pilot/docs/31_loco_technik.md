@@ -12,9 +12,9 @@ wollen. Für die Bedienung siehe [30_loco_anleitung.md](30_loco_anleitung.md).
 | `g1pilot/navigation/stand_balancer.py` | PD-Balancer mit Schwerpunkt-Führung, Kipp-Erkennung, WALK→STAND-Übergabe (ohne ROS) |
 | `g1pilot/navigation/com_model.py` | Schwerpunkt relativ zu den Füßen aus den Gelenkwinkeln (Pinocchio, MJCF-Modell der Sim) |
 | `g1pilot/navigation/loco_client.py` | Ansteuerung des Unitree-Onboard-Reglers (nur echter Roboter) |
-| `g1pilot/policies/agile_velocity_g1/` | **Standard:** Lauf-Policy NVIDIA WBC-AGILE „Velocity-G1-History-v0" (Apache-2.0, Herkunft in `ATTRIBUTION.md`) |
-| `g1pilot/policies/agile_velocity_height_g1/` | Alternative: NVIDIA WBC-AGILE „Velocity-Height-G1-History-v0" (Apache-2.0), gleichmäßiger Gang; fängt mit der Standard-Policy ab |
-| `g1pilot/policies/g1_wholebody/` | Alte Lauf-Policy (unitree_rl_mjlab G1 Velocity, Apache-2.0), per Parameter wählbar |
+| `g1pilot/policies/g1_wholebody/` | **Standard:** alte Lauf-Policy (unitree_rl_mjlab G1 Velocity, Apache-2.0), Arme beim Laufen in der Lauf-Pose |
+| `g1pilot/policies/agile_velocity_g1/` | Alternative: NVIDIA WBC-AGILE „Velocity-G1-History-v0" (Apache-2.0, Herkunft in `ATTRIBUTION.md`), Arme frei |
+| `g1pilot/policies/agile_velocity_height_g1/` | Alternative: NVIDIA WBC-AGILE „Velocity-Height-G1-History-v0" (Apache-2.0), gleichmäßiger Gang, Arme frei; fängt mit `agile_velocity_g1` ab |
 | `g1pilot/test_agile_walk_sim.py` | Headless-MuJoCo-Test von Laufen, Stehen und Übergaben (ohne ROS) |
 | `g1pilot/test/test_walk_policy.py` | Unit-Tests: Obs-Layout, ONNX = Original, Übergabe-Logik, Schwerpunkt-Modell, Kipp-Erkennung |
 | `unitree_mujoco/simulate_python/unitree_sdk2py_bridge.py` | Mischt Bein-/Taillen-Kommandos (`rt/lowcmd`) mit Arm-Kommandos (`rt/arm_sdk`); stellt den Roboter bei START BALANCING in die von `loco_sim` kommandierte Stand-Pose |
@@ -38,13 +38,15 @@ funktioniert.
   Füße geplant, richtet die per IMU gemessene Neigung aktiv auf und schiebt
   das Becken so, dass der Schwerpunkt über der Fußmitte bleibt. Arm-Bewegungen
   und Lasten in den Händen fängt er ohne Schritte ab. Er steht in der
-  Stand-Pose der Lauf-Policy (AGILE: leichte Hocke mit breiter Spur).
-- **WALK** (laufen): eine vortrainierte, velocity-konditionierte ONNX-Policy.
-  Standard ist NVIDIAs WBC-AGILE „Velocity-G1-History-v0"
-  (`policies/agile_velocity_g1`). Sie steuert nur Beine und Taille
-  (roll/pitch) und wurde mit ständig zufällig bewegten Armen trainiert, darum
-  **bleiben die Arme beim Laufen frei** (Marker, Kommandos, Box tragen). Läuft
-  omnidirektional; bei `cmd=0` steht sie am Platz.
+  Stand-Pose der Lauf-Policy (AGILE: leichte Hocke mit breiter Spur; alte
+  Policy: gerade Standpose).
+- **WALK** (laufen): eine vortrainierte, velocity-konditionierte ONNX-Policy,
+  im Startmenü wählbar (Tabelle unten). Standard ist die alte Policy
+  `g1_wholebody`; sie braucht die Arme beim Laufen in ihrer Lauf-Pose. Die
+  beiden AGILE-Policies von NVIDIA wurden mit ständig zufällig bewegten Armen
+  trainiert, mit ihnen **bleiben die Arme beim Laufen frei** (Marker,
+  Kommandos, Box tragen). Alle laufen omnidirektional; bei `cmd=0` stehen sie
+  am Platz.
 
 Grund für die Kombination: Die Policy steht bei `cmd=0` zwar sicher, macht
 dabei aber kleine Ausgleichsschritte (Füße wandern einige Zentimeter, mit
@@ -54,21 +56,23 @@ Nur wenn der PD den Roboter nicht mehr halten kann (ein Fuß hebt ab, z. B.
 nach einem Stoß), fängt die Policy mit Schritten ab und gibt danach wieder an
 den PD (siehe „Abfangen").
 
-Policy wechseln: Umgebungsvariable `G1_WALK_POLICY` beim Start
-(`docker-compose.yml` → `launch/bringup_sim.launch.py` → Parameter `policy`
-von `loco_sim`, Ordnername unter `policies/`):
+Policy wechseln: im Startmenü (`g1_gui.py`, Simulation → „Lauf-Policy"; Text-
+Menü `start.sh` Frage 4). Beide setzen `G1_WALK_POLICY` (`docker-compose.yml`
+→ `launch/bringup_sim.launch.py` → Parameter `policy` von `loco_sim`,
+Ordnername unter `policies/`):
 
 | `G1_WALK_POLICY` | Gang | Arme beim Laufen |
 |---|---|---|
-| `agile_velocity_g1` (Standard) | sehr robust, aber Fangschritte ohne festen Rhythmus (siehe „Gangbild") | frei |
+| `g1_wholebody` (Standard, alt) | gleichmäßig | fest in der Lauf-Pose |
+| `agile_velocity_g1` | sehr robust, aber Fangschritte ohne festen Rhythmus (siehe „Gangbild") | frei |
 | `agile_velocity_height_g1` | gleichmäßig, trifft das Tempo, bis 1 m/s | frei |
-| `g1_wholebody` (alt) | gleichmäßig | fest in der Lauf-Pose |
 
-Die alte Policy braucht die Arme in der Lauf-Pose, also dazu
-`walk_park_arms:=true` für die Manipulation (siehe
-[11_arm_manipulation_technik.md](11_arm_manipulation_technik.md), steht in
-`launch/bringup_sim.launch.py`). Welche Logik eine Policy braucht, erkennt
-`walk_policy.load_walk_policy()` am Feld `format` in `deploy.yaml`.
+Ob die Arme beim Laufen geparkt werden (`walk_park_arms` der Manipulation,
+siehe [11_arm_manipulation_technik.md](11_arm_manipulation_technik.md)), leitet
+`bringup_sim.launch.py` aus der gewählten Policy ab
+(`walk_policy.policy_needs_arm_pose()`, liest nur die `deploy.yaml`): an bei
+`g1_wholebody`, aus bei den AGILE-Policies. Welche Logik eine Policy braucht,
+erkennt `walk_policy.load_walk_policy()` am Feld `format` in `deploy.yaml`.
 
 ### Gangbild
 
@@ -296,7 +300,7 @@ Trainingsbereiche der Policy (`commands.base_velocity.ranges`).
 
 | Parameter | Bedeutung |
 |---|---|
-| `policy` | Ordner der Lauf-Policy unter `policies/` (Standard `agile_velocity_g1`, im Bringup aus `G1_WALK_POLICY`) |
+| `policy` | Ordner der Lauf-Policy unter `policies/` (Standard `g1_wholebody`, im Bringup aus `G1_WALK_POLICY`) |
 | `settle_s`, `settle_quiet_s`, `settle_gyro_max`, `settle_dq_max`, `settle_timeout_s` | Übergabe WALK → STAND |
 | `fall_gz`, `fall_debounce_s` | Sturz-Erkennungsschwelle/-Entprellung |
 | `hold_kd_scale` | Dämpfungsfaktor der Beine im HOLD |
@@ -393,8 +397,11 @@ AGILE, Stand 2026-10-08 (Standard-Szene / Inspire-Szene, beide bestanden):
 | START WALKING mit cmd = 0 aus dem PD | Becken ≤ 2.1 cm nach START BALANCING, ≤ 4.9 cm nach einer Übergabe |
 | Stöße 80 / 150 / 250 N | 0 Stürze, wie oben |
 
-Die alte Policy (`--policy g1_wholebody`) läuft mit Armen in der Lauf-Pose gut,
-fällt aber mit hängenden Armen, mit Box und unter Arm-Bewegung im Stand.
+Die alte Policy (`--policy g1_wholebody`, Standard) besteht Laufen, PD-Stand
+(auch mit bewegten Armen und 1 kg je Hand), Übergaben mit Armen in der
+Lauf-Pose und Stöße bis 250 N. Beim Laufen mit hängenden oder bewegten Armen
+oder mit Box stürzt sie; darum parkt die Sim mit ihr die Arme beim Laufen.
+2 kg je Hand im Stand fängt sie nicht ab (die AGILE-Policies schon).
 
 ## Bekannte Einschränkungen
 
@@ -402,7 +409,7 @@ fällt aber mit hängenden Armen, mit Box und unter Arm-Bewegung im Stand.
   Balance-/Lauf-Strategie ist eigens für die Simulation gebaut und teils auf
   simulationsinterne Größen angewiesen (z. B. Basisgeschwindigkeit/Fußkraft
   in `reserve[]` der Bridge) — sie ist **nicht** für den Realeinsatz gedacht.
-- Die Standard-Policy `agile_velocity_g1` läuft mit Fangschritten ohne
+- Die Policy `agile_velocity_g1` läuft mit Fangschritten ohne
   festen Rhythmus (siehe „Gangbild"); das ist ihr Trainingsergebnis, kein
   Fehler der Anbindung.
 - Die AGILE-Policy erreicht in MuJoCo etwa 75 % der kommandierten

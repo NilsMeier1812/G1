@@ -7,7 +7,7 @@ Kapselt alles Policy-Spezifische (Obs-Aufbau, History, Gelenk-Zuordnung, Gains),
 damit loco_sim und die Headless-Tests EXAKT denselben Code benutzen. Welche Klasse
 geladen wird, entscheidet  format:  in der deploy.yaml des Policy-Ordners:
 
-  * agile_history  (Default, policies/agile_velocity_g1)
+  * agile_history  (policies/agile_velocity_g1)
       NVIDIA WBC-AGILE "Velocity-G1-History-v0". Steuert NUR Beine + Taille
       roll/pitch (14 Gelenke) und SIEHT die Arme nicht. Im Training wurden die
       Arme auch beim Laufen staendig zufaellig bewegt -> die Arme sind beim
@@ -16,7 +16,7 @@ geladen wird, entscheidet  format:  in der deploy.yaml des Policy-Ordners:
   * agile_height_history (policies/agile_velocity_height_g1)
       NVIDIA WBC-AGILE "Velocity-Height-G1-History-v0". Steuert NUR die Beine
       (12), SIEHT alle 29 Gelenke inkl. Arme. Gleichmaessiger Gang, Arme frei.
-  * mjlab_velocity (Legacy, policies/g1_wholebody)
+  * mjlab_velocity (Standard, policies/g1_wholebody)
       unitree_rl_mjlab G1 Velocity. Ganzkoerper-Obs (29 Gelenke inkl. Arme) ->
       laeuft nur stabil mit Armen nahe ihrer Default-Pose.
 
@@ -324,11 +324,22 @@ _FORMATS = {
 }
 
 
-def load_walk_policy(pdir):
-    """Policy aus einem Ordner mit deploy.yaml laden (format: siehe _FORMATS)."""
+def _policy_class(pdir):
     with open(os.path.join(pdir, "deploy.yaml"), "r") as f:
         dep = yaml.safe_load(f)
     fmt = dep.get("format", "mjlab_velocity")   # alte deploy.yaml ohne format-Feld
     if fmt not in _FORMATS:
         raise ValueError(f"Unbekanntes Policy-Format '{fmt}' in {pdir}/deploy.yaml")
-    return _FORMATS[fmt](pdir, dep)
+    return _FORMATS[fmt], dep
+
+
+def load_walk_policy(pdir):
+    """Policy aus einem Ordner mit deploy.yaml laden (format: siehe _FORMATS)."""
+    cls, dep = _policy_class(pdir)
+    return cls(pdir, dep)
+
+
+def policy_needs_arm_pose(pdir):
+    """Braucht die Policy die Arme beim Laufen in ihrer Lauf-Pose? Liest nur die
+    deploy.yaml (kein ONNX) -> fuer den Bringup (arm_controller walk_park_arms)."""
+    return _policy_class(pdir)[0].needs_arm_pose

@@ -49,19 +49,20 @@ Solange ein Marker nicht gezogen wird, folgt er standardmäßig der Hand
 
 Im Gehen-Modus (`/g1pilot/start_walking`) kommt es auf den Lauf-Regler an:
 
-- **Simulation** (Lauf-Policy AGILE): Die Arme bleiben frei. Sie behalten ihre
+- **Simulation mit einer AGILE-Lauf-Policy** (im Startmenü wählbar): Die Arme bleiben frei. Sie behalten ihre
   Stellung, die Marker bleiben sichtbar und ziehbar, man kann also z. B. eine
   Box halten und dabei gehen. Nur das Nachführen der Marker pausiert, bis man
   wieder zu Greifen wechselt. Die Taille bewegt sich beim Laufen mit, die Hände
   wandern dadurch um einige Zentimeter mit dem Oberkörper.
-- **Echter Roboter** (Unitree-Onboard-Regler): Die Arme fahren in die Lauf-Pose
+- **Echter Roboter** (Unitree-Onboard-Regler) **und Simulation mit der alten
+  Policy** (Standard): Die Arme fahren in die Lauf-Pose
   und die Marker sind ausgeblendet. Beim Wechsel zu Greifen bzw. START
   BALANCING (`/g1pilot/start_balancing`) erscheinen sie wieder an der aktuellen
   Handposition.
 
 Gesteuert wird das über das Launch-Argument `walk_park_arms` von
-`manipulation_launcher.launch.py` (`bringup_sim` setzt `false`, real gilt
-immer `true`).
+`manipulation_launcher.launch.py` (`bringup_sim` setzt es passend zur
+Lauf-Policy, real gilt immer `true`).
 
 **3. Home-Position**
 

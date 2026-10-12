@@ -13,12 +13,13 @@ es in MuJoCo nicht gibt. KOMBINIERT zwei Regler, je nach Aufgabe:
     in den Haenden werden ohne Schritte abgefangen. Braucht IMU + Encoder.
     Steht der Roboter in der Stand-Pose der Lauf-Policy (AGILE: breite Hocke).
   * WALK (laufen): velocity-konditionierte ONNX-Lauf-Policy (walk_policy.py).
-    Default: NVIDIA WBC-AGILE "Velocity-G1-History-v0"
-    (policies/agile_velocity_g1, Apache-2.0). Sie steuert nur Beine + Taille
-    roll/pitch und wurde mit staendig bewegten Armen trainiert -> die Arme
-    bleiben beim Laufen frei (arm_controller/Marker), keine Lauf-Pose noetig.
-    Legacy-Alternative: policy:=g1_wholebody (unitree_rl_mjlab, braucht die
-    Arme in der Lauf-Pose -> dann arm_controller walk_park_arms:=true).
+    Default: policy:=g1_wholebody (unitree_rl_mjlab, braucht die Arme in der
+    Lauf-Pose -> arm_controller walk_park_arms:=true, setzt bringup_sim).
+    Alternativen (im Startmenue waehlbar): NVIDIA WBC-AGILE
+    "Velocity-G1-History-v0" (policies/agile_velocity_g1, Apache-2.0) und
+    "Velocity-Height-G1-History-v0" (policies/agile_velocity_height_g1). Sie
+    wurden mit staendig bewegten Armen trainiert -> die Arme bleiben beim Laufen
+    frei (arm_controller/Marker), keine Lauf-Pose noetig.
 
 WARUM HYBRID: Eine Lauf-Policy balanciert Stoerungen im Stand per Schritt und
 driftet unter dauernder Arm-Bewegung langsam weg. Der PD haelt dagegen die Fuesse
@@ -104,8 +105,8 @@ class LocoSim(Node):
         super().__init__("loco_sim")
 
         self.declare_parameter("interface", "lo")
-        # Lauf-Policy (Ordner unter share/g1pilot/policies). Legacy: g1_wholebody.
-        self.declare_parameter("policy", "agile_velocity_g1")
+        # Lauf-Policy (Ordner unter share/g1pilot/policies), siehe Kopf-Docstring.
+        self.declare_parameter("policy", "g1_wholebody")
         self.declare_parameter("damp_kd", 8.0)
         # WALK->STAND (START BALANCING im Laufen): die Policy bremst mit cmd=0 aus;
         # der PD uebernimmt fruehestens nach settle_s, wenn der Roboter settle_quiet_s

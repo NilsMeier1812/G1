@@ -75,7 +75,7 @@ und ist nach Themen gegliedert. Jedes Thema hat zwei Dokumente: eine
 │   ├── docs/                    vollständige Dokumentation
 │   ├── g1pilot/                 Node-Quellcode (state, manipulation, navigation, teleoperation, utils)
 │   ├── launch/                  ROS-2-Launchdateien
-│   ├── policies/                RL-Lauf-Policies (ONNX, Sim): agile_velocity_g1, g1_wholebody
+│   ├── policies/                RL-Lauf-Policies (ONNX, Sim): g1_wholebody (Standard), agile_velocity_g1, agile_velocity_height_g1
 │   └── docker/, docker-compose.yml
 ├── unitree_mujoco/               MuJoCo-Simulation (Unitree, angepasst)
 ├── unitree_ros2/                 Unitree-ROS-2-Abhängigkeiten

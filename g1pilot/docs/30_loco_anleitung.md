@@ -52,19 +52,22 @@ Geschwindigkeit ergibt sich aus den konfigurierten Limits (siehe unten).
 
 ### Lauf-Regler wählen (nur Sim)
 
-Welche Lauf-Policy die Sim benutzt, legt `G1_WALK_POLICY` beim Start fest:
+Welche Lauf-Policy die Sim benutzt, wählt man im Startmenü
+(Simulation → „Lauf-Policy"); die Wahl wird gemerkt. Im Text-Menü ist es
+Frage 4, ohne Menü die Umgebungsvariable `G1_WALK_POLICY`:
 
 ```bash
-G1_WALK_POLICY=agile_velocity_height_g1 ./start.sh   # gleichmäßiger Gang
+G1_WALK_POLICY=agile_velocity_height_g1 ./start.sh --yes   # gleichmäßiger AGILE-Gang
 ```
 
 | Wert | Wirkung |
 |---|---|
-| `agile_velocity_g1` (Standard) | sehr robust, Arme frei; der Gang sieht aber nach Stolpern aus (Fangschritte ohne festen Rhythmus) |
-| `agile_velocity_height_g1` | gleichmäßiger Gang, trifft das Tempo, bis 1 m/s vorwärts, Arme frei; Stöße im Stand fängt weiter `agile_velocity_g1` ab |
-| `g1_wholebody` | alte Policy: gleichmäßiger Gang, aber die Arme müssen beim Laufen in der Lauf-Pose stehen |
+| `g1_wholebody` (Standard, „Alt") | natürlicher, gleichmäßiger Gang; die Arme fahren beim Laufen automatisch in die Lauf-Pose |
+| `agile_velocity_g1` („AGILE Velocity") | sehr robust, Arme frei; der Gang sieht aber nach Stolpern aus (Fangschritte ohne festen Rhythmus) |
+| `agile_velocity_height_g1` („AGILE Velocity-Height") | gleichmäßiger Gang, trifft das Tempo, bis 1 m/s vorwärts, Arme frei; Stöße im Stand fängt `agile_velocity_g1` ab |
 
-Stand-Regler, Stand-Haltung und Übergaben sind bei beiden AGILE-Policies gleich.
+Ob die Arme beim Laufen geparkt werden, stellt der Sim-Start passend zur
+Policy ein. Im Stand hält bei allen dreien derselbe Stand-Regler die Füße fest.
 Vergleichswerte stehen in [31_loco_technik.md](31_loco_technik.md#gangbild).
 
 ## Sim ↔ Real

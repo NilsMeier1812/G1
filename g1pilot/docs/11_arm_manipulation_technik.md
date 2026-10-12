@@ -37,7 +37,8 @@ Der Node hält mehrere unabhängige, aber interagierende Zustände:
 - `walk_mode` — während `WALK` (siehe [31_loco_technik.md](31_loco_technik.md))
   hält der Controller die Arme in einer definierten Lauf-Pose. Nur mit
   `walk_park_arms=true` (Standard, real immer). In der Sim setzt
-  `bringup_sim` `walk_park_arms=false`: Die AGILE-Lauf-Policy braucht keine
+  `bringup_sim` es passend zur Lauf-Policy: `true` bei der alten Policy
+  `g1_wholebody` (Standard), `false` bei den AGILE-Policies. Die brauchen keine
   Armpose, `walk_mode` bleibt aus, die Arme halten ihre Stellung und bleiben
   bedienbar, und `/g1pilot/arms/walk_ready` kommt sofort (die Demo-GUI wartet
   darauf). `walk_park_arms=false` außerhalb der Sim wird mit Warnung ignoriert.
