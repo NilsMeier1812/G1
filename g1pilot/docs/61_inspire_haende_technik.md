@@ -80,8 +80,8 @@ zusätzlich an das echte URDF-Limit geklemmt (`load_limits_from_urdf`).
   ist bewusst manuell (nächster GUI-Hauptschalter oder OPEN/CLOSE-Befehl).
 - **Positionsspeicher-Anbindung**: `hand_state_pub` veröffentlicht laufend
   den Ist-Fingerzustand (`/g1pilot/hand_state/{left,right}`, 6 Werte
-  0..1000) für `arm_controller` zum Speichern; `_on_hand_goal` nimmt
-  gespeicherte Winkel entgegen (`/g1pilot/hand_goal/{left,right}`) und
+  0..1000) für `arm_controller` zum Speichern; `_on_finger_goal` nimmt
+  gespeicherte Winkel entgegen (`/g1pilot/finger_goal/{left,right}`) und
   aktiviert die Hand dabei automatisch.
 
 ## Sim-Kontaktphysik (Stufe 2, `MujocoContactBackend`)
