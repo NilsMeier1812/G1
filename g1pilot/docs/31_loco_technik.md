@@ -401,7 +401,8 @@ Die alte Policy (`--policy g1_wholebody`, Standard) besteht Laufen, PD-Stand
 (auch mit bewegten Armen und 1 kg je Hand), Übergaben mit Armen in der
 Lauf-Pose und Stöße bis 250 N. Beim Laufen mit hängenden oder bewegten Armen
 oder mit Box stürzt sie; darum parkt die Sim mit ihr die Arme beim Laufen.
-2 kg je Hand im Stand fängt sie nicht ab (die AGILE-Policies schon).
+2 kg je Hand im Stand fängt sie in der Standard-Szene nicht ab (die AGILE-Policies
+schon; mit Inspire-Händen hält der PD sie ohne Abfangen).
 
 ## Bekannte Einschränkungen
 
