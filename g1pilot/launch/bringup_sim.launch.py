@@ -53,6 +53,13 @@ def generate_launch_description():
     #  deploy.yaml, siehe walk_policy.needs_arm_pose).
     park_arms = policy_needs_arm_pose(os.path.join(pkg_share, 'policies', walk_policy))
 
+    #  G1_PS4_ARMS : "1"/"0" — PS4-Controller steuert den OBERKOERPER (Arme +
+    #  Haende, kein Laufen): ps4_joystick + ps4_arm_teleop statt des alten
+    #  joystick-Nodes. Der Container braucht dafuer /dev/input (start.sh nimmt
+    #  dann docker-compose.ps4.yml dazu). Siehe g1pilot/docs/43_ps4_controller.md.
+    ps4_arms = os.environ.get('G1_PS4_ARMS', '0').strip().lower() in ('1', 'true', 'yes', 'on')
+    joystick_name = os.environ.get('JOYSTICK_NAME', 'Wireless Controller').strip()
+
     # Navigation OHNE RViz waere blind (Karte/Pfad/Ziel-Werkzeug leben in RViz,
     # es gibt kein eigenes Nav-Fenster) -> bei Nav RViz erzwingen.
     if enable_nav:
@@ -118,10 +125,15 @@ def generate_launch_description():
         ),
 
         # ── 3. Teleoperation (Joystick): funktioniert unverändert im Sim ─
+        #    G1_PS4_ARMS=1: PS4-Controller fuer Arme/Haende (kein Laufen).
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 os.path.join(pkg_share, 'launch', 'teleoperation_launcher.launch.py')
             ),
+            launch_arguments=({
+                'ps4_arms': 'true',
+                'joystick_name': joystick_name,
+            } if ps4_arms else {}).items()
         ),
 
         # ── 4. loco_sim: Whole-Body-Loco-/Balance-Controller (ersetzt das Onboard-

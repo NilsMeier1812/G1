@@ -294,6 +294,15 @@ class StreamDeck(Node):
         self.pub_pose_save = self.create_publisher(String, '/g1pilot/pose_store/save', 10)
         self.pub_pose_goto = self.create_publisher(String, '/g1pilot/pose_store/goto', 10)
         self.pub_pose_cancel = self.create_publisher(Bool, '/g1pilot/pose_store/cancel', 10)
+        # NOT-HALT kann auch von aussen kommen (PS-Taste am PS4-Controller,
+        # ps4_arm_teleop): die GUI zeigt ihn dann genauso an wie den eigenen.
+        # Der Callback laeuft im Qt-Thread (spin_once im QTimer).
+        self.on_emergency_stop = None
+        self.create_subscription(Bool, '/g1pilot/emergency_stop', self._emergency_stop, 10)
+
+    def _emergency_stop(self, msg: Bool):
+        if msg.data and self.on_emergency_stop:
+            self.on_emergency_stop()
 
     def publish_bool(self, pub, value: bool):
         msg = Bool()
@@ -319,6 +328,7 @@ class ButtonGUI(QWidget):
         }
 
         self.sim_mode = is_sim_mode()
+        ros_node.on_emergency_stop = self._show_emergency_stop
         self.setWindowTitle("DIGITAL STREAMDECK — "
                             + ("SIM" if self.sim_mode else "REAL"))
         self.init_ui()
@@ -728,7 +738,11 @@ class ButtonGUI(QWidget):
         self.node.publish_bool(self.node.pub_arms_enabled, False)
         self.node.publish_bool(self.node.pub_arms_home, False)
         self.node.publish_bool(self.node.pub_emergency_stop, True)
+        self._show_emergency_stop()
 
+    def _show_emergency_stop(self):
+        """Nur Anzeige: alle Buttons aus, EMERGENCY rot (auch bei NOT-HALT von
+        aussen, z.B. PS-Taste am Controller -- dann ohne erneutes Publizieren)."""
         for pos in self.buttons:
             if pos != (4, 4):
                 self.set_button_active(pos, False)

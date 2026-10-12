@@ -171,6 +171,12 @@ services:
       - G1_HAND_PORT=${G1_HAND_PORT:-6000}
       # PS4-Controller-Gerätename (evdev); Bluetooth-PS4 = "Wireless Controller".
       - JOYSTICK_NAME=${JOYSTICK_NAME:-Wireless Controller}
+      # PS4-Controller: 0 = Gehen (alter joystick -> loco_client, Deadman),
+      # 1 = Arme + Haende, KEIN Laufen (docs/43_ps4_controller.md).
+      - G1_PS4_ARMS=${G1_PS4_ARMS:-0}
+      - G1_PS4_SPEED=${G1_PS4_SPEED:-Langsam}
+      - G1_PS4_MAX_SPEED=${G1_PS4_MAX_SPEED:-Normal}
+      - G1_PS4_PS_ESTOP=${G1_PS4_PS_ESTOP:-1}
       # Konservative Walk-Limits fuer die ersten Tests (loco_client skaliert
       # die normierten UI-/PS4-Kommandos damit).
       - G1_MAX_VX=${G1_MAX_VX:-0.4}

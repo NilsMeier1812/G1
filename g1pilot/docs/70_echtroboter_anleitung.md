@@ -130,6 +130,11 @@ exakt; die Marker folgen der Hand (Leader-Follower).
    die Fernbedienungs-Notabschaltung nutzen und den Vorfall melden.
 6. **ENABLE MANIPULATION** wieder aus — Gewicht rampt 2 s auf 0, die
    Roboter-eigene Armsteuerung übernimmt weich.
+7. Optional **PS4-Controller für Arme + Hände** (Start mit `G1_PS4_ARMS=1`,
+   Startmenü: Ausstattung): Ablauf in
+   [43_ps4_controller.md](43_ps4_controller.md#echter-roboter). In diesem
+   Modus steuert der Controller **nicht** das Gehen; Schritt 5 unten (PS4-
+   Deadman) gibt es dann nicht.
 
 Regelrate-Hinweis: Während ein Marker-Ziel aktiv verfolgt wird, kostet der
 IK-Solve ~20-30 ms/Zyklus — der Regel-Loop läuft dann effektiv mit
@@ -149,7 +154,8 @@ prüfen.
 
 **5. Gehen**
 
-Zuerst **PS4-Pfad** (physischer Deadman), dann Streamdeck:
+Zuerst **PS4-Pfad** (physischer Deadman; nur ohne PS4-Arm-Modus, also
+`G1_PS4_ARMS=0`), dann Streamdeck:
 
 1. Controller verbinden (Gerätename passt zu `JOYSTICK_NAME`, Log „Joystick
    found"). Deadman (Button 8) halten + Stick bewegt den Roboter; loslassen
@@ -169,6 +175,7 @@ Zuerst **PS4-Pfad** (physischer Deadman), dann Streamdeck:
 |---|---|
 | Sanft anhalten beim Gehen | **START BALANCING** (Roboter bleibt stehen) |
 | Ruckt/schwingt an den Armen | **ENABLE MANIPULATION aus** (Gewicht rampt 2 s runter) |
+| Hand fährt per PS4-Controller falsch | Stick loslassen bzw. **Kreuz** (Hand steht sofort, Roboter bleibt stehen). PS am Controller = NOT-HALT wie unten |
 | Echte Gefahr / Sturz droht | **Unitree-Fernbedienung** (übergeordnet) — Streamdeck-EMERGENCY nur, wenn Zusammensacken vertretbar ist |
 
 Was EMERGENCY STOP konkret bewirkt: Beine gehen in `Damp()` (Roboter sackt

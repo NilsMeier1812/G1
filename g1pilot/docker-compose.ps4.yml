@@ -1,0 +1,27 @@
+# ══════════════════════════════════════════════════════════════════════
+# PS4-Controller-Zusatz fuer die Sim (Oberkoerper: Arme + Haende, kein Laufen).
+#
+# Der g1pilot-sim-Container sieht sonst keine Eingabegeraete. Hier bekommt er
+# /dev/input (Bind-Mount: auch ein SPAETER gekoppelter/eingesteckter Controller
+# erscheint) und das Recht, Eingabegeraete zu oeffnen (Zeichengeraete Major 13
+# = input) -- bewusst OHNE privileged. Lesen + Vibration gehen damit; die
+# Controller-LED (sysfs) bleibt im Container read-only, die aktive Hand zeigen
+# dann RViz (Kugel an der Hand) und die Vibration.
+#
+# Wird von start.sh AUTOMATISCH dazugenommen, wenn G1_PS4_ARMS=1 und der Host
+# /dev/input hat. Von Hand:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.ps4.yml G1_PS4_ARMS=1 \
+#     docker compose --profile sim up
+# Siehe g1pilot/docs/43_ps4_controller.md.
+# ══════════════════════════════════════════════════════════════════════
+services:
+  g1pilot-sim:
+    environment:
+      - G1_PS4_ARMS=1
+      # evdev-Name; Bluetooth "Wireless Controller", per USB je nach Treiber
+      # "Sony Interactive Entertainment Wireless Controller" (wird auch erkannt).
+      - JOYSTICK_NAME=${JOYSTICK_NAME:-Wireless Controller}
+    volumes:
+      - /dev/input:/dev/input
+    device_cgroup_rules:
+      - 'c 13:* rmw'

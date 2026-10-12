@@ -179,6 +179,14 @@ if [ "$G1_MODE" = "real" ]; then
   export G1_HAND_RIGHT_HOST="${G1_HAND_RIGHT_HOST:-192.168.123.211}"
   ask_hand_browser R3b
 
+  # ── R3c) Wofuer der PS4-Controller? ───────────────────────────────────
+  #   Gehen = bisheriger Weg (joystick -> loco_client, Deadman Button 8).
+  #   Arme + Haende = ps4_arm_teleop, KEIN Laufen (docs/43_ps4_controller.md).
+  ask_menu "R3c) PS4-Controller steuert …" 1 "${G1_PS4_ARMS:-}" \
+    "Gehen          — wie bisher (Deadman + Sticks -> loco_client)|0" \
+    "Arme + Haende  — Steuerkreuz waehlt die Hand, KEIN Laufen|1"
+  export G1_PS4_ARMS="$REPLY_VALUE"
+
   # ── R4) RViz ──────────────────────────────────────────────────────────
   ask_menu "R4) RViz mitstarten?" 1 "${USE_RVIZ:-}" \
     "Ja   — empfohlen: Arm-Marker + Zustand sichtbar|true" \
@@ -200,6 +208,10 @@ if [ "$G1_MODE" = "real" ]; then
   echo -e "   Oberflaeche    : ${G}G1_GUI=${G1_GUI}${R}"
   echo -e "   RViz           : ${G}USE_RVIZ=${USE_RVIZ}${R}"
   echo -e "   Geh-Limits     : ${G}vx=${G1_MAX_VX:-0.4} vy=${G1_MAX_VY:-0.3} vyaw=${G1_MAX_VYAW:-0.4}${R}"
+  _ps4_lbl=$( [ "${G1_PS4_ARMS}" = "1" ] \
+    && echo "Arme + Haende, kein Laufen; Tempo ${G1_PS4_SPEED:-Langsam}, max ${G1_PS4_MAX_SPEED:-Normal}" \
+    || echo "Gehen mit Deadman" )
+  echo -e "   PS4-Controller : ${G}G1_PS4_ARMS=${G1_PS4_ARMS}${R} ${DIM}(${_ps4_lbl})${R}"
   echo -e "   ${DIM}Kein Auto-Start: Der Roboter bewegt sich erst, wenn er in der${R}"
   echo -e "   ${DIM}Bedienoberflaeche gestartet wird (Demo-GUI: 'Roboter starten', Streamdeck: START).${R}"
   echo -e "   ${Y}NOT-HALT / E-STOP = Damp = Roboter sackt ZUSAMMEN (sichern!).${R}"
@@ -253,6 +265,13 @@ else
     "Nein — starre Haende (Rubber-Hand-Modell)|0"
   export G1_INSPIRE_HANDS="$REPLY_VALUE"
   ask_hand_browser 3b
+
+  # ── 3c) PS4-Controller fuer den Oberkoerper (Arme + Haende, kein Laufen) ─
+  #   Siehe docs/43_ps4_controller.md. Braucht /dev/input auf dem Host.
+  ask_menu "3c) PS4-Controller fuer Arme + Haende? (kein Laufen)" 2 "${G1_PS4_ARMS:-}" \
+    "Ja   — Controller steuert Haende (Steuerkreuz waehlt die Hand)|1" \
+    "Nein — ohne Controller|0"
+  export G1_PS4_ARMS="$REPLY_VALUE"
 
   # ── 4) Lauf-Policy von loco_sim (Ordner unter policies/) ──────────────
   #   Arme beim Laufen: g1_wholebody parkt sie in der Lauf-Pose, die beiden
@@ -316,6 +335,8 @@ else
   _nav_lbl=$( [ "${G1_ENABLE_NAV}" = "1" ] && echo "an (dijkstra + nav2point + Sim-Glue)" || echo "aus" )
   echo -e "   Navigation     : ${G}G1_ENABLE_NAV=${G1_ENABLE_NAV}${R} ${DIM}(${_nav_lbl})${R}"
   echo -e "   Oberflaeche    : ${G}G1_GUI=${G1_GUI}${R}"
+  _ps4_lbl=$( [ "${G1_PS4_ARMS}" = "1" ] && echo "an (Arme + Haende, kein Laufen)" || echo "aus" )
+  echo -e "   PS4-Controller : ${G}G1_PS4_ARMS=${G1_PS4_ARMS}${R} ${DIM}(${_ps4_lbl})${R}"
   [ "${#PASSTHRU[@]}" -gt 0 ] && echo -e "   compose-Args   : ${G}${PASSTHRU[*]}${R}"
   echo
 fi
@@ -433,6 +454,20 @@ if [ -z "${COMPOSE_FILE:-}" ]; then
   fi
   export COMPOSE_FILE="$_cf"
   echo -e "${G}[start] Compose-Dateien: ${COMPOSE_FILE}${R}"
+fi
+# PS4-Controller (nur Sim): Container braucht /dev/input -> Zusatz-Datei.
+if [ "$PROFILE" = "sim" ] && [ "${G1_PS4_ARMS:-0}" = "1" ]; then
+  if [ -d /dev/input ]; then
+    case ":$COMPOSE_FILE:" in
+      *:docker-compose.ps4.yml:*) ;;
+      *) export COMPOSE_FILE="$COMPOSE_FILE:docker-compose.ps4.yml" ;;
+    esac
+    echo -e "${G}[start] PS4-Controller: ${COMPOSE_FILE}${R}"
+    ls /dev/input/by-id/*event-joystick >/dev/null 2>&1 || \
+      echo -e "${Y}[start] Hinweis: noch kein Controller sichtbar -- jetzt koppeln/anstecken geht auch spaeter.${R}"
+  else
+    echo -e "${Y}[start] WARN: /dev/input fehlt (WSL?) -- PS4-Controller nicht verfuegbar.${R}"
+  fi
 fi
 # Laut warnen, wenn die Sim-Container keine GPU bekommen (z.B. NVIDIA ohne
 # Container Toolkit) -- sonst faellt das CPU-Rendering nur an den FPS auf.
