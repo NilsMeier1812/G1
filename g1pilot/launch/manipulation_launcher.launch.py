@@ -53,6 +53,10 @@ def generate_launch_description():
         # (= sofort umschalten, bisheriges Verhalten).
         DeclareLaunchArgument("arm_weight_ramp_up_s", default_value="2.0"),
         DeclareLaunchArgument("arm_weight_ramp_down_s", default_value="2.0"),
+        # Echt-Roboter-Absicherung (0 = aus; bringup_real setzt sie): Schlepp-
+        # fehler-Begrenzung [rad] und Anfahrrampe [rad/s^2], siehe arm_controller.
+        DeclareLaunchArgument("max_tracking_error", default_value="0.0"),
+        DeclareLaunchArgument("arm_accel_limit", default_value="0.0"),
         # Marker senden ihr Ziel sofort beim Ziehen (gruener Wuerfel). Steht das
         # auf false, sind die Wuerfel grau und stumm, bis man sie per Rechtsklick-
         # Menue "Enable publishing" aktiviert. Der Arm bewegt sich ohnehin nur,
@@ -86,6 +90,10 @@ def generate_launch_description():
                     LaunchConfiguration("arm_weight_ramp_up_s"), value_type=float),
                 'arm_weight_ramp_down_s': ParameterValue(
                     LaunchConfiguration("arm_weight_ramp_down_s"), value_type=float),
+                'max_tracking_error': ParameterValue(
+                    LaunchConfiguration("max_tracking_error"), value_type=float),
+                'arm_accel_limit': ParameterValue(
+                    LaunchConfiguration("arm_accel_limit"), value_type=float),
                 'arm_velocity_limit': ParameterValue(
                     arm_velocity_limit, value_type=float),
                 'ee_velocity_limit': ParameterValue(

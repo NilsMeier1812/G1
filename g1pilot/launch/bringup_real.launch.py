@@ -106,6 +106,9 @@ def generate_launch_description():
                 'arm_velocity_limit': os.environ.get('G1_ARM_VEL_LIMIT', '1.5'),
                 'ee_velocity_limit':  os.environ.get('G1_EE_VEL_LIMIT', '0.25'),
                 'self_collision_gate': 'true',
+                # Schleppfehler-Begrenzung + Anfahrrampe (siehe 70_echtroboter_anleitung.md).
+                'max_tracking_error': os.environ.get('G1_ARM_MAX_TRACKING_ERROR', '0.3'),
+                'arm_accel_limit':    os.environ.get('G1_ARM_ACCEL_LIMIT', '3.0'),
                 'kp_low':   '60.0',
                 'kd_low':   '1.5',
                 'kp_wrist': '40.0',

@@ -230,6 +230,31 @@ class ArmController(Node):
         # 0.0 = sofort umschalten (Sim-Verhalten, wird vom Sim-Bringup gesetzt).
         self.declare_parameter("arm_weight_ramp_up_s", 2.0)
         self.declare_parameter("arm_weight_ramp_down_s", 2.0)
+        # Rueckgabe an den Onboard-Regler (DISABLE / Programmende, nur mit
+        # Gewichts-Rampe, also real): ERST die Arme geplant in die Pose fahren,
+        # in der der Onboard-Regler sie beim ENABLE hielt, DANN das Gewicht
+        # 1->0 rampen. Ohne die Rueckfahrt blendet die Rampe in 2 s von der
+        # aktuellen Stellung in die Onboard-Pose ueber -- bei hochgehobenen
+        # Armen ein kraeftiger Schwung auf geradem Gelenkweg (ggf. durch den
+        # Tisch). Sim (Rampe 0) unveraendert.
+        self.declare_parameter("release_to_onboard_pose", True)
+        self.declare_parameter("release_tolerance", 0.05)      # rad, max je Gelenk
+        self.declare_parameter("release_timeout_s", 12.0)      # inkl. Planung
+        # Programmende (Strg+C / docker stop): direkte, langsame Rueckfahrt
+        # hoechstens so lange [s], danach Rampe (launch eskaliert nach ~5 s).
+        self.declare_parameter("shutdown_return_s", 2.5)
+        # Schleppfehler-Begrenzung [rad] (0 = aus, real 0.3): das Kommando
+        # entfernt sich nie weiter als das von der GEMESSENEN Stellung. Haelt
+        # jemand/etwas den Arm fest, laeuft der Sollwert nicht davon -- sonst
+        # baut der PD-Regler Kraft auf und der Arm schnellt beim Loslassen
+        # zum weit entfernten Sollwert.
+        self.declare_parameter("max_tracking_error", 0.0)
+        # Anfahrrampe [rad/s^2] (0 = aus, real 3.0): die Gelenkgeschwindigkeit
+        # des Kommandos darf pro Sekunde hoechstens um so viel STEIGEN. Ein
+        # neues, weit entferntes Ziel (anderer Eingang, Marker-Klick) faehrt
+        # damit sanft an statt im ersten Tick mit voller Geschwindigkeit.
+        # Bremsen bleibt unbegrenzt (Anhalten ist nie das Risiko).
+        self.declare_parameter("arm_accel_limit", 0.0)
 
 
         self.declare_parameter("ee_offset_right_xyz", [0.0, 0.0, 0.0])
@@ -306,6 +331,15 @@ class ArmController(Node):
         # Quittieren (START) aktiv, bis ENABLE MANIPULATION die Kontrolle
         # bewusst zurueckholt.
         self._arm_slack = False
+        # Rueckgabe an den Onboard-Regler (siehe release_to_onboard_pose):
+        # _onboard_q = gemessene Armstellung (14) im Moment, als der Onboard-
+        # Regler die Arme noch allein fuehrte (ENABLE bzw. E-Stop bei Gewicht 0).
+        self._onboard_q = None
+        self._releasing = False          # Rueckfahrt laeuft (danach Rampe 1->0)
+        self._release_direct = False     # Planung gescheitert -> direkt (Gate aktiv)
+        self._release_t0 = 0.0
+        self._release_best = (np.inf, 0.0)   # (kleinster Restfehler, Zeitpunkt)
+        self._last_cmd_speed = 0.0       # rad/s, fuer die Anfahrrampe
         self.homing_active = False
         self.homing_reached = False
         self.homing_tolerance = 0.02
@@ -313,6 +347,7 @@ class ArmController(Node):
         self._last_right_goal_raw = None
         self._goal_left_filt = None
         self._goal_right_filt = None
+        self._ik_hold_goal = {}          # Halteziele aus _align_ik_to_config
         self._reset_after_home = False
         self._initialized = False
 
@@ -831,6 +866,10 @@ class ArmController(Node):
 
         self.kp_low   = _gain("kp_low",   150.0); self.kd_low   = _gain("kd_low",   12.0)
         self.kp_wrist = _gain("kp_wrist",  40.0); self.kd_wrist = _gain("kd_wrist",  4.0)
+        if not is_sim_mode():
+            self._apply_real_safety_limits()
+        self._accel_limit = float(self.get_parameter("arm_accel_limit").value)
+        self._max_track_err = float(self.get_parameter("max_tracking_error").value)
 
         # NUR die 14 Arm-Gelenke (15..28) + Weight (29) werden je beschrieben --
         # exakt wie im offiziellen Unitree-g1_arm7_sdk-Beispiel. Alle anderen
@@ -909,6 +948,248 @@ class ArmController(Node):
 
         msg = self.lowstate_buffer.GetData()
         return np.array([msg.motor_state[id].q for id in G1_29_JointIndex], dtype=float)
+
+    # --------------------------------------------------------
+    # Echt-Roboter-Absicherung: Grenzen, Rueckgabe, Programmende
+    # --------------------------------------------------------
+
+    # Obergrenzen auf dem ECHTEN G1, egal welches Launchfile startet (frueher
+    # bekam z.B. bringup_launcher / `make real-full` die Sim-Gains kp=150/kd=12).
+    REAL_MAX_GAINS = {"kp_low": 80.0, "kd_low": 3.0, "kp_wrist": 50.0, "kd_wrist": 3.0}
+    REAL_MIN_RAMP_S = 1.0
+    REAL_MAX_ARM_VEL = 1.5      # rad/s
+    REAL_MAX_EE_VEL = 0.25      # m/s
+
+    def _apply_real_safety_limits(self) -> None:
+        """Nur real: Gains, Rampen und Speedlimits auf sichere Werte begrenzen.
+        Ein falsches Launchfile darf die Arme nicht hart/schnell machen."""
+        from rclpy.parameter import Parameter
+        log = self.get_logger()
+        for name, cap in self.REAL_MAX_GAINS.items():
+            if getattr(self, name) > cap:
+                log.error(f"REAL: {name}={getattr(self, name):.1f} ist zu hart -> {cap:.1f} "
+                          "(Sim-Gains auf echten Motoren?).")
+                setattr(self, name, cap)
+        fixes = []
+        for name in ("arm_weight_ramp_up_s", "arm_weight_ramp_down_s"):
+            if float(self.get_parameter(name).value) < self.REAL_MIN_RAMP_S:
+                fixes.append(Parameter(name, Parameter.Type.DOUBLE, 2.0))
+        if not (0.0 < self.arm_velocity_limit <= self.REAL_MAX_ARM_VEL):
+            self.arm_velocity_limit = self.REAL_MAX_ARM_VEL
+            fixes.append(Parameter("arm_velocity_limit", Parameter.Type.DOUBLE,
+                                   self.REAL_MAX_ARM_VEL))
+        if not (0.0 < self.ee_velocity_limit <= self.REAL_MAX_EE_VEL):
+            self.ee_velocity_limit = self.REAL_MAX_EE_VEL
+            fixes.append(Parameter("ee_velocity_limit", Parameter.Type.DOUBLE,
+                                   self.REAL_MAX_EE_VEL))
+        if fixes:
+            self.set_parameters(fixes)
+            log.error("REAL: unsichere Parameter korrigiert: "
+                      + ", ".join(f"{p.name}={p.value}" for p in fixes))
+
+    def _measured_arm_q(self) -> np.ndarray:
+        """Gemessene Armstellung (7 links + 7 rechts)."""
+        cur = self.get_current_motor_q()
+        return np.array([cur[j] for j in LEFT_JOINT_INDICES_LIST + RIGHT_JOINT_INDICES_LIST],
+                        dtype=float)
+
+    def _record_onboard_pose(self, why: str) -> None:
+        """Armstellung merken, solange der Onboard-Regler die Arme noch ALLEIN
+        fuehrt (Gewicht 0, kein Slack) -- dorthin faehrt die Rueckgabe zurueck."""
+        if (not self.use_robot or self._arm_slack or self._weight_state != "off"
+                or self._arm_sdk_weight > 0.0):
+            return
+        try:
+            q = self._measured_arm_q()
+        except Exception:
+            return
+        lim = [JOINT_LIMITS_RAD[j] for j in LEFT_JOINT_INDICES_LIST + RIGHT_JOINT_INDICES_LIST]
+        lo = np.array([a for a, _ in lim]); hi = np.array([b for _, b in lim])
+        self._onboard_q = np.clip(q, lo, hi)
+        self.get_logger().info(f"Onboard-Armpose gemerkt ({why}) -- Ziel der spaeteren Rueckgabe.")
+
+    def _release_possible(self) -> bool:
+        ramp = float(self.get_parameter("arm_weight_ramp_down_s").value)
+        return bool(self.use_robot and self.arms_enabled and not self.estop_active
+                    and not self._arm_slack and ramp > 0.0
+                    and bool(self.get_parameter("release_to_onboard_pose").value)
+                    and self._weight_state in ("ramp_up", "on") and self._arm_sdk_weight > 0.0)
+
+    def _start_release(self) -> bool:
+        """DISABLE: Rueckfahrt in die Onboard-Pose starten (geplant). -> True,
+        wenn die Rueckgabe uebernommen wurde (Aufrufer macht dann nichts mehr)."""
+        if not self._release_possible():
+            return False
+        if self._onboard_q is None:
+            self.get_logger().warn("DISABLE: Onboard-Armpose unbekannt -- weiche Rampe ohne "
+                                   "Rueckfahrt (Arme blenden in 2 s in die Onboard-Pose).")
+            return False
+        self._cancel_marker_goals("Rueckgabe an den Onboard-Regler")
+        self._abort_planned_motion("DISABLE")
+        self.homing_active = False
+        self.homing_reached = False
+        # Real: beim Laufen fuehrt danach der Onboard-Regler die Arme selbst.
+        self.walk_mode = False
+        self._walk_transition = False
+        tol = float(self.get_parameter("release_tolerance").value)
+        if float(np.max(np.abs(self._last_q_target - self._onboard_q))) <= tol:
+            self._finish_release("Arme stehen schon in der Onboard-Pose")
+            return True
+        self._releasing = True
+        self._release_direct = False
+        self._release_t0 = time.monotonic()
+        self._release_best = (np.inf, self._release_t0)
+        self.get_logger().info("DISABLE: Arme fahren geplant in die Onboard-Pose zurueck, "
+                               "danach weiche Uebergabe (Gewicht 1->0).")
+        self._start_planned_motion(
+            "Rueckgabe an den Onboard-Regler", ["left", "right"],
+            {"left": self._onboard_q[0:7].copy(), "right": self._onboard_q[7:14].copy()},
+            {}, source="release")
+        return True
+
+    def _finish_release(self, why: str) -> None:
+        """Rueckfahrt beendet (oder abgebrochen): Arme abgeben, Gewicht 1->0."""
+        self._releasing = False
+        self._release_direct = False
+        if self._planned_motion_active or (
+                self._planning_thread is not None and self._planning_thread.is_alive()):
+            self._abort_planned_motion("Rueckgabe")
+        self.arms_enabled = False
+        self._cancel_marker_goals("Manipulation deaktiviert")
+        if self._weight_state in ("ramp_up", "on") and self._arm_sdk_weight > 0.0:
+            self._weight_state = "ramp_down"
+        self.get_logger().info(f"Rueckgabe: {why} -- Gewicht 1->0, Onboard-Regler uebernimmt.")
+
+    def _limit_accel(self, q_prev: np.ndarray, q_new: np.ndarray, dt: float) -> np.ndarray:
+        """Anfahrrampe: Gelenkgeschwindigkeit (max ueber die Gelenke) darf je
+        Tick nur um arm_accel_limit*dt steigen. Richtungserhaltend; Bremsen
+        und Anhalten bleiben unbegrenzt."""
+        a = self._accel_limit
+        if a <= 0.0 or dt <= 0.0:
+            return q_new
+        step = q_new - q_prev
+        s = float(np.max(np.abs(step)))
+        if s < 1e-12:
+            return q_new
+        v = s / dt
+        v_ok = self._last_cmd_speed + a * dt
+        if v <= v_ok:
+            return q_new
+        return q_prev + step * (v_ok / v)
+
+    def _limit_tracking_error(self, q_new: np.ndarray) -> np.ndarray:
+        """Kommando auf +-max_tracking_error um die GEMESSENE Stellung klemmen
+        (nur bei voller arm_sdk-Autoritaet). Weicht der Arm aus (festgehalten,
+        angestossen), gibt der Sollwert nach statt Kraft aufzubauen."""
+        e = self._max_track_err
+        if e <= 0.0 or not self.use_robot or self._weight_state != "on":
+            return q_new
+        try:
+            meas = self._measured_arm_q()
+        except Exception:
+            return q_new
+        return np.clip(q_new, meas - e, meas + e)
+
+    def _write_arm_cmd(self, q14: np.ndarray, weight: float) -> None:
+        """Arm-Kommando (14 Gelenke, PD + Schwerkraft-Feedforward) mit dem
+        gegebenen arm_sdk-Gewicht auf rt/arm_sdk schreiben."""
+        self.msg.mode_machine = self.get_mode_machine()
+        # mode_pr NICHT setzen (bleibt 0 wie im Unitree-arm_sdk-Beispiel;
+        # betrifft nur die Knoechel-Interpretation, die uns nichts angeht).
+        try:
+            self.msg.motor_cmd[G1_29_JointIndex.kNotUsedJoint0].q = float(weight)
+        except Exception:
+            pass
+        # Schwerkraft-Feedforward gegen den PD-Durchhang (s. Parameter).
+        tau_g = self._arm_gravity_tau(q14)
+        wrist_vals = {m.value for m in G1_29_JointWristIndex}
+        for idx, jid in enumerate(G1_29_JointArmIndex):
+            mc = self.msg.motor_cmd[jid]
+            mc.mode = 1
+            mc.q = float(q14[idx])
+            mc.dq = 0.0
+            mc.tau = float(tau_g[idx])
+            if jid.value in wrist_vals:
+                mc.kp = self.kp_wrist
+                mc.kd = self.kd_wrist
+            else:
+                mc.kp = self.kp_low
+                mc.kd = self.kd_low
+        self.msg.crc = self.crc.Crc(self.msg)
+        self.lowcmd_publisher.Write(self.msg)
+
+    def shutdown_release(self) -> None:
+        """Programmende (Strg+C, docker stop, Absturz) NUR REAL: die Arme nicht
+        einfach fallen lassen. Haelt arm_sdk die Arme, fahren sie langsam
+        (direkt, Gates aktiv) Richtung Onboard-Pose und das Gewicht rampt dann
+        1->0 -- wie bei DISABLE, nur ohne Planer (der Prozess endet gerade).
+        Im E-Stop/Slack: nur das Gewicht abrampen (kp bleibt 0)."""
+        if not self.use_robot or is_sim_mode() or not getattr(self, "_initialized", False):
+            return
+        import signal
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                signal.signal(sig, signal.SIG_IGN)   # Rueckgabe nicht abwuergen
+            except Exception:
+                pass
+        w = float(self._arm_sdk_weight)
+        if w <= 0.0 and self._weight_state == "off":
+            return
+        rate = 250.0
+        dt = 1.0 / rate
+
+        def _param(name, default):
+            try:
+                return float(self.get_parameter(name).value)
+            except Exception:
+                return default
+
+        ramp = max(self.REAL_MIN_RAMP_S, _param("arm_weight_ramp_down_s", 2.0))
+        if self._arm_slack and not self.arms_enabled:
+            print("[arm_controller] Programmende im E-Stop: Gewicht 1->0 (Arme bleiben schlaff).",
+                  flush=True)
+            while w > 0.0:
+                w = max(0.0, w - dt / ramp)
+                self.msg.motor_cmd[G1_29_JointIndex.kNotUsedJoint0].q = float(w)
+                self.msg.crc = self.crc.Crc(self.msg)
+                self.lowcmd_publisher.Write(self.msg)
+                time.sleep(dt)
+            return
+        q = self._last_q_target.copy()
+        target = self._onboard_q
+        if (target is not None and self._weight_state != "ramp_down"
+                and bool(self.get_parameter("release_to_onboard_pose").value)):
+            print("[arm_controller] Programmende: Arme fahren langsam in die Onboard-Pose, "
+                  "dann Uebergabe.", flush=True)
+            tol = _param("release_tolerance", 0.05)
+            vmax = min(self.arm_velocity_limit, 0.8)
+            t_end = time.monotonic() + _param("shutdown_return_s", 2.5)
+            v_prev = 0.0
+            while time.monotonic() < t_end:
+                err = target - q
+                m = float(np.max(np.abs(err)))
+                if m <= tol:
+                    break
+                v = min(vmax, v_prev + 3.0 * dt)       # sanft anfahren
+                q_new = q + err * min(1.0, v * dt / m)
+                q_new = self._limit_cartesian_speed(q, q_new, dt)
+                q_new = self._apply_collision_gate(q, q_new)
+                moved = float(np.max(np.abs(q_new - q)))
+                if moved < 1e-7:
+                    break                               # Gate haelt -> von hier abgeben
+                v_prev = moved / dt
+                q = q_new
+                self._write_arm_cmd(q, w)
+                time.sleep(dt)
+        print(f"[arm_controller] Programmende: arm_sdk-Gewicht {w:.2f}->0 in {ramp:.1f} s.",
+              flush=True)
+        while w > 0.0:
+            w = max(0.0, w - dt / ramp)
+            self._write_arm_cmd(q, w)
+            time.sleep(dt)
+        self._arm_sdk_weight = 0.0
+        self._weight_state = "off"
+        print("[arm_controller] Arme an den Onboard-Regler uebergeben.", flush=True)
 
     def _assemble_full_from_last(self) -> np.ndarray:
         """
@@ -1243,7 +1524,10 @@ class ArmController(Node):
         (Damp)."""
         if not msg.data or self.estop_active:
             return
+        self._record_onboard_pose("E-Stop")   # nur wenn der Onboard-Regler sie fuehrte
         self.estop_active = True
+        self._releasing = False
+        self._release_direct = False
         self._arm_slack = True
         self.arms_enabled = False
         self.homing_active = False
@@ -1287,6 +1571,20 @@ class ArmController(Node):
             self.get_logger().warn("ENABLE ignoriert: E-Stop aktiv -- erst mit "
                                    "START quittieren.")
             return
+        if not msg.data:
+            if self._releasing:
+                return                   # Rueckgabe laeuft bereits
+            # Real: erst zurueck in die Onboard-Pose fahren, dann Rampe.
+            if self._start_release():
+                return
+        elif self._releasing:
+            # ENABLE waehrend der Rueckfahrt: abbrechen, Arme HALTEN (unten).
+            self._releasing = False
+            self._release_direct = False
+            self.get_logger().info("Rueckgabe abgebrochen (ENABLE) -- Arme halten.")
+        if msg.data:
+            self._record_onboard_pose("ENABLE")
+            self._last_cmd_speed = 0.0
         self.arms_enabled = msg.data
         self._cancel_marker_goals("Manipulation %s" % ("aktiviert" if msg.data else "deaktiviert"))
         # Reste einer geplanten Bewegung IMMER verwerfen (Enable UND Disable):
@@ -1349,6 +1647,10 @@ class ArmController(Node):
         """
 
         if msg.data:
+            if self._releasing:
+                self.get_logger().warn("HOMING ignoriert: Arme werden gerade an den "
+                                       "Onboard-Regler zurueckgegeben.")
+                return
             # Nur bei aktiver Manipulation annehmen. Frueher wurde ein Homing-
             # Klick im disabled-Zustand GESPEICHERT und feuerte dann beim
             # naechsten Enable als Ueberraschungsbewegung. (Sim: automatisch
@@ -1400,6 +1702,11 @@ class ArmController(Node):
             T_right = self.ik_solver.data.oMf[self.ik_solver._fid_right]
             self._goal_left_filt  = T_left.copy()
             self._goal_right_filt = T_right.copy()
+            # Solange diese Ziele unveraendert sind, HAELT die Hauptschleife die
+            # Gelenke exakt (keine IK) -- sonst zieht der Nullraum-Term die
+            # Arme beim Uebernehmen (ENABLE) in die Ruhe-Konfiguration: Hand
+            # bleibt, Ellbogen dreht bis ~0.25 rad weg.
+            self._ik_hold_goal = {"left": T_left.copy(), "right": T_right.copy()}
             if hasattr(self.ik_solver, "set_goal"):
                 self.ik_solver.set_goal("left",  T_left.copy())
                 self.ik_solver.set_goal("right", T_right.copy())
@@ -1407,10 +1714,24 @@ class ArmController(Node):
         except Exception as e:
             self.get_logger().warning(f"IK-Align fehlgeschlagen: {e}")
 
+    def _ik_side_held(self, side: str) -> bool:
+        """True, wenn das IK-Ziel dieser Seite noch das per _align_ik_to_config
+        gesetzte Halteziel ist (kein neues Ziel seitdem)."""
+        hold = self._ik_hold_goal.get(side)
+        goal = self._goal_left_filt if side == "left" else self._goal_right_filt
+        if hold is None or goal is None:
+            return False
+        return bool(np.allclose(goal.homogeneous, hold.homogeneous, atol=1e-9))
+
     def _on_walk_mode(self, msg: Bool):
         """WALK: Arme sanft in die Lauf-Pose fahren und dort halten (Marker
         werden waehrend WALK ignoriert), damit die Lauf-Policy stabil bleibt."""
         if not msg.data or self.walk_mode:
+            return
+        if self._releasing:
+            # Die Arme gehen ohnehin gerade an den Onboard-Regler, der sie beim
+            # Laufen selbst fuehrt -- nicht in die Lauf-Pose umplanen.
+            self.get_logger().info("WALK: Rueckgabe an den Onboard-Regler laeuft weiter.")
             return
         if not self.walk_park_arms:
             # Arme frei (Sim, AGILE-Policy): nichts parken, Marker/Kommandos wirken
@@ -1656,6 +1977,10 @@ class ArmController(Node):
     def _on_pose_cancel(self, msg: Bool):
         if not msg.data:
             return
+        if self._releasing:
+            self.get_logger().info("POSE ABBRECHEN ignoriert: Rueckgabe an den "
+                                   "Onboard-Regler laeuft (Abbruch: ENABLE oder E-Stop).")
+            return
         if self.walk_mode:
             # Ein Abbruch liesse die Arme auf GERADEM Weg in die Lauf-Pose fahren
             # (WALK braucht sie dort) -- schlechter als der geplante Weg.
@@ -1670,6 +1995,8 @@ class ArmController(Node):
         Kommandos), damit die Schranken nicht auseinanderlaufen."""
         if self.estop_active:
             return "E-Stop aktiv (mit START quittieren)."
+        if self._releasing:
+            return "Arme werden an den Onboard-Regler zurueckgegeben."
         if not self.arms_enabled:
             return "Arme nicht aktiviert (ENABLE MANIPULATION)."
         if self.homing_active:
@@ -1986,6 +2313,13 @@ class ArmController(Node):
         if result[2] != self._plan_gen:
             return   # veraltet: abgebrochen oder von einer neueren Planung ueberholt.
         if result[0] != "ok":
+            if self._releasing:
+                # Rueckgabe: ohne Plan direkt zurueck (Gates aktiv, Stillstand
+                # oder Zeitlimit -> Uebergabe von dort).
+                self._release_direct = True
+                self.get_logger().warn("Rueckgabe: kein geplanter Weg -- fahre direkt "
+                                       "(Kollisions-Gate haelt bei Beruehrung an).")
+                return
             # Fehlschlag wurde schon vom Worker geloggt -- Arm haelt einfach.
             # Ausnahme WALK: die Lauf-Pose muss trotzdem angefahren werden
             # (sonst kein walk_ready) -> wie frueher direkt, das Laufzeit-Gate
@@ -2112,6 +2446,11 @@ class ArmController(Node):
                                              reason="Manipulation nicht aktiv")
             return
 
+        if self._releasing:
+            self._publish_marker_goal_status('right', msg.header.stamp, "ignored",
+                                             reason="Rueckgabe an den Onboard-Regler")
+            return
+
         # Mode-Mux (siehe g1pilot/docs/11_arm_manipulation_technik.md (Mode-Mux Marker vs. Positionsspeicher)): manueller
         # Marker hat IMMER Vorrang -- ein laufender ODER gerade geplanter Plan
         # (Positionsspeicher) wird sofort verworfen, kein Kaempfen zweier
@@ -2179,6 +2518,11 @@ class ArmController(Node):
         if not self.arms_enabled:
             self._publish_marker_goal_status('left', msg.header.stamp, "ignored",
                                              reason="Manipulation nicht aktiv")
+            return
+
+        if self._releasing:
+            self._publish_marker_goal_status('left', msg.header.stamp, "ignored",
+                                             reason="Rueckgabe an den Onboard-Regler")
             return
 
         # Mode-Mux (siehe g1pilot/docs/11_arm_manipulation_technik.md (Mode-Mux Marker vs. Positionsspeicher)): manueller
@@ -2251,8 +2595,18 @@ class ArmController(Node):
         """Neues Marker-Ziel fuer `side` merken. Ein neues Ziel ersetzt das alte
         einfach (Marker erneut gezogen) -- der Stillstand-Zaehler beginnt neu."""
         q7 = self._last_q_target[0:7] if side == "left" else self._last_q_target[7:14]
+        stamp_t = self._stamp_tuple(stamp)
+        prev = self._marker_goal.get(side)
+        if prev is not None and prev["stamp"] != stamp_t:
+            # Ein ANDERER Eingang (PS4, Demo-GUI, zweiter Marker-Zug) hat ein
+            # neues Ziel gesetzt: dem alten Absender sagen, dass sein Ziel
+            # erledigt ist -- sonst bleibt z.B. der RViz-Marker auf dem alten
+            # Ziel stehen, und ein spaeterer Klick darauf zoege den Arm dorthin
+            # zurueck.
+            self._publish_marker_goal_status(side, prev["stamp"], "cancelled",
+                                             reason="durch neues Ziel ersetzt")
         self._marker_goal[side] = {
-            "stamp": self._stamp_tuple(stamp),
+            "stamp": stamp_t,
             "T": T_target,
             "q_ref": np.array(q7, dtype=float),
             "t_ref": time.monotonic(),
@@ -2418,6 +2772,10 @@ class ArmController(Node):
         # Hintergrund-Planung (Positionsspeicher) fertig? Billig (Lock+Read).
         self._poll_plan_result()
 
+        if self._releasing and (time.monotonic() - self._release_t0
+                                > float(self.get_parameter("release_timeout_s").value)):
+            self._finish_release("Zeitlimit der Rueckfahrt")
+
         # E-STOP / Slack: Arme drehmomentfrei/gedaempft halten und WEITER
         # senden -- ohne die Kontrolle an den Onboard-Regler zurueckzugeben
         # (der wuerde die Arme in seine Default-Pose reissen). Laeuft, bis
@@ -2557,6 +2915,8 @@ class ArmController(Node):
                     self._align_ik_to_config(q_target[0:7], q_target[7:14])
                     self._publish_cmd_status(ac.ST_REACHED, sides=sides,
                                              detail=self._cmd_ik_detail or None)
+                    if self._releasing:
+                        self._finish_release("Onboard-Pose erreicht")
                     wall = time.monotonic() - st["t0"]
                     self.get_logger().info(
                         f"Geplante Bewegung zu {self._planned_pose_name} abgeschlossen "
@@ -2574,6 +2934,23 @@ class ArmController(Node):
                     self.get_logger().warn(
                         f"Geplante Bewegung zu {name} blockiert -- abgebrochen.")
                     q_target = self._last_q_target.copy()
+                    if self._releasing:
+                        self._finish_release("Rueckfahrt blockiert (Gate)")
+
+        elif self._releasing:
+            # Rueckgabe: Planung laeuft -> stillhalten; ohne Plan direkt zur
+            # Onboard-Pose (Speed-/Kollisions-Limits unten wirken wie immer).
+            q_target = self._last_q_target.copy()
+            if self._release_direct and self._onboard_q is not None:
+                q_target = self._onboard_q.copy()
+                err = float(np.max(np.abs(q_target - self._last_q_target)))
+                now = time.monotonic()
+                if err <= float(self.get_parameter("release_tolerance").value):
+                    self._finish_release("Onboard-Pose erreicht (direkt)")
+                elif err < self._release_best[0] - 1e-3:
+                    self._release_best = (err, now)
+                elif now - self._release_best[1] > 1.5:
+                    self._finish_release("Rueckfahrt blockiert (Gate)")
 
         elif self._walk_transition:
             # WALK: Weg in die Lauf-Pose wird noch geplant -> stillhalten.
@@ -2608,7 +2985,12 @@ class ArmController(Node):
             if self._goal_right_filt is not None:
                 self.ik_solver.set_goal("right", self._goal_right_filt)
 
-            q_dict = self.ik_solver.get_joint_targets(current_all)
+            held = {side: self._ik_side_held(side) for side in ("left", "right")}
+            q_dict = ({} if held["left"] and held["right"]
+                      else self.ik_solver.get_joint_targets(current_all))
+            for side in ("left", "right"):
+                if held[side]:
+                    q_dict.pop(side, None)      # Gelenke exakt halten
             # Default: HALTEN. Ohne gesetztes IK-Ziel (kein Marker gezogen)
             # liefert get_joint_targets ein leeres Dict – dann muss der Arm in
             # seiner letzten Position bleiben. Frueher stand hier zeros(14), was
@@ -2641,43 +3023,21 @@ class ArmController(Node):
         # begrenzt auch die Faelle, in denen ein kleiner Gelenkschritt eine
         # grosse Handbewegung erzeugt (gestreckter Arm, Schulterdrehung).
         q_smooth = self._limit_cartesian_speed(self._last_q_target, q_smooth, dt)
+        # Anfahrrampe (real): kein Sprung von 0 auf volle Geschwindigkeit.
+        q_smooth = self._limit_accel(self._last_q_target, q_smooth, dt)
         # Selbstkollisions-Gate: nie in den eigenen Koerper fahren.
         q_smooth = self._apply_collision_gate(self._last_q_target, q_smooth)
+        self._last_cmd_speed = float(np.max(np.abs(q_smooth - self._last_q_target))) / max(dt, 1e-4)
+        # Schleppfehler-Begrenzung (real): Sollwert nie weit weg von der Messung.
+        q_smooth = self._limit_tracking_error(q_smooth)
         self._last_q_target = q_smooth.copy()
 
         if not (self.walk_mode or self.homing_active or self.homing_reached
-                or self._planned_motion_active):
+                or self._planned_motion_active or self._releasing):
             self._update_marker_goals()
 
         if self.use_robot:
-            self.msg.mode_machine = self.get_mode_machine()
-            # mode_pr NICHT setzen (bleibt 0 wie im Unitree-arm_sdk-Beispiel;
-            # betrifft nur die Knoechel-Interpretation, die uns nichts angeht).
-
-            try:
-                self.msg.motor_cmd[G1_29_JointIndex.kNotUsedJoint0].q = \
-                    float(self._advance_arm_weight(dt))
-            except Exception:
-                pass
-
-            # Schwerkraft-Feedforward gegen den PD-Durchhang (s. Parameter).
-            tau_g = self._arm_gravity_tau(q_smooth)
-
-            wrist_vals = {m.value for m in G1_29_JointWristIndex}
-            for idx, jid in enumerate(G1_29_JointArmIndex):
-                self.msg.motor_cmd[jid].mode = 1
-                self.msg.motor_cmd[jid].q   = float(q_smooth[idx])
-                self.msg.motor_cmd[jid].dq  = 0.0
-                self.msg.motor_cmd[jid].tau = float(tau_g[idx])
-                if jid.value in wrist_vals:
-                    self.msg.motor_cmd[jid].kp = self.kp_wrist
-                    self.msg.motor_cmd[jid].kd = self.kd_wrist
-                else:
-                    self.msg.motor_cmd[jid].kp = self.kp_low
-                    self.msg.motor_cmd[jid].kd = self.kd_low
-
-            self.msg.crc = self.crc.Crc(self.msg)
-            self.lowcmd_publisher.Write(self.msg)
+            self._write_arm_cmd(q_smooth, self._advance_arm_weight(dt))
         else:
             js = JointState()
             js.header.stamp = self.get_clock().now().to_msg()
@@ -2690,16 +3050,36 @@ class ArmController(Node):
             self.joint_pub.publish(js)
 
 
+def _raise_keyboard_interrupt(signum, frame):
+    raise KeyboardInterrupt
+
+
 def main(args=None):
+    import signal
+    try:
+        from rclpy.executors import ExternalShutdownException
+    except ImportError:  # aeltere rclpy
+        ExternalShutdownException = KeyboardInterrupt
     rclpy.init(args=args)
     node = ArmController()
+    # SIGTERM (docker stop, launch-Eskalation) wie Strg+C behandeln: raus aus
+    # spin und die Arme sauber an den Onboard-Regler zurueckgeben, statt den
+    # arm_sdk-Strom mitten in einer Bewegung abreissen zu lassen.
+    signal.signal(signal.SIGTERM, _raise_keyboard_interrupt)
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
+    except Exception as e:  # noqa: BLE001 -- auch bei Absturz die Arme abgeben
+        node.get_logger().error(f"arm_controller abgestuerzt: {e!r} -- gebe Arme ab.")
     finally:
+        try:
+            node.shutdown_release()
+        except Exception as e:  # noqa: BLE001
+            print(f"[arm_controller] Rueckgabe beim Beenden fehlgeschlagen: {e!r}", flush=True)
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":

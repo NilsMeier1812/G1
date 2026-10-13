@@ -50,8 +50,18 @@ def generate_launch_description():
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(teleoperation_launcher)
         ),
+        # Arm-Parameter wie bringup_real (echter G1): Unitree-Gains statt der
+        # Sim-Defaults (kp=150/kd=12), Speedlimits, Schleppfehler-Begrenzung,
+        # Anfahrrampe. arm_controller begrenzt real zusaetzlich selbst.
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(manipulation_launcher),
-            launch_arguments=fwd.items()
+            launch_arguments={**fwd,
+                              'arm_velocity_limit': '1.5',
+                              'ee_velocity_limit': '0.25',
+                              'self_collision_gate': 'true',
+                              'max_tracking_error': '0.3',
+                              'arm_accel_limit': '3.0',
+                              'kp_low': '60.0', 'kd_low': '1.5',
+                              'kp_wrist': '40.0', 'kd_wrist': '1.5'}.items()
         ),
     ])
