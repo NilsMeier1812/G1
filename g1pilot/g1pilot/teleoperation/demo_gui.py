@@ -53,6 +53,7 @@ from g1pilot.navigation import scene_markers as sm
 
 from g1pilot.utils.window_style import DarkStyle
 from g1pilot.utils.common import is_sim_mode
+from g1pilot.teleoperation.sim_autostart import SimAutoStart
 from g1pilot.teleoperation.ui_interface import (
     StreamDeck, VirtualJoystick, PoseSaveDialog, PoseLoadDialog,
 )
@@ -835,9 +836,21 @@ class DemoGUI(QWidget):
         self.jog_timer.timeout.connect(self._jog_tick)
         self.jog_timer.start(33)
 
-        # Wie ui_interface: Auto-Start NUR in der Sim (Arme an + BALANCING).
+        # Wie ui_interface: Auto-Start NUR in der Sim (Arme an + BALANCING),
+        # wiederholt bis arm_controller und loco_sim quittieren (sim_autostart.py;
+        # frueher EIN Versuch nach 3 s -> ging verloren, wenn die Regler noch
+        # luden: GREIFEN angezeigt, Arme aber aus).
+        self.autostart = SimAutoStart(
+            lambda: node.publish_bool(node.pub_arms_enabled, True),
+            lambda: node.publish_bool(node.pub_start_balancing, True),
+            log=lambda t: node.get_logger().info(t),
+            on_done=self._autostart_done)
+        self.autostart_timer = QTimer(self)
+        self.autostart_timer.timeout.connect(
+            lambda: self.autostart.tick(node.arms_state, node.loco_state))
+        self.autostart_timer.start(100)
         if self.sim_mode:
-            QTimer.singleShot(3000, lambda: self.request_mode(MANIP))
+            QTimer.singleShot(3000, self._auto_start)
         else:
             self._status("REAL: zuerst »Roboter starten« drücken.", "#ffb300")
 
@@ -975,9 +988,28 @@ class DemoGUI(QWidget):
         self._status("Gestartet. Jetzt einen Modus wählen.", "#aaa")
         self._refresh()
 
-    def request_mode(self, mode):
+    def _auto_start(self):
+        if self.started and self.mode is None and self.pending is None:
+            self.request_mode(MANIP, auto=True)
+
+    def _autostart_done(self, ok):
+        if self.mode != MANIP:
+            return
+        if ok:
+            self._status("Greifen bereit — Bewegung auswählen.", MODE_COLOR[MANIP])
+        else:
+            # Kein Regler-Quittung: GREIFEN nicht als aktiv vortaeuschen, damit
+            # ein Antippen die Anforderung erneut sendet.
+            self.mode = None
+            self._refresh()
+            self._status("Arme reagieren nicht (keine Rückmeldung vom Arm-Regler) — "
+                         "GREIFEN antippen.", "#ef5350")
+
+    def request_mode(self, mode, auto=False):
         if not self.started or mode == self.mode or mode == self.pending:
             return
+        if not auto:
+            self.autostart.cancel("Modus gewählt")
         self._cancel_sequence()
         self.set_auto_nav(False)
         self.walk_panel.reset()
@@ -994,7 +1026,14 @@ class DemoGUI(QWidget):
             self._status("NOT-HALT quittiert …", "#aaa")
             QTimer.singleShot(300, lambda: self.request_mode(mode))
             return
-        if mode == MANIP:
+        if mode == MANIP and auto:
+            # Sim-Auto-Start: senden + wiederholen, bis quittiert (_autostart_done).
+            self.autostart.start()
+            self.mode, self.pending = MANIP, None
+            self._status("Greifen wird eingeschaltet — warte auf Arm-Regler …",
+                         MODE_COLOR[MANIP])
+            self._reload_sequence_buttons()
+        elif mode == MANIP:
             # BALANCING: Fuesse geplant, Arme frei -> sofort bestaetigt.
             n.publish_bool(n.pub_arms_enabled, True)
             n.publish_bool(n.pub_start_balancing, True)
@@ -1316,6 +1355,7 @@ class DemoGUI(QWidget):
         an den Startpunkt (bzw. g1_spawn) und haelt ihn (Weld). Beim naechsten
         Modus-Klick wird er in die Stand-Pose gestellt und freigegeben."""
         n = self.node
+        self.autostart.cancel("Roboter zurueckgesetzt")
         self._cancel_sequence()
         self.set_auto_nav(False)
         self.walk_panel.reset()
@@ -1332,6 +1372,7 @@ class DemoGUI(QWidget):
 
     def emergency_stop(self):
         n = self.node
+        self.autostart.cancel("NOT-HALT")
         self._cancel_sequence()
         self.set_auto_nav(False)
         self.walk_panel.reset()
