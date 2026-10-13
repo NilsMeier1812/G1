@@ -413,6 +413,8 @@ class _ModbusHandWorker(threading.Thread):
         self._w_force: List[int] | None = None
         self._w_speed: List[int] | None = None
         self._cycle_n = 0
+        # Hauptschalter beim letzten Zyklus (Flanke an -> aus erkennen).
+        self._was_enabled = False
 
     def stop(self) -> None:
         self._stop_evt.set()
@@ -470,6 +472,15 @@ class _ModbusHandWorker(threading.Thread):
             angle_set = list(self.model.angle_set)
             force_set = list(self.model.force_set)
             speed_set = list(self.model.speed_set)
+        if not enabled and self._was_enabled:
+            # Deaktiviert (E-Stop / Hauptschalter aus): die Hand haelt sonst ihr
+            # LETZTES Ziel und schliesst z.B. weiter. Einmal die gemessene
+            # Stellung als Ziel schreiben -> Finger bleiben stehen, wo sie sind
+            # (ein gegriffenes Objekt bleibt gehalten, nichts faellt).
+            if not self.client.write_registers(_REG_ANGLE_SET, list(angle_act)):
+                return False
+            self._w_angle = None
+        self._was_enabled = enabled
         if enabled:
             if speed_set != self._w_speed:
                 if not self.client.write_registers(_REG_SPEED_SET, speed_set):

@@ -198,3 +198,31 @@ def test_backend_reconnects(fake_hand):
             lambda: not models["left"].controller_state()["connected"], timeout=5.0)
     finally:
         backend.shutdown()
+
+
+def test_backend_freezes_hand_on_disable(fake_hand):
+    """E-Stop/Hauptschalter aus: die Hand bekommt EINMAL ihre gemessene
+    Stellung als Ziel -> sie faehrt nicht weiter auf ihr altes Ziel zu."""
+    models = {"left": HandModel("links", "x"), "right": HandModel("rechts", "y")}
+    backend = InspireModbusBackend(
+        publish_fn=lambda names, pos: None,
+        hosts={"left": "127.0.0.1", "right": ""},
+        models=models, port=fake_hand.port,
+        poll_rate_hz=50.0, tactile_every=0,
+    )
+    try:
+        models["left"].set_enabled(True)
+        for i in range(6):
+            models["left"].set_angle(i, 0)            # "Hand schliessen"
+        assert _wait_until(lambda: fake_hand.regs.get(_REG_ANGLE_SET + 3) == 0)
+        n = len(fake_hand.write_log)
+        models["left"].set_enabled(False)              # E-Stop
+        assert _wait_until(lambda: any(w[0] == _REG_ANGLE_SET
+                                       for w in fake_hand.write_log[n:]))
+        freeze = [w for w in fake_hand.write_log[n:] if w[0] == _REG_ANGLE_SET]
+        assert freeze[0][1] == [900, 890, 880, 870, 860, 850]   # = angle_act
+        time.sleep(0.2)
+        again = [w for w in fake_hand.write_log[n:] if w[0] == _REG_ANGLE_SET]
+        assert len(again) == 1                         # nur einmal
+    finally:
+        backend.shutdown()
