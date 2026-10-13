@@ -193,7 +193,14 @@ services:
                source /ros2_ws/install/setup.bash &&
                colcon build --packages-select g1pilot --symlink-install &&
                source /ros2_ws/install/setup.bash &&
-               ros2 launch g1pilot bringup_real.launch.py"
+               exec ros2 launch g1pilot bringup_real.launch.py"
+    # Beenden (Strg+C / docker compose down): `exec` macht ros2 launch zum
+    # Hauptprozess -> es bekommt das SIGTERM und gibt jedem Node SIGINT. Der
+    # arm_controller faehrt dann die Arme zurueck und rampt das arm_sdk-
+    # Gewicht 1->0 (sanfte Uebergabe an den Onboard-Regler). Ohne exec bekam
+    # die bash (PID 1) das Signal, ignorierte es, und nach 10 s riss SIGKILL
+    # alles ab. Die Frist deckt Rueckfahrt + Rampe + launch-Eskalation.
+    stop_grace_period: 20s
 
   g1pilot-real-full:
     # ── Voller Real-Stack (Livox MID360 + MOLA + Navigation) ───────────
@@ -218,6 +225,8 @@ services:
                source /ros2_ws/install/setup.bash &&
                colcon build --packages-select g1pilot --symlink-install &&
                source /ros2_ws/install/setup.bash &&
-               ros2 launch g1pilot bringup_launcher.launch.py
+               exec ros2 launch g1pilot bringup_launcher.launch.py
                  use_robot:=true
                  interface:=${ROBOT_INTERFACE:-eth0}"
+    # Siehe g1pilot-real: exec + Frist fuer die sanfte Arm-Uebergabe beim Beenden.
+    stop_grace_period: 20s
