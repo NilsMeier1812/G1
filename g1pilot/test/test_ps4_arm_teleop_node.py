@@ -27,6 +27,7 @@ from geometry_msgs.msg import PoseStamped, TransformStamped, Twist   # noqa: E40
 from sensor_msgs.msg import Joy                          # noqa: E402
 from std_msgs.msg import Bool, String                    # noqa: E402
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster   # noqa: E402
+from visualization_msgs.msg import Marker, MarkerArray   # noqa: E402
 
 from g1pilot.teleoperation import ps4_layout as L        # noqa: E402
 
@@ -52,7 +53,8 @@ def rig():
     try:
         node = rclpy.create_node("ps4_real_probe")
         got = {k: [] for k in ("goal_left", "goal_right", "enabled", "balance", "estop",
-                               "hand_right", "hand_left", "feedback", "status", "walk")}
+                               "hand_right", "hand_left", "feedback", "status", "walk",
+                               "markers")}
         sub = lambda t, typ, key: node.create_subscription(   # noqa: E731
             typ, t, lambda m: got[key].append((time.monotonic(), m)), 50)
         sub("/g1pilot/hand_goal/left", PoseStamped, "goal_left")
@@ -67,6 +69,7 @@ def rig():
         sub("/g1pilot/loco_cmd_vel", Twist, "walk")
         sub("/g1pilot/joy", Joy, "walk")
         sub("/g1pilot/start_walking", Bool, "walk")
+        sub("/g1pilot/ps4/markers", MarkerArray, "markers")
         pub_joy = node.create_publisher(Joy, "/g1pilot/ps4/joy", 10)
         pub_estop = node.create_publisher(Bool, "/g1pilot/emergency_stop", 10)
         pub_start = node.create_publisher(Bool, "/g1pilot/start", 10)
@@ -215,3 +218,11 @@ def test_real_settings_end_to_end(rig):
 
     # Nie ein Laufbefehl
     assert g["walk"] == []
+
+    # RViz: nur die Kugel an der Hand, kein Text ueber dem Roboter
+    assert g["markers"]
+    for _, arr in g["markers"]:
+        assert not any(m.type == Marker.TEXT_VIEW_FACING and m.action == Marker.ADD
+                       for m in arr.markers)
+    assert any(m.ns == "ps4_label" and m.action == Marker.DELETE
+               for m in g["markers"][-1][1].markers)

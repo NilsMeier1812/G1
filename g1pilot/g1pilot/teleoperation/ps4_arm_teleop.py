@@ -18,7 +18,7 @@ arm_controller bzw. in der Inspire-Bridge:
 KEIN Laufen: der Node publiziert nichts an loco_cmd_vel / joy_mux. Rueckmeldung:
   /g1pilot/ps4/feedback  String(JSON)  LED-Farbe + Vibration -> ps4_joystick
   /g1pilot/ps4/status    String(JSON)  Auswahl/Modus/Tempo (fuer GUIs/Logs)
-  /g1pilot/ps4/markers   MarkerArray   farbige Kugel an der aktiven Hand + Text
+  /g1pilot/ps4/markers   MarkerArray   farbige Kugel an der aktiven Hand
 
 Belegung (Details: g1pilot/docs/43_ps4_controller.md):
   Steuerkreuz  links/rechts/oben/unten = linke / rechte / beide / beide gespiegelt
@@ -428,16 +428,14 @@ def main(args=None):
                 else:
                     m.action = Marker.DELETE
                 arr.markers.append(m)
+            # Kein Status-Text mehr ueber dem Roboter (stand in RViz im Weg).
+            # Einen evtl. noch angezeigten Text einer aelteren Version loeschen;
+            # der Status steht weiter auf /g1pilot/ps4/status und in der LED.
             t = Marker()
             t.header.frame_id = JOG_FRAME
             t.header.stamp = stamp
             t.ns, t.id = "ps4_label", 0
-            t.type, t.action = Marker.TEXT_VIEW_FACING, Marker.ADD
-            t.pose.position.z = 0.75
-            t.pose.orientation.w = 1.0
-            t.scale.z = 0.06
-            t.color.r, t.color.g, t.color.b, t.color.a = max(r, 0.3), max(g, 0.3), max(b, 0.3), 1.0
-            t.text = self.logic.label() + ("" if self.connected else " · nicht verbunden")
+            t.action = Marker.DELETE
             arr.markers.append(t)
             self.pub_markers.publish(arr)
 
