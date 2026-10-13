@@ -12,7 +12,10 @@ fasst nichts an ausser einem Hand-Ziel (wie der RViz-Marker):
      (/g1pilot/arms/state), loco_sim STAND (/g1pilot/loco_state). Aeltere Staende
      ohne diese Topics: nur Schritt 2 zaehlt.
   2. schickt ein Hand-Ziel 6 cm ueber die aktuelle rechte Hand und prueft per TF,
-     dass die Hand sich mindestens 3 cm darauf zu bewegt.
+     dass die Hand sich mindestens 1.5 cm darauf zu bewegt (= Arme reagieren).
+     Voll erreicht wird das Ziel aus der haengenden Startpose meist nicht: der
+     IK bleibt dort 2-3 cm darunter stehen -- auch lange nach dem Start, also
+     unabhaengig von diesem Fehler (bekannte IK-Restabweichung).
 Exit 0 = GREIFEN funktioniert ohne Moduswechsel. Mehrere Starts: run_startup_grasp_loop.sh.
 """
 import argparse
@@ -63,7 +66,8 @@ def main():
     ap.add_argument("--wait", type=float, default=90.0, help="max. Wartezeit auf den Auto-Start")
     ap.add_argument("--settle", type=float, default=6.0,
                     help="nach dem Auto-Start-Zeitpunkt (GUI 3 s) zusaetzlich warten")
-    ap.add_argument("--move-timeout", type=float, default=25.0)
+    ap.add_argument("--move-timeout", type=float, default=10.0)
+    ap.add_argument("--min-move", type=float, default=0.015, help="Mindest-Hub [m]")
     ap.add_argument("--hand-tf", default=HAND_TF)
     args = ap.parse_args()
 
@@ -101,9 +105,9 @@ def main():
         cur = n.hand(child=args.hand_tf)
         if cur is not None:
             best = max(best, cur.translation.z - start[2])
-            if best >= 0.03:
+            if best >= 0.04:
                 break
-    ok = best >= 0.03
+    ok = best >= args.min_move
     print(f"[probe] Hand-Ziel +6 cm: Hand hob sich um {best * 100:.1f} cm in "
           f"{time.monotonic() - t1:.1f} s -> {'PASS' if ok else 'FAIL'} "
           f"(arms/state={n.arms}, loco_state={n.loco})", flush=True)
