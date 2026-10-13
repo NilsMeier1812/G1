@@ -95,7 +95,7 @@ def test_timeout_reports_failure():
         clock.t = float(i)
         a.tick(False, "hold")
     assert done == [False] and not a.active
-    assert a.sent_enable == 10
+    assert a.sent_enable == 11                   # t = 0..10 s, je 1 s
 
 
 # ── 2. Ueber DDS, mehrere Starts mit spaet startenden Reglern ────────────
