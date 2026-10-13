@@ -123,15 +123,23 @@ Reihenfolge (vereinfacht):
 5. Zielkonfiguration `q_target` je nach aktivem Modus bestimmen: `walk_mode`
    ohne `_walk_transition` (Lauf-Pose halten) > `homing_active`/`homing_reached`
    (Home-Pose) > `_planned_motion_active` (Sollwert der zeitparametrierten
-   Bahn zur aktuellen Bahnzeit) > `_walk_transition` (Weg in die Lauf-Pose wird noch geplant →
+   Bahn zur aktuellen Bahnzeit) > `_releasing` (Rückgabe an den Onboard-Regler,
+   siehe unten) > `_walk_transition` (Weg in die Lauf-Pose wird noch geplant →
    stillhalten) > sonst IK-Ergebnis aus dem reaktiven Servoing
-   (`ik_solver.get_joint_targets`).
+   (`ik_solver.get_joint_targets`). Eine Seite, deren Ziel noch das per
+   `_align_ik_to_config` gesetzte Halteziel ist, wird **ohne IK** exakt gehalten
+   (`_ik_side_held`) — sonst drehte der Nullraum-Term den Ellbogen beim ENABLE
+   in die Ruhe-Konfiguration.
 6. Geschwindigkeitslimit (`arm_velocity_limit`) + exponentielle Glättung
    (`ik_alpha`).
 7. Kartesisches Geschwindigkeitslimit (`_limit_cartesian_speed`, überwacht
    Hand-TCPs + Ellbogen).
-8. Kollisions-Gate (`_apply_collision_gate`), siehe unten „Laufzeit-Gate".
-9. Schreiben: bei `use_robot=true` `rt/arm_sdk` mit
+8. Beschleunigungslimit (`_limit_accel`, nur real: `arm_accel_limit`,
+   begrenzt nur das Schneller-Werden; Bremsen bleibt frei).
+9. Kollisions-Gate (`_apply_collision_gate`), siehe unten „Laufzeit-Gate".
+10. Schleppfehler-Begrenzung (`_limit_tracking_error`, nur real bei Gewicht 1:
+    Sollwert höchstens `max_tracking_error` rad von der Messung).
+11. Schreiben (`_write_arm_cmd`): bei `use_robot=true` `rt/arm_sdk` mit
    Schwerkraft-Feedforward-Drehmoment (`_arm_gravity_tau`,
    Parameter `gravity_comp`), sonst `/joint_states`.
 
@@ -145,6 +153,34 @@ zurück (`_advance_arm_weight`, `_publish_weight_ramp_down`). Die Sim setzt
 beide Rampenzeiten auf 0.0 (sofortiges Umschalten, im Bridge-Merge auf 0/1
 getestet); der reale Roboter nutzt 2.0 s (weiche Übergabe, sonst reißt die
 Steuerungsübernahme an den Armen).
+
+### Übergabe an den Onboard-Regler (nur Echtbetrieb relevant)
+
+Die Rampe allein blendet bei `DISABLE` von der aktuellen Armpose in die Pose
+des Onboard-Reglers über — steht der Arm weit vorn, schwingt er in 2 s nach
+unten. Deshalb:
+
+- `_record_onboard_pose` merkt sich beim `ENABLE` (Gewicht 0) und beim E-Stop
+  die gemessene Armpose = Onboard-Pose (`_onboard_q`).
+- `DISABLE` ruft `_start_release`: Marker-Ziele, Bahnen, WALK und Homing
+  werden beendet, dann fährt eine **geplante** Bahn (`source="release"`) in
+  `_onboard_q`. Erst bei Ankunft (`release_tolerance`, 0,05 rad) folgt
+  `_finish_release` → Rampe 1→0. Planer-Fehler → direkte, geschwindigkeits-
+  und gate-begrenzte Fahrt; kein Fortschritt für 1,5 s oder
+  `release_timeout_s` (12 s) → Rampe aus der erreichten Pose.
+  `release_to_onboard_pose=false` schaltet das ab (alte direkte Rampe).
+- Während `_releasing` lehnen Ziel-, Homing- und WALK-Callbacks mit
+  „Rueckgabe an den Onboard-Regler" ab; `ENABLE` bricht ab und hält.
+- Programmende: `main()` behandelt SIGTERM wie Strg+C und ruft im `finally`
+  `shutdown_release()`: bis `shutdown_return_s` (2,5 s) direkt Richtung
+  `_onboard_q` (≤ 0,8 rad/s, sanfter Start, kartesisches Limit, Gate), dann
+  Rampe 1→0 bei 250 Hz. Im E-Stop nur die Rampe.
+- `_apply_real_safety_limits` (nur real) begrenzt Gains auf
+  `REAL_MAX_GAINS`, Rampen auf ≥ 1 s und die Geschwindigkeiten auf 1,5 rad/s /
+  0,25 m/s.
+
+Tests ohne Hardware: `test/test_arm_controller_real.py` (Fake-G1, der wie die
+Firmware `arm_sdk` und Onboard-Pose nach dem Gewicht mischt).
 
 ### E-Stop-Semantik (`_on_emergency_stop` / `_publish_arm_slack`)
 
@@ -341,6 +377,10 @@ Bahn:
 | `planner_time_budget_s` | Rechenzeit-Budget einer Planung (2,5 s) |
 | `planner_vel_limit` / `planner_cart_vel_limit` | Tempo der geplanten Fahrt (rad/s, m/s) |
 | `gate_hand_floor` / `gate_arm_floor` / `gate_slow_dist` | Laufzeit-Gate, siehe oben |
+| `release_to_onboard_pose`, `release_tolerance`, `release_timeout_s` | Rückfahrt vor der Übergabe (Default an / 0,05 rad / 12 s) |
+| `shutdown_return_s` | Rückfahrzeit beim Programmende (2,5 s) |
+| `arm_accel_limit` | Gelenkbeschleunigung [rad/s²], 0 = aus (real über Launch 3,0, `G1_ARM_ACCEL_LIMIT`) |
+| `max_tracking_error` | max. Abstand Soll–Messung [rad], 0 = aus (real 0,3, `G1_ARM_MAX_TRACKING_ERROR`) |
 | `arm_api_*` | Parameter der HTTP-Brücke, siehe [21_arm_api_technik.md](21_arm_api_technik.md) |
 
 ## Bekannte Einschränkungen

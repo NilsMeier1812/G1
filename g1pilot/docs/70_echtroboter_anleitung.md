@@ -96,8 +96,34 @@ werden. Ohne `lowstate`: falsches Interface, Roboter nicht im
   [41_teleoperation_technik.md](41_teleoperation_technik.md), Abschnitt
   Auto-Start).
 - **WALK ist gesperrt, bis balanciert:** wird sonst mit Warnung ignoriert.
-- **Weiche Arm-Übergabe:** das `arm_sdk`-Gewicht rampt beim `ENABLE` 0→1 und
-  beim `DISABLE` 1→0 über 2,0 s.
+- **Übernehmen ohne Bewegung (`ENABLE`):** `arm_controller` merkt sich die
+  gemessene Armpose (= Pose des Onboard-Reglers), kommandiert genau diese und
+  rampt das `arm_sdk`-Gewicht 0→1 über 2,0 s. Die Gelenke werden exakt
+  gehalten, bis ein Ziel kommt (kein Nachdrehen des Ellbogens durch die IK).
+- **Zurückgeben ohne Schwung (`DISABLE`):** die Arme fahren erst geplant und
+  langsam in die beim `ENABLE` gemerkte Onboard-Pose; erst dort rampt das
+  Gewicht 1→0. Die Überblendung hat also keinen Positionsunterschied mehr.
+  Während der Rückfahrt werden neue Ziele, Homing und WALK abgelehnt;
+  `ENABLE` bricht die Rückfahrt ab (Arme halten), EMERGENCY STOP macht sie
+  sofort schlaff. Zeitlimit 12 s, danach Rampe aus der erreichten Pose.
+- **Programmende (Strg+C, `docker compose stop`, Absturz):** `arm_controller`
+  fährt die Arme bis zu 2,5 s langsam (≤ 0,8 rad/s) Richtung Onboard-Pose und
+  rampt dann das Gewicht 1→0, statt den `arm_sdk`-Strom abzureißen. Im
+  E-Stop nur Rampe (Arme bleiben schlaff). Compose startet `ros2 launch`
+  per `exec` mit 20 s Gnadenfrist, damit `docker stop` dafür Zeit hat.
+- **Harte Grenzen nur auf real:** Gains höchstens kp 80/kd 3 (Handgelenk
+  kp 50), Gewichtsrampen ≥ 1 s, Gelenkgeschwindigkeit ≤ 1,5 rad/s,
+  Hand ≤ 0,25 m/s. Falsche Werte aus einem Launchfile werden mit
+  Fehlermeldung korrigiert.
+- **Sanftes Anfahren und begrenzter Schleppfehler (real):** Gelenk-
+  beschleunigung ≤ 3 rad/s² (`G1_ARM_ACCEL_LIMIT`), Sollwert höchstens
+  0,3 rad von der Messung entfernt (`G1_ARM_MAX_TRACKING_ERROR`) — wird ein
+  Arm festgehalten, „lädt" sich kein Sprung auf, der beim Loslassen schnappt.
+- **Ein Ziel ersetzt das andere:** setzt PS4, Demo-GUI oder ein Positions-
+  speicher ein neues Ziel, bekommt ein offenes RViz-Marker-Ziel „cancelled";
+  ein späterer Klick auf den alten Marker zieht den Arm nicht zurück.
+- **Hände frieren beim Abschalten ein:** Hand deaktiviert (auch per E-Stop)
+  → Soll = aktuelle Ist-Stellung, die Finger schließen nicht weiter.
 
 ## F · Ablauf der ersten Tests
 
@@ -115,7 +141,9 @@ exakt; die Marker folgen der Hand (Leader-Follower).
 **3. Arm-Manipulation (hängend oder kniend)**
 
 1. **ENABLE MANIPULATION** — Gewicht rampt 2 s von 0 auf 1; die Arme
-   übernehmen die aktuelle Pose ohne Ruck.
+   übernehmen die aktuelle Pose ohne Ruck. **Reihenfolge:** erst START bzw.
+   START BALANCING, dann ENABLE — die beim ENABLE gemessene Pose ist die, in
+   die DISABLE später zurückfährt.
 2. In RViz einen Marker wenige Zentimeter ziehen — Hand folgt ruhig,
    max. 0,25 m/s.
 3. **Gate-Test:** Marker absichtlich in den Torso ziehen. Erwartung: Arm
@@ -128,9 +156,14 @@ exakt; die Marker folgen der Hand (Leader-Follower).
    schlaff) → ENABLE MANIPULATION übernimmt wieder ruckfrei die aktuelle
    Pose. Fährt der Arm beim E-Stop stattdessen aktiv irgendwohin, sofort
    die Fernbedienungs-Notabschaltung nutzen und den Vorfall melden.
-6. **ENABLE MANIPULATION** wieder aus — Gewicht rampt 2 s auf 0, die
-   Roboter-eigene Armsteuerung übernimmt weich.
-7. Optional **PS4-Controller für Arme + Hände** (Start mit `G1_PS4_ARMS=1`,
+6. **ENABLE MANIPULATION** wieder aus — die Arme fahren erst langsam in die
+   Pose vom ENABLE zurück, dann rampt das Gewicht 2 s auf 0 und die
+   Roboter-eigene Armsteuerung übernimmt ohne Positionssprung.
+7. **Programmende testen (hängend):** Arm mit einem Ziel vom Körper weg
+   fahren, dann `Strg+C` bzw. `docker compose stop`. Erwartung: Log
+   „Programmende: Arme fahren langsam in die Onboard-Pose …" und „Arme an
+   den Onboard-Regler uebergeben", kein Schwung.
+8. Optional **PS4-Controller für Arme + Hände** (Start mit `G1_PS4_ARMS=1`,
    Startmenü: Ausstattung): Ablauf in
    [43_ps4_controller.md](43_ps4_controller.md#echter-roboter). In diesem
    Modus steuert der Controller **nicht** das Gehen; Schritt 5 unten (PS4-
@@ -174,7 +207,8 @@ Zuerst **PS4-Pfad** (physischer Deadman; nur ohne PS4-Arm-Modus, also
 | Situation | Richtige Reaktion |
 |---|---|
 | Sanft anhalten beim Gehen | **START BALANCING** (Roboter bleibt stehen) |
-| Ruckt/schwingt an den Armen | **ENABLE MANIPULATION aus** (Gewicht rampt 2 s runter) |
+| Arm fährt falsch, aber ruhig | **ENABLE MANIPULATION aus** (Arme fahren langsam in die Onboard-Pose, dann Übergabe) |
+| Ruckt/schwingt an den Armen, Kontakt mit Mensch/Objekt | **EMERGENCY STOP** (Arme sofort schlaff; Beine Damp — nur wenn der Roboter gesichert ist) |
 | Hand fährt per PS4-Controller falsch | Stick loslassen bzw. **Kreuz** (Hand steht sofort, Roboter bleibt stehen). PS am Controller = NOT-HALT wie unten |
 | Echte Gefahr / Sturz droht | **Unitree-Fernbedienung** (übergeordnet) — Streamdeck-EMERGENCY nur, wenn Zusammensacken vertretbar ist |
 
@@ -195,7 +229,10 @@ bis **ENABLE MANIPULATION** die Kontrolle bewusst zurückholt.
 | Hand „NICHT VERBUNDEN" | IP/Port prüfen (`nc -zv <ip> 6000`); Hand mit Strom versorgt? |
 | „No joystick found" | `/dev/input` gemountet (Compose-Profil `real` braucht `privileged: true`)? Gerätename weicht ab → `JOYSTICK_NAME` setzen. Geräte anzeigen: `python3 -c "import evdev;[print(p, evdev.InputDevice(p).name) for p in evdev.list_devices()]"` |
 | WALK-Klick ohne Wirkung | Erst START → START BALANCING. |
-| Arme ruckeln beim Enable | Rampe verkürzt/0? `arm_weight_ramp_up_s` prüfen (Default 2.0 auf real). |
+| Arme ruckeln beim Enable | Rampe verkürzt/0? `arm_weight_ramp_up_s` prüfen (Default 2.0 auf real; < 1 s wird auf real korrigiert). |
+| DISABLE dauert mehrere Sekunden | Gewollt: Rückfahrt in die Onboard-Pose vor der Übergabe (max. 12 s). Log „Rueckgabe an den Onboard-Regler". |
+| Log „Onboard-Pose unbekannt" bei DISABLE | ENABLE kam aus dem E-Stop-Latch o. ä. ohne gemessene Pose → alte direkte 2-s-Rampe. Arme vorher von Hand/Ziel in eine neutrale Pose bringen. |
+| Log „REAL: … zu hart" | Ein Launchfile übergibt Sim-Gains; die Werte wurden begrenzt. Launchfile korrigieren. |
 | Roboter geht nach GUI-Absturz weiter | Darf nicht passieren (Deadman) — Log von `loco_client` prüfen, melden. |
 | RViz leer | `USE_RVIZ=true`? X11-Freigabe (`xhost +local:root`) gelaufen? |
 
