@@ -469,6 +469,23 @@ class ArmController(Node):
         self._last_tick_time = None
         self.timer = self.create_timer(1.0 / self.rate_hz, self.main_loop)
 
+        # Zustand "Arme aktiv" (latched) fuer die Quittung des Sim-Auto-Starts der
+        # GUIs (teleoperation/sim_autostart.py): sie wiederholen ENABLE, bis hier
+        # True steht. Eigener Timer, nur bei Aenderung publiziert. Reine Meldung,
+        # aendert kein Verhalten (auch nicht auf dem echten Roboter).
+        qos_state = QoSProfile(depth=1)
+        qos_state.durability = DurabilityPolicy.TRANSIENT_LOCAL
+        self.pub_arms_state = self.create_publisher(Bool, "/g1pilot/arms/state", qos_state)
+        self._arms_state_sent = None
+        self.create_timer(0.2, self._publish_arms_state)
+        self._publish_arms_state()
+
+    def _publish_arms_state(self):
+        state = bool(self.arms_enabled)
+        if state != self._arms_state_sent:
+            self._arms_state_sent = state
+            self.pub_arms_state.publish(Bool(data=state))
+
     def _arm_gravity_tau(self, q14):
         """Schwerkraft-Drehmomente [Nm] fuer die 14 Arm-Gelenke bei der
         Konfiguration q14 (7 links + 7 rechts) aus dem Pinocchio-Modell."""
