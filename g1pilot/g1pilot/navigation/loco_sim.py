@@ -56,7 +56,8 @@ import numpy as np
 import yaml
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Bool
+from rclpy.qos import QoSProfile, DurabilityPolicy
+from std_msgs.msg import Bool, String
 from geometry_msgs.msg import Twist
 from ament_index_python.packages import get_package_share_directory
 
@@ -235,10 +236,26 @@ class LocoSim(Node):
 
         self._run_thread = threading.Thread(target=self._control_loop, daemon=True)
         self._run_thread.start()
+
+        # Zustand (hold|stand|walk|damp, latched) fuer die Quittung des Sim-Auto-
+        # Starts der GUIs (teleoperation/sim_autostart.py): sie wiederholen START
+        # BALANCING, bis hier stand steht (z.B. weil rt/lowstate noch fehlte).
+        qos_state = QoSProfile(depth=1)
+        qos_state.durability = DurabilityPolicy.TRANSIENT_LOCAL
+        self.state_pub = self.create_publisher(String, "/g1pilot/loco_state", qos_state)
+        self._state_sent = None
+        self.create_timer(0.2, self._publish_state)
+        self._publish_state()
         self.get_logger().info(
             f"loco_sim bereit (HOLD). policy='{policy_name}', control_dt={self.control_dt:.3f}s. "
             f"START BALANCING -> STAND (PD, Fuesse geplant). "
             f"START WALKING / loco_cmd_vel -> WALK (Policy).")
+
+    def _publish_state(self):
+        state = self.state
+        if state != self._state_sent:
+            self._state_sent = state
+            self.state_pub.publish(String(data=state))
 
     # ── Setup ────────────────────────────────────────────────────────────────
     def _load_policy(self, policy_name):

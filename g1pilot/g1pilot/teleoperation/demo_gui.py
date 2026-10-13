@@ -32,24 +32,28 @@ import math
 import os
 import re
 import sys
+import time
 
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QGridLayout, QPushButton, QVBoxLayout, QHBoxLayout,
     QLabel, QStackedWidget, QFrame, QDialog, QMessageBox, QSizePolicy,
     QGraphicsOpacityEffect,
 )
-from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtCore import QTimer, Qt, QRectF, QPointF
+from PyQt6.QtGui import QPainter, QColor, QPen, QBrush
 
 import rclpy
 from rclpy.qos import QoSProfile, DurabilityPolicy
 from std_msgs.msg import Bool, String
 from geometry_msgs.msg import Twist, PoseStamped
 from visualization_msgs.msg import Marker, MarkerArray
+from tf2_ros import Buffer, TransformListener
 
 from g1pilot.navigation import scene_markers as sm
 
 from g1pilot.utils.window_style import DarkStyle
 from g1pilot.utils.common import is_sim_mode
+from g1pilot.teleoperation.sim_autostart import SimAutoStart
 from g1pilot.teleoperation.ui_interface import (
     StreamDeck, VirtualJoystick, PoseSaveDialog, PoseLoadDialog,
 )
@@ -86,12 +90,73 @@ NAV_OFF, NAV_WAIT, NAV_MOVING, NAV_ARRIVED = "off", "waiting", "moving", "arrive
 NAV_PLAN_TIMEOUT_MS = 5000
 NAV_DONE_COLOR = "#66bb6a"
 
+# »Hand bewegen« (Joystick + Hoch/Runter-Schieber): kartesische Hand-Ziele im
+# pelvis-Frame auf /g1pilot/hand_goal/<side> -- dieselbe Schnittstelle wie der
+# RViz-Marker; der arm_controller loest per IK (inkl. Kollisions-Gate).
+JOG_FRAME = "pelvis"
+JOG_TF = {"left": "left_hand_point_contact", "right": "right_hand_point_contact"}
+JOG_SIDES = {"Links": ("left",), "Rechts": ("right",), "Beide": ("left", "right")}
+# Tempo bei Vollausschlag: (Verschieben m/s, Drehen rad/s).
+JOG_SPEEDS = {"Langsam": (0.05, math.radians(20)),
+              "Normal":  (0.15, math.radians(45)),
+              "Schnell": (0.30, math.radians(90))}
+# Das Ziel laeuft der echten Hand hoechstens so weit voraus (JOG_LEAD_S x Tempo,
+# mindestens JOG_MIN_LEAD_*). Sonst wuerde es weiterwandern, wenn der Arm nicht
+# folgen kann (Gelenkgrenze, Tisch). Zu knapp darf es nicht sein: der
+# arm_controller glaettet Ziele (ik_goal_filter_alpha), die Hand haengt bei
+# hohem Tempo einige cm hinterher -- ein fester kleiner Vorlauf bremste sie aus.
+JOG_LEAD_S = 0.5
+JOG_MIN_LEAD_M = 0.04
+JOG_MIN_LEAD_RAD = math.radians(15)
+
 # »Sim beenden«: Trigger-Datei im bind-gemounteten Repo (docker-compose:
 # .:/ros2_ws/src/g1pilot). Der Host-Watcher docker/sim_shutdown_watcher.sh
 # (gestartet von start.sh / make sim) stoppt daraufhin den ganzen Sim-Stack.
 SIM_SHUTDOWN_TRIGGER = "/ros2_ws/src/g1pilot/.sim_shutdown_request"
 QUIT_CONFIRM_MS = 4000      # so lange gilt der erste Klick als »scharf«
 QUIT_ACK_TIMEOUT_MS = 3000  # Watcher loescht die Datei -> sonst Hinweis
+
+
+def _qmul(a, b):
+    ax, ay, az, aw = a
+    bx, by, bz, bw = b
+    return (aw * bx + ax * bw + ay * bz - az * by,
+            aw * by - ax * bz + ay * bw + az * bx,
+            aw * bz + ax * by - ay * bx + az * bw,
+            aw * bw - ax * bx - ay * by - az * bz)
+
+
+def _qconj(q):
+    return (-q[0], -q[1], -q[2], q[3])
+
+
+def _qfrom_rotvec(rx, ry, rz):
+    """Drehvektor (Achse * Winkel, rad) -> Quaternion."""
+    ang = math.sqrt(rx * rx + ry * ry + rz * rz)
+    if ang < 1e-12:
+        return (0.0, 0.0, 0.0, 1.0)
+    s = math.sin(ang / 2) / ang
+    return (rx * s, ry * s, rz * s, math.cos(ang / 2))
+
+
+def _qangle(a, b):
+    """Drehwinkel zwischen zwei Orientierungen (rad)."""
+    d = abs(sum(x * y for x, y in zip(a, b)))
+    return 2.0 * math.acos(min(1.0, d))
+
+
+def _qslerp(a, b, t):
+    d = sum(x * y for x, y in zip(a, b))
+    if d < 0.0:
+        b, d = tuple(-x for x in b), -d
+    if d > 0.9995:
+        q = tuple(x + t * (y - x) for x, y in zip(a, b))
+    else:
+        th = math.acos(d)
+        sa, sb = math.sin((1 - t) * th), math.sin(t * th)
+        q = tuple((sa * x + sb * y) / math.sin(th) for x, y in zip(a, b))
+    n = math.sqrt(sum(x * x for x in q))
+    return tuple(x / n for x in q)
 
 
 def _envflag(name):
@@ -137,6 +202,34 @@ class DemoNode(StreamDeck):
         self.nav_status = "idle"
         self.on_nav_status = None
         self.create_subscription(String, "/g1pilot/nav_status", self._nav_status, qos_scene)
+        # Hand bewegen: aktuelle Hand-Pose per TF, Ziele wie der RViz-Marker.
+        # /tf kommt mit hoher Rate -> eigener Node mit eigenem Spin-Thread, damit
+        # die GUI-Schleife (spin_once im Qt-Timer) nicht von TF-Nachrichten
+        # verstopft wird. Der Buffer ist thread-sicher.
+        self.tf_node = rclpy.create_node("demo_gui_tf")
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self.tf_node, spin_thread=True)
+        self.pub_hand_goal = {
+            side: self.create_publisher(PoseStamped, f"/g1pilot/hand_goal/{side}", 10)
+            for side in ("left", "right")}
+
+    def hand_pose(self, side):
+        """-> ([x, y, z], (qx, qy, qz, qw)) der Hand im JOG_FRAME oder None (kein TF)."""
+        try:
+            t = self.tf_buffer.lookup_transform(JOG_FRAME, JOG_TF[side], rclpy.time.Time())
+        except Exception:   # noqa: BLE001 -- Lookup/Connectivity/Extrapolation
+            return None
+        tr, r = t.transform.translation, t.transform.rotation
+        return [tr.x, tr.y, tr.z], (r.x, r.y, r.z, r.w)
+
+    def publish_hand_goal(self, side, pos, rot):
+        msg = PoseStamped()
+        msg.header.frame_id = JOG_FRAME
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.pose.position.x, msg.pose.position.y, msg.pose.position.z = map(float, pos)
+        o = msg.pose.orientation
+        o.x, o.y, o.z, o.w = map(float, rot)
+        self.pub_hand_goal[side].publish(msg)
 
     def _nav_status(self, msg: String):
         self.nav_status = msg.data
@@ -234,6 +327,157 @@ def state_css(bg, fg, border, font):
                        border:{border}; border-radius:14px; padding:8px; }}
         QPushButton:disabled {{ background:#1c1c1c; color:#555; border:1px solid #2a2a2a; }}
     """
+
+
+class VerticalRocker(QWidget):
+    """Senkrechter Schieber, der zurueckfedert (Gegenstueck zum VirtualJoystick):
+    nach oben ziehen -> value = +1 (hoch), nach unten -> -1, loslassen -> 0."""
+
+    def __init__(self, height=190, width=74, labels=("▲", "▼")):
+        super().__init__()
+        self.setFixedSize(width, height)
+        self._labels = labels
+        self._travel = height / 2 - 24     # Knopf-Weg je Richtung (Pixel)
+        self._knob = 0.0                   # Versatz vom Zentrum, + = nach unten
+        self.value = 0.0
+
+    def _set_from_y(self, y):
+        self._knob = max(-self._travel, min(self._travel, y - self.height() / 2))
+        self.value = -self._knob / self._travel
+        self.update()
+
+    def mousePressEvent(self, e):
+        self._set_from_y(e.position().y())
+
+    def mouseMoveEvent(self, e):
+        self._set_from_y(e.position().y())
+
+    def mouseReleaseEvent(self, e):
+        self._knob = 0.0
+        self.value = 0.0
+        self.update()
+
+    def paintEvent(self, e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, h = self.width(), self.height()
+        cx, cy = w / 2, h / 2
+        p.setBrush(QBrush(QColor("#1e1e1e")))
+        p.setPen(QPen(QColor("#444"), 2))
+        p.drawRoundedRect(QRectF(cx - 26, 4, 52, h - 8), 26, 26)
+        p.setPen(QPen(QColor("#333"), 1))
+        p.drawLine(int(cx - 18), int(cy), int(cx + 18), int(cy))
+        p.setPen(QPen(QColor("#666"), 1))
+        p.drawText(QRectF(0, 8, w, 20), Qt.AlignmentFlag.AlignCenter, self._labels[0])
+        p.drawText(QRectF(0, h - 28, w, 20), Qt.AlignmentFlag.AlignCenter, self._labels[1])
+        active = abs(self.value) > 1e-3
+        p.setBrush(QBrush(QColor("#4CAF50") if active else QColor("#3c3c3c")))
+        p.setPen(QPen(QColor("#80ff80") if active else QColor("#666"), 2))
+        p.drawEllipse(QPointF(cx, cy + self._knob), 15, 15)
+
+
+class ArmJogPanel(QWidget):
+    """Hand bewegen, zwei Gruppen (beide gleichzeitig nutzbar), Richtungen aus
+    Sicht des Roboters (JOG_FRAME), Drehung um die Hand selbst:
+      VERSCHIEBEN  Joystick = vor/zurueck + links/rechts, Schieber = hoch/runter
+      DREHEN       Joystick = kippen (Finger hoch/runter) + schwenken
+                   (links/rechts), Schieber = rollen (um die Vorwaertsachse)
+    Gedrueckt halten = Hand faehrt, loslassen = Hand steht.
+    twist() -> ((vx, vy, vz) m/s, (wx, wy, wz) rad/s) im JOG_FRAME."""
+
+    STICK = 180
+
+    def __init__(self):
+        super().__init__()
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(18)
+
+        opts = QVBoxLayout()
+        opts.setSpacing(6)
+        opts.addWidget(WalkPanel._caption("Arm"))
+        self.side_btns = self._choice_row(opts, JOG_SIDES, self.set_side)
+        opts.addSpacing(8)
+        opts.addWidget(WalkPanel._caption("Tempo"))
+        self.speed_btns = self._choice_row(opts, JOG_SPEEDS, self.set_speed)
+        opts.addStretch(1)
+        lay.addLayout(opts)
+
+        self.move_stick, self.move_rocker = self._group(
+            lay, "VERSCHIEBEN", "vor / zurück · links / rechts", "hoch / runter", ("▲", "▼"))
+        self.turn_stick, self.turn_rocker = self._group(
+            lay, "DREHEN", "kippen · schwenken", "rollen", ("⟲", "⟳"))
+        lay.addStretch(1)
+
+        self.set_side("Rechts")
+        self.set_speed("Normal")
+
+    def _group(self, parent, title, stick_cap, rocker_cap, rocker_labels):
+        box = QVBoxLayout()
+        box.setSpacing(4)
+        head = QLabel(title)
+        head.setStyleSheet(f"color:{MODE_COLOR[MANIP]}; font-size:13px; font-weight:800;"
+                           "letter-spacing:1px;")
+        box.addWidget(head)
+        row = QHBoxLayout()
+        row.setSpacing(12)
+        col = QVBoxLayout()
+        col.addWidget(WalkPanel._caption(stick_cap), alignment=Qt.AlignmentFlag.AlignCenter)
+        stick = VirtualJoystick(self.STICK)
+        col.addWidget(stick, alignment=Qt.AlignmentFlag.AlignCenter)
+        row.addLayout(col)
+        col = QVBoxLayout()
+        col.addWidget(WalkPanel._caption(rocker_cap), alignment=Qt.AlignmentFlag.AlignCenter)
+        rocker = VerticalRocker(self.STICK, labels=rocker_labels)
+        col.addWidget(rocker, alignment=Qt.AlignmentFlag.AlignCenter)
+        row.addLayout(col)
+        box.addLayout(row)
+        parent.addLayout(box)
+        return stick, rocker
+
+    @staticmethod
+    def _choice_row(parent, choices, on_pick):
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        btns = {}
+        for name in choices:
+            b = big_button(name, font=15, height=44)
+            b.setCheckable(True)
+            b.setFixedWidth(92)
+            b.clicked.connect(lambda _, n=name: on_pick(n))
+            row.addWidget(b)
+            btns[name] = b
+        row.addStretch(1)
+        parent.addLayout(row)
+        return btns
+
+    def set_side(self, name):
+        self.side = name
+        for n, b in self.side_btns.items():
+            b.setChecked(n == name)
+
+    def set_speed(self, name):
+        self.lin_speed, self.ang_speed = JOG_SPEEDS[name]
+        for n, b in self.speed_btns.items():
+            b.setChecked(n == name)
+
+    def sides(self):
+        return JOG_SIDES[self.side]
+
+    def twist(self):
+        m, t = self.move_stick, self.turn_stick
+        lin = (m.vx * self.lin_speed, m.vy * self.lin_speed,
+               self.move_rocker.value * self.lin_speed)
+        # Joystick oben = Finger hoch: das ist eine NEGATIVE Drehung um y
+        # (positive dreht x nach -z). Links = positive Drehung um z.
+        ang = (self.turn_rocker.value * self.ang_speed,
+               -t.vx * self.ang_speed,
+               t.vy * self.ang_speed)
+        return lin, ang
+
+    def reset(self):
+        for w in (self.move_stick, self.move_rocker, self.turn_stick, self.turn_rocker):
+            w.mouseReleaseEvent(None)
 
 
 # ── Bereich 2a: Gehen ────────────────────────────────────────────────────
@@ -495,6 +739,13 @@ class ManipPanel(QWidget):
             row.addWidget(b)
         lay.addLayout(row)
 
+        # Hand bewegen (Joystick + Hoch/Runter) -- statt Marker in RViz.
+        lay.addSpacing(4)
+        lay.addWidget(WalkPanel._caption("Hand bewegen  —  gedrückt halten, loslassen = stehen"))
+        self.jog = ArmJogPanel()
+        lay.addWidget(self.jog)
+        self.arms_page = arms
+
         # Erweitert (eingeklappt)
         self.btn_expert = QPushButton("Erweitert ▸")
         self.btn_expert.setCheckable(True)
@@ -564,6 +815,8 @@ class DemoGUI(QWidget):
         self.nav_station = None     # Quickbefehl-Ziel (Station) oder None = RViz-Ziel
         self._nav_planning = False  # Station geklickt, Pfad noch nicht da
         self._nav_req = 0           # verwirft veraltete Planungs-Timeouts
+        self._jog_targets = {}      # side -> [pos, rot]: laufendes Hand-Ziel
+        self._jog_t = time.monotonic()
 
         node.on_walk_ready = self._on_walk_ready
         node.on_arm_status = self._on_arm_status
@@ -579,10 +832,25 @@ class DemoGUI(QWidget):
         self.cmd_timer = QTimer(self)
         self.cmd_timer.timeout.connect(self._publish_cmd_vel)
         self.cmd_timer.start(33)
+        self.jog_timer = QTimer(self)
+        self.jog_timer.timeout.connect(self._jog_tick)
+        self.jog_timer.start(33)
 
-        # Wie ui_interface: Auto-Start NUR in der Sim (Arme an + BALANCING).
+        # Wie ui_interface: Auto-Start NUR in der Sim (Arme an + BALANCING),
+        # wiederholt bis arm_controller und loco_sim quittieren (sim_autostart.py;
+        # frueher EIN Versuch nach 3 s -> ging verloren, wenn die Regler noch
+        # luden: GREIFEN angezeigt, Arme aber aus).
+        self.autostart = SimAutoStart(
+            lambda: node.publish_bool(node.pub_arms_enabled, True),
+            lambda: node.publish_bool(node.pub_start_balancing, True),
+            log=lambda t: node.get_logger().info(t),
+            on_done=self._autostart_done)
+        self.autostart_timer = QTimer(self)
+        self.autostart_timer.timeout.connect(
+            lambda: self.autostart.tick(node.arms_state, node.loco_state))
+        self.autostart_timer.start(100)
         if self.sim_mode:
-            QTimer.singleShot(3000, lambda: self.request_mode(MANIP))
+            QTimer.singleShot(3000, self._auto_start)
         else:
             self._status("REAL: zuerst »Roboter starten« drücken.", "#ffb300")
 
@@ -720,12 +988,32 @@ class DemoGUI(QWidget):
         self._status("Gestartet. Jetzt einen Modus wählen.", "#aaa")
         self._refresh()
 
-    def request_mode(self, mode):
+    def _auto_start(self):
+        if self.started and self.mode is None and self.pending is None:
+            self.request_mode(MANIP, auto=True)
+
+    def _autostart_done(self, ok):
+        if self.mode != MANIP:
+            return
+        if ok:
+            self._status("Greifen bereit — Bewegung auswählen.", MODE_COLOR[MANIP])
+        else:
+            # Kein Regler-Quittung: GREIFEN nicht als aktiv vortaeuschen, damit
+            # ein Antippen die Anforderung erneut sendet.
+            self.mode = None
+            self._refresh()
+            self._status("Arme reagieren nicht (keine Rückmeldung vom Arm-Regler) — "
+                         "GREIFEN antippen.", "#ef5350")
+
+    def request_mode(self, mode, auto=False):
         if not self.started or mode == self.mode or mode == self.pending:
             return
+        if not auto:
+            self.autostart.cancel("Modus gewählt")
         self._cancel_sequence()
         self.set_auto_nav(False)
         self.walk_panel.reset()
+        self.manip_panel.jog.reset()
         n = self.node
         if self._estop_unacked:
             # Sim nach NOT-HALT: START quittiert den E-Stop-Latch im
@@ -738,7 +1026,14 @@ class DemoGUI(QWidget):
             self._status("NOT-HALT quittiert …", "#aaa")
             QTimer.singleShot(300, lambda: self.request_mode(mode))
             return
-        if mode == MANIP:
+        if mode == MANIP and auto:
+            # Sim-Auto-Start: senden + wiederholen, bis quittiert (_autostart_done).
+            self.autostart.start()
+            self.mode, self.pending = MANIP, None
+            self._status("Greifen wird eingeschaltet — warte auf Arm-Regler …",
+                         MODE_COLOR[MANIP])
+            self._reload_sequence_buttons()
+        elif mode == MANIP:
             # BALANCING: Fuesse geplant, Arme frei -> sofort bestaetigt.
             n.publish_bool(n.pub_arms_enabled, True)
             n.publish_bool(n.pub_start_balancing, True)
@@ -961,6 +1256,66 @@ class DemoGUI(QWidget):
         self._pulse(self.node.pub_arms_home)
         self._status("Arme fahren in Grundstellung …", MODE_COLOR[MANIP])
 
+    # ── Hand bewegen ────────────────────────────────────────────────────
+    def _jog_tick(self):
+        """~30 Hz: solange ein Bedienelement ausgelenkt ist, das Hand-Ziel mit
+        dem eingestellten Tempo verschieben/drehen (Drehung um die Hand, Achsen
+        im JOG_FRAME). Startpunkt ist die echte Hand (TF) beim Anfassen."""
+        now = time.monotonic()
+        dt = min(0.1, now - self._jog_t)
+        self._jog_t = now
+        mp = self.manip_panel
+        jog = mp.jog
+        lin, ang = jog.twist()
+        active = (self.mode == MANIP and self.pending is None
+                  and mp.views.currentWidget() is mp.arms_page
+                  and max(abs(c) for c in lin + ang) > 1e-4)
+        if not active:
+            if self._jog_targets:
+                self._jog_stop()
+            return
+        if not self._jog_targets:
+            self._cancel_sequence()     # laufenden Ablauf beenden (Marker-Vorrang)
+            self._status(f"Hand bewegen: {jog.side.lower()} …", MODE_COLOR[MANIP])
+        lead_m = max(JOG_MIN_LEAD_M, jog.lin_speed * JOG_LEAD_S)
+        lead_rad = max(JOG_MIN_LEAD_RAD, jog.ang_speed * JOG_LEAD_S)
+        dq = _qfrom_rotvec(*(w * dt for w in ang))
+        missing = []
+        for side in jog.sides():
+            hand = self.node.hand_pose(side)
+            if hand is None:
+                missing.append(side)
+                continue
+            pos, rot = hand
+            tgt = self._jog_targets.setdefault(side, [list(pos), rot])
+            # Verschieben, Vorlauf zur echten Hand begrenzen
+            p = [tgt[0][i] + lin[i] * dt for i in range(3)]
+            d = [p[i] - pos[i] for i in range(3)]
+            n = math.sqrt(sum(c * c for c in d))
+            if n > lead_m:
+                p = [pos[i] + d[i] * lead_m / n for i in range(3)]
+            # Drehen (feste Achsen -> von links multiplizieren), Vorlauf begrenzen
+            q = _qmul(dq, tgt[1])
+            err = _qangle(q, rot)
+            if err > lead_rad:
+                q = _qslerp(rot, q, lead_rad / err)
+            tgt[0], tgt[1] = p, q
+            self.node.publish_hand_goal(side, p, q)
+        if missing:
+            self._status("Hand bewegen: Handposition unbekannt (TF fehlt) — "
+                         "läuft der Roboter-Zustand?", "#ffb300")
+
+    def _jog_stop(self):
+        """Losgelassen: Ziel auf die aktuelle Hand setzen -> Arm bleibt sofort
+        stehen statt den Vorlauf noch abzufahren."""
+        for side in self._jog_targets:
+            hand = self.node.hand_pose(side)
+            if hand is not None:
+                self.node.publish_hand_goal(side, *hand)
+        self._jog_targets = {}
+        if self.mode == MANIP:
+            self._status("Hand steht.", MODE_COLOR[MANIP])
+
     def _pose_goto_dialog(self):
         store = self._pose_store()
         grouped = store.list_grouped() if store is not None else {}
@@ -1000,9 +1355,11 @@ class DemoGUI(QWidget):
         an den Startpunkt (bzw. g1_spawn) und haelt ihn (Weld). Beim naechsten
         Modus-Klick wird er in die Stand-Pose gestellt und freigegeben."""
         n = self.node
+        self.autostart.cancel("Roboter zurueckgesetzt")
         self._cancel_sequence()
         self.set_auto_nav(False)
         self.walk_panel.reset()
+        self.manip_panel.jog.reset()
         for pub in (n.pub_start_balancing, n.pub_start_walking, n.pub_arms_enabled):
             n.publish_bool(pub, False)
         n.publish_bool(n.pub_start, True)
@@ -1015,9 +1372,11 @@ class DemoGUI(QWidget):
 
     def emergency_stop(self):
         n = self.node
+        self.autostart.cancel("NOT-HALT")
         self._cancel_sequence()
         self.set_auto_nav(False)
         self.walk_panel.reset()
+        self.manip_panel.jog.reset()
         for pub in (n.pub_start, n.pub_start_balancing, n.pub_start_walking,
                     n.pub_arms_enabled, n.pub_arms_home):
             n.publish_bool(pub, False)
@@ -1096,6 +1455,7 @@ def main():
     timer.start(10)
 
     app.exec()
+    node.tf_node.destroy_node()
     node.destroy_node()
     rclpy.shutdown()
 
