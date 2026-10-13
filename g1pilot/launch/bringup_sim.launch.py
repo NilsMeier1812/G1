@@ -95,6 +95,10 @@ def generate_launch_description():
                 'ee_velocity_limit': '0.5',
                 'planned_motion_alpha': '1.0',
                 'hand_only_settle_s': '1.5',
+                # Glaettung zeitbasiert (Bezug 50 Hz): der arm_controller schafft
+                # neben MuJoCo + allen Nodes oft nur 10-20 Hz -- pro Takt
+                # gerechnet hinge der Arm dann 1-2 s hinter Marker/PS4-Controller.
+                'smoothing_ref_hz': '50.0',
             }.items()
         ),
 

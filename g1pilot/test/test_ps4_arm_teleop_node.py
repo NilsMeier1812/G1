@@ -48,7 +48,7 @@ def rig():
 
     rclpy.init()
     state = {"run": False}
-    ex = node = None
+    ex = node = th = None
     try:
         node = rclpy.create_node("ps4_real_probe")
         got = {k: [] for k in ("goal_left", "goal_right", "enabled", "balance", "estop",
@@ -126,6 +126,8 @@ def rig():
             out, _ = proc.communicate()
         if ex is not None:
             ex.shutdown()
+        if th is not None:
+            th.join(timeout=2.0)     # Spin-Thread beenden, bevor rclpy herunterfaehrt
         if node is not None:
             node.destroy_node()
         rclpy.shutdown()

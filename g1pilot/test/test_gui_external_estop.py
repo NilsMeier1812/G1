@@ -77,6 +77,8 @@ def test_demo_gui_follows_external_estop(mode):
         assert log.count(("/g1pilot/emergency_stop", True)) == 1 and gui._estop_shown
     finally:
         gui.close()
+        node.tf_listener.executor.shutdown()            # TF-Spin-Thread vor rclpy beenden
+        node.tf_listener.dedicated_listener_thread.join(timeout=2.0)
         node.tf_node.destroy_node()
         node.destroy_node()
 

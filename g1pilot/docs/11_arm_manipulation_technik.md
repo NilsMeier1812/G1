@@ -60,6 +60,12 @@ Planung) — sowohl der Positionsspeicher als auch die Live-Pose-Schnittstelle
 3. `ik_solver.set_goal(side, T_goal_use)` — das eigentliche Lösen passiert im
    `main_loop`.
 
+Die beiden Ziel-Subscriptions haben Queue-Tiefe **1**: der Executor bedient
+sie nur einmal pro `main_loop`-Takt. Kommen Ziele schneller als der Takt
+(PS4-Controller/Demo-GUI mit 30 Hz, Sim-Takt auf einem schwachen PC
+10–20 Hz), stauten sich mit Tiefe 10 alte Ziele — die Hand reagierte erst
+0,3–0,8 s später. Jetzt zählt immer das neueste Ziel.
+
 Ein Marker-Griff bricht **immer** eine laufende geplante Bewegung ab
 (`_abort_planned_motion("Marker bewegt")`) — manuelle Eingabe hat Vorrang.
 
@@ -79,7 +85,7 @@ Reihenfolge (vereinfacht):
    `_planned_motion_active` (nächster Wegpunkt der geplanten Bahn) > sonst
    IK-Ergebnis aus dem reaktiven Servoing (`ik_solver.get_joint_targets`).
 6. Geschwindigkeitslimit (`arm_velocity_limit`) + exponentielle Glättung
-   (`ik_alpha`).
+   (`ik_alpha`; mit `smoothing_ref_hz` > 0 zeitbasiert, siehe Konfiguration).
 7. Kartesisches Geschwindigkeitslimit (`_limit_cartesian_speed`, überwacht
    Hand-TCPs + Ellbogen).
 8. Kollisions-Gate (`_apply_collision_gate`) — hält bei Kollision auf der
@@ -87,6 +93,12 @@ Reihenfolge (vereinfacht):
 9. Schreiben: bei `use_robot=true` `rt/arm_sdk` mit
    Schwerkraft-Feedforward-Drehmoment (`_arm_gravity_tau`,
    Parameter `gravity_comp`), sonst `/joint_states`.
+
+Den LowState liest **nur** der Thread `_subscribe_motor_state`
+(`lowstate_buffer`). Früher las der `main_loop` zusätzlich blockierend
+`lowstate_subscriber.Read()`: jeder Tick wartete auf die nächste
+LowState-Nachricht und nahm sie dem Thread weg (real ~2 ms je Tick, in der
+Sim halbierte es die Regelrate).
 
 ### `rt/arm_sdk`-Gewichtsrampe
 
@@ -201,7 +213,8 @@ des Solvers.
 | Parameter | Bedeutung |
 |---|---|
 | `rate_hz` | Regeltakt des `main_loop` (Default 250) |
-| `ik_alpha`, `ik_goal_filter_alpha` | Glättung Servoing-Pfad |
+| `ik_alpha`, `ik_goal_filter_alpha` | Glättung Servoing-Pfad (`ik_goal_filter_alpha` pro Ziel-Nachricht, `ik_alpha` und der Ziel-Filter im Solver pro Takt) |
+| `smoothing_ref_hz` | 0 = Glättung pro Takt (Real-Default). > 0: die Alphas pro Takt gelten für diese Bezugsrate und werden auf das echte `dt` umgerechnet, `1-(1-a)^(dt·ref)` — gleiches Zeitverhalten bei niedriger Regelrate. `bringup_sim` setzt 50 |
 | `ik_orientation_mode` | `full` / weitere Modi, siehe `set_orientation_mode` |
 | `ik_null_space_gain` | Stärke der Nullraum-Regularisierung |
 | `planned_motion_tolerance` | Toleranz [rad], ab der ein Wegpunkt als erreicht gilt |
@@ -212,7 +225,13 @@ des Solvers.
 - Der IK-Solve kostet bei aktiv verfolgtem Marker-Ziel ~20-30 ms/Zyklus —
   der Regel-Loop läuft dann effektiv mit ~30-50 Hz statt 250 Hz. Alle
   Limits rechnen mit dem tatsächlichen `dt`, bleiben also korrekt; im
-  Halte-Zustand läuft der Loop mit voller Rate.
+  Halte-Zustand läuft der Loop mit voller Rate. Die Glättung dagegen wirkt
+  pro Takt — je langsamer der Takt, desto träger der Arm (in der Sim auf
+  einem ausgelasteten PC 10–15 Hz; dafür `smoothing_ref_hz`).
+- Der IK-Solver erreicht posenabhängig das Ziel nicht ganz: Nullraum-Haltung
+  und Reichweiten-Klemme lassen in manchen Posen 0,5–3 cm Restfehler
+  (gemessen offline, z. B. Hand weit vorn und außen). Am Rand der Reichweite
+  knickt eine gerade Fahrt deshalb ab.
 - Die Taille (12-14) ist über `rt/arm_sdk` real ansteuerbar, wird von
   `arm_controller` aber bewusst nie beschrieben — ein Kommando dort würde
   gegen den Unitree-Loco-Controller arbeiten.
