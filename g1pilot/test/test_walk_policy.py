@@ -250,6 +250,9 @@ def test_vh_matches_official_leapp_export():
     from g1pilot.navigation.walk_policy import get_gravity_orientation
     vh = load_walk_policy(VH_DIR)
     assert vh.base_height == pytest.approx(0.72)
+    # Export-Vergleich mit der Trainings-Initialisierung (last_action 0), nicht mit dem
+    # Start-Seed fuer die PD-Hocke (test_vh_seed_last_action_from_pose).
+    vh.seed_last_action = False
     vh.reset()
     got = []
     for q, dq, quat, gyro in _vh_states():
@@ -262,6 +265,33 @@ def test_vh_matches_official_leapp_export():
     # Gelenk-Zuordnung: Ausgabe i gehoert zu Motor JOINT_NAMES_ROS-Index von joint_names[i]
     for k, name in enumerate(vh.joint_names):
         assert JOINT_NAMES_ROS[int(t.idx[k])] == name
+
+
+def test_vh_seed_last_action_from_pose():
+    """Start aus der PD-Hocke: last_action-History = Aktion, deren Sollwert die
+    aktuelle Pose ist (sonst streckt die Policy beim Loslaufen kurz die Beine)."""
+    vh = load_walk_policy(VH_DIR)
+    assert vh.seed_last_action is True
+    assert load_walk_policy(AGILE_DIR).seed_last_action is False
+    q = np.zeros(29, np.float32)
+    q[:12] = vh.stand_leg_pose
+    dq = np.zeros(29, np.float32)
+    grav = np.array([0.0, 0.0, -1.0], np.float32)
+    vh.reset()
+    obs = vh.build_obs(q, dq, np.zeros(3, np.float32), grav, [0.0, 0.0, 0.0])[0]
+    seed = vh.last_action.copy()
+    np.testing.assert_allclose(vh.default + vh.action_scale * seed, q[vh.idx], atol=1e-6)
+    # alle 5 History-Slots von last_action (letzter Term) tragen den Seed
+    la = obs[-5 * 12:].reshape(5, 12)
+    np.testing.assert_allclose(la, np.tile(seed, (5, 1)), atol=1e-6)
+    # nur beim frischen Start: danach zaehlt wieder die echte letzte Aktion
+    t = vh.step(q, dq, np.zeros(3, np.float32), grav, [0.0, 0.0, 0.0])
+    act = vh.last_action.copy()
+    obs = vh.build_obs(q, dq, np.zeros(3, np.float32), grav, [0.0, 0.0, 0.0])[0]
+    np.testing.assert_allclose(obs[-12:], act, atol=1e-6)
+    # erster Sollwert liegt nahe der Hocke (ohne Seed: Knie bis ~0.3 = fast gestreckt)
+    knee = [vh.joint_names.index(n) for n in ("left_knee_joint", "right_knee_joint")]
+    assert np.all(t.q[knee] > 0.6)
 
 
 # ── WALK -> STAND ────────────────────────────────────────────────────────────

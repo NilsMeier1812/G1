@@ -169,6 +169,10 @@ class AgileHistoryPolicy(_VelocityPolicyBase):
         self.min_norm = float(dep["commands"]["base_velocity"].get("min_norm", 0.0))
         # Feste Becken-Hoehe fuer velocity_height_commands [m]
         self.base_height = float(dep["commands"].get("base_height", 0.0))
+        # Start-History von last_action: False -> 0 wie im Training (Reset steht dort
+        # in der Default-Pose). True -> die Aktion, deren Sollwert die aktuelle Pose ist
+        # (Start aus der PD-Hocke, weit weg von der Default-Pose), siehe build_obs.
+        self.seed_last_action = bool(dep.get("seed_last_action", False))
 
         held = dep.get("held_joints", {}) or {}
         self.held_idx = _motor_indices(list(held.keys()))
@@ -233,6 +237,15 @@ class AgileHistoryPolicy(_VelocityPolicyBase):
         """Obs-Vektor (1, num_obs) aus dem aktuellen Zustand bauen und die History fortschreiben."""
         q = np.asarray(q, dtype=np.float32)
         dq = np.asarray(dq, dtype=np.float32)
+        if self._fresh and self.seed_last_action:
+            # last_action = 0 hiesse "zuletzt die Default-Pose kommandiert" (Beine fast
+            # gestreckt). Aus der Hocke antwortet die Policy darauf mit fast gestreckten
+            # Sollwerten -> Becken springt beim Loslaufen hoch und sackt wieder ab.
+            # Stattdessen die Aktion, die die aktuelle Pose als Sollwert ergibt.
+            a = (q[self.idx] - self.default) / self.action_scale
+            if self.action_clip is not None:
+                a = np.clip(a, -self.action_clip, self.action_clip)
+            self.last_action = a.astype(np.float32)
         off = 0
         for k, buf in enumerate(self._hist):
             val = self._term_value(self.term_names[k], q, dq, gyro, gravity, cmd)

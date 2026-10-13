@@ -520,7 +520,8 @@ def main():
               f"max Fuss-Drift nach Uebergabe {worst:.3f} m")
 
     # 7) Loslaufen: START WALKING mit cmd = 0 aus dem PD-Stand nach START BALANCING
-    #    und aus dem PD nach einer Uebergabe. Gemessen: max. Becken-Weg in 4 s.
+    #    und aus dem PD nach einer Uebergabe. Gemessen: max. Becken-Weg in 4 s und
+    #    Becken-Hub in der ersten Sekunde (kein Hochschnellen aus der Hocke).
     print("\n=== 7) Anlauf bei START WALKING mit cmd = 0 ===")
     for nm, sched, t_w in [
             ("aus PD-Stand nach START BALANCING", lambda t: ("stand", [0, 0, 0]) if t < 2.5
@@ -530,8 +531,10 @@ def main():
         fall, log, _ = run(policy, scene, sched, t_w + 4.0, walk_arms)
         w = window(log, t_w, t_w + 4.0)
         pel = max(float(np.linalg.norm(r["xy"] - w[0]["xy"])) for r in w)
-        R.add(f"Loslaufen {nm}", fall is None and pel < 0.05,
-              f"Becken bis {pel:.3f} m verschoben" + (f"  GESTUERZT t={fall:.1f}" if fall else ""))
+        hub = max(r["z"] for r in window(log, t_w, t_w + 1.0)) - w[0]["z"]
+        R.add(f"Loslaufen {nm}", fall is None and pel < 0.05 and hub < 0.015,
+              f"Becken bis {pel:.3f} m verschoben, Hub {hub * 100:+.1f} cm"
+              + (f"  GESTUERZT t={fall:.1f}" if fall else ""))
 
     # 8) Stoesse im PD-Stand (wie der PUSH-Button: Kraft 0.12 s auf den Torso).
     #    Pflicht: kein Sturz. Info: ob abgefangen werden musste und wie weit er ging.

@@ -11,6 +11,12 @@ format: agile_height_history
 policy_file: policy.onnx
 step_dt: 0.02            # 50 Hz (controller_freq im Training)
 history_length: 5        # 5 Zeitschritte je Obs-Term
+# Start-History von last_action = Aktion, die die aktuelle Gelenkpose als Sollwert
+# ergibt (statt 0 = Default-Pose). Die Policy startet aus der PD-Hocke (Knie 0.81,
+# Default 0.3); mit last_action = 0 streckte sie in den ersten ~0.1 s die Beine
+# (Becken +6.6 cm) und ging dann wieder in die Hocke. Mit Seed: +0.0 cm
+# (test_agile_walk_sim.py, Szenario 7). Siehe walk_policy.AgileHistoryPolicy.build_obs.
+seed_last_action: true
 
 # Von der Policy gesteuerte Gelenke (nur Beine) in der Reihenfolge der Policy
 # (Isaac-Lab-Artikulationsreihenfolge). Gilt fuer last_action und die Aktionen.
