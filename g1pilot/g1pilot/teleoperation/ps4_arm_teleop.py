@@ -286,6 +286,7 @@ def main(args=None):
             self.connected = False
             self.targets = {}            # side -> [pos, quat] laufendes Jog-Ziel
             self.last_twist = {}         # side -> (lin, ang) letzte Sollbewegung
+            self.last_hand = {}          # side -> (pos, quat) letzte bekannte Hand (TF)
             self.holds = HoldStreamer()  # Halte-Ziele nach dem Loslassen
             self.t_tick = time.monotonic()
             self._tf_warned = False
@@ -468,9 +469,19 @@ def main(args=None):
             for side in sides:
                 target = self.targets.pop(side, None)
                 lin, ang = self.last_twist.pop(side, ((0.0,) * 3, (0.0,) * 3))
+                cached = self.last_hand.pop(side, None)
                 if target is None:
                     continue
                 hand = self._hand_pose(side)
+                if hand is None:
+                    # TF-Luecke genau beim Loslassen: NICHT gar nichts senden --
+                    # sonst faehrt der arm_controller das alte Ziel (ganzer
+                    # Vorlauf) ab. Die Hand aus dem letzten Takt (<= 1 Takt alt)
+                    # gibt es immer, sobald es ein Jog-Ziel gibt.
+                    hand = cached
+                    self.get_logger().warn(
+                        f"Handposition {side} beim Anhalten unbekannt (TF) -- "
+                        "halte an der zuletzt bekannten Hand.")
                 if hand is not None:
                     pose = hold_pose(target, hand, lin, ang)
                     self.holds.hold(side, pose, now)
@@ -515,6 +526,7 @@ def main(args=None):
                             "fehlt) -- laeuft robot_state?")
                     continue
                 self._tf_warned = False
+                self.last_hand[side] = hand
                 p, q = jog_step(self.targets.get(side), hand, lin, ang, dt, lead_m, lead_rad)
                 self.targets[side] = [p, q]
                 self.last_twist[side] = (lin, ang)

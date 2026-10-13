@@ -35,8 +35,9 @@ class FakeDevice:
     """Minimales evdev.InputDevice: Ereignisse kommen aus einer Queue,
     None in der Queue = Abriss (OSError wie bei Bluetooth-Verlust)."""
 
-    def __init__(self, name, path="/dev/input/event7"):
+    def __init__(self, name, path="/dev/input/event7", phys="", uniq=""):
         self.name, self.path = name, path
+        self.phys, self.uniq = phys, uniq
         self.q = queue.Queue()
         self.closed = False
         self.ff_written = []
@@ -175,3 +176,56 @@ def test_feedback_led_and_rumble(env):
     assert wait_for(lambda: rd("green") == "200")
     assert rd("red") == "0" and rd("blue") == "60"
     assert wait_for(lambda: dev.ff_written == [(EV_FF, 3, 1)])
+
+
+def test_stall_detection_motion_sensors(env):
+    """Bluetooth haengt, ohne dass evdev einen Fehler meldet: das Sensor-
+    Teilgeraet liefert nichts mehr -> nichts publizieren; Daten wieder da ->
+    weiter. Ein Sensor-Geraet eines ANDEREN Controllers zaehlt nicht."""
+    other = FakeDevice("Wireless Controller Motion Sensors", "/dev/input/event9",
+                       phys="aa:bb:cc:00:00:02")
+    motion = FakeDevice("Wireless Controller Motion Sensors", "/dev/input/event8",
+                        phys="aa:bb:cc:00:00:01")
+    dev = FakeDevice("Wireless Controller", phys="aa:bb:cc:00:00:01")
+    env.fake.devices[other.path] = other
+    env.fake.devices[motion.path] = motion
+    env.fake.devices[dev.path] = dev
+    feed = {"on": True, "run": True}
+
+    def feeder():                      # Sensor-Berichte ~200 Hz
+        while feed["run"]:
+            if feed["on"]:
+                motion.q.put((0x04, 0x05, int(time.time() * 1e6) & 0x7fffffff))   # MSC_TIMESTAMP
+            time.sleep(0.005)
+    th = threading.Thread(target=feeder, daemon=True)
+    th.start()
+    try:
+        assert wait_for(lambda: len(env.got) > 10)
+        dev.q.put((L.EV_ABS, L.ABS_Y, 0))          # Stick voll ausgelenkt
+        assert wait_for(lambda: env.got[-1].axes[L.LY] == pytest.approx(1.0))
+        # Funk haengt: keine Sensor-Ereignisse mehr, evdev meldet nichts
+        feed["on"] = False
+        time.sleep(0.3 + 0.15)
+        n = len(env.got)
+        time.sleep(0.5)
+        assert len(env.got) == n, "eingefrorener Stick wird weiter publiziert"
+        # Daten kommen wieder -> weiter publizieren
+        feed["on"] = True
+        assert wait_for(lambda: len(env.got) > n + 5)
+        assert not other.q.qsize() and other.closed       # fremdes Geraet nicht benutzt
+    finally:
+        feed["run"] = False
+
+
+def test_no_motion_device_keeps_old_behaviour(env):
+    """Sensor-Teilgeraet nicht zuzuordnen (keine phys/uniq) oder liefert nie
+    etwas: ohne Lebendpruefung weiter publizieren wie bisher."""
+    motion = FakeDevice("Wireless Controller Motion Sensors", "/dev/input/event8",
+                        phys="usb-1")
+    dev = FakeDevice("Wireless Controller", phys="usb-1")
+    env.fake.devices[motion.path] = motion            # zugeordnet, aber stumm
+    env.fake.devices[dev.path] = dev
+    assert wait_for(lambda: len(env.got) > 3)
+    n = len(env.got)
+    time.sleep(0.6)
+    assert len(env.got) > n + 10

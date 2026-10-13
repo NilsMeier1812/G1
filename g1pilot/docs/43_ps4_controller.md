@@ -119,7 +119,10 @@ Ablauf:
    MANIPULATION) übernimmt die Arme wieder ruckfrei.
 6. **Abriss-Test:** Stick halten und dabei USB-Kabel ziehen bzw. Bluetooth
    am PC trennen (`bluetoothctl disconnect …`). Nicht PS lange drücken —
-   das wäre der NOT-HALT. Erwartung: Hand steht innerhalb 0,5 s.
+   das wäre der NOT-HALT. Erwartung: Hand steht innerhalb 0,5 s. Bei
+   Bluetooth zusätzlich: Controller mit ausgelenktem Stick abschirmen bzw.
+   außer Reichweite bringen (Funk hängt, ohne sauber zu trennen). Erwartung:
+   Log „seit 0.3 s keine Daten“, Hand steht nach < 1 s.
 
 | Env-Variable (Real) | Default | Bedeutung |
 |---|---|---|
@@ -171,7 +174,7 @@ Ablauf:
 | `launch/bringup_real.launch.py` | setzt `ps4_arms` aus `G1_PS4_ARMS` mit Real-Werten (Langsam/max Normal, Options ohne `start_balancing`) |
 | `teleoperation/demo_gui.py`, `teleoperation/ui_interface.py` | zeigen einen NOT-HALT von außen (PS-Taste) an |
 | `docker-compose.ps4.yml` | `/dev/input` + `device_cgroup_rules: c 13:* rmw` für `g1pilot-sim` |
-| `test/test_ps4_arm_teleop.py`, `test/test_ps4_joystick.py` | Unit-Tests (Belegung, Logik, Jog, simuliertes evdev-Gerät) |
+| `test/test_ps4_arm_teleop.py`, `test/test_ps4_joystick.py` | Unit-Tests (Belegung, Logik, Jog, simuliertes evdev-Gerät inkl. hängender Funkverbindung) |
 | `test/test_ps4_arm_teleop_node.py` | Node mit Real-Einstellungen gegen simuliertes Joy + TF (Options, Tempo, NOT-HALT von außen, kein Laufbefehl) |
 | `test/test_gui_external_estop.py` | Demo-GUI + Streamdeck folgen einem NOT-HALT von außen (Sim und Real, offscreen) |
 | `test/test_demo_gui_jog_hold.py` | Demo-GUI »Hand bewegen«: Halte-Ziel beim Loslassen (auf der Linie, 1 s wiederholt, Grundstellung löscht es) |
@@ -223,6 +226,15 @@ Geräte-Reihenfolge — für eine Tastenbelegung zu wackelig.
 - Totzone 0.12 (mit Neuskalierung) + Expo 0.4 → kein Kriechen, feinfühlig um die Mitte.
 - Kein Joy länger als 0.5 s (`joy_timeout_s`) → Hand hält an. `ps4_joystick`
   publiziert ohne Verbindung **nichts** (kein eingefrorener Wert).
+- Hängende Funkverbindung (Bluetooth friert ein, der Kernel meldet die
+  Trennung erst nach Sekunden): `ps4_joystick` überwacht das Teilgerät
+  „… Motion Sensors“ desselben Controllers (gleiche phys/uniq), das mit
+  jedem Funkbericht Ereignisse liefert. Kommen länger als 0,3 s
+  (`stall_timeout_s`) keine Daten, publiziert es nichts mehr → nach
+  `joy_timeout_s` hält die Hand. Ohne zuordenbares Sensor-Teilgerät gibt es
+  keine Lebendprüfung (Log-Hinweis beim Verbinden).
+- TF-Lücke beim Loslassen: Halte-Ziel aus der Hand-Pose des letzten Takts
+  (statt nichts zu senden und den Vorlauf abfahren zu lassen).
 - Abgewählte Hand hält sofort an (Ziel = echte Hand).
 - Loslassen / Abwählen / Abriss: Halte-Ziel (Hand stoppt entlang der
   Bewegungsrichtung) wird 1 s lang wiederholt (`JOG_HOLD_S`), sonst führe der
