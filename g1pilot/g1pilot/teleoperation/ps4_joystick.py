@@ -11,7 +11,14 @@ und hier NICHT angefasst wird):
     wegbrechen. Ohne Verbindung wird NICHTS publiziert (der Empfaenger merkt
     den Abriss am Timeout und haelt die Hand an), nie ein eingefrorener Wert,
   * Rueckmeldung am Controller (best effort): LED-Farbe ueber sysfs und
-    Vibration ueber evdev-Force-Feedback, gesteuert ueber /g1pilot/ps4/feedback.
+    Vibration ueber evdev-Force-Feedback, gesteuert ueber /g1pilot/ps4/feedback,
+  * Lebendpruefung: haengt die Bluetooth-Verbindung, ohne dass der Kernel die
+    Trennung meldet (das kommt erst nach dem Supervision-Timeout, mehrere
+    Sekunden), wuerde sonst der letzte Zustand -- z.B. ein ausgelenkter
+    Stick -- weiter publiziert. Das Teilgeraet "<Name> Motion Sensors"
+    liefert mit jedem Funkbericht Ereignisse (u.a. MSC_TIMESTAMP); bleiben
+    sie (und Tasten/Sticks) laenger als `stall_timeout_s` aus, wird nichts
+    mehr publiziert, bis wieder Daten kommen.
 """
 import glob
 import json
@@ -41,8 +48,10 @@ class Ps4Joystick(Node):
         self.declare_parameter("topic", "/g1pilot/ps4/joy")
         self.declare_parameter("publish_rate", 50.0)
         self.declare_parameter("reconnect_period_s", 1.0)
+        self.declare_parameter("stall_timeout_s", 0.3)
         self.wanted = self.get_parameter("joystick_name").value
         self.reconnect_s = float(self.get_parameter("reconnect_period_s").value)
+        self.stall_s = float(self.get_parameter("stall_timeout_s").value)
 
         self.pub = self.create_publisher(Joy, self.get_parameter("topic").value, 10)
         self.create_subscription(String, "/g1pilot/ps4/feedback", self._on_feedback, 10)
@@ -55,6 +64,11 @@ class Ps4Joystick(Node):
         self._ff_effect = None
         self._rgb = None
         self._stop = False
+        # Lebendpruefung: Zeit des letzten Ereignisses; None = nicht scharf
+        # (kein Sensor-Teilgeraet gefunden oder es hat noch nichts geliefert).
+        self._alive_t = None
+        self._gen = 0             # Verbindungs-Nummer (alte Sensor-Threads ignorieren)
+        self._stalled = False
 
         if evdev is None:
             self.get_logger().error("Python-Paket 'evdev' fehlt -- kein PS4-Controller.")
@@ -83,6 +97,40 @@ class Ps4Joystick(Node):
             extra.close()
         return candidates[0] if candidates else None
 
+    def _find_motion(self, dev):
+        """Sensor-Teilgeraet desselben Controllers: Name + " Motion Sensors"
+        und gleiche phys/uniq (hid-sony/hid-playstation setzen beide gleich).
+        None, wenn nicht eindeutig zuzuordnen -> keine Lebendpruefung."""
+        want = f"{dev.name} Motion Sensors"
+        phys = getattr(dev, "phys", "") or ""
+        uniq = getattr(dev, "uniq", "") or ""
+        for path in evdev.list_devices():
+            if path == dev.path:
+                continue
+            try:
+                m = evdev.InputDevice(path)
+            except OSError:
+                continue
+            if m.name == want and ((uniq and getattr(m, "uniq", "") == uniq)
+                                   or (phys and getattr(m, "phys", "") == phys)):
+                return m
+            m.close()
+        return None
+
+    def _motion_reader(self, mdev, gen):
+        try:
+            for _ in mdev.read_loop():
+                with self.lock:
+                    if self._gen != gen or self._stop:
+                        break
+                    self._alive_t = time.monotonic()
+        except OSError:
+            pass
+        try:
+            mdev.close()
+        except Exception:   # noqa: BLE001
+            pass
+
     def _reader(self):
         missing_logged = False
         while not self._stop:
@@ -104,9 +152,20 @@ class Ps4Joystick(Node):
             # Startwerte (z.B. Trigger halb gedrueckt beim Verbinden)
             for code, info in dev.capabilities().get(ecodes.EV_ABS, []):
                 state.apply(L.EV_ABS, code, info.value)
+            motion = self._find_motion(dev)
             with self.lock:
                 self.state = state
                 self.device = dev
+                self._gen += 1
+                self._alive_t = None
+                self._stalled = False
+            if motion is not None:
+                threading.Thread(target=self._motion_reader, args=(motion, self._gen),
+                                 daemon=True).start()
+            else:
+                self.get_logger().info(
+                    "Kein Sensor-Teilgeraet zum Controller gefunden -- ohne "
+                    "Lebendpruefung (Trennung erst, wenn der Kernel sie meldet).")
             self._led = self._find_led(dev)
             self._ff_effect = None
             self.get_logger().info(f"PS4-Controller verbunden: {dev.name} ({dev.path})"
@@ -117,11 +176,15 @@ class Ps4Joystick(Node):
                 for ev in dev.read_loop():
                     with self.lock:
                         self.state.apply(ev.type, ev.code, ev.value)
+                        if self._alive_t is not None:
+                            self._alive_t = time.monotonic()
             except OSError as e:
                 self.get_logger().warn(f"PS4-Controller getrennt ({e}). Warte auf Wiederverbindung ...")
             with self.lock:
                 self.device = None
                 self.state.reset()
+                self._gen += 1           # Sensor-Thread dieser Verbindung beenden
+                self._alive_t = None
             try:
                 dev.close()
             except Exception:   # noqa: BLE001
@@ -130,6 +193,18 @@ class Ps4Joystick(Node):
     def _publish(self):
         with self.lock:
             if self.device is None:
+                return
+            stalled = (self._alive_t is not None
+                       and time.monotonic() - self._alive_t > self.stall_s)
+            if stalled != self._stalled:
+                self._stalled = stalled
+                if stalled:
+                    self.get_logger().warn(
+                        f"PS4-Controller: seit {self.stall_s:.1f} s keine Daten "
+                        "(Funkverbindung haengt?) -- publiziere nichts, Hand haelt an.")
+                else:
+                    self.get_logger().info("PS4-Controller: Daten kommen wieder.")
+            if stalled:
                 return
             msg = Joy()
             msg.header.stamp = self.get_clock().now().to_msg()

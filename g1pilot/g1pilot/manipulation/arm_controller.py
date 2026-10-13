@@ -211,6 +211,14 @@ class ArmController(Node):
         self.declare_parameter("ik_world_frame", "pelvis")
         self.declare_parameter("ik_alpha", 0.2)
         self.declare_parameter("ik_goal_filter_alpha", 0.25)
+        # Glaettung pro Takt (ik_alpha + Ziel-Filter im IK-Solver) gilt fuer
+        # EINEN Takt -- wie stark sie bremst, haengt also von der erreichten
+        # Regelrate ab (Soll 250 Hz, real mit IK ~30-50 Hz, Sim auf schwachem
+        # PC ~10-15 Hz -> Arm haengt 1-2 s hinterher). > 0: die Alphas gelten
+        # fuer diese Bezugsrate und werden auf den echten Zeitschritt
+        # umgerechnet (gleiches Zeitverhalten unabhaengig von der Rate).
+        # 0 = pro Takt wie bisher (Real-Default). bringup_sim setzt 50.
+        self.declare_parameter("smoothing_ref_hz", 0.0)
         self.declare_parameter("ik_orientation_mode", "full")
         self.declare_parameter("ik_max_ori_step_rad", 0.35)
         # Staerke der IK-Nullraum-Regularisierung zur Ruhe-Pose (0 = aus). Verhindert,
@@ -420,6 +428,9 @@ class ArmController(Node):
         self._gate_end_q14 = None
         self._env_near_cache = (None, np.inf, None)
         self._gate_end_cache = (None, {})
+        self.smoothing_ref_hz = float(self.get_parameter("smoothing_ref_hz").value)
+        self._ik_goal_alpha_base = float(self.ik_solver.goal_filter_alpha)
+        self._last_dt = 1.0 / float(self.get_parameter("rate_hz").value)
         if hasattr(self.ik_solver, "set_orientation_mode"):
             self.ik_solver.set_orientation_mode(self.ik_orientation_mode)
         # Eigener FK-Buffer fuer die Marker-Ziel-Pruefung (stoert self.data nicht).
@@ -515,8 +526,12 @@ class ArmController(Node):
 
 
         self.joint_pub = self.create_publisher(JointState, "/joint_states", 10)
-        self.create_subscription(PoseStamped, "/g1pilot/hand_goal/right", self._right_goal_callback, 10)
-        self.create_subscription(PoseStamped, "/g1pilot/hand_goal/left", self._left_goal_callback, 10)
+        # Tiefe 1: nur das NEUESTE Hand-Ziel zaehlt. Der Executor bedient die
+        # Subscription nur einmal pro main_loop-Takt; kommen Ziele schneller als
+        # der Takt (PS4-Teleop 30 Hz, Sim-Takt 10-20 Hz), stauten sich mit Tiefe 10
+        # bis zu 10 alte Ziele -> 0,3-0,8 s Verzug, bevor die Hand reagiert.
+        self.create_subscription(PoseStamped, "/g1pilot/hand_goal/right", self._right_goal_callback, 1)
+        self.create_subscription(PoseStamped, "/g1pilot/hand_goal/left", self._left_goal_callback, 1)
         self.create_subscription(Bool, "/g1pilot/arms/enabled", self._arms_controlled_callback, 10)
         self.create_subscription(Bool, "/g1pilot/arms/home", self._homming_callback, 10)
         # Loco-Zustand: bei WALK Arme in die Lauf-Pose, bei BALANCING wieder frei.
@@ -2681,6 +2696,14 @@ class ArmController(Node):
                     f"[marker] {side}: Ziel nicht erreichbar "
                     f"(Rest {pos_err * 100:.1f} cm / {ori_err:.1f} deg).")
 
+    def _alpha_dt(self, alpha: float, dt: float) -> float:
+        """Glaettungs-Alpha (gilt pro Takt bei smoothing_ref_hz) auf den echten
+        Zeitschritt umrechnen: 1 - (1 - a)^(dt * ref). smoothing_ref_hz <= 0
+        oder alpha >= 1 -> unveraendert (pro Takt, bisheriges Verhalten)."""
+        if self.smoothing_ref_hz <= 0.0 or alpha >= 1.0 or alpha <= 0.0:
+            return alpha
+        return 1.0 - (1.0 - alpha) ** (dt * self.smoothing_ref_hz)
+
     def _compute_dt(self) -> float:
         """
         Compute the elapsed time (Δt) between consecutive main loop cycles.
@@ -2784,13 +2807,13 @@ class ArmController(Node):
             self._publish_arm_slack()
             return
 
-        if self.use_robot:
-            robot_data = self.lowstate_subscriber.Read()
-            if robot_data is not None:
-                self.lowstate_buffer.SetData(robot_data)
-                for i in range(len(self.motor_state)):
-                    self.motor_state[i].q  = robot_data.motor_state[i].q
-                    self.motor_state[i].dq = robot_data.motor_state[i].dq
+        # LowState kommt aus _subscribe_motor_state (eigener Thread ->
+        # lowstate_buffer/motor_state). Frueher stand hier zusaetzlich ein
+        # BLOCKIERENDES lowstate_subscriber.Read(): der Tick wartete auf die
+        # naechste LowState-Nachricht und konkurrierte dabei mit dem Thread um
+        # jede Probe. Real (500 Hz) kostete das ~2 ms je Tick, in der Sim
+        # (Lockstep, ~30-50 Hz) halbierte es die Regelrate -> Arm zaeh, 1-2 s
+        # Verzug am PS4-Controller/Marker.
 
         if not self.arms_enabled:
             if self._weight_state == "ramp_down":
@@ -2980,10 +3003,15 @@ class ArmController(Node):
             except Exception:
                 pass
 
+            # Ziel-Filter des Solvers zeitbasiert (smoothing_ref_hz), nur fuer
+            # diesen Takt-Aufruf; Callbacks behalten ihr Alpha pro Nachricht.
+            self.ik_solver.goal_filter_alpha = self._alpha_dt(
+                self._ik_goal_alpha_base, self._last_dt)
             if self._goal_left_filt is not None:
                 self.ik_solver.set_goal("left", self._goal_left_filt)
             if self._goal_right_filt is not None:
                 self.ik_solver.set_goal("right", self._goal_right_filt)
+            self.ik_solver.goal_filter_alpha = self._ik_goal_alpha_base
 
             held = {side: self._ik_side_held(side) for side in ("left", "right")}
             q_dict = ({} if held["left"] and held["right"]
@@ -3018,6 +3046,8 @@ class ArmController(Node):
         if self._planned_motion_active:
             pa = float(self.get_parameter("planned_motion_alpha").value)
             alpha = pa if pa > 0.0 else self.ik_alpha
+        alpha = self._alpha_dt(alpha, dt)
+        self._last_dt = dt
         q_smooth = (1.0 - alpha) * self._last_q_target + alpha * q_unsmoothed
         # Kartesisches Speedlimit (TCP + Ellbogen, ISO 10218-1 reduced speed):
         # begrenzt auch die Faelle, in denen ein kleiner Gelenkschritt eine

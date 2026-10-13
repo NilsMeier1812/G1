@@ -58,7 +58,7 @@ from g1pilot.teleoperation.ui_interface import (
 )
 from g1pilot.teleoperation.hand_panel import HandPanel
 from g1pilot.teleoperation.hand_jog import (
-    JOG_FRAME, JOG_TF, JOG_SPEEDS, lead_limits, jog_step,
+    JOG_FRAME, JOG_TF, JOG_SPEEDS, HoldStreamer, hold_pose, lead_limits, jog_step,
 )
 
 WALK = "walk"
@@ -765,6 +765,8 @@ class DemoGUI(QWidget):
         self._nav_planning = False  # Station geklickt, Pfad noch nicht da
         self._nav_req = 0           # verwirft veraltete Planungs-Timeouts
         self._jog_targets = {}      # side -> [pos, rot]: laufendes Hand-Ziel
+        self._jog_twist = ((0.0,) * 3, (0.0,) * 3)   # letzte Sollbewegung (lin, ang)
+        self._jog_holds = HoldStreamer()   # Halte-Ziele nach dem Loslassen
         self._jog_t = time.monotonic()
 
         node.on_walk_ready = self._on_walk_ready
@@ -1123,6 +1125,7 @@ class DemoGUI(QWidget):
             self._status("Fertig.", "#66bb6a")
             return
         self.current_pose = self.queue.pop(0)
+        self._jog_holds.clear()     # ein Halte-Ziel braeche die Fahrt ab
         self.node.publish_str(self.node.pub_pose_goto, self.current_pose)
         step = ""
         if getattr(self, "_seq_label", None):
@@ -1167,6 +1170,7 @@ class DemoGUI(QWidget):
         Pose, Arme neben dem Koerper -- geplant angefahren. Die »Sichere Pose«
         (Arme hoch, Ellbogen hinten) hat ihren eigenen Knopf."""
         self._cancel_sequence()
+        self._jog_holds.clear()     # ein Halte-Ziel braeche die Fahrt ab
         self._pulse(self.node.pub_arms_home)
         self._status("Arme fahren in Grundstellung …", MODE_COLOR[MANIP])
 
@@ -1184,6 +1188,11 @@ class DemoGUI(QWidget):
         active = (self.mode == MANIP and self.pending is None
                   and mp.views.currentWidget() is mp.arms_page
                   and max(abs(c) for c in lin + ang) > 1e-4)
+        if active:
+            for side in jog.sides():
+                self._jog_holds.cancel(side)
+        for side, pose in self._jog_holds.due(now).items():
+            self.node.publish_hand_goal(side, *pose)
         if not active:
             if self._jog_targets:
                 self._jog_stop()
@@ -1201,6 +1210,7 @@ class DemoGUI(QWidget):
             p, q = jog_step(self._jog_targets.get(side), hand, lin, ang, dt,
                             lead_m, lead_rad)
             self._jog_targets[side] = [p, q]
+            self._jog_twist = (lin, ang)
             self.node.publish_hand_goal(side, p, q)
         if missing:
             self._status("Hand bewegen: Handposition unbekannt (TF fehlt) — "
@@ -1208,11 +1218,16 @@ class DemoGUI(QWidget):
 
     def _jog_stop(self):
         """Losgelassen: Ziel auf die aktuelle Hand setzen -> Arm bleibt sofort
-        stehen statt den Vorlauf noch abzufahren."""
-        for side in self._jog_targets:
+        stehen statt den Vorlauf noch abzufahren (hold_pose: entlang der
+        Bewegung an der Hand, quer auf der Ziel-Linie). Das Halte-Ziel wird eine
+        Weile wiederholt (HoldStreamer, Ziel-Glaettung im arm_controller)."""
+        now = time.monotonic()
+        for side, target in self._jog_targets.items():
             hand = self.node.hand_pose(side)
             if hand is not None:
-                self.node.publish_hand_goal(side, *hand)
+                pose = hold_pose(target, hand, *self._jog_twist)
+                self._jog_holds.hold(side, pose, now)
+                self.node.publish_hand_goal(side, *pose)
         self._jog_targets = {}
         if self.mode == MANIP:
             self._status("Hand steht.", MODE_COLOR[MANIP])
@@ -1290,6 +1305,7 @@ class DemoGUI(QWidget):
 
     def _enter_estop(self):
         self._estop_shown = True
+        self._jog_holds.clear()
         self._cancel_sequence()
         self.set_auto_nav(False)
         self.walk_panel.reset()

@@ -39,7 +39,8 @@ import time
 
 from g1pilot.teleoperation import ps4_layout as L
 from g1pilot.teleoperation.hand_jog import (
-    JOG_FRAME, JOG_TF, JOG_SPEEDS, JOG_SPEED_ORDER, lead_limits, jog_step,
+    JOG_FRAME, JOG_TF, JOG_SPEEDS, JOG_SPEED_ORDER, HoldStreamer, hold_pose, lead_limits,
+    jog_step,
 )
 
 # Auswahl -> betroffene Seiten
@@ -284,6 +285,9 @@ def main(args=None):
             self.axes, self.t_joy = [], None
             self.connected = False
             self.targets = {}            # side -> [pos, quat] laufendes Jog-Ziel
+            self.last_twist = {}         # side -> (lin, ang) letzte Sollbewegung
+            self.last_hand = {}          # side -> (pos, quat) letzte bekannte Hand (TF)
+            self.holds = HoldStreamer()  # Halte-Ziele nach dem Loslassen
             self.t_tick = time.monotonic()
             self._tf_warned = False
             self._home_off_at = None
@@ -341,6 +345,7 @@ def main(args=None):
         def _on_estop(self, msg):
             if msg.data and self.logic.latch_estop():
                 self._hold(("left", "right"))
+                self.holds.clear()   # Arme sind ohnehin abgeschaltet
                 self.get_logger().warn("NOT-HALT (von aussen) -- PS4 gesperrt bis START.")
                 self._send_feedback(rumble_ms=600, strong=1.0, weak=1.0)
                 self._publish_status()
@@ -363,6 +368,9 @@ def main(args=None):
                 self._send_feedback(rumble_ms=150)
             elif kind == "home":
                 self._hold(("left", "right"))
+                # KEIN Halte-Strom: jedes Ziel braeche die geplante Grundstellung
+                # ab ("manueller Vorrang" im arm_controller).
+                self.holds.clear()
                 self.pub_home.publish(Bool(data=True))
                 # Impuls wie _pulse der GUIs: nach 1 s False (in _tick)
                 self._home_off_at = time.monotonic() + 1.0
@@ -373,6 +381,7 @@ def main(args=None):
                 self.get_logger().info("STOPP: Hand haelt, geplante Bewegung abgebrochen.")
                 self._send_feedback(rumble_ms=80, strong=0.6, weak=0.0)
             elif kind == "estop":
+                self.holds.clear()
                 self.pub_estop.publish(Bool(data=True))
                 self.get_logger().warn("NOT-HALT (PS-Taste). Quittieren in GUI/Streamdeck.")
                 self._send_feedback(rumble_ms=600, strong=1.0, weak=1.0)
@@ -452,13 +461,35 @@ def main(args=None):
 
         def _hold(self, sides):
             """Ziel auf die echte Hand setzen -> Arm bleibt sofort stehen statt
-            den Vorlauf noch abzufahren (wie Loslassen in der Demo-GUI)."""
+            den Vorlauf noch abzufahren (hold_pose: entlang der Bewegung an der
+            Hand, quer auf der Ziel-Linie). Das Halte-Ziel wird JOG_HOLD_S lang
+            wiederholt (HoldStreamer), sonst faehrt der arm_controller wegen
+            seiner Ziel-Glaettung noch einen Grossteil des Vorlaufs ab."""
+            now = time.monotonic()
             for side in sides:
-                if self.targets.pop(side, None) is None:
+                target = self.targets.pop(side, None)
+                lin, ang = self.last_twist.pop(side, ((0.0,) * 3, (0.0,) * 3))
+                cached = self.last_hand.pop(side, None)
+                if target is None:
                     continue
                 hand = self._hand_pose(side)
+                if hand is None:
+                    # TF-Luecke genau beim Loslassen: NICHT gar nichts senden --
+                    # sonst faehrt der arm_controller das alte Ziel (ganzer
+                    # Vorlauf) ab. Die Hand aus dem letzten Takt (<= 1 Takt alt)
+                    # gibt es immer, sobald es ein Jog-Ziel gibt.
+                    hand = cached
+                    self.get_logger().warn(
+                        f"Handposition {side} beim Anhalten unbekannt (TF) -- "
+                        "halte an der zuletzt bekannten Hand.")
                 if hand is not None:
-                    self._publish_goal(side, *hand)
+                    pose = hold_pose(target, hand, lin, ang)
+                    self.holds.hold(side, pose, now)
+                    self._publish_goal(side, *pose)
+
+        def _stream_holds(self, now):
+            for side, pose in self.holds.due(now).items():
+                self._publish_goal(side, *pose)
 
         def _tick(self):
             now = time.monotonic()
@@ -473,10 +504,14 @@ def main(args=None):
                     self.get_logger().warn("PS4-Controller: keine Daten mehr -> Hand haelt an.")
                     self._publish_status()
                 self._hold(tuple(self.targets))
+                self._stream_holds(now)
                 return
             tw = self.logic.twist(self.axes) if self.connected else {}
             # Seiten, die nicht mehr bewegt werden (Stick losgelassen): anhalten
             self._hold(tuple(s for s in self.targets if s not in tw))
+            for side in tw:
+                self.holds.cancel(side)
+            self._stream_holds(now)
             if not tw:
                 return
             v, w = JOG_SPEEDS[self.logic.speed]
@@ -491,8 +526,10 @@ def main(args=None):
                             "fehlt) -- laeuft robot_state?")
                     continue
                 self._tf_warned = False
+                self.last_hand[side] = hand
                 p, q = jog_step(self.targets.get(side), hand, lin, ang, dt, lead_m, lead_rad)
                 self.targets[side] = [p, q]
+                self.last_twist[side] = (lin, ang)
                 self._publish_goal(side, p, q)
 
     rclpy.init(args=args)

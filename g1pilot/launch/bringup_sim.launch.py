@@ -110,6 +110,10 @@ def generate_launch_description():
                 # Sim: Arme beim Laufen nur parken, wenn die Lauf-Policy ihre
                 # Lauf-Pose braucht (g1_wholebody); bei AGILE bleiben sie frei.
                 'walk_park_arms': 'true' if park_arms else 'false',
+                # Glaettung zeitbasiert (Bezug 50 Hz): der arm_controller schafft
+                # neben MuJoCo + allen Nodes oft nur 10-20 Hz -- pro Takt
+                # gerechnet hinge der Arm dann 1-2 s hinter Marker/PS4-Controller.
+                'smoothing_ref_hz': '50.0',
             }.items()
         ),
 

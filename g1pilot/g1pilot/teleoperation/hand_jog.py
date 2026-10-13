@@ -10,7 +10,8 @@ Prinzip: Das Ziel startet an der echten Hand (TF) und wird mit der Soll-
 Geschwindigkeit verschoben/gedreht, laeuft der echten Hand aber hoechstens
 `lead_m` / `lead_rad` voraus. Sonst wuerde es weiterwandern, wenn der Arm
 nicht folgen kann (Gelenkgrenze, Tisch), und beim Loslassen noch lange
-nachfahren.
+nachfahren. Begrenzt wird der Vorlauf ENTLANG der Bewegungsrichtung; quer
+dazu bleibt das Ziel auf seiner Linie (siehe jog_step).
 """
 import math
 
@@ -31,6 +32,8 @@ JOG_SPEED_ORDER = ("Langsam", "Normal", "Schnell")
 JOG_LEAD_S = 0.5
 JOG_MIN_LEAD_M = 0.04
 JOG_MIN_LEAD_RAD = math.radians(15)
+# Sicherheitsnetz: Abstand Ziel-Hand insgesamt (Vorlauf + Querversatz).
+JOG_MAX_LEAD_FACTOR = 1.5
 
 
 def qmul(a, b):
@@ -93,12 +96,26 @@ def jog_step(target, hand, lin, ang, dt, lead_m, lead_rad):
     pos, rot = hand
     if target is None:
         target = [list(pos), tuple(rot)]
-    # Verschieben, Vorlauf zur echten Hand begrenzen
+    # Verschieben, Vorlauf zur echten Hand begrenzen -- nur ENTLANG der
+    # Bewegungsrichtung. Frueher wurde das Ziel auf die Kugel um die Hand
+    # zurueckgezogen; dabei uebernahm es jede Querabweichung der Hand (IK-
+    # Restfehler, Nachziehen in Gelenkkoordinaten) und behielt sie: die Hand
+    # lief bei laengeren Fahrten schraeg weg (seitwaerts 9 cm -> 5 cm nach
+    # hinten). Quer bleibt das Ziel jetzt auf seiner Linie; als Sicherheitsnetz
+    # liegt es nie weiter als JOG_MAX_LEAD_FACTOR x lead_m von der Hand.
     p = [target[0][i] + lin[i] * dt for i in range(3)]
     d = [p[i] - pos[i] for i in range(3)]
+    sp = math.sqrt(sum(c * c for c in lin))
+    if sp > 1e-12:
+        u = [c / sp for c in lin]
+        along = sum(d[i] * u[i] for i in range(3))
+        if along > lead_m:
+            d = [d[i] - (along - lead_m) * u[i] for i in range(3)]
     n = math.sqrt(sum(c * c for c in d))
-    if n > lead_m:
-        p = [pos[i] + d[i] * lead_m / n for i in range(3)]
+    n_max = JOG_MAX_LEAD_FACTOR * lead_m
+    if n > n_max:
+        d = [c * n_max / n for c in d]
+    p = [pos[i] + d[i] for i in range(3)]
     # Drehen (feste Achsen -> von links multiplizieren), Vorlauf begrenzen
     dq = qfrom_rotvec(*(w * dt for w in ang))
     q = qmul(dq, target[1])
@@ -106,3 +123,72 @@ def jog_step(target, hand, lin, ang, dt, lead_m, lead_rad):
     if err > lead_rad:
         q = qslerp(rot, q, lead_rad / err)
     return [p, q]
+
+
+def hold_pose(target, hand, lin, ang):
+    """Halte-Ziel beim Loslassen.
+
+    Entlang der letzten Bewegungsrichtung stoppt es an der echten Hand (der
+    Vorlauf faellt weg), quer dazu bleibt es auf der Linie des Ziels -- so
+    wird eine Querabweichung der Hand nicht als neue Ruhelage uebernommen.
+    Orientierung: nach Drehen die echte Hand, nach reinem Verschieben die
+    des Ziels (die Hand soll ihre Ausrichtung behalten).
+    target : [pos, quat] laufendes Jog-Ziel oder None (-> echte Hand)
+    hand   : (pos, quat) echte Hand
+    lin/ang: letzte Sollbewegung (m/s, rad/s)
+    -> (pos, quat)
+    """
+    pos, rot = hand
+    if target is None:
+        return list(pos), tuple(rot)
+    tp, tq = target
+    sp = math.sqrt(sum(c * c for c in lin))
+    if sp > 1e-12:
+        u = [c / sp for c in lin]
+        along = sum((tp[i] - pos[i]) * u[i] for i in range(3))
+        p = [tp[i] - along * u[i] for i in range(3)]
+    else:
+        p = list(tp)        # nur gedreht: Position war fest
+    q = tuple(rot) if any(abs(c) > 1e-12 for c in ang) else tuple(tq)
+    return p, q
+
+
+# Halten nach dem Loslassen: der arm_controller glaettet Ziele PRO NACHRICHT
+# (ik_goal_filter_alpha = 0.25). Ein einzelnes Halte-Ziel zieht sein internes
+# Ziel nur 25 % zur Hand -- der Rest des Vorlaufs (mehrere cm) wuerde noch
+# abgefahren. Darum das Halte-Ziel JOG_HOLD_S lang weiter senden. Der
+# arm_controller nimmt hoechstens ein (das neueste) Ziel pro Regeltakt: real
+# (~30-50 Hz) kommen alle 30 an -> Restfehler 0.75^30 ~ 0 %, in einer langsamen
+# Sim (~14 Hz) immer noch 0.75^14 < 2 %.
+JOG_HOLD_S = 1.0
+
+
+class HoldStreamer:
+    """Halte-Ziele nach dem Loslassen eine Weile wiederholen.
+
+    hold(side, pose, now)  -> Ziel merken (pose = (pos, quat))
+    cancel(side)           -> Seite bewegt sich wieder, nicht mehr halten
+    due(now)               -> {side: pose}, die in diesem Takt zu senden sind
+    """
+
+    def __init__(self, hold_s=JOG_HOLD_S):
+        self.hold_s = float(hold_s)
+        self._held = {}     # side -> (pose, until)
+
+    def hold(self, side, pose, now):
+        self._held[side] = (pose, now + self.hold_s)
+
+    def cancel(self, side):
+        self._held.pop(side, None)
+
+    def clear(self):
+        self._held.clear()
+
+    def due(self, now):
+        out = {}
+        for side, (pose, until) in list(self._held.items()):
+            if now > until:
+                del self._held[side]
+            else:
+                out[side] = pose
+        return out

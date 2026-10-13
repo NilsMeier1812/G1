@@ -21,6 +21,7 @@ import threading
 import time
 
 import rclpy
+from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy
 from geometry_msgs.msg import Twist, PoseStamped
@@ -29,7 +30,7 @@ from std_msgs.msg import Bool, String
 from tf2_ros import Buffer, TransformListener
 
 from g1pilot.teleoperation import ps4_layout as L
-from g1pilot.teleoperation.hand_jog import JOG_FRAME, JOG_TF, qangle
+from g1pilot.teleoperation.hand_jog import JOG_FRAME, JOG_HOLD_S, JOG_TF, qangle
 
 RATE = 50.0
 
@@ -67,9 +68,11 @@ class Probe(Node):
         self.arm_states = []       # /g1pilot/arm_command/status (state)
         self.create_subscription(String, "/g1pilot/arm_command/status",
                                  lambda m: self.arm_states.append(json.loads(m.data).get("state")), 10)
-        self.goal_times = []       # Empfangszeiten /g1pilot/hand_goal/right
-        self.create_subscription(PoseStamped, "/g1pilot/hand_goal/right",
-                                 lambda m: self.goal_times.append(time.time()), 50)
+        self.goals = []            # (Empfangszeit, (x, y, z)) /g1pilot/hand_goal/right
+        self.create_subscription(
+            PoseStamped, "/g1pilot/hand_goal/right",
+            lambda m: self.goals.append((time.time(), (m.pose.position.x, m.pose.position.y,
+                                                      m.pose.position.z))), 50)
         self.axes = [0.0] * L.NUM_AXES
         self.buttons = [0] * L.NUM_BUTTONS
         self.sending = True
@@ -181,7 +184,9 @@ def main():
     args = ap.parse_args()
     rclpy.init()
     p = Probe()
-    th = threading.Thread(target=rclpy.spin, args=(p,), daemon=True)
+    ex = SingleThreadedExecutor()
+    ex.add_node(p)
+    th = threading.Thread(target=ex.spin, daemon=True)
     th.start()
     r = Runner(p)
 
@@ -201,8 +206,15 @@ def main():
     r.tap(L.DPAD_RIGHT)
     if p.status.get("mode") == "turn":
         r.tap(L.TRIANGLE)
-    r.check("Status: rechte Hand, Verschieben",
-            p.status.get("selection") == "right" and p.status.get("mode") == "move",
+    # Tempo definiert auf Normal (der Node behaelt es ueber Testlaeufe hinweg):
+    # L1 bis Langsam, dann einmal R1.
+    for _ in range(2):
+        r.tap(L.L1)
+    r.tap(L.R1)
+    r.sleep(1.2)            # Status kommt mit 1 Hz
+    r.check("Status: rechte Hand, Verschieben, Normal",
+            p.status.get("selection") == "right" and p.status.get("mode") == "move"
+            and p.status.get("speed") == "Normal",
             p.status.get("label"))
 
     print("1) Options: Greifen-Modus / Arme uebernehmen", flush=True)
@@ -211,8 +223,10 @@ def main():
 
     def start_pose(sel_btn):
         """Gleiche Ausgangslage fuer jede Pruefung: Grundstellung (Share
-        halten), dann beide Haende 2.5 s nach vorn (frei vom Koerper), dann
-        Auswahl per Steuerkreuz."""
+        halten), dann beide Haende 1.5 s schraeg nach vorn-oben (frei vom
+        Koerper, aber mit Abstand zur Reichweitengrenze -- nur nach vorn lag
+        die Hand ~1 cm davor, weitere Fahrten nach vorn/aussen knickten an der
+        Reichweiten-Kugel ab), dann Auswahl per Steuerkreuz."""
         r.tap(L.DPAD_UP)
         p.arm_states.clear()
         r.tap(L.SHARE, hold=1.3)
@@ -223,7 +237,7 @@ def main():
                 st in ("reached", "failed", "cancelled", "rejected") for st in p.arm_states):
             r.sleep(0.1)
         r.settle()
-        r.stick(2.5, LY=1.0)
+        r.stick(1.5, LY=1.0, RY=1.0)
         r.settle()
         r.tap(sel_btn)
         r.settle()
@@ -313,13 +327,18 @@ def main():
     r.sleep(0.6)
     p.sending = False
     t_cut = time.time()
-    r.sleep(1.5)
-    late = [t - t_cut for t in p.goal_times if t - t_cut > 0.8]
+    r.sleep(0.5 + JOG_HOLD_S + 0.8)
+    # Nach dem Joy-Timeout (0.5 s) nur noch das Halte-Ziel (JOG_HOLD_S lang
+    # wiederholt, gleiche Pose), danach Ruhe.
+    after = [(t - t_cut, g) for t, g in p.goals if t - t_cut > 0.8]
+    too_late = [dt for dt, _ in after if dt > 0.5 + JOG_HOLD_S + 0.4]
+    moving = [g for _, g in after if math.dist(g, after[0][1]) > 1e-6]
     t_settle = r.settle()
     p.axes = [0.0] * L.NUM_AXES
     p.sending = True
-    r.check("keine Ziele mehr nach Abriss", not late,
-            f"{len(late)} Ziele spaeter als 0.8 s nach dem letzten Joy")
+    r.check("nach Abriss nur Halte-Ziel, dann Ruhe", not too_late and not moving,
+            f"{len(after)} Halte-Ziele, {len(moving)} abweichend, "
+            f"{len(too_late)} spaeter als {0.9 + JOG_HOLD_S:.1f} s")
     r.check("Hand kommt zur Ruhe", t_settle is not None, f"nach {t_settle} s")
     r.sleep(0.5)
 
@@ -362,6 +381,10 @@ def main():
 
     n_fail = sum(1 for _, ok, _ in r.results if not ok)
     print(f"\n{len(r.results) - n_fail}/{len(r.results)} Pruefungen bestanden.")
+    # Spin-Thread sauber beenden, bevor Node/rclpy abgebaut werden -- sonst
+    # stuerzt der Prozess beim Beenden ab (Exit 134/139 trotz bestandener Pruefungen).
+    ex.shutdown()
+    th.join(timeout=2.0)
     p.destroy_node()
     rclpy.shutdown()
     return 1 if n_fail else 0

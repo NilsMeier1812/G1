@@ -346,8 +346,11 @@ def _rand_quat(rng):
 
 
 def test_jog_step_matches_old_gui():
+    """Innerhalb des Vorlaufs identisch zur alten GUI-Rechnung; nur der
+    Positions-Deckel ist neu (entlang der Bewegung statt Kugel um die Hand)."""
     rng = random.Random(7)
-    for _ in range(300):
+    n_same = n_capped = 0
+    for _ in range(600):
         speed = rng.choice(list(hj.JOG_SPEEDS))
         v, w = hj.JOG_SPEEDS[speed]
         hand = ([rng.uniform(-0.5, 0.5) for _ in range(3)], _rand_quat(rng))
@@ -359,8 +362,72 @@ def test_jog_step_matches_old_gui():
         lead_m, lead_rad = hj.lead_limits(v, w)
         new = hj.jog_step(tgt, hand, lin, ang, dt, lead_m, lead_rad)
         old = _old_gui_step(tgt, hand, lin, ang, dt, v, w)
-        assert new[0] == pytest.approx(old[0], abs=1e-12)
-        assert new[1] == pytest.approx(old[1], abs=1e-12)
+        assert new[1] == pytest.approx(old[1], abs=1e-12)      # Drehung unveraendert
+        p0 = (tgt or [hand[0]])[0]
+        cand = [p0[i] + lin[i] * dt for i in range(3)]
+        if math.dist(cand, hand[0]) <= lead_m:
+            n_same += 1
+            assert new[0] == pytest.approx(old[0], abs=1e-12)
+        else:
+            n_capped += 1
+            d = [new[0][i] - hand[0][i] for i in range(3)]
+            sp = math.sqrt(sum(c * c for c in lin))
+            along = sum(d[i] * lin[i] / sp for i in range(3))
+            assert along <= lead_m + 1e-12
+            assert math.dist(new[0], hand[0]) <= hj.JOG_MAX_LEAD_FACTOR * lead_m + 1e-12
+    assert n_same > 50 and n_capped > 50
+
+
+def test_jog_step_keeps_line_when_hand_drifts_sideways():
+    """Hand bleibt hinter dem Ziel zurueck UND driftet quer (IK-Restfehler):
+    das Ziel bleibt auf seiner Linie (y, z fest), statt die Drift zu uebernehmen."""
+    v, w = hj.JOG_SPEEDS["Normal"]
+    lead_m, lead_rad = hj.lead_limits(v, w)
+    start = [0.3, -0.2, 0.1]
+    rot = (0.0, 0.0, 0.0, 1.0)
+    tgt = None
+    for k in range(60):              # 2 s Vollausschlag +x, Hand halb so schnell
+        hand = [[start[0] + 0.5 * v * k / 30,
+                 start[1] - 0.0005 * k,            # 3 cm Querdrift ueber 2 s
+                 start[2]], rot]
+        tgt = hj.jog_step(tgt, hand, (v, 0, 0), (0, 0, 0), 1 / 30, lead_m, lead_rad)
+        assert tgt[0][0] - hand[0][0] <= lead_m + 1e-9
+    assert tgt[0][1] == pytest.approx(start[1], abs=1e-9)
+    assert tgt[0][2] == pytest.approx(start[2], abs=1e-9)
+    assert tgt[0][0] - hand[0][0] == pytest.approx(lead_m, abs=1e-9)
+
+
+def test_jog_step_safety_cap_on_total_distance():
+    """Haengt die Hand quer weit weg, wird das Ziel trotzdem herangezogen."""
+    lead_m, lead_rad = 0.04, math.radians(15)
+    hand = ([0.3, -0.5, 0.1], (0.0, 0.0, 0.0, 1.0))
+    tgt = [[0.3, -0.2, 0.1], (0.0, 0.0, 0.0, 1.0)]
+    new = hj.jog_step(tgt, hand, (0.15, 0, 0), (0, 0, 0), 1 / 30, lead_m, lead_rad)
+    assert math.dist(new[0], hand[0]) == pytest.approx(hj.JOG_MAX_LEAD_FACTOR * lead_m)
+
+
+def test_hold_pose_stops_along_motion_keeps_line():
+    rot_t = (0.0, 0.0, 0.0, 1.0)
+    rot_h = hj.qfrom_rotvec(0.0, 0.0, 0.2)
+    tgt = [[0.40, -0.20, 0.10], rot_t]
+    hand = ([0.35, -0.23, 0.11], rot_h)
+    # nach Verschieben +x: x von der Hand, y/z vom Ziel, Orientierung vom Ziel
+    p, q = hj.hold_pose(tgt, hand, (0.15, 0, 0), (0, 0, 0))
+    assert p == pytest.approx([0.35, -0.20, 0.10])
+    assert q == pytest.approx(rot_t)
+    # schraeg: nur die Komponente entlang der Bewegung faellt weg
+    u = (1 / math.sqrt(2), 1 / math.sqrt(2), 0.0)
+    p, _ = hj.hold_pose(tgt, hand, tuple(0.1 * c for c in u), (0, 0, 0))
+    d_t = [tgt[0][i] - p[i] for i in range(3)]
+    d_h = [hand[0][i] - p[i] for i in range(3)]
+    assert sum(d_h[i] * u[i] for i in range(3)) == pytest.approx(0.0, abs=1e-12)
+    assert sum(d_t[i] * (u[1], -u[0], 0.0)[i] for i in range(3)) == pytest.approx(0.0, abs=1e-12)
+    # nach Drehen: Position fest (Ziel), Orientierung der echten Hand
+    p, q = hj.hold_pose(tgt, hand, (0, 0, 0), (0, 0, 0.5))
+    assert p == pytest.approx(tgt[0]) and q == pytest.approx(rot_h)
+    # ohne Ziel: echte Hand
+    p, q = hj.hold_pose(None, hand, (0.1, 0, 0), (0, 0, 0))
+    assert p == pytest.approx(hand[0]) and q == pytest.approx(rot_h)
 
 
 def test_jog_step_lead_limit_holds_when_arm_stuck():
@@ -385,3 +452,40 @@ def test_jog_step_moves_with_speed_when_arm_follows():
         tgt = hj.jog_step(tgt, hand, (0, 0, v), (0, 0, 0), 1 / 30, lead_m, lead_rad)
         hand = [list(tgt[0]), tgt[1]]
     assert hand[0][2] - 0.1 == pytest.approx(v, rel=1e-6)
+
+
+def test_hold_streamer_repeats_hold_until_expiry():
+    """Halte-Ziel nach dem Loslassen JOG_HOLD_S lang wiederholen, dann Ruhe."""
+    hs = hj.HoldStreamer(hold_s=0.5)
+    pose = ([0.2, -0.2, 0.05], (1.0, 0.0, 0.0, 0.0))
+    hs.hold("right", pose, now=10.0)
+    assert hs.due(10.0) == {"right": pose}
+    assert hs.due(10.5) == {"right": pose}          # Grenze noch drin
+    assert hs.due(10.51) == {}                       # abgelaufen
+    assert hs.due(10.6) == {}                        # und vergessen
+
+
+def test_hold_streamer_cancel_and_clear():
+    hs = hj.HoldStreamer()
+    pl = ([0.2, 0.2, 0.05], (1.0, 0.0, 0.0, 0.0))
+    pr = ([0.2, -0.2, 0.05], (1.0, 0.0, 0.0, 0.0))
+    hs.hold("left", pl, 0.0)
+    hs.hold("right", pr, 0.0)
+    hs.cancel("left")                                # links bewegt sich wieder
+    assert hs.due(0.1) == {"right": pr}
+    hs.hold("right", pl, 0.2)                        # neues Halte-Ziel ersetzt das alte
+    assert hs.due(0.3) == {"right": pl}
+    hs.clear()                                       # Grundstellung / NOT-HALT
+    assert hs.due(0.3) == {}
+
+
+def test_hold_streamer_converges_controller_goal_filter():
+    """Mit der Glaettung PRO NACHRICHT im arm_controller (alpha 0.25): ein
+    einzelnes Halte-Ziel laesst ~75 % des Vorlaufs stehen, das Wiederholen
+    zieht den gefilterten Sollwert auch bei nur ~14 Nachrichten/s (langsame
+    Sim, 1 Ziel pro Regeltakt) auf < 2 % an die Hand."""
+    alpha, lead = 0.25, 0.04
+    one = lead * (1 - alpha)
+    assert one > 0.029
+    n = int(hj.JOG_HOLD_S * 14)
+    assert lead * (1 - alpha) ** n < 0.02 * lead
