@@ -19,10 +19,13 @@ from PyQt6.QtGui import QPainter, QColor, QPen, QBrush
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, DurabilityPolicy
 from std_msgs.msg import Bool, String
 from geometry_msgs.msg import Twist
 from g1pilot.utils.window_style import DarkStyle
 from g1pilot.utils.common import is_sim_mode
+from g1pilot.teleoperation.sim_autostart import (
+    SimAutoStart, ARMS_STATE_TOPIC, LOCO_STATE_TOPIC)
 
 
 class VirtualJoystick(QWidget):
@@ -299,6 +302,16 @@ class StreamDeck(Node):
         # Der Callback laeuft im Qt-Thread (spin_once im QTimer).
         self.on_emergency_stop = None
         self.create_subscription(Bool, '/g1pilot/emergency_stop', self._emergency_stop, 10)
+        # Quittung fuer den Sim-Auto-Start (sim_autostart.py): Zustand von
+        # arm_controller (Arme aktiv?) und loco_sim (hold|stand|walk|damp), latched.
+        self.arms_state = None
+        self.loco_state = None
+        qos_latched = QoSProfile(depth=1)
+        qos_latched.durability = DurabilityPolicy.TRANSIENT_LOCAL
+        self.create_subscription(Bool, ARMS_STATE_TOPIC,
+                                 lambda m: setattr(self, 'arms_state', bool(m.data)), qos_latched)
+        self.create_subscription(String, LOCO_STATE_TOPIC,
+                                 lambda m: setattr(self, 'loco_state', m.data), qos_latched)
 
     def _emergency_stop(self, msg: Bool):
         if msg.data and self.on_emergency_stop:
@@ -329,6 +342,7 @@ class ButtonGUI(QWidget):
 
         self.sim_mode = is_sim_mode()
         ros_node.on_emergency_stop = self._show_emergency_stop
+        self._estop_pressed = False
         self.setWindowTitle("DIGITAL STREAMDECK — "
                             + ("SIM" if self.sim_mode else "REAL"))
         self.init_ui()
@@ -341,12 +355,23 @@ class ButtonGUI(QWidget):
         self.cmd_timer.timeout.connect(self.publish_cmd_vel)
         self.cmd_timer.start(33)
 
-        # Nach kurzer Anlaufzeit (DDS/loco_sim/arm_controller verbunden) automatisch
-        # die Arme aktivieren und in den BALANCING-Stand gehen. NUR EINMAL feuern (3s):
-        # ein zweiter Auto-Start (frueher 6s) loeste einen Ruck/Sturz aus.
+        # Nach kurzer Anlaufzeit automatisch die Arme aktivieren und in den
+        # BALANCING-Stand gehen. Wiederholt, bis arm_controller und loco_sim es
+        # bestaetigen (sim_autostart.py) -- frueher nur EIN Versuch nach 3 s, der
+        # verloren ging, wenn die Regler noch luden (Arme blieben aus). Wiederholt
+        # wird nur, was noch fehlt; ein bereits stehender Roboter bekommt kein
+        # zweites BALANCING (ein zweiter Auto-Start loeste frueher einen Ruck aus).
         # NUR IN DER SIM: auf dem echten G1 darf NIE automatisch balanciert oder
         # arm_sdk aktiviert werden -- der Operator entscheidet, wann der Roboter
         # sich bewegt. Bewusst hart verdrahtet (kein Parameter zum Umgehen).
+        self.autostart = SimAutoStart(
+            lambda: self.node.publish_bool(self.node.pub_arms_enabled, True),
+            lambda: self.node.publish_bool(self.node.pub_start_balancing, True),
+            log=lambda t: self.node.get_logger().info(t))
+        self.autostart_timer = QTimer(self)
+        self.autostart_timer.timeout.connect(
+            lambda: self.autostart.tick(self.node.arms_state, self.node.loco_state))
+        self.autostart_timer.start(100)
         if self.sim_mode:
             QTimer.singleShot(3000, self._auto_start)
         else:
@@ -574,6 +599,8 @@ class ButtonGUI(QWidget):
         self.node.publish_bool(pub, False)
 
     def toggle_button(self, pos, pub):
+        if pos == (1, 0):
+            self.autostart.cancel("ENABLE MANIPULATION")
         new_state = not self.button_states[pos]
         self.set_button_active(pos, new_state)
         self.node.publish_bool(pub, new_state)
@@ -581,6 +608,7 @@ class ButtonGUI(QWidget):
     def radio_loco(self, pos, pub):
         """Loco-Radio: genau EINEN der Loco-Buttons (BALANCING/WALK) gruen schalten
         und True publizieren. Kein automatisches Umschalten — nur dieser Klick."""
+        self.autostart.cancel("Loco-Knopf")
         for p in self.loco_group:
             self.set_button_active(p, p == pos)
         self.node.publish_bool(pub, True)
@@ -589,9 +617,12 @@ class ButtonGUI(QWidget):
         """Direkt nach Launch: Arme aktivieren (werden ab jetzt dauerhaft vom
         arm_controller gehalten und sind per rviz bewegbar) und in den BALANCING-
         Stand gehen. So steht der Roboter sofort stabil, ohne Knopfdruck."""
+        if self._estop_pressed:
+            return
         self.set_button_active((1, 0), True)
-        self.node.publish_bool(self.node.pub_arms_enabled, True)
-        self.radio_loco((0, 1), self.node.pub_start_balancing)
+        for p in self.loco_group:
+            self.set_button_active(p, p == (0, 1))
+        self.autostart.start()
 
     # Bind-Mount-Pfad des Repos IM Container (docker-compose: .:/ros2_ws/src/g1pilot).
     # Eine Trigger-Datei hier ist fuer den Host-Watcher (start.sh) sichtbar.
@@ -731,6 +762,8 @@ class ButtonGUI(QWidget):
 
     def emergency_stop(self):
         """Turns all buttons OFF and publishes False to all Bool topics."""
+        self._estop_pressed = True
+        self.autostart.cancel("NOT-HALT")
 
         self.node.publish_bool(self.node.pub_start, False)
         self.node.publish_bool(self.node.pub_start_balancing, False)
@@ -743,6 +776,10 @@ class ButtonGUI(QWidget):
     def _show_emergency_stop(self):
         """Nur Anzeige: alle Buttons aus, EMERGENCY rot (auch bei NOT-HALT von
         aussen, z.B. PS-Taste am Controller -- dann ohne erneutes Publizieren)."""
+        # Auch ein NOT-HALT von aussen beendet einen noch laufenden Sim-Auto-Start
+        # (sonst stellte ein wiederholtes BALANCING den Roboter wieder auf).
+        self._estop_pressed = True
+        self.autostart.cancel("NOT-HALT")
         for pos in self.buttons:
             if pos != (4, 4):
                 self.set_button_active(pos, False)
