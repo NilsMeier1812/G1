@@ -190,7 +190,13 @@ class PlannerProcess:
     def start_async(self):
         """Start im Hintergrund (der Controller soll nicht auf das Modell-
         Laden warten). Wartet in kurzen Scheiben, damit eine Anfrage
-        dazwischen den Lock bekommt."""
+        dazwischen den Lock bekommt. Der Prozess selbst startet SOFORT hier
+        (dauert nur ms): im Hintergrund-Thread kam der Start erst dran, wenn
+        der Aufrufer das GIL freigab -- das eigene Modell-Laden des Controllers
+        (pinocchio, ~10 s) haelt es aber, und der Planer lud dann erst danach."""
+        with self._lock:
+            if self._proc is None or not self._proc.is_alive():
+                self._spawn()
         th = threading.Thread(target=self._background_start, daemon=True)
         th.start()
         return th

@@ -417,6 +417,28 @@ class ArmController(Node):
         pkg_share = get_package_share_directory('g1pilot')
         urdf_path = os.path.join(pkg_share, 'description_files', 'urdf', 'g1_29dof_inspire_ftp.urdf')
         mesh_dir = os.path.join(pkg_share, 'description_files', 'meshes')
+        # Home-Pose je Arm (7 DOF, Reihenfolge:
+        #   [shoulder_pitch, shoulder_roll, shoulder_yaw, elbow,
+        #    wrist_roll, wrist_pitch, wrist_yaw]).
+        # Natuerliche Ruhepose: Arme leicht vor (pitch +), leicht seitlich aus
+        # (roll links + / rechts -, gespiegelt!), Ellbogen leicht gebeugt (elbow +).
+        # Als Parameter -> live tunebar via --ros-args -p home_left:="[...]".
+        self.declare_parameter("home_left",  [0.3,  0.2, 0.0, 0.5, 0.0, 0.0, 0.0])
+        self.declare_parameter("home_right", [0.3, -0.2, 0.0, 0.5, 0.0, 0.0, 0.0])
+        self.home_left  = np.array(self.get_parameter("home_left").value,  dtype=float)
+        self.home_right = np.array(self.get_parameter("home_right").value, dtype=float)
+        # Armplaner als EIGENER Prozess (hielte im Regelprozess das GIL und
+        # braechte den 250-Hz-Takt aus dem Tritt). Startet im Hintergrund --
+        # VOR dem eigenen Modell-Laden, damit beide parallel laden: das Laden
+        # (URDF + Meshes) dauert je ~10-20 s; nacheinander war der Planer erst
+        # ~20 s NACH dem Controller bereit, und das erste WALK (Lauf-Pose wird
+        # geplant) wartete so lange auf ihn.
+        self._planner = PlannerProcess(
+            urdf_path, mesh_dir,
+            rest={"left": self.home_left, "right": self.home_right},
+            null_space_gain=float(self.get_parameter("ik_null_space_gain").value),
+            logger=self.get_logger())
+        self._planner.start_async()
         self.ik_solver = G1IKSolver(urdf_path=urdf_path, mesh_dir=mesh_dir, debug=False)
         # Kugelmodell der Arme (Abstaende zu Objekten, siehe arm_geometry.py) fuer
         # das Laufzeit-Gate; der Planer-Prozess baut sich dasselbe Modell.
@@ -457,16 +479,6 @@ class ArmController(Node):
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
-        # Home-Pose je Arm (7 DOF, Reihenfolge:
-        #   [shoulder_pitch, shoulder_roll, shoulder_yaw, elbow,
-        #    wrist_roll, wrist_pitch, wrist_yaw]).
-        # Natuerliche Ruhepose: Arme leicht vor (pitch +), leicht seitlich aus
-        # (roll links + / rechts -, gespiegelt!), Ellbogen leicht gebeugt (elbow +).
-        # Als Parameter -> live tunebar via --ros-args -p home_left:="[...]".
-        self.declare_parameter("home_left",  [0.3,  0.2, 0.0, 0.5, 0.0, 0.0, 0.0])
-        self.declare_parameter("home_right", [0.3, -0.2, 0.0, 0.5, 0.0, 0.0, 0.0])
-        self.home_left  = np.array(self.get_parameter("home_left").value,  dtype=float)
-        self.home_right = np.array(self.get_parameter("home_right").value, dtype=float)
         # Ziel des HOMING-ARMS-Buttons (Streamdeck) bzw. »Grundstellung« (Demo-GUI):
         # die Lauf-Pose walk_left/right weiter unten (Arme neben dem Koerper).
         # Frueher Nullpose (Unterarm waagerecht nach vorn) -- siehe _homing_goals.
@@ -478,14 +490,6 @@ class ArmController(Node):
             self.ik_solver.set_rest_posture("left",  self.home_left)
             self.ik_solver.set_rest_posture("right", self.home_right)
         self.ik_solver.null_space_gain = float(self.get_parameter("ik_null_space_gain").value)
-
-        # Armplaner als EIGENER Prozess (hielte im Regelprozess das GIL und
-        # braechte den 250-Hz-Takt aus dem Tritt). Startet im Hintergrund.
-        self._planner = PlannerProcess(
-            urdf_path, mesh_dir,
-            rest={"left": self.home_left, "right": self.home_right},
-            null_space_gain=self.ik_solver.null_space_gain, logger=self.get_logger())
-        self._planner.start_async()
 
         # WALK-Pose: waehrend WALK haelt der arm_controller die Arme HIER (= Policy-
         # Default-Armpose des g1_wholebody-Policy). Headless validiert: die Lauf-Policy
@@ -1764,6 +1768,7 @@ class ArmController(Node):
             # Die Arme gehen ohnehin gerade an den Onboard-Regler, der sie beim
             # Laufen selbst fuehrt -- nicht in die Lauf-Pose umplanen.
             self.get_logger().info("WALK: Rueckgabe an den Onboard-Regler laeuft weiter.")
+            self._report_walk_ready_onboard()
             return
         if not self.walk_park_arms:
             # Arme frei (Sim, AGILE-Policy): nichts parken, Marker/Kommandos wirken
@@ -1788,6 +1793,11 @@ class ArmController(Node):
         # Also fuer WALK die Arme selbst uebernehmen. Real bleibt unveraendert:
         # dort fuehrt Unitrees Onboard-Regler die Arme beim Laufen.
         self._sim_auto_enable_arms("WALK")
+        if not self.arms_enabled:
+            # Real ohne ENABLE: nichts aufzuraeumen (main_loop ueberspringt den
+            # WALK-Zweig) -> sofort melden, sonst wartete die Demo-GUI bis zu
+            # ihrem Timeout (16 s) auf ein walk_ready, das nie kommt.
+            self._report_walk_ready_onboard()
         # Den Weg in die Lauf-Pose PLANEN (um Tisch/Hindernisse herum). Die
         # fruehere direkte Gelenkfahrt lief auf gerader Linie -- steht der
         # Roboter am Tisch, fuhren die Finger in die Platte und das Gate hielt
@@ -1798,6 +1808,18 @@ class ArmController(Node):
                 "Lauf-Pose (WALK)", ["left", "right"],
                 {"left": self.walk_left.copy(), "right": self.walk_right.copy()},
                 {}, source="walk")
+
+    def _report_walk_ready_onboard(self) -> None:
+        """NUR REAL: Fuehrt Unitrees Onboard-Regler die Arme (nicht aktiviert
+        oder Rueckgabe laeuft), parkt er sie beim Laufen selbst -- fuer WALK
+        ist von hier aus nichts aufzuraeumen, also sofort walk_ready. In der
+        Sim nicht: dort haelt die Bridge nicht kommandierte Arme in der
+        Null-Pose, loco_sim soll dann nicht auf walk_ready hin loslaufen."""
+        if is_sim_mode() or self._walk_ready_sent:
+            return
+        self._walk_ready_sent = True
+        self.walk_ready_publisher.publish(Bool(data=True))
+        self.get_logger().info("WALK: Arme beim Onboard-Regler -> walk_ready sofort.")
 
     def _sim_auto_enable_arms(self, what: str) -> None:
         """NUR SIM: Arme automatisch aktivieren, wenn eine Aktion sie braucht

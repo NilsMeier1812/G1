@@ -472,3 +472,54 @@ def test_sigterm_hands_arms_back(tmp_path):
     assert last_w == 0.0, out[-3000:]
     assert "Arme an den Onboard-Regler uebergeben" in out, out[-3000:]
     assert "Gewicht 1.00->0" in out or "Programmende: Arme fahren" in out, out[-3000:]
+
+
+def test_planner_loads_parallel_to_controller(ac_module, monkeypatch):
+    """Der Planer-Prozess startet VOR dem Modell-Laden des Controllers (beide
+    laden parallel). Nacheinander war er ~20 s nach dem Controller bereit und
+    das erste WALK wartete so lange auf die Planung der Lauf-Pose."""
+    order = []
+    orig_start, orig_ik = ac_module.PlannerProcess.start_async, ac_module.G1IKSolver
+
+    def start_async(self):
+        order.append(self)
+        return orig_start(self)
+
+    def ik(*a, **k):
+        # Der Arbeiterprozess muss schon LAUFEN (nicht nur ein Thread, der ihn
+        # erst startet, wenn das Modell-Laden hier das GIL freigibt).
+        proc = order[0]._proc if order else None
+        order.append(("ik", proc is not None and proc.is_alive()))
+        return orig_ik(*a, **k)
+
+    monkeypatch.setattr(ac_module.PlannerProcess, "start_async", start_async)
+    monkeypatch.setattr(ac_module, "G1IKSolver", ik)
+    _reset_robot()
+    node = _make_node(ac_module)
+    try:
+        assert len(order) >= 2 and order[1] == ("ik", True), order
+    finally:
+        _close(node)
+
+
+def test_walk_without_enable_reports_ready_at_once(ac_module):
+    """Real direkt nach START -> WALK (Arme nicht aktiviert): die Arme fuehrt
+    der Onboard-Regler, nichts aufzuraeumen -> walk_ready sofort (vorher kam
+    es nie, die Demo-GUI hing bis zu ihrem 16-s-Timeout in "Arme werden
+    eingeklappt"). Kein arm_sdk-Kommando dabei."""
+    _reset_robot()
+    node = _make_node(ac_module)
+    sent = []
+    orig_pub = node.walk_ready_publisher.publish
+    node.walk_ready_publisher.publish = lambda m: (sent.append(m.data), orig_pub(m))
+    try:
+        node._on_walk_mode(_bool(True))
+        assert sent == [True]
+        _run(node, 0.5)
+        assert not node.arms_enabled
+        assert all(w == 0.0 for w, _, _ in ROBOT.writes), "Arme duerfen nicht uebernommen werden"
+        # Zurueck nach GREIFEN nimmt die Meldung wieder zurueck.
+        node._on_balance_mode(_bool(True))
+        assert sent == [True, False] and not node._walk_ready_sent
+    finally:
+        _close(node)
