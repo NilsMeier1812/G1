@@ -58,8 +58,9 @@ arm_controllers ab, siehe [Reaktionszeit](#reaktionszeit).
 **Rückmeldung**, welche Hand aktiv ist:
 - Controller-LED in der Farbe der Auswahl (siehe Tabelle), rot bei NOT-HALT,
 - kurze Vibration bei jedem Umschalten, lange bei NOT-HALT,
-- in RViz eine farbige Kugel an der aktiven Hand und ein Text über dem
-  Roboter (`PS4 · RECHTS · Verschieben · Normal`), Display „PS4-Controller“.
+- in RViz eine farbige Kugel an der aktiven Hand, Display „PS4-Controller“
+  (kein Text über dem Roboter, der stand im Weg; den vollen Status
+  `PS4 · RECHTS · Verschieben · Normal` zeigt `ros2 topic echo /g1pilot/ps4/status`).
 
 Hände öffnen/schließen wirkt mit **Inspire-Händen**; mit den starren Händen
 passiert dabei nichts.
@@ -151,7 +152,7 @@ Ablauf:
 | Symptom | Ursache / Abhilfe |
 |---|---|
 | Log: „Kein PS4-Controller gefunden … Warte“ | Controller nicht gekoppelt oder Container ohne `/dev/input` (über start.sh starten bzw. `COMPOSE_FILE=…:docker-compose.ps4.yml`). |
-| Status-Text zeigt die Auswahl, aber die Hand bewegt sich nicht | Arme nicht übernommen → **Options** drücken (oder GUI: GREIFEN / ENABLE MANIPULATION). Im Gehen-Modus hängen die Arme in der Lauf-Pose. Real nach NOT-HALT: erst »Roboter starten«, dann Options. |
+| LED/Kugel zeigt die Auswahl, aber die Hand bewegt sich nicht | Arme nicht übernommen → **Options** drücken (oder GUI: GREIFEN / ENABLE MANIPULATION). Im Gehen-Modus hängen die Arme in der Lauf-Pose. Real nach NOT-HALT: erst »Roboter starten«, dann Options. |
 | Hand bleibt an einer Stelle hängen | Kollisions-Gate (Log: „Kollisions-Gate …“) oder Reichweite erreicht → in eine andere Richtung bewegen. |
 | Sim: Hand reagiert spürbar verzögert / fährt nach dem Loslassen weiter | PC ausgelastet → arm_controller regelt nur mit 10–15 Hz. RViz und Navigation abschalten (`USE_RVIZ=false G1_ENABLE_NAV=0`), Last mit `top` prüfen. Siehe [Reaktionszeit](#reaktionszeit). |
 | Nach PS reagiert nichts mehr | NOT-HALT aktiv → in der GUI quittieren (Sim: Modus wählen, Real: Roboter starten). |
