@@ -113,6 +113,11 @@ def generate_launch_description():
                 'kd_low':   '1.5',
                 'kp_wrist': '40.0',
                 'kd_wrist': '1.5',
+                # Taille halten, solange arm_sdk Gewicht hat (sonst kraftlos ->
+                # Oberkoerper kippt). Gains ungeprueft; per Env anpassbar.
+                'waist_hold': os.environ.get('G1_WAIST_HOLD', 'true'),
+                'kp_waist': os.environ.get('G1_WAIST_KP', '150.0'),
+                'kd_waist': os.environ.get('G1_WAIST_KD', '4.0'),
             }.items()
         ),
 

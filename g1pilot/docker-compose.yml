@@ -177,6 +177,11 @@ services:
       - G1_PS4_SPEED=${G1_PS4_SPEED:-Langsam}
       - G1_PS4_MAX_SPEED=${G1_PS4_MAX_SPEED:-Normal}
       - G1_PS4_PS_ESTOP=${G1_PS4_PS_ESTOP:-1}
+      # Taille (Waist) halten, solange arm_sdk die Arme fuehrt (sonst kraftlos).
+      # Gains auf Hardware ungeprueft -- beim ersten Test am Seil anpassen.
+      - G1_WAIST_HOLD=${G1_WAIST_HOLD:-true}
+      - G1_WAIST_KP=${G1_WAIST_KP:-150.0}
+      - G1_WAIST_KD=${G1_WAIST_KD:-4.0}
       # Konservative Walk-Limits fuer die ersten Tests (loco_client skaliert
       # die normierten UI-/PS4-Kommandos damit).
       - G1_MAX_VX=${G1_MAX_VX:-0.4}

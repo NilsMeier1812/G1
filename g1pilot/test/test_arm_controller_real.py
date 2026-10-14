@@ -35,6 +35,12 @@ ONBOARD = np.array([0.10, 0.30, 0.0, 1.00, 0.0, 0.0, 0.0,
 RAISED = {"left": [-0.60, 0.30, 0.0, 0.70, 0.0, 0.0, 0.0],
           "right": [-0.60, -0.30, 0.0, 0.70, 0.0, 0.0, 0.0]}
 DT = 0.004
+WAIST_IDX = [12, 13, 14]
+ONBOARD_WAIST = np.array([0.02, 0.0, 0.03])   # so haelt der Onboard-Regler die Taille
+ONBOARD_WAIST_KP = 200.0
+# Oberkoerper = umgekehrtes Pendel ueber der Taille: unterhalb dieser effektiven
+# Steifigkeit [Nm/rad] kippt er (grobe Schaetzung m*g*l ~ 15 kg * 9.81 * 0.18 m).
+PENDULUM_K = 26.0
 
 
 # ── Attrappen fuer unitree_sdk2py ────────────────────────────────────────
@@ -64,8 +70,34 @@ class FakeG1:
             motor_state=[_Motor() for _ in range(35)], mode_machine=5)
         for k, j in enumerate(ARM_IDX):
             self.state.motor_state[j].q = float(ONBOARD[k])
+        for k, j in enumerate(WAIST_IDX):
+            self.state.motor_state[j].q = float(ONBOARD_WAIST[k])
         self.writes = []            # (weight, q14, kp14) je Write
+        self.waist_writes = []      # (weight, q3, kp3, kd3) je Write
         self.freeze = False         # True: Arm festgehalten (Messung steht)
+
+    def waist(self):
+        return np.array([self.state.motor_state[j].q for j in WAIST_IDX])
+
+    def _waist_write(self, msg, w):
+        """Gewicht blendet auch die Taille (wie beim echten G1): effektive
+        Steifigkeit (1-w)*Onboard + w*arm_sdk; zu weich -> Oberkoerper kippt."""
+        q = np.array([msg.motor_cmd[j].q for j in WAIST_IDX])
+        kp = np.array([msg.motor_cmd[j].kp for j in WAIST_IDX])
+        kd = np.array([msg.motor_cmd[j].kd for j in WAIST_IDX])
+        self.waist_writes.append((w, q, kp, kd))
+        meas = self.waist()
+        k_eff = (1.0 - w) * ONBOARD_WAIST_KP + w * kp
+        for k, j in enumerate(WAIST_IDX):
+            if k_eff[k] < PENDULUM_K:
+                if j == 14:                      # Pitch: kippt nach vorn
+                    meas[k] = min(0.52, meas[k] + 0.01)
+                continue
+            soll = ((1.0 - w) * ONBOARD_WAIST_KP * ONBOARD_WAIST[k]
+                    + w * kp[k] * q[k]) / k_eff[k]
+            meas[k] += 0.5 * (soll - meas[k])
+        for k, j in enumerate(WAIST_IDX):
+            self.state.motor_state[j].q = float(meas[k])
 
     def measured(self):
         return np.array([self.state.motor_state[j].q for j in ARM_IDX])
@@ -75,6 +107,7 @@ class FakeG1:
         q = np.array([msg.motor_cmd[j].q for j in ARM_IDX])
         kp = np.array([msg.motor_cmd[j].kp for j in ARM_IDX])
         self.writes.append((w, q, kp))
+        self._waist_write(msg, w)
         if self.freeze:
             return
         soll = w * q + (1.0 - w) * ONBOARD
@@ -189,9 +222,12 @@ def _run(node, seconds, until=None):
 
 def _reset_robot():
     ROBOT.writes.clear()
+    ROBOT.waist_writes.clear()
     ROBOT.freeze = False
     for k, j in enumerate(ARM_IDX):
         ROBOT.state.motor_state[j].q = float(ONBOARD[k])
+    for k, j in enumerate(WAIST_IDX):
+        ROBOT.state.motor_state[j].q = float(ONBOARD_WAIST[k])
 
 
 def _max_step(writes, vel=1.5, slack=1.6):
@@ -367,9 +403,12 @@ def test_real_limits_clamp_sim_gains(ac_module):
     _reset_robot()
     node = _make_node(ac_module, kp_low=150.0, kd_low=12.0,
                       arm_weight_ramp_up_s=0.0, arm_weight_ramp_down_s=0.0,
-                      ee_velocity_limit=0.5, arm_velocity_limit=5.0)
+                      ee_velocity_limit=0.5, arm_velocity_limit=5.0,
+                      kp_waist=400.0, kd_waist=12.0)
     try:
         assert node.kp_low <= 80.0 and node.kd_low <= 3.0
+        assert node.kp_waist <= 250.0 and node.kd_waist <= 6.0
+        assert node._waist.kp <= 250.0 and node._waist.kd <= 6.0
         assert float(node.get_parameter("arm_weight_ramp_up_s").value) >= 1.0
         assert float(node.get_parameter("arm_weight_ramp_down_s").value) >= 1.0
         assert node.ee_velocity_limit <= 0.25 and node.arm_velocity_limit <= 1.5
@@ -472,3 +511,120 @@ def test_sigterm_hands_arms_back(tmp_path):
     assert last_w == 0.0, out[-3000:]
     assert "Arme an den Onboard-Regler uebergeben" in out, out[-3000:]
     assert "Gewicht 1.00->0" in out or "Programmende: Arme fahren" in out, out[-3000:]
+
+
+# ── Taille (Waist 12-14) ────────────────────────────────────────────────
+# Befund vom Real-Test 2026-10-14: sobald die Arme gesteuert werden, ist die
+# Taille kraftlos und der Oberkoerper kippt. Ursache: das arm_sdk-Gewicht
+# schaltet auch die Taille vom Onboard-Regler weg; wir schrieben dort kp=0.
+
+
+def test_waist_limp_without_hold_regression(ac_module):
+    """Gegenprobe (altes Verhalten, waist_hold=false): bei Gewicht 1 kippt
+    der Oberkoerper im Fake-G1 -- genau das Bild vom Real-Test."""
+    _reset_robot()
+    node = _make_node(ac_module, waist_hold=False)
+    try:
+        assert node._waist is None
+        node._arms_controlled_callback(_bool(True))
+        _run(node, 2.6)
+        assert node._weight_state == "on"
+        assert ROBOT.waist()[2] - ONBOARD_WAIST[2] > 0.2, "Taille muesste kippen"
+    finally:
+        _close(node)
+
+
+def test_waist_held_while_arms_controlled(ac_module):
+    """ENABLE + Armfahrt: Taille bleibt in der Onboard-Stellung, ohne Sprung
+    beim Uebernehmen; kp/kd wie konfiguriert."""
+    _reset_robot()
+    node = _make_node(ac_module)
+    try:
+        from std_msgs.msg import String
+        node._arms_controlled_callback(_bool(True))
+        assert np.allclose(node._waist.target, ONBOARD_WAIST, atol=1e-9)
+        _run(node, 2.4)
+        assert node._weight_state == "on"
+        node._on_arm_command(String(data=json.dumps({"id": "vor", "type": "joints", **RAISED})))
+        goal = np.array(RAISED["left"] + RAISED["right"])
+        assert _run(node, 20.0, until=lambda: (not node._planned_motion_active
+                                               and float(np.max(np.abs(node._last_q_target - goal))) < 0.03))
+        ww = ROBOT.waist_writes
+        assert len(ww) > 50
+        for w, q, kp, kd in ww:
+            assert np.allclose(q, ONBOARD_WAIST, atol=1e-6), "Taillen-Soll = Onboard-Stellung"
+            assert np.allclose(kp, 150.0) and np.allclose(kd, 4.0)
+        assert float(np.max(np.abs(ROBOT.waist() - ONBOARD_WAIST))) < 0.01
+    finally:
+        _close(node)
+
+
+def test_waist_handover_on_disable(ac_module):
+    """DISABLE: waehrend der Gewichtsrampe 1->0 haelt arm_sdk die Taille
+    unveraendert in der Onboard-Stellung -> weiche Rueckgabe."""
+    _reset_robot()
+    node = _make_node(ac_module)
+    try:
+        node._arms_controlled_callback(_bool(True))
+        _run(node, 2.4)
+        ROBOT.waist_writes.clear()
+        node._arms_controlled_callback(_bool(False))
+        assert _run(node, 25.0, until=lambda: node._weight_state == "off")
+        ww = ROBOT.waist_writes
+        assert ww[-1][0] == 0.0
+        assert any(0.0 < w < 1.0 for w, _, _, _ in ww), "Rampe muss gesendet werden"
+        for w, q, kp, _ in ww:
+            assert np.allclose(q, ONBOARD_WAIST, atol=1e-6) and float(np.min(kp)) > 0.0
+        assert float(np.max(np.abs(ROBOT.waist() - ONBOARD_WAIST))) < 0.01
+    finally:
+        _close(node)
+
+
+def test_waist_estop_passive_then_start_reengages(ac_module):
+    """E-Stop: Taille passiv wie die Arme (kp=0, Daempfung). START: weich
+    wieder halten -- ab der gemessenen Stellung, kp rampt, Kommando faehrt
+    langsam zurueck in die Onboard-Stellung (Arme bleiben schlaff)."""
+    _reset_robot()
+    node = _make_node(ac_module, waist_engage_s=1.0, waist_max_vel=0.3)
+    try:
+        node._arms_controlled_callback(_bool(True))
+        _run(node, 2.4)
+        node._on_emergency_stop(_bool(True))
+        _run(node, 0.3)
+        w, q, kp, kd = ROBOT.waist_writes[-1]
+        assert w == 1.0 and float(np.max(kp)) == 0.0 and np.allclose(kd, 3.0)
+        # Roboter ist zusammengesackt: Taille steht 0.25 rad vorgekippt.
+        bent = ONBOARD_WAIST + np.array([0.0, 0.0, 0.25])
+        for k, j in enumerate(WAIST_IDX):
+            ROBOT.state.motor_state[j].q = float(bent[k])
+        ROBOT.waist_writes.clear()
+        node._on_start(_bool(True))
+        assert not node.estop_active and node._arm_slack
+        _run(node, 2.5)
+        ww = ROBOT.waist_writes
+        # Erstes Kommando an der Messung, kp klein (Rampe), kein Sprung.
+        assert float(np.max(np.abs(ww[0][1] - bent))) <= 0.3 * 0.1 + 1e-9
+        assert float(np.max(ww[0][2])) < 30.0
+        steps = [float(np.max(np.abs(b[1] - a[1]))) for a, b in zip(ww, ww[1:])]
+        assert max(steps) <= 0.3 * 0.1 + 1e-9
+        kps = [float(np.max(x[2])) for x in ww]
+        assert all(b >= a - 1e-9 for a, b in zip(kps, kps[1:])), "kp rampt monoton hoch"
+        assert np.isclose(kps[-1], 150.0)
+        assert np.allclose(ww[-1][1], ONBOARD_WAIST, atol=1e-6)
+        # Arme bleiben schlaff.
+        assert float(np.max(ROBOT.writes[-1][2])) == 0.0
+    finally:
+        _close(node)
+
+
+def test_waist_hold_off_in_sim_mode(ac_module):
+    """Sim: Taille bleibt unangetastet (MuJoCo-Bridge/Policy unveraendert)."""
+    _reset_robot()
+    node = _make_node(ac_module)
+    try:
+        os.environ["G1_SIM_MODE"] = "true"
+        node._init_waist_hold()
+        assert node._waist is None
+    finally:
+        os.environ["G1_SIM_MODE"] = "false"
+        _close(node)
