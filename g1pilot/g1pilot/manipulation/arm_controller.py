@@ -591,6 +591,16 @@ class ArmController(Node):
         # Rueckmeldung zu Marker-Zielen (reached/unreachable/cancelled/ignored),
         # damit der RViz-Marker weiss, wann er wieder der Hand folgen darf.
         self.pub_marker_goal_status = self.create_publisher(String, "/g1pilot/hand_goal_status", 10)
+        # Kommandierte Handpose (FK der Soll-Gelenke, im Ziel-Frame inkl.
+        # EE-Offsets) fuer Jog-Eingaben (PS4, Demo-GUI): sie setzen ihre Ziele
+        # relativ zu DIESER Pose statt zur gemessenen (TF) -- sonst uebernimmt
+        # jede Fahrt den Regelfehler gemessen<->kommandiert erneut (Hand kippt
+        # schrittweise). Nur Rueckmeldung, kein Eingang. Siehe hand_jog.py.
+        self.pub_hand_cmd_pose = {
+            s: self.create_publisher(PoseStamped, f"/g1pilot/hand_cmd_pose/{s}", 10)
+            for s in ("left", "right")}
+        self._cmd_pose_data = pin.Data(self.ik_solver.model)
+        self._cmd_pose_last = 0.0
         # Rueckkanal des Speicherns (POST /arm/save bzw. Streamdeck-Dialog):
         # sagt, WAS unter welchem Namen/Kategorie wirklich in der Datei landete.
         self.pub_save_status = self.create_publisher(
@@ -2864,6 +2874,53 @@ class ArmController(Node):
                     f"[marker] {side}: Ziel nicht erreichbar "
                     f"(Rest {pos_err * 100:.1f} cm / {ori_err:.1f} deg).")
 
+    def _publish_hand_cmd_poses(self, q14: np.ndarray) -> None:
+        """Kommandierte Handposen auf /g1pilot/hand_cmd_pose/<side> (<= 30 Hz).
+
+        Im selben Frame und mit denselben EE-Offsets wie die Ziele auf
+        /g1pilot/hand_goal: ein Ziel GENAU auf dieser Pose laesst den Arm
+        stehen. Vor der Auto-Kalibrierung einer Seite (erstes Ziel) wird fuer
+        sie nichts gesendet -- die Jog-Eingaben nehmen dann TF, und das erste
+        Ziel kalibriert wie bisher gegen die gemessene Hand."""
+        now = time.monotonic()
+        if now - self._cmd_pose_last < 1.0 / 30.0:
+            return
+        self._cmd_pose_last = now
+        try:
+            full = self._full_config_with_arms(q14)
+            q_full = pin.neutral(self.ik_solver.model)
+            for jid_idx, ros_name in enumerate(self.ik_solver._ros_joint_names):
+                if ros_name in self.ik_solver._name_to_q_index:
+                    q_full[self.ik_solver._name_to_q_index[ros_name]] = float(full[jid_idx])
+            data = self._cmd_pose_data
+            pin.forwardKinematics(self.ik_solver.model, data, q_full)
+            pin.updateFramePlacements(self.ik_solver.model, data)
+        except Exception:   # noqa: BLE001 -- nur Rueckmeldung, nie den Tick stoeren
+            return
+        stamp = self.get_clock().now().to_msg()
+        for side in ("left", "right"):
+            right = side == "right"
+            if self.ee_auto_calibrate and not (self._auto_done_right if right
+                                               else self._auto_done_left):
+                continue
+            fid = self.ik_solver._fid_right if right else self.ik_solver._fid_left
+            if fid is None:
+                continue
+            T_static = self._T_off_right_static if right else self._T_off_left_static
+            T_auto = self._T_off_right_auto if right else self._T_off_left_auto
+            T_off = T_static * (T_auto if T_auto is not None else SE3.Identity())
+            M = data.oMf[fid] * T_off.inverse()
+            q = pin.Quaternion(M.rotation)
+            msg = PoseStamped()
+            msg.header.frame_id = self.frame
+            msg.header.stamp = stamp
+            p = M.translation
+            msg.pose.position.x, msg.pose.position.y, msg.pose.position.z = (
+                float(p[0]), float(p[1]), float(p[2]))
+            o = msg.pose.orientation
+            o.x, o.y, o.z, o.w = float(q.x), float(q.y), float(q.z), float(q.w)
+            self.pub_hand_cmd_pose[side].publish(msg)
+
     def _alpha_dt(self, alpha: float, dt: float) -> float:
         """Glaettungs-Alpha (gilt pro Takt bei smoothing_ref_hz) auf den echten
         Zeitschritt umrechnen: 1 - (1 - a)^(dt * ref). smoothing_ref_hz <= 0
@@ -3229,6 +3286,8 @@ class ArmController(Node):
         # Schleppfehler-Begrenzung (real): Sollwert nie weit weg von der Messung.
         q_smooth = self._limit_tracking_error(q_smooth)
         self._last_q_target = q_smooth.copy()
+        if not (self.walk_mode or self._releasing):
+            self._publish_hand_cmd_poses(q_smooth)
 
         if not (self.walk_mode or self.homing_active or self.homing_reached
                 or self._planned_motion_active or self._releasing):

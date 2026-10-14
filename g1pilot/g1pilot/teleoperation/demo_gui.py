@@ -59,7 +59,8 @@ from g1pilot.teleoperation.ui_interface import (
 )
 from g1pilot.teleoperation.hand_panel import HandPanel
 from g1pilot.teleoperation.hand_jog import (
-    JOG_FRAME, JOG_TF, JOG_SPEEDS, HoldStreamer, hold_pose, lead_limits, jog_step,
+    JOG_FRAME, JOG_TF, JOG_SPEEDS, JOG_CMD_TOPIC, CommandedPoses, HoldStreamer, hold_pose,
+    lead_limits, jog_step,
 )
 
 WALK = "walk"
@@ -168,6 +169,28 @@ class DemoNode(StreamDeck):
         self.pub_hand_goal = {
             side: self.create_publisher(PoseStamped, f"/g1pilot/hand_goal/{side}", 10)
             for side in ("left", "right")}
+        # Jog-Bezug = kommandierte Hand (Sim), siehe hand_jog.JOG_CMD_TOPIC.
+        # Real vorerst wie bisher die gemessene Hand (TF).
+        self.jog_from_command = is_sim_mode()
+        self.cmd_poses = CommandedPoses()
+        if self.jog_from_command:
+            for side in ("left", "right"):
+                self.create_subscription(
+                    PoseStamped, JOG_CMD_TOPIC.format(side=side),
+                    lambda m, s=side: self._on_cmd_pose(s, m), 10)
+
+    def _on_cmd_pose(self, side, msg):
+        if msg.header.frame_id and msg.header.frame_id != JOG_FRAME:
+            return
+        p, q = msg.pose.position, msg.pose.orientation
+        self.cmd_poses.update(side, (p.x, p.y, p.z), (q.x, q.y, q.z, q.w), time.monotonic())
+
+    def jog_start_pose(self, side):
+        """Startpose eines neuen »Hand bewegen«-Ziels: kommandierte Hand, falls
+        aktuell, sonst None (-> an der gemessenen Hand)."""
+        if self.jog_from_command:
+            return self.cmd_poses.get(side, time.monotonic())
+        return None
 
     def hand_pose(self, side):
         """-> ([x, y, z], (qx, qy, qz, qw)) der Hand im JOG_FRAME oder None (kein TF)."""
@@ -1256,8 +1279,10 @@ class DemoGUI(QWidget):
             if hand is None:
                 missing.append(side)
                 continue
+            start = (self.node.jog_start_pose(side)
+                     if side not in self._jog_targets else None)
             p, q = jog_step(self._jog_targets.get(side), hand, lin, ang, dt,
-                            lead_m, lead_rad)
+                            lead_m, lead_rad, start=start)
             self._jog_targets[side] = [p, q]
             self._jog_twist = (lin, ang)
             self.node.publish_hand_goal(side, p, q)

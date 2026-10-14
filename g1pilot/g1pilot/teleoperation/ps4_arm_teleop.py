@@ -39,9 +39,10 @@ import time
 
 from g1pilot.teleoperation import ps4_layout as L
 from g1pilot.teleoperation.hand_jog import (
-    JOG_FRAME, JOG_TF, JOG_SPEEDS, JOG_SPEED_ORDER, HoldStreamer, hold_pose, lead_limits,
-    jog_step,
+    JOG_FRAME, JOG_TF, JOG_SPEEDS, JOG_SPEED_ORDER, JOG_CMD_TOPIC, CommandedPoses,
+    HoldStreamer, hold_pose, lead_limits, jog_step,
 )
+from g1pilot.utils.common import is_sim_mode
 
 # Auswahl -> betroffene Seiten
 SELECTIONS = {
@@ -275,6 +276,10 @@ def main(args=None):
             # Real: false -- der Controller aendert den Zustand der Beine nie
             # (Aufstehen/Balancing bleibt eine Aktion in GUI/Streamdeck).
             self.declare_parameter("options_starts_balancing", True)
+            # Start eines Jog-Ziels: "command" = kommandierte Hand vom arm_controller
+            # (/g1pilot/hand_cmd_pose, Fallback TF), "tf" = gemessene Hand wie
+            # frueher. Default: Sim "command", Real "tf" (real noch ungetestet).
+            self.declare_parameter("jog_reference", "command" if is_sim_mode() else "tf")
             gp = lambda n: self.get_parameter(n).value   # noqa: E731
 
             self.logic = ArmTeleopLogic(gp("deadzone"), gp("expo"), gp("speed"),
@@ -282,6 +287,7 @@ def main(args=None):
                                         ps_estop=gp("ps_estop"))
             self.joy_timeout = float(gp("joy_timeout_s"))
             self.options_balancing = bool(gp("options_starts_balancing"))
+            self.cmd_poses = CommandedPoses()
             self.axes, self.t_joy = [], None
             self.connected = False
             self.targets = {}            # side -> [pos, quat] laufendes Jog-Ziel
@@ -311,6 +317,10 @@ def main(args=None):
             self.pub_markers = self.create_publisher(MarkerArray, "/g1pilot/ps4/markers", 10)
 
             self.create_subscription(Joy, gp("joy_topic"), self._on_joy, 10)
+            for s in ("left", "right"):
+                self.create_subscription(
+                    PoseStamped, JOG_CMD_TOPIC.format(side=s),
+                    lambda m, s=s: self._on_cmd_pose(s, m), 10)
             # START (GUI/Streamdeck) quittiert den NOT-HALT im arm_controller.
             self.create_subscription(Bool, "/g1pilot/start", self._on_start, 10)
             # NOT-HALT aus GUI/Streamdeck sperrt auch den Controller (LED rot).
@@ -336,6 +346,13 @@ def main(args=None):
             self.axes, self.t_joy = list(msg.axes), now
             for cmd in self.logic.update(msg.axes, msg.buttons, now):
                 self._run(cmd)
+
+        def _on_cmd_pose(self, side, msg):
+            if msg.header.frame_id and msg.header.frame_id != JOG_FRAME:
+                return
+            p, q = msg.pose.position, msg.pose.orientation
+            self.cmd_poses.update(side, (p.x, p.y, p.z), (q.x, q.y, q.z, q.w),
+                                  time.monotonic())
 
         def _on_start(self, msg):
             if msg.data and self.logic.clear_estop():
@@ -448,6 +465,14 @@ def main(args=None):
             p, q = tr.transform.translation, tr.transform.rotation
             return [p.x, p.y, p.z], (q.x, q.y, q.z, q.w)
 
+        def _jog_start(self, side):
+            """Startpose eines neuen Jog-Ziels: kommandierte Hand (falls aktuell)
+            oder None (-> an der gemessenen Hand). Siehe hand_jog.JOG_CMD_TOPIC.
+            Live umschaltbar: ros2 param set /ps4_arm_teleop jog_reference tf|command."""
+            if str(self.get_parameter("jog_reference").value).lower() == "command":
+                return self.cmd_poses.get(side, time.monotonic())
+            return None
+
         def _publish_goal(self, side, pos, rot):
             msg = PoseStamped()
             msg.header.frame_id = JOG_FRAME
@@ -525,7 +550,9 @@ def main(args=None):
                     continue
                 self._tf_warned = False
                 self.last_hand[side] = hand
-                p, q = jog_step(self.targets.get(side), hand, lin, ang, dt, lead_m, lead_rad)
+                start = self._jog_start(side) if side not in self.targets else None
+                p, q = jog_step(self.targets.get(side), hand, lin, ang, dt, lead_m, lead_rad,
+                                start=start)
                 self.targets[side] = [p, q]
                 self.last_twist[side] = (lin, ang)
                 self._publish_goal(side, p, q)

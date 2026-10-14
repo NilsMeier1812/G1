@@ -489,3 +489,56 @@ def test_hold_streamer_converges_controller_goal_filter():
     assert one > 0.029
     n = int(hj.JOG_HOLD_S * 14)
     assert lead * (1 - alpha) ** n < 0.02 * lead
+
+
+# ── Jog-Bezug: kommandierte statt gemessene Hand (hand_jog.JOG_CMD_TOPIC) ──
+def test_commanded_poses_fresh_and_stale():
+    cp = hj.CommandedPoses(max_age_s=0.3)
+    assert cp.get("right", 0.0) is None
+    cp.update("right", (0.3, -0.1, 0.2), (0.0, 0.0, 0.0, 1.0), 10.0)
+    assert cp.get("right", 10.2) == ([0.3, -0.1, 0.2], (0.0, 0.0, 0.0, 1.0))
+    assert cp.get("right", 10.31) is None      # zu alt -> Fallback TF
+    assert cp.get("left", 10.0) is None
+
+
+def _jog_sessions(reference, n=8, offset_deg=3.0):
+    """Stark vereinfachter Regelkreis: der Arm erreicht das Ziel exakt
+    (kommandiert = Ziel), gemessen ist um einen festen Regelfehler gekippt
+    (Durchhang). n Tipp-Fahrten nach vorn; Vorlauf und Halten wie im Node an
+    der gemessenen Hand, nur der Start je nach `reference`.
+    -> Kippwinkel der gemessenen Hand gegenueber der Ausgangslage [deg]."""
+    off = hj.qfrom_rotvec(0.0, -math.radians(offset_deg), 0.0)
+    cmd = ([0.3, -0.15, 0.2], hj.qfrom_rotvec(0.0, 0.3, 0.0))
+    meas = lambda c: (list(c[0]), hj.qmul(c[1], off))   # noqa: E731
+    start_meas = meas(cmd)
+    lin, ang = (0.15, 0.0, 0.0), (0.0, 0.0, 0.0)
+    for _ in range(n):
+        target = None
+        for _ in range(5):
+            start = cmd if (reference == "command" and target is None) else None
+            target = hj.jog_step(target, meas(cmd), lin, ang, 0.033, 0.075,
+                                 math.radians(22), start=start)
+            cmd = (list(target[0]), tuple(target[1]))
+        p, q = hj.hold_pose(target, meas(cmd), lin, ang)
+        cmd = (list(p), tuple(q))
+    return math.degrees(hj.qangle(start_meas[1], meas(cmd)[1]))
+
+
+def test_jog_from_measured_hand_ratchets_orientation():
+    # Bisheriges Verhalten: jede Fahrt uebernimmt den Regelfehler erneut.
+    assert _jog_sessions("tf") == pytest.approx(8 * 3.0, abs=0.5)
+
+
+def test_jog_from_commanded_hand_keeps_orientation():
+    assert _jog_sessions("command") < 0.1
+
+
+def test_jog_step_start_pose_only_for_new_target():
+    hand = ([0.3, -0.15, 0.2], (0.0, 0.0, 0.0, 1.0))
+    start = ([0.31, -0.15, 0.21], hj.qfrom_rotvec(0.0, -0.05, 0.0))
+    p, q = hj.jog_step(None, hand, (0, 0, 0), (0, 0, 0), 0.03, 0.04, 0.3, start=start)
+    assert p == pytest.approx(start[0]) and q == pytest.approx(start[1])
+    # laufendes Ziel: start wird ignoriert
+    p2, q2 = hj.jog_step([p, q], hand, (0, 0, 0), (0, 0, 0), 0.03, 0.04, 0.3,
+                         start=([9, 9, 9], (0, 0, 0, 1)))
+    assert p2 == pytest.approx(p) and q2 == pytest.approx(q)
