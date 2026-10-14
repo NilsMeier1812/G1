@@ -18,6 +18,7 @@ die "ersetzt"-Meldung an den RViz-Marker. Braucht rclpy + pinocchio.
 import json
 import os
 import sys
+import threading
 import time
 import types
 
@@ -415,8 +416,14 @@ from std_msgs.msg import Bool
 orig = ac.ArmController.__init__
 def init(self, *a, **k):
     orig(self, *a, **k)
-    self.create_timer(1.0, lambda: (not self.arms_enabled)
-                      and self._arms_controlled_callback(Bool(data=True)))
+    said = []
+    def tick():
+        if not self.arms_enabled:
+            self._arms_controlled_callback(Bool(data=True))
+        elif self._weight_state == "on" and not said:
+            said.append(1)
+            print("WEIGHT_ON", flush=True)
+    self.create_timer(0.5, tick)
 ac.ArmController.__init__ = init
 def report():
     ws = T.ROBOT.writes
@@ -440,13 +447,26 @@ def test_sigterm_hands_arms_back(tmp_path):
                ROS_PACKAGE_PATH=os.path.dirname(PKG))
     p = subprocess.Popen([sys.executable, str(script)], env=env,
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    lines = []
+    reader = threading.Thread(target=lambda: lines.extend(iter(p.stdout.readline, "")),
+                              daemon=True)
+    reader.start()
     try:
-        time.sleep(15.0)           # laden, ENABLE, Gewichtsrampe hoch
+        # Warten, bis der Controller geladen hat und die Arme fuehrt (Gewicht 1).
+        # Unter Last (volle Testsuite, Planer-Prozess startet parallel) dauert
+        # das Laden deutlich laenger als allein -- feste Wartezeiten flaken.
+        t_end = time.monotonic() + 180.0
+        while time.monotonic() < t_end and not any("WEIGHT_ON" in ln for ln in lines):
+            assert p.poll() is None, "".join(lines)[-3000:]
+            time.sleep(0.2)
+        assert any("WEIGHT_ON" in ln for ln in lines), "".join(lines)[-3000:]
         p.send_signal(signal.SIGTERM)
-        out, _ = p.communicate(timeout=30)
+        p.wait(timeout=30)
+        reader.join(timeout=5)
     finally:
         if p.poll() is None:
             p.kill()
+    out = "".join(lines)
     assert "WRITES" in out, out[-3000:]
     last_w = float(out.split("LASTW")[-1].split()[0])
     assert last_w == 0.0, out[-3000:]
