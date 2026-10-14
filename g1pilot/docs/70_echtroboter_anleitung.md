@@ -100,6 +100,16 @@ werden. Ohne `lowstate`: falsches Interface, Roboter nicht im
   gemessene Armpose (= Pose des Onboard-Reglers), kommandiert genau diese und
   rampt das `arm_sdk`-Gewicht 0→1 über 2,0 s. Die Gelenke werden exakt
   gehalten, bis ein Ziel kommt (kein Nachdrehen des Ellbogens durch die IK).
+- **Taille wird mitgehalten (seit 2026-10-14):** das `arm_sdk`-Gewicht
+  schaltet beim G1 nicht nur die Arme, sondern auch die Taille (Waist
+  yaw/roll/pitch, Gelenke 12-14) vom Onboard-Regler weg — so steht es auch in
+  den Unitree-Beispielen. Früher bekam die Taille dabei kp=0: Oberkörper
+  kraftlos, kippte nach vorn/hinten. Jetzt hält `arm_controller` die Taille in
+  der beim `ENABLE` gemessenen Stellung (kp 150 / kd 4 + Schwerkraft-
+  Feedforward, `G1_WAIST_KP` / `G1_WAIST_KD`, Obergrenze 250 / 6). Im E-Stop
+  ist sie passiv wie die Arme; START packt sie weich wieder (kp-Rampe 1,5 s,
+  ab der gemessenen Stellung, ≤ 0,3 rad/s zurück). Gesperrte Taille
+  (23/29 DoF locked): Parameter `waist_joints` auf `[12]`.
 - **Zurückgeben ohne Schwung (`DISABLE`):** die Arme fahren erst geplant und
   langsam in die beim `ENABLE` gemerkte Onboard-Pose; erst dort rampt das
   Gewicht 1→0. Die Überblendung hat also keinen Positionsunterschied mehr.
@@ -144,6 +154,10 @@ exakt; die Marker folgen der Hand (Leader-Follower).
    übernehmen die aktuelle Pose ohne Ruck. **Reihenfolge:** erst START bzw.
    START BALANCING, dann ENABLE — die beim ENABLE gemessene Pose ist die, in
    die DISABLE später zurückfährt.
+   **Taille prüfen (hängend):** nach der Rampe den Oberkörper an der
+   Schulter leicht vor/zurück und seitlich drücken — er muss federnd
+   zurückkommen und darf nicht mehr frei kippen. Log: „Taille [12, 13, 14]
+   wird bei arm_sdk-Gewicht > 0 gehalten".
 2. In RViz einen Marker wenige Zentimeter ziehen — Hand folgt ruhig,
    max. 0,25 m/s.
 3. **Gate-Test:** Marker absichtlich in den Torso ziehen. Erwartung: Arm

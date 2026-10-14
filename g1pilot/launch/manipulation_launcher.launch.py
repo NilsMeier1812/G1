@@ -51,6 +51,12 @@ def generate_launch_description():
         DeclareLaunchArgument("kd_low", default_value="12.0"),
         DeclareLaunchArgument("kp_wrist", default_value="40.0"),
         DeclareLaunchArgument("kd_wrist", default_value="4.0"),
+        # Taille (Waist 12-14): wird vom arm_sdk-Gewicht mit umgeschaltet und
+        # deshalb real mitgehalten (Sim: aus). waist_hold=false nur zur Diagnose
+        # (Taille dann kraftlos!). Gains auf Hardware ungeprueft.
+        DeclareLaunchArgument("waist_hold", default_value="true"),
+        DeclareLaunchArgument("kp_waist", default_value="150.0"),
+        DeclareLaunchArgument("kd_waist", default_value="4.0"),
         # arm_sdk-Gewichts-Rampe (0->1 beim Enable, 1->0 beim Disable). Auf dem
         # echten G1 Pflicht fuer eine weiche Uebergabe; die Sim setzt 0.0
         # (= sofort umschalten, bisheriges Verhalten).
@@ -117,6 +123,9 @@ def generate_launch_description():
                 'kd_low': ParameterValue(LaunchConfiguration("kd_low"), value_type=float),
                 'kp_wrist': ParameterValue(LaunchConfiguration("kp_wrist"), value_type=float),
                 'kd_wrist': ParameterValue(LaunchConfiguration("kd_wrist"), value_type=float),
+                'waist_hold': ParameterValue(LaunchConfiguration("waist_hold"), value_type=bool),
+                'kp_waist': ParameterValue(LaunchConfiguration("kp_waist"), value_type=float),
+                'kd_waist': ParameterValue(LaunchConfiguration("kd_waist"), value_type=float),
                 'walk_park_arms': ParameterValue(
                     LaunchConfiguration("walk_park_arms"), value_type=bool),
             }],

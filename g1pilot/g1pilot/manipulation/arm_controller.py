@@ -33,6 +33,7 @@ from g1pilot.manipulation import arm_command as ac
 from g1pilot.manipulation.arm_geometry import ArmGeometry, Environment, HAND_LINK_MIN
 from g1pilot.manipulation.arm_planner_process import PlannerProcess
 from g1pilot.manipulation.arm_planner import DEFAULTS as PLANNER_DEFAULTS
+from g1pilot.manipulation.waist_hold import WaistHold
 
 from unitree_sdk2py.core.channel import ChannelPublisher, ChannelSubscriber
 from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowCmd_ , LowState_
@@ -207,6 +208,25 @@ class ArmController(Node):
         # keine Positionshaltung; kleines kd -> die Arme sacken GEDAEMPFT statt
         # frei zu fallen (an Seilen abgefangen). 0.0 = voellig frei (harter Fall).
         self.declare_parameter("estop_arm_kd", 3.0)
+        # Taille (Waist 12-14) halten, solange arm_sdk Gewicht hat (NUR REAL).
+        # Das arm_sdk-Gewicht schaltet beim G1 Arme UND Taille vom Onboard-
+        # Regler auf rt/arm_sdk um (Unitree-Beispiele kommandieren die Taille
+        # mit). Ohne eigenes Kommando ist die Taille bei Gewicht 1 kraftlos und
+        # der Oberkoerper kippt. Siehe waist_hold.py.
+        #   waist_joints: [12, 13, 14] fuer G1-29 mit freier Taille; bei
+        #   gesperrter Taille (23 DoF / 29 DoF locked) sind 13/14 laut Unitree
+        #   ungueltig -> [12].
+        #   kp/kd_waist: UNGEPRUEFT auf Hardware (Unitree-Beispiele: 60/1.5 bzw.
+        #   240/6). Real-Obergrenze 250/6.
+        #   waist_max_vel: Kommando faehrt hoechstens so schnell [rad/s] aufs Ziel.
+        #   waist_engage_s: kp-Rampe beim Wiederzupacken (nach E-Stop-Quittung).
+        #   waist_gravity_comp: Schwerkraft-Feedforward aus dem Pinocchio-Modell
+        #   (Becken aufrecht angenommen), begrenzt auf +-25 Nm.
+        self.declare_parameter("waist_hold", True)
+        self.declare_parameter("waist_joints", [12, 13, 14])
+        self.declare_parameter("waist_max_vel", 0.3)
+        self.declare_parameter("waist_engage_s", 1.5)
+        self.declare_parameter("waist_gravity_comp", True)
         self.declare_parameter("rate_hz", 250.0)
         self.declare_parameter("ik_world_frame", "pelvis")
         self.declare_parameter("ik_alpha", 0.2)
@@ -622,11 +642,7 @@ class ArmController(Node):
             return tau
         try:
             ik = self.ik_solver
-            q_full = pin.neutral(ik.model)
-            for i, arm_i in enumerate(LEFT_JOINT_INDICES_LIST):
-                q_full[ik._name_to_q_index[ik._ros_joint_names[arm_i]]] = float(q14[i])
-            for i, arm_i in enumerate(RIGHT_JOINT_INDICES_LIST):
-                q_full[ik._name_to_q_index[ik._ros_joint_names[arm_i]]] = float(q14[7 + i])
+            q_full = self._gravity_q_full(q14)
             g = pin.computeGeneralizedGravity(ik.model, ik.data, q_full)
             for i, arm_i in enumerate(LEFT_JOINT_INDICES_LIST):
                 tau[i] = float(g[ik._name_to_v_index[ik._ros_joint_names[arm_i]]])
@@ -636,6 +652,23 @@ class ArmController(Node):
         except Exception:
             tau[:] = 0.0
         return tau
+
+    def _gravity_q_full(self, q14, q_waist=None):
+        """Modell-Konfiguration fuer die Schwerkraftrechnung: Arme aus q14,
+        Taille aus q_waist (bzw. dem Halteziel), Rest neutral."""
+        ik = self.ik_solver
+        q_full = pin.neutral(ik.model)
+        for i, arm_i in enumerate(LEFT_JOINT_INDICES_LIST):
+            q_full[ik._name_to_q_index[ik._ros_joint_names[arm_i]]] = float(q14[i])
+        for i, arm_i in enumerate(RIGHT_JOINT_INDICES_LIST):
+            q_full[ik._name_to_q_index[ik._ros_joint_names[arm_i]]] = float(q14[7 + i])
+        waist = getattr(self, "_waist", None)
+        if waist is not None:
+            qw = q_waist if q_waist is not None else waist.q_cmd
+            if qw is not None:
+                for k, j in enumerate(waist.joints):
+                    q_full[ik._name_to_q_index[ik._ros_joint_names[j]]] = float(qw[k])
+        return q_full
 
     def _mk_static_T(self, xyz, rpy_deg):
         """
@@ -902,8 +935,10 @@ class ArmController(Node):
 
         self.kp_low   = _gain("kp_low",   150.0); self.kd_low   = _gain("kd_low",   12.0)
         self.kp_wrist = _gain("kp_wrist",  40.0); self.kd_wrist = _gain("kd_wrist",  4.0)
+        self.kp_waist = _gain("kp_waist", 150.0); self.kd_waist = _gain("kd_waist",  4.0)
         if not is_sim_mode():
             self._apply_real_safety_limits()
+        self._init_waist_hold()
         self._accel_limit = float(self.get_parameter("arm_accel_limit").value)
         self._max_track_err = float(self.get_parameter("max_tracking_error").value)
 
@@ -991,7 +1026,9 @@ class ArmController(Node):
 
     # Obergrenzen auf dem ECHTEN G1, egal welches Launchfile startet (frueher
     # bekam z.B. bringup_launcher / `make real-full` die Sim-Gains kp=150/kd=12).
-    REAL_MAX_GAINS = {"kp_low": 80.0, "kd_low": 3.0, "kp_wrist": 50.0, "kd_wrist": 3.0}
+    REAL_MAX_GAINS = {"kp_low": 80.0, "kd_low": 3.0, "kp_wrist": 50.0, "kd_wrist": 3.0,
+                      "kp_waist": 250.0, "kd_waist": 6.0}
+    WAIST_TAU_LIMIT = 25.0      # Nm, Schwerkraft-Feedforward der Taille
     REAL_MIN_RAMP_S = 1.0
     REAL_MAX_ARM_VEL = 1.5      # rad/s
     REAL_MAX_EE_VEL = 0.25      # m/s
@@ -1023,6 +1060,66 @@ class ArmController(Node):
             log.error("REAL: unsichere Parameter korrigiert: "
                       + ", ".join(f"{p.name}={p.value}" for p in fixes))
 
+    def _init_waist_hold(self) -> None:
+        """Taillen-Haltung anlegen (nur real, s. Parameter waist_hold)."""
+        self._waist = None
+        self._waist_t_last = None
+        if not self.use_robot or is_sim_mode() or not bool(self.get_parameter("waist_hold").value):
+            if self.use_robot and not is_sim_mode():
+                self.get_logger().warn("waist_hold=false: Taille ist bei arm_sdk-Gewicht > 0 "
+                                       "KRAFTLOS (Oberkoerper kann kippen).")
+            return
+        joints = [int(j) for j in self.get_parameter("waist_joints").value]
+        self._waist = WaistHold(joints=joints, kp=self.kp_waist, kd=self.kd_waist,
+                                passive_kd=self.estop_arm_kd,
+                                max_vel=float(self.get_parameter("waist_max_vel").value),
+                                engage_s=max(0.0, float(self.get_parameter("waist_engage_s").value)))
+        cur = self.get_current_motor_q()
+        self._waist.set_target([cur[j] for j in joints])
+        self.get_logger().info(f"Taille {joints} wird bei arm_sdk-Gewicht > 0 gehalten "
+                               f"(kp={self.kp_waist:.0f}, kd={self.kd_waist:.1f}).")
+
+    def _measured_waist_q(self) -> np.ndarray:
+        cur = self.get_current_motor_q()
+        return np.array([cur[j] for j in self._waist.joints], dtype=float)
+
+    def _waist_gravity_tau(self, q14: np.ndarray, q_waist: np.ndarray) -> np.ndarray:
+        """Schwerkraft-Drehmomente [Nm] der Taillengelenke (Becken aufrecht)."""
+        tau = np.zeros(len(self._waist.joints), dtype=float)
+        if not (bool(self.get_parameter("gravity_comp").value)
+                and bool(self.get_parameter("waist_gravity_comp").value)):
+            return tau
+        try:
+            ik = self.ik_solver
+            g = pin.computeGeneralizedGravity(ik.model, ik.data,
+                                              self._gravity_q_full(q14, q_waist))
+            for k, j in enumerate(self._waist.joints):
+                tau[k] = float(g[ik._name_to_v_index[ik._ros_joint_names[j]]])
+            np.clip(tau, -self.WAIST_TAU_LIMIT, self.WAIST_TAU_LIMIT, out=tau)
+        except Exception:
+            tau[:] = 0.0
+        return tau
+
+    def _write_waist_cmd(self, q14_ff: np.ndarray) -> None:
+        """Taillen-Kommando in self.msg eintragen (vor CRC/Write aufrufen).
+        q14_ff: Armstellung fuer den Schwerkraft-Feedforward."""
+        if self._waist is None:
+            return
+        now = time.monotonic()
+        dt = 0.0 if self._waist_t_last is None else min(0.1, now - self._waist_t_last)
+        self._waist_t_last = now
+        meas = self._measured_waist_q()
+        q, kp, kd = self._waist.step(dt, meas)
+        tau = self._waist_gravity_tau(q14_ff, q) * self._waist.scale
+        for k, j in enumerate(self._waist.joints):
+            mc = self.msg.motor_cmd[j]
+            mc.mode = 1
+            mc.q = float(q[k])
+            mc.dq = 0.0
+            mc.kp = float(kp)
+            mc.kd = float(kd)
+            mc.tau = float(tau[k])
+
     def _measured_arm_q(self) -> np.ndarray:
         """Gemessene Armstellung (7 links + 7 rechts)."""
         cur = self.get_current_motor_q()
@@ -1042,6 +1139,16 @@ class ArmController(Node):
         lim = [JOINT_LIMITS_RAD[j] for j in LEFT_JOINT_INDICES_LIST + RIGHT_JOINT_INDICES_LIST]
         lo = np.array([a for a, _ in lim]); hi = np.array([b for _, b in lim])
         self._onboard_q = np.clip(q, lo, hi)
+        if getattr(self, "_waist", None) is not None:
+            try:
+                qw = self._measured_waist_q()
+                self._waist.set_target(qw)
+                self._waist.q_cmd = self._waist.target.copy()
+                if any(abs(v) > 0.3 for j, v in zip(self._waist.joints, qw) if j != 12):
+                    self.get_logger().warn(f"Taille steht beim {why} schraeg ({np.round(qw, 2)}) "
+                                           "-- wird so gehalten.")
+            except Exception:
+                pass
         self.get_logger().info(f"Onboard-Armpose gemerkt ({why}) -- Ziel der spaeteren Rueckgabe.")
 
     def _release_possible(self) -> bool:
@@ -1151,6 +1258,8 @@ class ArmController(Node):
             else:
                 mc.kp = self.kp_low
                 mc.kd = self.kd_low
+        # Taille: wird vom Gewicht mit umgeschaltet -> immer mitkommandieren.
+        self._write_waist_cmd(q14)
         self.msg.crc = self.crc.Crc(self.msg)
         self.lowcmd_publisher.Write(self.msg)
 
@@ -1541,6 +1650,10 @@ class ArmController(Node):
                 mc.dq = 0.0
                 if cur is not None:
                     mc.q = float(cur[jid.value])   # bei kp=0 ohne Wirkung, sauber
+            # Taille: im E-Stop passiv (wie Damp), nach START wieder gehalten.
+            if cur is not None:
+                self._write_waist_cmd(np.array([cur[j] for j in LEFT_JOINT_INDICES_LIST
+                                                + RIGHT_JOINT_INDICES_LIST], dtype=float))
             # Weight = 1: arm_sdk behaelt die Autoritaet (KEIN Onboard-Snap).
             self.msg.motor_cmd[G1_29_JointIndex.kNotUsedJoint0].q = 1.0
             self.msg.crc = self.crc.Crc(self.msg)
@@ -1573,6 +1686,8 @@ class ArmController(Node):
         self._cancel_marker_goals("E-Stop")
         self._weight_state = "off"
         self._arm_sdk_weight = 1.0     # Autoritaet behalten (kein Onboard-Snap)
+        if getattr(self, "_waist", None) is not None:
+            self._waist.go_passive()
         self._publish_arm_slack()
         self.get_logger().warn("EMERGENCY STOP: Arme drehmomentfrei/gedaempft "
                                "(arm_sdk behaelt Autoritaet, KEIN Sprung in "
@@ -1585,8 +1700,21 @@ class ArmController(Node):
         Onboard-Regler zurueckgeben (der wuerde sie posieren)."""
         if msg.data and self.estop_active:
             self.estop_active = False
+            # Taille wieder halten: arm_sdk hat weiter Gewicht 1, der Onboard-
+            # Regler haelt sie also NICHT -- ohne das kippt der Oberkoerper,
+            # sobald der Roboter wieder steht. Weich: ab Messung, kp-Rampe.
+            self._waist_engage("START")
             self.get_logger().info("E-Stop quittiert (START) -- Arme bleiben "
                                    "gedaempft schlaff bis ENABLE MANIPULATION.")
+
+    def _waist_engage(self, why: str) -> None:
+        if getattr(self, "_waist", None) is None or not self._waist.passive:
+            return
+        try:
+            self._waist.engage(self._measured_waist_q())
+            self.get_logger().info(f"Taille wird wieder gehalten ({why}, weiche kp-Rampe).")
+        except Exception as e:
+            self.get_logger().error(f"Taille wieder halten fehlgeschlagen: {e}")
 
     def _arms_controlled_callback(self, msg: Bool):
         """
@@ -1632,6 +1760,7 @@ class ArmController(Node):
         if self.arms_enabled:
             # Slack-Latch aufheben: ENABLE holt die Kontrolle bewusst zurueck.
             self._arm_slack = False
+            self._waist_engage("ENABLE")
             try:
                 cur = self.get_current_motor_q()
                 left = [cur[j] for j in LEFT_JOINT_INDICES_LIST]
