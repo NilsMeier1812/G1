@@ -202,6 +202,24 @@ Zuerst **PS4-Pfad** (physischer Deadman; nur ohne PS4-Arm-Modus, also
 4. Geh-Limits konservativ lassen (Default vx=0.4/vy=0.3/vyaw=0.4 m·rad/s,
    über `G1_MAX_VX/VY/VYAW` anpassbar).
 
+## G · Sicher beenden
+
+Am einfachsten über die Demo-GUI: **Real beenden** zweimal tippen. Die GUI
+erledigt dann alles der Reihe nach:
+
+1. Sie stoppt das Gehen (StopMove) und alle laufenden Arm-Ziele.
+2. Sie schaltet die Arme aus. Die Arme fahren langsam in die Pose vom
+   ENABLE zurück und werden weich an den Roboter übergeben.
+3. Sie stoppt den Stack sanft.
+
+Von Hand geht es so: WALK beenden, dann ENABLE MANIPULATION aus und auf das
+Log „Arme an den Onboard-Regler uebergeben“ warten, dann `Strg+C` bzw.
+`make stop`.
+
+Die Beine bekommen beim Beenden **kein** Damp. Der Roboter bleibt im
+Onboard-Zustand stehen. Danach ablegen bzw. dämpfen über die
+Unitree-Fernbedienung, gesichert.
+
 ## Notaus-Reflex (auswendig lernen)
 
 | Situation | Richtige Reaktion |

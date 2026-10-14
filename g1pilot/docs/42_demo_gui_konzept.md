@@ -169,6 +169,20 @@ der Hand-Bridge (`hand_controller_viewer.html`, `inspire_hand_viewer.html`):
   `make sim` gestartet) macht daraufhin `docker compose kill` + `down`, also
   sofort und ohne langsames Herunterfahren. Ohne Watcher (z. B. `make sim-bg`)
   meldet die GUI nach 3 s, dass es nur mit `make stop` im Terminal geht.
+- **Real beenden** (nur echter Roboter, gleiche Doppelklick-Bestätigung):
+  beendet den Stack sicher. Zuerst wird alles angehalten (Ablauf, AUTO NAV,
+  Hand bewegen, Gehen über `start_walking` False, also StopMove). Dann gehen
+  die Arme aus (`arms/enabled` False). Der arm_controller fährt sie in die
+  Pose vom ENABLE zurück und rampt das Gewicht auf 0. Erst wenn
+  `/g1pilot/arms/state` False meldet und die Rampe durch ist (2,5 s), legt die
+  GUI `.real_shutdown_request` an. Der Host-Watcher
+  `docker/real_shutdown_watcher.sh` (von `./start.sh`, `make real` und
+  `make real-full` gestartet) stoppt den Stack **sanft** mit
+  `docker compose stop` (SIGTERM) + `down`. Die Beine bleiben im
+  Onboard-Zustand, es gibt kein Damp: Den Roboter danach per Fernbedienung
+  ablegen. Kommt vom Arm-Regler 20 s lang keine Quittung, wird trotzdem
+  beendet. Er gibt die Arme beim SIGTERM selbst ab. NOT-HALT bricht
+  „Real beenden“ ab.
 - Die **Statuszeile** steht über die volle Breite, die Knöpfe darunter.
 
 ## Bedienen

@@ -52,13 +52,15 @@ sim-bg: build-g1pilot-sim build-mujoco
 real: build-g1pilot-real
 	@echo "🔴 Starte G1Pilot ECHTER ROBOTER (schlank: Arme + Haende + Loco)..."
 	@xhost +local:root 2>/dev/null || true
-	ROBOT_INTERFACE=$(ROBOT_INTERFACE) DISPLAY=$(DISPLAY) \
+	@# Watcher fuer »Real beenden« der Demo-GUI (endet mit diesem Shell-Prozess).
+	bash docker/real_shutdown_watcher.sh $$$$ real & ROBOT_INTERFACE=$(ROBOT_INTERFACE) DISPLAY=$(DISPLAY) \
 	  docker compose --profile real up
 
 real-full: build-g1pilot-real-full
 	@echo "🔴 Starte G1Pilot ECHTER ROBOTER (voll: + Livox/MOLA/Navigation)..."
 	@xhost +local:root 2>/dev/null || true
-	ROBOT_INTERFACE=$(ROBOT_INTERFACE) DISPLAY=$(DISPLAY) \
+	@# Watcher fuer »Real beenden« der Demo-GUI (endet mit diesem Shell-Prozess).
+	bash docker/real_shutdown_watcher.sh $$$$ real-full & ROBOT_INTERFACE=$(ROBOT_INTERFACE) DISPLAY=$(DISPLAY) \
 	  docker compose --profile real-full up
 
 # ─── BAUEN ──────────────────────────────────────────────────

@@ -495,6 +495,10 @@ docker compose --profile "$PROFILE" down --remove-orphans
 # Watcher endet mit dem Stack. Siehe docker/sim_shutdown_watcher.sh.
 if [ "$PROFILE" = "sim" ]; then
   bash docker/sim_shutdown_watcher.sh $$ &
+else
+  # »Real beenden« der Demo-GUI: Arme sind dann schon abgegeben; der Watcher
+  # stoppt den Stack sanft (SIGTERM). Siehe docker/real_shutdown_watcher.sh.
+  bash docker/real_shutdown_watcher.sh $$ "$PROFILE" &
 fi
 
 # ── Hochfahren ──────────────────────────────────────────────────────────

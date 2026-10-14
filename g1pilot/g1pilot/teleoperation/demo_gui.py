@@ -106,6 +106,13 @@ JOG_SIDES = {"Links": ("left",), "Rechts": ("right",), "Beide": ("left", "right"
 SIM_SHUTDOWN_TRIGGER = "/ros2_ws/src/g1pilot/.sim_shutdown_request"
 QUIT_CONFIRM_MS = 4000      # so lange gilt der erste Klick als »scharf«
 QUIT_ACK_TIMEOUT_MS = 3000  # Watcher loescht die Datei -> sonst Hinweis
+# »Real beenden«: erst Laufen stoppen und die Arme sicher an den Onboard-Regler
+# zurueckgeben (DISABLE: Rueckfahrt in die Pose vom ENABLE, dann Gewichtsrampe),
+# DANN den Stack stoppen. Host-Watcher: docker/real_shutdown_watcher.sh
+# (sanftes docker compose stop -> SIGTERM -> arm_controller.shutdown_release).
+REAL_SHUTDOWN_TRIGGER = "/ros2_ws/src/g1pilot/.real_shutdown_request"
+REAL_RELEASE_TIMEOUT_MS = 20000   # > release_timeout_s (12 s) + Rampe
+REAL_RAMP_WAIT_MS = 2500          # nach arms/state False: Gewichtsrampe 1->0 (2 s real)
 
 
 def _envflag(name):
@@ -879,12 +886,14 @@ class DemoGUI(QWidget):
         self.btn_push.setFixedWidth(170)
         self.btn_push.setVisible(self.sim_mode)
         bottom.addWidget(self.btn_push)
-        # Nur Sim: ganzen Stack beenden (alle Fenster zu). Zweiter Klick bestaetigt.
-        self.btn_quit = big_button("Sim\nbeenden", "#37474f", font=15, height=70)
+        # Ganzen Stack beenden (alle Fenster zu). Zweiter Klick bestaetigt.
+        # Real: vorher Laufen stoppen und Arme sicher abgeben (_quit_real_begin).
+        self._quit_label = "Sim\nbeenden" if self.sim_mode else "Real\nbeenden"
+        self.btn_quit = big_button(self._quit_label, "#37474f", font=15, height=70)
         self.btn_quit.setFixedWidth(170)
-        self.btn_quit.setVisible(self.sim_mode)
         self._quit_css = self.btn_quit.styleSheet()
         self._quit_armed = 0        # >0: erster Klick erfolgt (Zaehler gegen alte Timer)
+        self._real_quit = 0         # >0: »Real beenden« laeuft (Zaehler gegen alte Timer)
         bottom.addWidget(self.btn_quit)
         self.btn_estop = QPushButton("NOT-HALT")
         self.btn_estop.setFixedSize(220, 90)
@@ -917,7 +926,7 @@ class DemoGUI(QWidget):
         self.btn_reset_scene.clicked.connect(lambda: self._pulse(n.pub_scene_reset))
         self.btn_push.clicked.connect(self._push)
         self.btn_reset_robot.clicked.connect(self._reset_robot)
-        self.btn_quit.clicked.connect(self._quit_sim)
+        self.btn_quit.clicked.connect(self._quit_clicked)
         self.walk_panel.on_station = self.go_to_station
         n.on_stations = self.walk_panel.set_stations
         if n.stations:
@@ -960,7 +969,8 @@ class DemoGUI(QWidget):
                          "GREIFEN antippen.", "#ef5350")
 
     def request_mode(self, mode, auto=False):
-        if not self.started or mode == self.mode or mode == self.pending:
+        if (not self.started or self._real_quit or mode == self.mode
+                or mode == self.pending):
             return
         if not auto:
             self.autostart.cancel("Modus gewählt")
@@ -1345,6 +1355,11 @@ class DemoGUI(QWidget):
 
     def _enter_estop(self):
         self._estop_shown = True
+        if self._real_quit:
+            # NOT-HALT hat Vorrang: »Real beenden« abbrechen, nichts stoppen.
+            self._real_quit = 0
+            self._disarm_quit()
+            self.btn_quit.setEnabled(True)
         # Auch NOT-HALT von aussen beendet einen laufenden Sim-Auto-Start.
         self.autostart.cancel("NOT-HALT")
         self._jog_holds.clear()
@@ -1361,9 +1376,12 @@ class DemoGUI(QWidget):
         self._status("NOT-HALT aktiv — Roboter ist weich geschaltet. "
                      "Zum Fortsetzen oben einen Modus wählen.", "#ef5350")
 
-    def _quit_sim(self):
+    def _quit_clicked(self):
         """Erster Klick: scharf schalten (Rueckfrage im Knopf). Zweiter Klick
-        innerhalb QUIT_CONFIRM_MS: Host-Watcher stoppt den Sim-Stack sofort."""
+        innerhalb QUIT_CONFIRM_MS: Sim -> Host-Watcher stoppt den Stack sofort;
+        Real -> erst Laufen stoppen und Arme abgeben (_quit_real_begin)."""
+        if self._real_quit:
+            return
         if not self._quit_armed:
             self._quit_armed += 1
             armed = self._quit_armed
@@ -1375,6 +1393,9 @@ class DemoGUI(QWidget):
             return
         self._quit_armed = 0
         self.btn_quit.setEnabled(False)
+        if not self.sim_mode:
+            self._quit_real_begin()
+            return
         self.btn_quit.setText("Sim wird\nbeendet …")
         try:
             with open(SIM_SHUTDOWN_TRIGGER, "w") as f:
@@ -1387,7 +1408,7 @@ class DemoGUI(QWidget):
 
     def _disarm_quit(self):
         self._quit_armed = 0
-        self.btn_quit.setText("Sim\nbeenden")
+        self.btn_quit.setText(self._quit_label)
         self.btn_quit.setStyleSheet(self._quit_css)
 
     def _check_quit_ack(self):
@@ -1405,6 +1426,88 @@ class DemoGUI(QWidget):
         self.btn_quit.setEnabled(True)
         self._status(f"Sim beenden geht nur bei Start über ./start.sh oder make sim. "
                      f"{reason} Im Terminal: make stop", "#ef5350")
+
+    # ── »Real beenden« ──────────────────────────────────────────────────
+    def _quit_real_begin(self):
+        """Real: 1) alles anhalten (Ablauf, AUTO NAV, Jog, WALK -> StopMove;
+        BALANCING wird NICHT neu gestartet, der Roboter bleibt im Onboard-
+        Zustand stehen), 2) Arme abgeben (ENABLE aus -> arm_controller faehrt
+        sie in die Pose vom ENABLE zurueck, dann Gewicht 1->0), 3) Stack per
+        Host-Watcher sanft stoppen. Beine: kein Damp -- ablegen per
+        Unitree-Fernbedienung."""
+        n = self.node
+        self._real_quit += 1
+        token = self._real_quit
+        self.btn_quit.setText("Arme werden\nabgegeben …")
+        self.autostart.cancel("Real beenden")
+        self._cancel_sequence()
+        self.set_auto_nav(False)
+        self.walk_panel.reset()
+        self.manip_panel.jog.reset()
+        self._jog_holds.clear()
+        # Laufen beenden: start_walking False -> loco_client StopMove. (Kein
+        # start_balancing: der Roboter steht schon; ein nicht balancierter
+        # Roboter wuerde sonst die Hoehenrampe starten.)
+        n.publish_bool(n.pub_start_walking, False)
+        self.mode = self.pending = None
+        self._refresh()
+        if n.arms_state:
+            n.publish_bool(n.pub_arms_enabled, False)
+            self._status("Real beenden: Arme fahren langsam in die Ausgangspose und "
+                         "werden an den Roboter übergeben …", "#ffb300")
+            self._real_quit_t0 = time.monotonic()
+            self._real_quit_poll(token)
+        else:
+            self._quit_real_shutdown(token)
+
+    def _real_quit_poll(self, token):
+        if token != self._real_quit:
+            return                      # abgebrochen (NOT-HALT)
+        if self.node.arms_state is False:
+            # arm_controller hat die Rueckfahrt beendet; jetzt laeuft noch die
+            # Gewichtsrampe 1->0 -> abwarten, dann den Stack stoppen.
+            QTimer.singleShot(REAL_RAMP_WAIT_MS, lambda: self._quit_real_shutdown(token))
+            return
+        if (time.monotonic() - self._real_quit_t0) * 1000.0 > REAL_RELEASE_TIMEOUT_MS:
+            # Keine Quittung: trotzdem beenden. Beim Stoppen (SIGTERM) gibt der
+            # arm_controller die Arme selbst langsam ab (shutdown_release).
+            self._status("Keine Rückmeldung vom Arm-Regler — beende trotzdem "
+                         "(er gibt die Arme beim Beenden selbst ab).", "#ffb300")
+            self._quit_real_shutdown(token)
+            return
+        QTimer.singleShot(200, lambda: self._real_quit_poll(token))
+
+    def _quit_real_shutdown(self, token):
+        if token != self._real_quit:
+            return
+        self.btn_quit.setText("Real wird\nbeendet …")
+        try:
+            with open(REAL_SHUTDOWN_TRIGGER, "w") as f:
+                f.write("quit")
+        except OSError as e:
+            self._real_quit_unavailable(f"Trigger-Datei nicht schreibbar ({e}).")
+            return
+        self._status("Arme übergeben — Stack wird beendet. Der Roboter bleibt im "
+                     "Onboard-Modus stehen: per Fernbedienung ablegen.", "#ffb300")
+        QTimer.singleShot(QUIT_ACK_TIMEOUT_MS, lambda: self._check_real_quit_ack(token))
+
+    def _check_real_quit_ack(self, token):
+        if token != self._real_quit:
+            return
+        if os.path.exists(REAL_SHUTDOWN_TRIGGER):
+            try:
+                os.remove(REAL_SHUTDOWN_TRIGGER)
+            except OSError:
+                pass
+            self._real_quit_unavailable("Kein Host-Watcher aktiv.")
+
+    def _real_quit_unavailable(self, reason):
+        self._real_quit = 0
+        self._disarm_quit()
+        self.btn_quit.setEnabled(True)
+        self._status(f"Arme sind abgegeben. Stack-Stopp geht nur bei Start über "
+                     f"./start.sh oder make real. {reason} Im Terminal: Strg+C "
+                     f"oder make stop", "#ef5350")
 
     def _status(self, text, color):
         self.status.setText(text)
