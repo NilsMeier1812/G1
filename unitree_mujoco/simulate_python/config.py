@@ -201,5 +201,6 @@ PUSH_UDP_PORT = int(os.environ.get("SIM_PUSH_PORT", "47900"))
 PUSH_BODY = os.environ.get("SIM_PUSH_BODY", "torso_link")     # Angriffspunkt
 PUSH_FORCE_N = float(os.environ.get("SIM_PUSH_FORCE_N", "150.0"))    # Kraft [N]
 PUSH_DURATION_S = float(os.environ.get("SIM_PUSH_DURATION_S", "0.12"))  # Dauer [s]
+PUSH_FORCE_CAP_N = float(os.environ.get("SIM_PUSH_FORCE_CAP_N", "3000.0"))  # Obergrenze aufgeladener Schubs [N]
 # Impuls = Kraft x Dauer (150 N x 0.12 s = 18 Ns -> bei ~40 kg ~0.45 m/s Stoss).
 # === SIM PUSH END ===

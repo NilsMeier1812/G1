@@ -68,7 +68,7 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy
-from std_msgs.msg import Bool, String
+from std_msgs.msg import Bool, Float32, String
 from geometry_msgs.msg import Twist
 from ament_index_python.packages import get_package_share_directory
 
@@ -78,6 +78,7 @@ from unitree_sdk2py.idl.default import unitree_hg_msg_dds__LowCmd_
 from unitree_sdk2py.utils.crc import CRC
 
 from g1pilot.utils.common import init_dds
+from g1pilot.utils import push_charge
 from g1pilot.navigation.walk_policy import get_gravity_orientation, load_walk_policy
 from g1pilot.navigation.stand_balancer import (
     BalancerParams, SettleGate, SettleParams, StandBalancer, TipDetector, TipParams,
@@ -249,6 +250,8 @@ class LocoSim(Node):
         self._push_port = int(os.environ.get("SIM_PUSH_PORT", "47900"))
         self._push_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.create_subscription(Bool, "/g1pilot/push", self._on_push, 10)
+        # Aufladbarer Schubs: Ladegrad 0..1 beim Loslassen des PUSH-Buttons.
+        self.create_subscription(Float32, "/g1pilot/push_charge", self._on_push_charge, 10)
 
         # GRASP BOX: Streamdeck-Toggle -> UDP an die Sim (greifbare Test-Kugel an/aus).
         self._grasp_port = int(os.environ.get("SIM_GRASP_PORT", "47901"))
@@ -466,6 +469,19 @@ class LocoSim(Node):
         try:
             self._push_sock.sendto(b"push", ("127.0.0.1", self._push_port))
             self.get_logger().info("PUSH -> Stoer-Impuls an die Sim.")
+        except OSError as e:
+            self.get_logger().warn(f"PUSH nicht gesendet: {e}")
+
+    def _on_push_charge(self, msg: Float32):
+        """Ladegrad 0..1 (Button gehalten) -> Kraft in N -> UDP an die Sim.
+        0 = kurzer Klick = bisheriger Schubs (Payload 'push' -> Kraft aus config)."""
+        level = min(1.0, max(0.0, float(msg.data)))
+        payload = b"push" if level <= 0.0 else f"{push_charge.force_for_level(level):.1f}".encode()
+        try:
+            self._push_sock.sendto(payload, ("127.0.0.1", self._push_port))
+            self.get_logger().info(
+                f"PUSH -> Stoer-Impuls an die Sim (Ladegrad {level*100:.0f} %, "
+                f"{push_charge.force_for_level(level):.0f} N).")
         except OSError as e:
             self.get_logger().warn(f"PUSH nicht gesendet: {e}")
 

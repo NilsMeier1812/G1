@@ -54,6 +54,8 @@ from g1pilot.navigation import scene_markers as sm
 from g1pilot.utils.window_style import DarkStyle
 from g1pilot.utils.common import is_sim_mode
 from g1pilot.utils import g1_temperature as g1t
+from g1pilot.utils import push_charge
+from g1pilot.utils.push_charge import PushCharger
 from g1pilot.teleoperation.sim_autostart import SimAutoStart
 from g1pilot.teleoperation.ui_interface import (
     StreamDeck, VirtualJoystick, PoseSaveDialog, PoseLoadDialog,
@@ -1073,7 +1075,13 @@ class DemoGUI(QWidget):
         self.btn_start.clicked.connect(self._start_robot)
         self.btn_estop.clicked.connect(self.emergency_stop)
         self.btn_reset_scene.clicked.connect(lambda: self._pulse(n.pub_scene_reset))
-        self.btn_push.clicked.connect(self._push)
+        # Halten = Schubs aufladen (Ladegrad im Button), Loslassen = schubsen.
+        self._push_charger = PushCharger()
+        self._push_timer = QTimer(self)
+        self._push_timer.setInterval(50)
+        self._push_timer.timeout.connect(self._push_refresh)
+        self.btn_push.pressed.connect(self._push_press)
+        self.btn_push.released.connect(self._push_release)
         self.btn_reset_robot.clicked.connect(self._reset_robot)
         self.btn_quit.clicked.connect(self._quit_clicked)
         self.walk_panel.on_station = self.go_to_station
@@ -1461,10 +1469,29 @@ class DemoGUI(QWidget):
         self.node.publish_bool(pub, True)
         QTimer.singleShot(duration, lambda: self.node.publish_bool(pub, False))
 
-    def _push(self):
-        """Wie PUSH ROBOT im Streamdeck: 400-ms-Impuls auf /g1pilot/push."""
-        self._pulse(self.node.pub_push, duration=400)
-        self._status("Roboter wird geschubst …", "#ffb300")
+    def _push_press(self):
+        """PUSH-Button gedrueckt: Aufladen beginnt (Anzeige im Button + Statuszeile)."""
+        self._push_charger.press()
+        self._push_timer.start()
+
+    def _push_refresh(self):
+        lvl = self._push_charger.level()
+        if lvl > 0.0:
+            f = push_charge.force_for_level(lvl)
+            self.btn_push.setText(f"Schubs\n{lvl*100:.0f} % · {f:.0f} N")
+            self._status(f"Schubs aufgeladen: {lvl*100:.0f} % ({f:.0f} N) – loslassen zum Schubsen",
+                         "#ffb300")
+
+    def _push_release(self):
+        """Loslassen: schubst mit der aufgeladenen Kraft (kurzer Klick = Standard-Schubs)."""
+        if not self._push_charger.holding:
+            return
+        self._push_timer.stop()
+        lvl = self._push_charger.release()
+        self.node.publish_push_charge(lvl)
+        self.btn_push.setText("Roboter\nschubsen")
+        f = push_charge.force_for_level(lvl)
+        self._status(f"Roboter wird geschubst … ({f:.0f} N)", "#ffb300")
 
     def _reset_robot(self):
         """Nur Sim: wie beim Start -> loco_sim HOLD; die Bridge stellt den Roboter
