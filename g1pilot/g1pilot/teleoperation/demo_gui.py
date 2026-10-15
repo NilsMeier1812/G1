@@ -37,7 +37,7 @@ import time
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QGridLayout, QPushButton, QVBoxLayout, QHBoxLayout,
     QLabel, QStackedWidget, QFrame, QDialog, QMessageBox, QSizePolicy,
-    QGraphicsOpacityEffect,
+    QGraphicsOpacityEffect, QTableWidget, QTableWidgetItem,
 )
 from PyQt6.QtCore import QTimer, Qt, QRectF, QPointF
 from PyQt6.QtGui import QPainter, QColor, QPen, QBrush
@@ -53,6 +53,7 @@ from g1pilot.navigation import scene_markers as sm
 
 from g1pilot.utils.window_style import DarkStyle
 from g1pilot.utils.common import is_sim_mode
+from g1pilot.utils import g1_temperature as g1t
 from g1pilot.teleoperation.sim_autostart import SimAutoStart
 from g1pilot.teleoperation.ui_interface import (
     StreamDeck, VirtualJoystick, PoseSaveDialog, PoseLoadDialog,
@@ -146,6 +147,10 @@ class DemoNode(StreamDeck):
         # Hand-Bridge (inspire_ftp/bridge.py): Einzelbefehle + Zustand.
         self.pub_hand_cmd = self.create_publisher(String, "/g1pilot/hand_cmd", 10)
         self.create_subscription(String, "/g1pilot/hand_status", self._hand_status, 10)
+        # Motor-/IMU-Temperaturen des echten G1 (robot_state, reiner Lesepfad).
+        self.temps = None
+        self.temps_t = None
+        self.create_subscription(String, "/g1pilot/temperatures", self._temperatures, 10)
         # Stations-Ziele aus der Szene (station_<Name>, siehe scene_bridge.py):
         # name -> (x, y, yaw). on_stations wird nur bei Aenderung gerufen.
         self.stations = {}
@@ -238,6 +243,11 @@ class DemoNode(StreamDeck):
         msg.pose.orientation.w = math.cos(yaw / 2.0)
         self.pub_goal.publish(msg)
 
+    def _temperatures(self, msg: String):
+        data = g1t.parse_payload(msg.data)
+        if data is not None:
+            self.temps, self.temps_t = data, time.monotonic()
+
     def _hand_status(self, msg: String):
         try:
             data = json.loads(msg.data)
@@ -256,6 +266,116 @@ class DemoNode(StreamDeck):
 
 
 # ── Bereich 1: Modus-Kachel ──────────────────────────────────────────────
+class TempPanel(QFrame):
+    """Real: Temperaturen des G1. Links der heisseste Motor, daneben je Gruppe
+    (Bein L/R, Taille, Arm L/R) das Maximum, farbig nach Schwelle. Klick =
+    Tabelle aller 29 Motoren (beide Sensoren) + IMU."""
+
+    def __init__(self, node):
+        super().__init__()
+        self.node = node
+        self.warn, self.crit = g1t.thresholds()
+        self.setObjectName("temp")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setStyleSheet("QFrame#temp { background:#1b1b1b; border:1px solid #333;"
+                           " border-radius:8px; } QLabel { background:transparent; }")
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(10, 6, 10, 6)
+        lay.setSpacing(8)
+        cap = QLabel("TEMP.\nMOTOREN")
+        cap.setStyleSheet("color:#777; font-size:11px; font-weight:700;")
+        lay.addWidget(cap)
+        self.tiles = {}
+        for key, title in (("max", "Max"),) + tuple((k, t) for k, t, _ in g1t.GROUPS):
+            tile = QLabel()
+            tile.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            tile.setMinimumWidth(96 if key == "max" else 78)
+            tile.setFixedHeight(56)
+            lay.addWidget(tile)
+            self.tiles[key] = tile
+            self._paint(tile, title, "–", "", "none")
+        self.dialog = None
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.refresh)
+        self.timer.start(500)
+        self.refresh()
+
+    @staticmethod
+    def _paint(tile, title, value, sub, lvl):
+        tile.setText(f"<div style='font-size:10px; color:#ddd'>{title}</div>"
+                     f"<div style='font-size:17px; font-weight:800'>{value}</div>"
+                     f"<div style='font-size:9px; color:#eee'>{sub}</div>")
+        tile.setStyleSheet(f"background:{g1t.LEVEL_COLOR[lvl]}; color:white;"
+                           " border-radius:6px;")
+
+    def refresh(self):
+        data = self.node.temps
+        if data is None or g1t.is_stale(self.node.temps_t, time.monotonic()):
+            for key, tile in self.tiles.items():
+                title = "Max" if key == "max" else dict((k, t) for k, t, _ in g1t.GROUPS)[key]
+                self._paint(tile, title, "–", "keine Daten", "none")
+                tile.setToolTip("Keine Temperaturdaten vom Roboter (robot_state).")
+            return
+        idx, top = g1t.hottest(data)
+        self._paint(self.tiles["max"], "Max", f"{top:.0f} °C", g1t.motor_label(idx),
+                    g1t.level(top, self.warn, self.crit))
+        self.tiles["max"].setToolTip(f"Heissester Motor: {g1t.motor_label(idx)}, {top:.0f} °C")
+        for g in g1t.group_summary(data):
+            tile = self.tiles[g["key"]]
+            self._paint(tile, g["title"], f"{g['max']:.0f} °C", g["label"],
+                        g1t.level(g["max"], self.warn, self.crit))
+            tile.setToolTip("\n".join(
+                f"{g1t.motor_label(i)}: {t:.0f} °C" for i, t in g["temps"].items()))
+        if self.dialog is not None and self.dialog.isVisible():
+            self._fill_dialog(data)
+
+    # ── Detailtabelle ───────────────────────────────────────────────
+    def mousePressEvent(self, e):
+        data = self.node.temps
+        if data is None:
+            return
+        if self.dialog is None:
+            self.dialog = QDialog(self)
+            self.dialog.setWindowTitle("Motortemperaturen")
+            self.dialog.setStyleSheet("QDialog { background:#111; } QLabel { color:#ddd; }"
+                                      " QTableWidget { background:#1b1b1b; color:white;"
+                                      " gridline-color:#333; }"
+                                      " QHeaderView::section { background:#222; color:#aaa; }")
+            v = QVBoxLayout(self.dialog)
+            self.table = QTableWidget(g1t.N_MOTORS + 1, 4)
+            self.table.setHorizontalHeaderLabels(["Motor", "Sensor 1 [°C]", "Sensor 2 [°C]", "Spannung [V]"])
+            self.table.verticalHeader().setVisible(False)
+            self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+            self.table.setColumnWidth(0, 200)
+            for c in (1, 2, 3):
+                self.table.setColumnWidth(c, 110)
+            v.addWidget(self.table)
+            v.addWidget(QLabel(f"Gelb ab {self.warn:.0f} °C, rot ab {self.crit:.0f} °C "
+                               "(Annahme, anpassbar: G1_TEMP_WARN / G1_TEMP_CRIT)."))
+            self.dialog.resize(600, 760)
+        self._fill_dialog(data)
+        self.dialog.show()
+        self.dialog.raise_()
+
+    def _fill_dialog(self, data):
+        def cell(r, c, text, lvl=None):
+            it = QTableWidgetItem(text)
+            if lvl:
+                it.setBackground(QColor(g1t.LEVEL_COLOR[lvl]))
+            self.table.setItem(r, c, it)
+        for i in range(g1t.N_MOTORS):
+            cell(i, 0, g1t.motor_label(i))
+            for c in (0, 1):
+                t = data["t"][i][c]
+                cell(i, c + 1, f"{t:.0f}", g1t.level(t, self.warn, self.crit))
+            cell(i, 3, f"{data['v'][i]:.1f}" if i < len(data["v"]) else "–")
+        r = g1t.N_MOTORS
+        cell(r, 0, "IMU")
+        cell(r, 1, f"{data['imu']:.0f}", g1t.level(data["imu"], self.warn, self.crit))
+        cell(r, 2, "–")
+        cell(r, 3, "–")
+
+
 class ModeTile(QPushButton):
     """Grosse Kachel mit drei sichtbaren Zustaenden: aktiv / wechselt / inaktiv."""
 
@@ -893,6 +1013,12 @@ class DemoGUI(QWidget):
         self.status = QLabel()
         self.status.setWordWrap(True)
         self.status.setMinimumHeight(56)
+        # Real: Temperaturen des G1 (links; in der Sim ausgeblendet, kein Messwert).
+        self.temp_panel = TempPanel(self.node)
+        self.temp_panel.setVisible(not self.sim_mode)
+        if self.sim_mode:
+            self.temp_panel.timer.stop()
+        bottom.addWidget(self.temp_panel)
         bottom.addStretch(1)
         self.btn_reset_scene = big_button("Szene\nzurücksetzen", font=15, height=70)
         self.btn_reset_scene.setFixedWidth(170)

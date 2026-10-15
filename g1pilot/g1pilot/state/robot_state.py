@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import time
+
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile
 
 from sensor_msgs.msg import JointState, Imu
-from std_msgs.msg import Header
+from std_msgs.msg import Header, String
 from geometry_msgs.msg import TransformStamped
 from tf2_ros import TransformBroadcaster
 
@@ -16,6 +18,7 @@ from unitree_sdk2py.core.channel import ChannelSubscriber
 from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_
 
 from g1pilot.utils.common import init_dds
+from g1pilot.utils import g1_temperature
 
 
 class G1JointIndex:
@@ -108,6 +111,10 @@ class RobotState(Node):
         self.joint_pub = self.create_publisher(JointState, "/joint_states", qos_profile)
         self.imu_pub = self.create_publisher(Imu, f"{self.ns}/imu", qos_profile)
         self.motor_state_pub = self.create_publisher(MotorStateList, f"{self.ns}/motor_state", qos_profile)
+        # Temperaturen (nur Lesen aus rt/lowstate): 29 Motoren x 2 Sensoren + IMU,
+        # als JSON (g1_temperature.build_payload), 2 Hz -> Anzeige der Demo-GUI.
+        self.temp_pub = self.create_publisher(String, f"{self.ns}/temperatures", qos_profile)
+        self._temp_last = 0.0
         self.tf_broadcaster = TransformBroadcaster(self)
 
         self.joint_indices = sorted(_joint_index_to_ros_name.keys())
@@ -180,11 +187,26 @@ class RobotState(Node):
                 positions.append(float(m.q))
 
         self.motor_state_pub.publish(motor_list_msg)
+        self._publish_temperatures(msg)
 
         if self.publish_joint_states:
             self.joint_state_msg.header.stamp = now
             self.joint_state_msg.position = positions + self.hand_joint_zeros
             self.joint_pub.publish(self.joint_state_msg)
+
+    def _publish_temperatures(self, msg: LowState_):
+        """Temperaturen mit 2 Hz; ein Fehler hier darf den Lowstate-Callback
+        (Gelenkzustaende/TF) nie stoeren."""
+        t = time.monotonic()
+        if t - self._temp_last < 0.5:
+            return
+        self._temp_last = t
+        try:
+            payload = g1_temperature.build_payload(msg.motor_state, msg.imu_state.temperature)
+            self.temp_pub.publish(String(data=payload))
+        except Exception as e:  # noqa: BLE001
+            self.get_logger().warn(f"Temperatur-Aufbereitung fehlgeschlagen: {e}",
+                                   throttle_duration_sec=10.0)
 
     def _sim_tick(self):
         now = self.get_clock().now().to_msg()
