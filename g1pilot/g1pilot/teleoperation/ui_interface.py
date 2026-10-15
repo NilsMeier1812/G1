@@ -20,10 +20,12 @@ from PyQt6.QtGui import QPainter, QColor, QPen, QBrush
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy
-from std_msgs.msg import Bool, String
+from std_msgs.msg import Float32, Bool, String
 from geometry_msgs.msg import Twist
 from g1pilot.utils.window_style import DarkStyle
 from g1pilot.utils.common import is_sim_mode
+from g1pilot.utils import push_charge
+from g1pilot.utils.push_charge import PushCharger
 from g1pilot.teleoperation.sim_autostart import (
     SimAutoStart, ARMS_STATE_TOPIC, LOCO_STATE_TOPIC)
 
@@ -290,6 +292,8 @@ class StreamDeck(Node):
         self.pub_right_hand = self.create_publisher(String, '/g1pilot/hand_action/right', 10)
         self.pub_emergency_stop = self.create_publisher(Bool, '/g1pilot/emergency_stop', 10)
         self.pub_push = self.create_publisher(Bool, '/g1pilot/push', 10)
+        # Aufladbarer Schubs: Ladegrad 0..1 beim Loslassen (siehe utils/push_charge.py).
+        self.pub_push_charge = self.create_publisher(Float32, '/g1pilot/push_charge', 10)
         self.pub_grasp_box = self.create_publisher(Bool, '/g1pilot/grasp_box', 10)
         self.pub_scene_reset = self.create_publisher(Bool, '/g1pilot/scene_reset', 10)
         self.pub_catch_falls = self.create_publisher(Bool, '/g1pilot/catch_falls', 10)
@@ -321,6 +325,12 @@ class StreamDeck(Node):
         msg = Bool()
         msg.data = value
         pub.publish(msg)
+
+    def publish_push_charge(self, level: float):
+        """Ladegrad 0..1 des Schubses (0 = kurzer Klick) an loco_sim."""
+        msg = Float32()
+        msg.data = float(level)
+        self.pub_push_charge.publish(msg)
 
     def publish_str(self, pub, text: str):
         msg = String()
@@ -438,9 +448,9 @@ class ButtonGUI(QWidget):
         # Stoerunterdrueckung des Balancers zu pruefen. Auf dem echten G1 gibt
         # es keinen Empfaenger und der Button waere nur eine Falle -> nur Sim.
         if self.sim_mode:
-            button_actions[(1, 4)] = (
-                "PUSH\nROBOT",
-                lambda: self.flash_button((1, 4), self.node.pub_push, duration=400))
+            # Kurz klicken = Schubs wie bisher; Halten = aufladen (Anzeige im Button),
+            # Loslassen schubst mit der aufgeladenen Kraft (utils/push_charge.py).
+            button_actions[(1, 4)] = ("PUSH\nROBOT", None)
 
             # Greifbare Test-Kugel in der Sim an/aus (Toggle). Nur Sim: die echte Hand
             # hat kein solches Objekt -> auf Real waere der Button eine Falle.
@@ -473,7 +483,10 @@ class ButtonGUI(QWidget):
                 else:
                     label, func = action
                     btn.setText(label)
-                    btn.clicked.connect(func)
+                    if func is None:
+                        self._wire_push_button((r, c), btn, label)
+                    else:
+                        btn.clicked.connect(func)
                     if (r, c) == (4, 4):
                         btn.setStyleSheet("""
                             QPushButton {
@@ -583,6 +596,37 @@ class ButtonGUI(QWidget):
             self.apply_style()
 
         self.button_states[pos] = active
+
+    def _wire_push_button(self, pos, btn, label):
+        """PUSH ROBOT: Halten laedt den Schubs auf, Loslassen schubst.
+        Waehrend des Haltens zeigt der Button Ladegrad und Kraft."""
+        charger = PushCharger()
+        timer = QTimer(self)
+        timer.setInterval(50)
+
+        def refresh():
+            lvl = charger.level()
+            if lvl > 0.0:
+                btn.setText(f"PUSH {lvl*100:.0f} %\n{push_charge.force_for_level(lvl):.0f} N")
+
+        def pressed():
+            charger.press()
+            self.set_button_active(pos, True)
+            timer.start()
+
+        def released():
+            if not charger.holding:
+                return
+            timer.stop()
+            lvl = charger.release()
+            self.node.publish_push_charge(lvl)
+            btn.setText(label)
+            self.set_button_active(pos, False)
+
+        timer.timeout.connect(refresh)
+        btn.pressed.connect(pressed)
+        btn.released.connect(released)
+        self._push_timer = timer
 
     def flash_button(self, pos, pub, duration=1000):
         """Temporarily activates button for <duration> ms then resets."""

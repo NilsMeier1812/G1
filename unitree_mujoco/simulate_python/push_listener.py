@@ -14,7 +14,8 @@ laufen im network_mode: host -> Loopback verbindet sie ohne DDS-IDL/ROS hier.
 
 Protokoll: Ein UDP-Datagramm = ein Stoss. Leerer/nicht-numerischer Payload
 -> Kraft aus config (PUSH_FORCE_N). Enthaelt der Payload eine Zahl, wird sie
-als Kraft [N] verwendet (CLI-Tuning ohne Neustart). Die RICHTUNG ist immer
+als Kraft [N] verwendet (CLI-Tuning ohne Neustart; der aufladbare PUSH-Button
+der GUIs schickt so die aufgeladene Kraft, begrenzt auf PUSH_FORCE_CAP_N). Die RICHTUNG ist immer
 zufaellig (gleichverteilt in der Horizontalen).
 """
 import math
@@ -32,6 +33,8 @@ class PushListener:
         self.port = int(getattr(config, "PUSH_UDP_PORT", 47900))
         self.force_n = float(getattr(config, "PUSH_FORCE_N", 150.0))
         self.duration = float(getattr(config, "PUSH_DURATION_S", 0.12))
+        # Obergrenze fuer per UDP-Payload (aufgeladener Schubs) angeforderte Kraefte.
+        self.force_cap = float(getattr(config, "PUSH_FORCE_CAP_N", 1000.0))
         body_name = str(getattr(config, "PUSH_BODY", "torso_link"))
 
         self._lock = threading.Lock()
@@ -87,7 +90,13 @@ class PushListener:
                     mag = float(txt)
             except (ValueError, UnicodeDecodeError):
                 pass
-            self._trigger(mag)
+            self._trigger(self.clamp_force(mag))
+
+    def clamp_force(self, mag):
+        """Payload-Kraft auf [0, force_cap] begrenzen (NaN/inf -> Default-Kraft)."""
+        if not math.isfinite(mag):
+            return self.force_n
+        return min(max(mag, 0.0), self.force_cap)
 
     def _trigger(self, magnitude):
         angle = random.uniform(0.0, 2.0 * math.pi)
