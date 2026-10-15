@@ -148,6 +148,11 @@ Läuft in einem eigenen Thread, getaktet über `control_dt` aus
 - **Echtzeit** (`SIM_LOCKSTEP=0`): schläft die Restzeit von `control_dt`
   ab; `SIM_REALTIME_FACTOR` skaliert das Tempo.
 
+Statuszeile: Alle ~100 Takte prüft `_check_loop_health` Regeltakt und Neigung und
+warnt nur bei Auffälligkeit (Takt < 90 % vom Soll oder Neigung > ca. 26°, höchstens
+alle 30 s). Mit `G1_LOCO_DEBUG=1` (Umgebungsvariable, Standard aus) kommt zusätzlich
+die volle Zeile `[stand] eff=… grav=… cmd=…`.
+
 `_send_hold` / `_send_damp` / `_send_balance_pd` / `_send_policy` schreiben
 jeweils `rt/lowcmd` und (über `_write`) einen Zustandscode in
 `motor_cmd[29].q` (`STATE_IDX`), den die Bridge zur Basis-Physik nutzt

@@ -97,6 +97,12 @@ STATE_IDX = 29
 LOCO_CODE = {HOLD: 0.0, STAND: 1.0, WALK: 1.0, DAMP: 2.0}
 
 NJ = 29            # G1: 29 Gelenke
+
+# Regelschleifen-Ueberwachung: nur bei Auffaelligkeit loggen (G1_LOCO_DEBUG=1 = immer).
+LOCO_DEBUG = os.environ.get("G1_LOCO_DEBUG", "0").strip().lower() in ("1", "true", "yes", "on")
+LOOP_HZ_WARN_FRAC = 0.9        # Regeltakt < 90 % vom Soll -> melden
+LOOP_TILT_WARN_GZ = -0.9       # Schwerkraft-z im Rumpf > -0.9 (~26 Grad Neigung) -> melden
+LOOP_HEALTH_LOG_PERIOD_S = 30.0
 # Die ARME (15..28) regelt loco_sim BEWUSST NICHT -- sie gehoeren komplett dem
 # arm_controller (rt/arm_sdk, via rviz/Marker). loco_sim schreibt nur Beine (0..11)
 # und Taille (12..14). So koennen die Arme nie von loco_sim "teleportiert" werden.
@@ -237,7 +243,7 @@ class LocoSim(Node):
         self._walk_pending = False         # WALK angefordert, warte auf Arme
         self._walk_pending_t0 = 0.0
         self._dbg_grav = np.array([0.0, 0.0, -1.0], dtype=np.float32)
-        self._dbg_gyro = np.zeros(3, dtype=np.float32)
+        self._health_log_t = -1e9           # letzte Auffaelligkeits-Meldung der Regelschleife
 
         self.create_subscription(Bool, "/g1pilot/start_balancing", self._on_start_balancing, 10)
         self.create_subscription(Bool, "/g1pilot/start_walking", self._on_start_walking, 10)
@@ -514,6 +520,29 @@ class LocoSim(Node):
             self._fall_since = None
         return False
 
+    def _check_loop_health(self, n, span):
+        """Alle ~100 Takte: Regeltakt und Neigung pruefen. Gemeldet wird nur bei
+        Auffaelligkeit (max. alle 30 s); die volle Statuszeile gibt es nur mit
+        G1_LOCO_DEBUG=1."""
+        hz = n / span if span > 0 else 0.0
+        eff = (1.0 / self.control_dt) if self.lockstep else hz
+        g = self._dbg_grav
+        soll = 1.0 / self.control_dt
+        problems = []
+        if eff < LOOP_HZ_WARN_FRAC * soll:
+            problems.append(f"Regeltakt zu langsam: {eff:.1f} Hz (soll {soll:.0f})")
+        if float(g[2]) > LOOP_TILT_WARN_GZ:
+            problems.append(f"Neigung gross: grav=[{g[0]:+.2f} {g[1]:+.2f} {g[2]:+.2f}]")
+        now = time.perf_counter()
+        if problems and now - self._health_log_t >= LOOP_HEALTH_LOG_PERIOD_S:
+            self._health_log_t = now
+            self.get_logger().warn(f"[{self.state}] " + "; ".join(problems))
+        elif LOCO_DEBUG:
+            self.get_logger().info(
+                f"[{self.state}] eff={eff:.1f}Hz (soll {soll:.0f}) "
+                f"grav=[{g[0]:+.2f} {g[1]:+.2f} {g[2]:+.2f}] "
+                f"cmd=[{self.cmd[0]:+.2f} {self.cmd[1]:+.2f} {self.cmd[2]:+.2f}]")
+
     # ── Regelschleife ────────────────────────────────────────────────────────
     def _control_loop(self):
         diag_n = 0
@@ -548,15 +577,7 @@ class LocoSim(Node):
             if self.state in (STAND, WALK):
                 diag_n += 1
                 if diag_n >= 100:
-                    span = time.perf_counter() - diag_t0
-                    hz = diag_n / span if span > 0 else 0.0
-                    eff = (1.0 / self.control_dt) if self.lockstep else hz
-                    g = self._dbg_grav
-                    self.get_logger().info(
-                        f"[{self.state}] eff={eff:.1f}Hz (soll 50) "
-                        f"grav=[{g[0]:+.2f} {g[1]:+.2f} {g[2]:+.2f}] "
-                        f"cmd=[{self.cmd[0]:+.2f} {self.cmd[1]:+.2f} {self.cmd[2]:+.2f}]"
-                        + ("  <-- ZU LANGSAM!" if eff < 45 else ""))
+                    self._check_loop_health(diag_n, time.perf_counter() - diag_t0)
                     diag_n = 0
                     diag_t0 = time.perf_counter()
             else:
@@ -651,7 +672,6 @@ class LocoSim(Node):
         gyro = np.array(ls.imu_state.gyroscope, dtype=np.float32)
         g = get_gravity_orientation(ls.imu_state.quaternion)
         self._dbg_grav = g.copy()
-        self._dbg_gyro = gyro.copy()
 
         if self._fallen(g):
             self.state = DAMP
@@ -685,7 +705,6 @@ class LocoSim(Node):
         gyro = np.array(ls.imu_state.gyroscope, dtype=np.float32)
         gravity = get_gravity_orientation(ls.imu_state.quaternion)
         self._dbg_grav = gravity.copy()
-        self._dbg_gyro = gyro.copy()
         with self._lock:
             cmd = self.cmd.copy()
 
