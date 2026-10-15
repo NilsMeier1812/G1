@@ -34,7 +34,7 @@ class PushListener:
         self.force_n = float(getattr(config, "PUSH_FORCE_N", 150.0))
         self.duration = float(getattr(config, "PUSH_DURATION_S", 0.12))
         # Obergrenze fuer per UDP-Payload (aufgeladener Schubs) angeforderte Kraefte.
-        self.force_cap = float(getattr(config, "PUSH_FORCE_CAP_N", 1000.0))
+        self.force_cap = float(getattr(config, "PUSH_FORCE_CAP_N", 3000.0))
         body_name = str(getattr(config, "PUSH_BODY", "torso_link"))
 
         self._lock = threading.Lock()

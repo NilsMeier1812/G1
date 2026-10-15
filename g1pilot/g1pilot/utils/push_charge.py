@@ -8,7 +8,7 @@ entspricht MAX_N. Die Kraft wirkt weiter PUSH_DURATION_S (0.12 s) -> Impuls = F 
 Reines Python (kein Qt/ROS), damit GUI (Anzeige) und loco_sim (Umrechnung auf Newton)
 dieselbe Formel benutzen und sie ohne Roboter testbar ist. Einstellbar per Umgebung:
     SIM_PUSH_FORCE_N  Kraft bei Ladegrad 0 [N]   (Default 150, wie push_listener/config)
-    G1_PUSH_MAX_N     Kraft bei Ladegrad 1 [N]   (Default 500)
+    G1_PUSH_MAX_N     Kraft bei Ladegrad 1 [N]   (Default 2000)
     G1_PUSH_CHARGE_S  Haltedauer bis voll [s]    (Default 3.0)
     G1_PUSH_TAP_S     Klick bis zu dieser Dauer = kein Aufladen [s] (Default 0.3)
 """
@@ -24,7 +24,7 @@ def _env_float(name, default):
 
 
 BASE_N = _env_float("SIM_PUSH_FORCE_N", 150.0)
-MAX_N = _env_float("G1_PUSH_MAX_N", 500.0)
+MAX_N = _env_float("G1_PUSH_MAX_N", 2000.0)
 CHARGE_S = _env_float("G1_PUSH_CHARGE_S", 3.0)
 TAP_S = _env_float("G1_PUSH_TAP_S", 0.3)
 PUSH_DURATION_S = _env_float("SIM_PUSH_DURATION_S", 0.12)

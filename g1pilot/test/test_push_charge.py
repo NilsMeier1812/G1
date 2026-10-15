@@ -52,7 +52,7 @@ def test_charger_with_fake_clock():
     assert ch.release() == 1.0 and not ch.holding
 
 
-def _listener(port, cap=1000.0):
+def _listener(port, cap=3000.0):
     sys.path.insert(0, os.path.join(REPO, "unitree_mujoco", "simulate_python"))
     from push_listener import PushListener
     model = types.SimpleNamespace(body=lambda n: types.SimpleNamespace(id=1))
@@ -66,7 +66,7 @@ def test_listener_clamp_and_udp_payload():
     s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
     pl = _listener(port)
     assert pl.clamp_force(400.0) == 400.0
-    assert pl.clamp_force(1e9) == 1000.0
+    assert pl.clamp_force(1e9) == 3000.0
     assert pl.clamp_force(-5.0) == 0.0
     assert pl.clamp_force(float("nan")) == 150.0
     time.sleep(0.3)
@@ -74,7 +74,7 @@ def test_listener_clamp_and_udp_payload():
     class D: xfrc_applied = np.zeros((3, 6))
     d = D()
     tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    for payload, expect in ((b"push", 150.0), (b"325.5", 325.5), (b"99999", 1000.0)):
+    for payload, expect in ((b"push", 150.0), (b"325.5", 325.5), (b"99999", 3000.0)):
         tx.sendto(payload, ("127.0.0.1", port))
         time.sleep(0.1)
         pl.apply(d)

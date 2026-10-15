@@ -323,10 +323,10 @@ Live änderbar via `ros2 param set /loco_sim <name> <wert>`.
   (≤ 0,3 s) = Schubs wie bisher (150 N, 0,12 s, Impuls 18 N·s). Gehaltener Button
   lädt auf: Ladegrad wächst linear nach 0,3 s bis 100 % bei 3,0 s; der Button zeigt
   Prozent und Kraft, Loslassen schubst (Topic `/g1pilot/push_charge`, Float32 =
-  Ladegrad 0..1; loco_sim rechnet in N um). Kraft = 150 N + Ladegrad · (500 − 150) N,
-  Dauer bleibt 0,12 s (500 N → 60 N·s). Formel: `g1pilot/utils/push_charge.py`;
+  Ladegrad 0..1; loco_sim rechnet in N um). Kraft = 150 N + Ladegrad · (2000 − 150) N,
+  Dauer bleibt 0,12 s (2000 N → 240 N·s). Formel: `g1pilot/utils/push_charge.py`;
   einstellbar per Umgebung `SIM_PUSH_FORCE_N`, `G1_PUSH_MAX_N`, `G1_PUSH_CHARGE_S`,
-  `G1_PUSH_TAP_S`; die Sim kappt Schübe bei `SIM_PUSH_FORCE_CAP_N` (1000 N).
+  `G1_PUSH_TAP_S`; die Sim kappt Schübe bei `SIM_PUSH_FORCE_CAP_N` (3000 N).
 - **GRASP BOX** (`/g1pilot/grasp_box`) — schaltet eine greifbare Testkugel
   in der Handfläche an/aus (Inspire-Hände, siehe
   [61_inspire_haende_technik.md](61_inspire_haende_technik.md)).
