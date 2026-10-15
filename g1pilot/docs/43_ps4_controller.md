@@ -272,6 +272,30 @@ Fahrt); steht 0–1 s nach dem Loslassen (vorher 1,5–1,8 s). Real
 (30–50 Hz Regeltakt) wird es schneller sein; offline (IK allein, 40 Hz)
 fährt das Kommando nach ~0,2 s 5 mm.
 
+### Nebenachsen halten (2026-10-14)
+
+Beim Verfahren kippte die Hand nach oben und wanderte quer. Ursache: jedes
+neue Jog-Ziel startete an der **gemessenen** Hand (TF). Gemessen und
+kommandiert unterscheiden sich um einen bleibenden Regelfehler (Sim ~3°
+Kippen + ~1 cm); der Arm übernahm ihn bei jeder Fahrt erneut (Ratsche). Die
+IK selbst hält die Orientierung (offline < 1°).
+
+Jetzt startet ein neues Ziel an der **kommandierten** Hand: der arm_controller
+sendet sie auf `/g1pilot/hand_cmd_pose/<side>` (FK der Soll-Gelenke, mit
+EE-Offsets, ≤ 30 Hz, erst nach der Auto-Kalibrierung der Seite). Vorlauf und
+Anhalten bleiben an der gemessenen Hand (Vorlauf relativ zur kommandierten
+Hand machte die Fahrt unruhiger und lief nach). Fehlt das Topic, gilt TF wie
+bisher. Parameter `jog_reference`: `command` (Sim-Default) | `tf`
+(Real-Default, bis zum ersten Test am Roboter), live umschaltbar; die
+Demo-GUI folgt dem Sim-/Real-Modus.
+
+Sim (ohne Inspire-Hände, 5 Startposen × 6 Richtungen, je 10 cm, Normal),
+vorher → nachher: Kippen nach der Fahrt Median 3,1° → 0,6°, Querversatz
+0,9 → 0,4 cm; 8× Tippen vor/zurück: Kippen 15° → 0,4°, Rückkehrfehler
+7,4 → 4,5 cm. Grenzen: Richtung Körpermitte und am Rand der Reichweite
+kippt die Hand in beiden Varianten während der Fahrt kurz bis ~10°
+(Gelenkgrenzen/Kollisions-Gate). Messskript: `jog_axis_probe_sim.py`.
+
 ### Parameter `ps4_arm_teleop`
 
 | Parameter | Default | Bedeutung |
@@ -285,6 +309,7 @@ fährt das Kommando nach ~0,2 s 5 mm.
 | `home_hold_s` | 1.0 | Share-Haltezeit für Grundstellung |
 | `joy_timeout_s` | 0.5 | Abriss-Erkennung |
 | `options_starts_balancing` | `true` (Real `false`) | Options sendet zusätzlich `start_balancing` |
+| `jog_reference` | `command` (Real `tf`) | Startpose neuer Jog-Ziele: kommandierte Hand (`/g1pilot/hand_cmd_pose`) oder gemessene (TF) |
 
 ### Tests
 

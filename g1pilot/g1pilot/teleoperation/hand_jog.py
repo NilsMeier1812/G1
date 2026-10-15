@@ -6,7 +6,8 @@ Gemeinsam genutzt von der Demo-GUI (Bildschirm-Joystick, demo_gui.py) und dem
 PS4-Controller (ps4_arm_teleop.py). Beide schicken kartesische Hand-Ziele im
 pelvis-Frame auf /g1pilot/hand_goal/<side>; der arm_controller loest per IK.
 
-Prinzip: Das Ziel startet an der echten Hand (TF) und wird mit der Soll-
+Prinzip: Das Ziel startet an der Hand (kommandiert, sonst TF -- siehe
+JOG_CMD_TOPIC) und wird mit der Soll-
 Geschwindigkeit verschoben/gedreht, laeuft der echten Hand aber hoechstens
 `lead_m` / `lead_rad` voraus. Sonst wuerde es weiterwandern, wenn der Arm
 nicht folgen kann (Gelenkgrenze, Tisch), und beim Loslassen noch lange
@@ -18,6 +19,41 @@ import math
 # Hand-Ziele im pelvis-Frame, Hand-Pose per TF (wie RViz-Marker und Demo-GUI).
 JOG_FRAME = "pelvis"
 JOG_TF = {"left": "left_hand_point_contact", "right": "right_hand_point_contact"}
+
+# Startpose eines neuen Jog-Ziels: die KOMMANDIERTE Hand (FK der Soll-Gelenke,
+# vom arm_controller auf diesem Topic) statt der gemessenen (TF). Gemessen und
+# kommandiert unterscheiden sich um einen bleibenden Regelfehler (Durchhang,
+# Schwerkraft-Vorsteuerung, Gelenk-PD; in der Sim ~3 Grad Kippen + ~1 cm).
+# Startete jedes Jog-Ziel an der gemessenen Hand, uebernahm der Arm diesen
+# Versatz bei JEDER Fahrt erneut: die Hand kippte pro Fahrt ein Stueck weiter
+# (gemessen: nach 8x Tippen 9-18 Grad) und wanderte in den Nebenachsen.
+# NUR der Start: Vorlauf-Begrenzung und Anhalten bleiben an der gemessenen
+# Hand. Vorlauf relativ zur kommandierten Hand liess das Ziel weiter
+# vorauslaufen -> waehrend der Fahrt deutlich mehr Kippen/Querversatz und
+# Nachlauf (in der Sim gemessen). Fehlt das Topic, startet das Ziel an TF.
+JOG_CMD_TOPIC = "/g1pilot/hand_cmd_pose/{side}"
+JOG_CMD_MAX_AGE_S = 0.3
+
+
+class CommandedPoses:
+    """Letzte kommandierte Handpose je Seite (aus JOG_CMD_TOPIC) mit Alter.
+
+    update(side, pos, quat, now) -> merken
+    get(side, now)               -> (pos, quat) oder None (keine/zu alt)
+    """
+
+    def __init__(self, max_age_s=JOG_CMD_MAX_AGE_S):
+        self.max_age_s = float(max_age_s)
+        self._poses = {}
+
+    def update(self, side, pos, quat, now):
+        self._poses[side] = ((list(pos), tuple(quat)), now)
+
+    def get(self, side, now):
+        entry = self._poses.get(side)
+        if entry is None or now - entry[1] > self.max_age_s:
+            return None
+        return entry[0]
 
 # Tempo-Stufen bei Vollausschlag: (Verschieben m/s, Drehen rad/s).
 JOG_SPEEDS = {"Langsam": (0.05, math.radians(20)),
@@ -84,18 +120,22 @@ def lead_limits(lin_speed, ang_speed):
             max(JOG_MIN_LEAD_RAD, ang_speed * JOG_LEAD_S))
 
 
-def jog_step(target, hand, lin, ang, dt, lead_m, lead_rad):
+def jog_step(target, hand, lin, ang, dt, lead_m, lead_rad, start=None):
     """Einen Jog-Schritt rechnen.
 
-    target : [pos(list3), quat(tuple4)] bisheriges Ziel (oder None -> Start an der Hand)
-    hand   : (pos, quat) echte Hand im JOG_FRAME
+    target : [pos(list3), quat(tuple4)] bisheriges Ziel (oder None -> Start bei
+             `start`, ohne `start` an der Hand)
+    hand   : (pos, quat) echte Hand im JOG_FRAME (Vorlauf-Begrenzung)
+    start  : (pos, quat) Startpose eines neuen Ziels, i.d.R. die KOMMANDIERTE
+             Hand (JOG_CMD_TOPIC) -- oder None
     lin    : (vx, vy, vz) m/s im JOG_FRAME
     ang    : (wx, wy, wz) rad/s um feste JOG_FRAME-Achsen, Drehpunkt = Hand
     -> neues Ziel [pos, quat]
     """
     pos, rot = hand
     if target is None:
-        target = [list(pos), tuple(rot)]
+        sp0, sq0 = start if start is not None else hand
+        target = [list(sp0), tuple(sq0)]
     # Verschieben, Vorlauf zur echten Hand begrenzen -- nur ENTLANG der
     # Bewegungsrichtung. Frueher wurde das Ziel auf die Kugel um die Hand
     # zurueckgezogen; dabei uebernahm es jede Querabweichung der Hand (IK-
