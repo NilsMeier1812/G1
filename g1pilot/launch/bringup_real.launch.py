@@ -118,6 +118,8 @@ def generate_launch_description():
                 'waist_hold': os.environ.get('G1_WAIST_HOLD', 'true'),
                 'kp_waist': os.environ.get('G1_WAIST_KP', '150.0'),
                 'kd_waist': os.environ.get('G1_WAIST_KD', '4.0'),
+                # E-Stop laesst die Taille gehalten (Real-Test 2026-10-15).
+                'estop_waist_hold': os.environ.get('G1_ESTOP_WAIST_HOLD', 'true'),
             }.items()
         ),
 
@@ -158,6 +160,8 @@ def generate_launch_description():
                 'max_vyaw':        float(max_vyaw),
                 'cmd_vel_timeout': 0.5,
                 'damp_on_init':    False,
+                # E-Stop: Beine nur StopMove (kein Damp). G1_ESTOP_DAMP_LEGS=1 = alt.
+                'estop_damp_legs': _env_bool('G1_ESTOP_DAMP_LEGS'),
             }]
         ),
     ]

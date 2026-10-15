@@ -632,11 +632,13 @@ def test_waist_handover_on_disable(ac_module):
 
 
 def test_waist_estop_passive_then_start_reengages(ac_module):
-    """E-Stop: Taille passiv wie die Arme (kp=0, Daempfung). START: weich
-    wieder halten -- ab der gemessenen Stellung, kp rampt, Kommando faehrt
-    langsam zurueck in die Onboard-Stellung (Arme bleiben schlaff)."""
+    """E-Stop mit estop_waist_hold=false (altes Verhalten): Taille passiv wie
+    die Arme (kp=0, Daempfung). START: weich wieder halten -- ab der gemessenen
+    Stellung, kp rampt, Kommando faehrt langsam zurueck in die Onboard-Stellung
+    (Arme bleiben schlaff)."""
     _reset_robot()
-    node = _make_node(ac_module, waist_engage_s=1.0, waist_max_vel=0.3)
+    node = _make_node(ac_module, waist_engage_s=1.0, waist_max_vel=0.3,
+                      estop_waist_hold=False)
     try:
         node._arms_controlled_callback(_bool(True))
         _run(node, 2.4)
@@ -666,6 +668,61 @@ def test_waist_estop_passive_then_start_reengages(ac_module):
         assert float(np.max(ROBOT.writes[-1][2])) == 0.0
     finally:
         _close(node)
+
+
+def test_waist_estop_keeps_holding_by_default(ac_module):
+    """Real-Test 2026-10-15 (Walk-Modus): der E-Stop darf die Taille NICHT
+    schlaff schalten -- nur Arme/Haende. Der Walker balanciert weiter und
+    braucht einen steifen Oberkoerper."""
+    _reset_robot()
+    node = _make_node(ac_module)
+    try:
+        assert node.get_parameter("estop_waist_hold").value is True
+        node._arms_controlled_callback(_bool(True))
+        _run(node, 2.4)
+        node._on_emergency_stop(_bool(True))
+        ROBOT.waist_writes.clear()
+        _run(node, 1.0)
+        assert node.estop_active and node._arm_slack and not node._waist.passive
+        ww = ROBOT.waist_writes
+        assert len(ww) > 50
+        for w, q, kp, kd in ww:
+            assert w == 1.0 and float(np.min(kp)) == 150.0 and np.allclose(kd, 4.0)
+            assert np.allclose(q, ONBOARD_WAIST, atol=1e-6)
+        assert float(np.max(np.abs(ROBOT.waist() - ONBOARD_WAIST))) < 0.01, "Oberkoerper kippt"
+        # Arme: weiter schlaff (kp=0, Gewicht 1 = kein Onboard-Snap).
+        assert float(np.max(ROBOT.writes[-1][2])) == 0.0 and ROBOT.writes[-1][0] == 1.0
+        # START quittiert, Taille war nie passiv -> kein Neu-Zupacken noetig.
+        node._on_start(_bool(True))
+        _run(node, 0.3)
+        assert float(np.max(np.abs(ROBOT.waist() - ONBOARD_WAIST))) < 0.01
+    finally:
+        _close(node)
+
+
+def test_waist_estop_from_onboard_walker_holds_measured_pose(ac_module):
+    """Der Befund selbst: Walk OHNE ENABLE (Onboard-Regler fuehrt Arme UND
+    Taille, arm_sdk-Gewicht 0), dann E-Stop. arm_sdk uebernimmt (Gewicht 1);
+    die Taille wird an der GEMESSENEN Stellung gehalten -- sie kippt nicht und
+    springt nicht. Gegenprobe estop_waist_hold=false: Oberkoerper kippt."""
+    for hold in (True, False):
+        _reset_robot()
+        bent = ONBOARD_WAIST + np.array([0.0, 0.05, 0.04])   # Walker steht leicht schraeg
+        for k, j in enumerate(WAIST_IDX):
+            ROBOT.state.motor_state[j].q = float(bent[k])
+        node = _make_node(ac_module, estop_waist_hold=hold)
+        try:
+            node._on_emergency_stop(_bool(True))
+            ROBOT.waist_writes.clear()
+            _run(node, 1.0)
+            if hold:
+                assert float(np.max(np.abs(ROBOT.waist() - bent))) < 0.01, "Taille driftet"
+                for w, q, kp, kd in ROBOT.waist_writes:
+                    assert np.allclose(q, bent, atol=1e-6) and float(np.min(kp)) > 100.0
+            else:
+                assert ROBOT.waist()[2] - bent[2] > 0.2, "alte Variante muesste kippen"
+        finally:
+            _close(node)
 
 
 def test_waist_hold_off_in_sim_mode(ac_module):

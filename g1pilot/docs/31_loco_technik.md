@@ -339,10 +339,11 @@ ab:
 
 | Topic | RPC |
 |---|---|
-| `/g1pilot/start` | `SetFsmId(4)` (Standby) |
+| `/g1pilot/start` | `SetFsmId(4)` (Standby); nach E-Stop ohne Damp nur Latch lösen (Modus bleibt) |
 | `/g1pilot/start_balancing` | `entering_balancing()` — Höhenrampe + `BalanceStand(1)` + `Start()` |
-| `/g1pilot/start_walking` + `/g1pilot/loco_cmd_vel` | `Move(vx, vy, vyaw, continous_move=True)` in `_cmd_vel_tick` (20 Hz) |
-| `/g1pilot/emergency_stop` | `Damp()`, sofort, eigene Callback-Gruppe |
+| `/g1pilot/start_walking` + `/g1pilot/loco_cmd_vel` | übernimmt Walk-Zustand der App oder stellt aus FSM 4 auf Walk um; dann `SetVelocity(vx, vy, vyaw, move_duration_s)` in `_cmd_vel_tick` (20 Hz) |
+| `/g1pilot/emergency_stop` | `StopMove` (immer), `Damp()` nur mit `estop_damp_legs`; eigene Callback-Gruppe, wartet max. 0,5 s auf den RPC-Lock |
+| (Timer `state_sync_hz`) | liest die Onboard-FSM-ID, gleicht `balanced`/`walk_enabled` ab |
 
 Wichtige Sicherheitsmechanismen:
 
