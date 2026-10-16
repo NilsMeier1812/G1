@@ -67,6 +67,27 @@ Der Roboter folgt jetzt dem Pfad und stoppt selbstständig am Ziel.
 **AUTO NAV** erneut klicken — der Roboter stoppt sofort. Sanftes
 Not-Anhalten wie immer: START BALANCING. Harter Notaus: EMERGENCY STOP.
 
+## Echter Roboter (Stand 2026-10-15, Code-Prüfung, nicht an Hardware getestet)
+
+- **Pflicht: Pose-Quelle.** Planer (`dijkstra_planner`) und Folger (`nav2point`)
+  brauchen `/lidar_odometry/pose_fixed`. Auf dem echten G1 liefert die nur die
+  MOLA-LiDAR-Odometrie (`G1_ENABLE_LIDAR=1`, großes Image `g1pilot-real-full`,
+  Livox MID360). Ohne LiDAR gibt es keine Pose: der Planer meldet „No odom pose
+  yet“ und publiziert keinen Pfad, AUTO NAV ist in der GUI gesperrt.
+  `sim_localization` (Pose aus `rt/sportmodestate`) läuft nur in der Sim.
+- **Ziel ohne Karte funktioniert:** `create_map`/`scene_bridge` laufen nur in
+  der Sim, real gibt es kein `/map`. Dann publiziert der Planer eine **gerade
+  Linie** von der aktuellen Pose zum RViz-Ziel („2D Goal Pose“ → `/g1pilot/goal`).
+  Der Roboter läuft sie ohne Hindernisvermeidung ab (LiDAR-Punkte fließen nicht
+  in die Planung). Fläche freihalten, Aufsicht mit Fernbedienung.
+- **Kette:** Ziel → `dijkstra_planner` → `/g1pilot/path` → `nav2point` →
+  `/g1pilot/auto_joy` → `joy_mux` (AUTO NAV an) → `/g1pilot/joy` →
+  `loco_client` (`Move`, Limits `G1_MAX_VX/VY/VYAW`). Der Roboter muss im
+  Walk-Zustand sein (LAUFEN); bleibt der Joy-Strom aus, stoppt `loco_client`
+  nach 0,5 s.
+- Das Koordinatensystem „map“ ist die MOLA-Startpose; Drift der LiDAR-Odometrie
+  ist nicht vermessen.
+
 ## Worauf zu achten ist
 
 - **Hindernisvermeidung nur für die geladene Umgebung, nicht spontan.** In

@@ -208,6 +208,12 @@ class ArmController(Node):
         # keine Positionshaltung; kleines kd -> die Arme sacken GEDAEMPFT statt
         # frei zu fallen (an Seilen abgefangen). 0.0 = voellig frei (harter Fall).
         self.declare_parameter("estop_arm_kd", 3.0)
+        # E-Stop und Taille (NUR REAL): True = Taille bleibt GEHALTEN (nur Arme/
+        # Haende werden schlaff). Real-Test 2026-10-15: im Walk-Modus nahm der
+        # E-Stop dem Onboard-Regler Arme UND Taille ab (arm_sdk-Gewicht 1) und
+        # schaltete die Taille kraftlos -> Oberkoerper kippte, der noch
+        # balancierende Walker rannte hinterher. False = altes Verhalten.
+        self.declare_parameter("estop_waist_hold", True)
         # Taille (Waist 12-14) halten, solange arm_sdk Gewicht hat (NUR REAL).
         # Das arm_sdk-Gewicht schaltet beim G1 Arme UND Taille vom Onboard-
         # Regler auf rt/arm_sdk um (Unitree-Beispiele kommandieren die Taille
@@ -1660,7 +1666,7 @@ class ArmController(Node):
                 mc.dq = 0.0
                 if cur is not None:
                     mc.q = float(cur[jid.value])   # bei kp=0 ohne Wirkung, sauber
-            # Taille: im E-Stop passiv (wie Damp), nach START wieder gehalten.
+            # Taille: im E-Stop gehalten (estop_waist_hold) bzw. passiv, dann nach START wieder gehalten.
             if cur is not None:
                 self._write_waist_cmd(np.array([cur[j] for j in LEFT_JOINT_INDICES_LIST
                                                 + RIGHT_JOINT_INDICES_LIST], dtype=float))
@@ -1697,11 +1703,19 @@ class ArmController(Node):
         self._weight_state = "off"
         self._arm_sdk_weight = 1.0     # Autoritaet behalten (kein Onboard-Snap)
         if getattr(self, "_waist", None) is not None:
-            self._waist.go_passive()
+            if bool(self.get_parameter("estop_waist_hold").value):
+                # Taille NICHT schlaff: sie hielt vorher der Onboard-Regler (oder wir),
+                # der Walker balanciert weiter und braucht einen steifen Oberkoerper.
+                waist_txt = "Taille wird weiter gehalten"
+            else:
+                self._waist.go_passive()
+                waist_txt = "Taille schlaff (estop_waist_hold=false)"
+        else:
+            waist_txt = "Taille unberuehrt"
         self._publish_arm_slack()
         self.get_logger().warn("EMERGENCY STOP: Arme drehmomentfrei/gedaempft "
                                "(arm_sdk behaelt Autoritaet, KEIN Sprung in "
-                               "Home). Quittieren: START.")
+                               f"Home), {waist_txt}. Quittieren: START.")
 
     def _on_start(self, msg: Bool):
         """START (Streamdeck) quittiert den E-Stop-Latch. Die Arme bleiben

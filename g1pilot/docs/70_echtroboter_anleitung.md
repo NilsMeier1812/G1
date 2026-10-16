@@ -107,8 +107,12 @@ werden. Ohne `lowstate`: falsches Interface, Roboter nicht im
   kraftlos, kippte nach vorn/hinten. Jetzt hält `arm_controller` die Taille in
   der beim `ENABLE` gemessenen Stellung (kp 150 / kd 4 + Schwerkraft-
   Feedforward, `G1_WAIST_KP` / `G1_WAIST_KD`, Obergrenze 250 / 6). Im E-Stop
-  ist sie passiv wie die Arme; START packt sie weich wieder (kp-Rampe 1,5 s,
-  ab der gemessenen Stellung, ≤ 0,3 rad/s zurück). Gesperrte Taille
+  bleibt sie **gehalten** (`estop_waist_hold`, Env `G1_ESTOP_WAIST_HOLD`,
+  Default `true`; lief der Onboard-Regler vorher allein, wird sie an der
+  gemessenen Stellung gehalten). Nur mit `false` ist sie wie früher passiv
+  (START packt sie dann weich wieder: kp-Rampe 1,5 s, ab der gemessenen
+  Stellung, ≤ 0,3 rad/s zurück). Grund: Real-Test 2026-10-15 im Walk-Modus —
+  schlaffe Taille + balancierender Walker = Oberkörper kippt, G1 rennt los. Gesperrte Taille
   (23/29 DoF locked): Parameter `waist_joints` auf `[12]`.
 - **Zurückgeben ohne Schwung (`DISABLE`):** die Arme fahren erst geplant und
   langsam in die beim `ENABLE` gemerkte Onboard-Pose; erst dort rampt das
@@ -240,17 +244,39 @@ Unitree-Fernbedienung, gesichert.
 |---|---|
 | Sanft anhalten beim Gehen | **START BALANCING** (Roboter bleibt stehen) |
 | Arm fährt falsch, aber ruhig | **ENABLE MANIPULATION aus** (Arme fahren langsam in die Onboard-Pose, dann Übergabe) |
-| Ruckt/schwingt an den Armen, Kontakt mit Mensch/Objekt | **EMERGENCY STOP** (Arme sofort schlaff; Beine Damp — nur wenn der Roboter gesichert ist) |
+| Ruckt/schwingt an den Armen, Kontakt mit Mensch/Objekt | **EMERGENCY STOP** (Arme/Hände sofort schlaff; Taille gehalten; Beine: StopMove, Onboard-Regler balanciert weiter) |
 | Hand fährt per PS4-Controller falsch | Stick loslassen bzw. **Kreuz** (Hand steht sofort, Roboter bleibt stehen). PS am Controller = NOT-HALT wie unten |
-| Echte Gefahr / Sturz droht | **Unitree-Fernbedienung** (übergeordnet) — Streamdeck-EMERGENCY nur, wenn Zusammensacken vertretbar ist |
+| Echte Gefahr / Sturz droht | **Unitree-Fernbedienung** (übergeordnet, Damp dort) — Streamdeck-EMERGENCY dämpft die Beine nicht mehr von selbst (außer `G1_ESTOP_DAMP_LEGS=1`) |
 
-Was EMERGENCY STOP konkret bewirkt: Beine gehen in `Damp()` (Roboter sackt
-kontrolliert zusammen); Arme werden drehmomentfrei und sacken gedämpft, ohne
-in eine Home-Pose zu springen (dazu bleibt das `arm_sdk`-Gewicht bewusst auf
-1 — würde es auf 0 gesetzt, übernähme der Onboard-Regler die Arme und führe
-sie aktiv in seine Default-Pose); Hände werden deaktiviert und halten ihre
-Position. Quittieren: **START**. Die Arme bleiben danach gedämpft schlaff,
-bis **ENABLE MANIPULATION** die Kontrolle bewusst zurückholt.
+Was EMERGENCY STOP konkret bewirkt (Stand 2026-10-15): Arme werden
+drehmomentfrei und sacken gedämpft, ohne in eine Home-Pose zu springen (dazu
+bleibt das `arm_sdk`-Gewicht bewusst auf 1 — würde es auf 0 gesetzt, übernähme
+der Onboard-Regler die Arme und führe sie aktiv in seine Default-Pose); die
+**Taille bleibt gehalten**, damit der Oberkörper nicht kippt; Hände werden
+deaktiviert und halten ihre Position. Die Beine bekommen `StopMove()` (immer,
+auch wenn gerade kein Move lief) und **kein** `Damp()`: der Onboard-Regler
+balanciert den G1 stehend weiter. Der alte Stand (Beine `Damp()`, Taille
+schlaff) lässt sich mit `G1_ESTOP_DAMP_LEGS=1` bzw. `G1_ESTOP_WAIST_HOLD=false`
+zurückholen. Die Antwort-Codes der Roboter-RPCs stehen im Log
+(„EMERGENCY STOP: StopMove (Code 0) …“). Quittieren: **START** — war der G1
+dabei im Walk-Zustand, bleibt er darin (kein Sprung nach FSM 4). Die Arme
+bleiben danach gedämpft schlaff, bis **ENABLE MANIPULATION** die Kontrolle
+bewusst zurückholt.
+
+## Handy-App / Fernbedienung und GUI (Modus-Abgleich)
+
+`loco_client` liest alle 0,5 s die Onboard-FSM-ID (`state_sync_hz`). Stellt die
+Unitree-Handy-App oder die Fernbedienung den G1 auf **Walk** (FSM 500/501,
+Parameter `walk_fsm_ids`), übernimmt der Node das als „balanciert“ — **LAUFEN**
+in der GUI bewegt den G1 dann sofort. Steht der G1 in **Preparation** (FSM 4),
+stellt **LAUFEN** ihn selbst auf Walk (Höhenrampe + `BalanceStand` + `Start`,
+wie GREIFEN). Aus Damp/Zero-Torque/Sitzen steht der G1 nie von selbst auf
+(Log „WALK ignoriert … FSM n“). Verlässt der G1 den Walk-Zustand (z. B. Damp per
+Fernbedienung), sperrt der Node das Gehen (2 Polls + 3 s Schonfrist). `Move()`
+läuft nur noch mit begrenzter Dauer (`move_duration_s`, 1 s, alle 50 ms
+erneuert): stirbt der Node, stoppt der Onboard-Regler selbst. Bleibt der
+Joy-Strom (PS4/Auto-Nav) bei gedrücktem Deadman aus, gilt `cmd_vel_timeout`
+(0,5 s) → StopMove. FSM-ID 501 ist aus dem Repo nicht belegt.
 
 ## Fehlerbehebung
 

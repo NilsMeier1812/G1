@@ -57,6 +57,8 @@ def generate_launch_description():
         DeclareLaunchArgument("waist_hold", default_value="true"),
         DeclareLaunchArgument("kp_waist", default_value="150.0"),
         DeclareLaunchArgument("kd_waist", default_value="4.0"),
+        # E-Stop: Taille gehalten lassen (nur Arme/Haende schlaff). false = alt.
+        DeclareLaunchArgument("estop_waist_hold", default_value="true"),
         # arm_sdk-Gewichts-Rampe (0->1 beim Enable, 1->0 beim Disable). Auf dem
         # echten G1 Pflicht fuer eine weiche Uebergabe; die Sim setzt 0.0
         # (= sofort umschalten, bisheriges Verhalten).
@@ -126,6 +128,7 @@ def generate_launch_description():
                 'waist_hold': ParameterValue(LaunchConfiguration("waist_hold"), value_type=bool),
                 'kp_waist': ParameterValue(LaunchConfiguration("kp_waist"), value_type=float),
                 'kd_waist': ParameterValue(LaunchConfiguration("kd_waist"), value_type=float),
+                'estop_waist_hold': ParameterValue(LaunchConfiguration("estop_waist_hold"), value_type=bool),
                 'walk_park_arms': ParameterValue(
                     LaunchConfiguration("walk_park_arms"), value_type=bool),
             }],
