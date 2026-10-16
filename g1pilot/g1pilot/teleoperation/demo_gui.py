@@ -61,6 +61,7 @@ from g1pilot.teleoperation.ui_interface import (
     StreamDeck, VirtualJoystick, PoseSaveDialog, PoseLoadDialog,
 )
 from g1pilot.teleoperation.hand_panel import HandPanel
+from g1pilot.teleoperation import status_line
 from g1pilot.teleoperation.hand_jog import (
     JOG_FRAME, JOG_TF, JOG_SPEEDS, JOG_CMD_TOPIC, CommandedPoses, HoldStreamer, hold_pose,
     lead_limits, jog_step,
@@ -153,6 +154,16 @@ class DemoNode(StreamDeck):
         self.temps = None
         self.temps_t = None
         self.create_subscription(String, "/g1pilot/temperatures", self._temperatures, 10)
+        # Info-Zeile (nur Anzeige): Onboard-Modus des echten G1 (loco_client)
+        # und Auswahl/Tempo des PS4-Controllers (ps4_arm_teleop). Beide latched.
+        self.onboard = self.onboard_t = None
+        self.ps4 = self.ps4_t = None
+        qos_latched = QoSProfile(depth=1)
+        qos_latched.durability = DurabilityPolicy.TRANSIENT_LOCAL
+        self.create_subscription(String, "/g1pilot/onboard_state",
+                                 lambda m: self._latched_json("onboard", m), qos_latched)
+        self.create_subscription(String, "/g1pilot/ps4/status",
+                                 lambda m: self._latched_json("ps4", m), qos_latched)
         # Stations-Ziele aus der Szene (station_<Name>, siehe scene_bridge.py):
         # name -> (x, y, yaw). on_stations wird nur bei Aenderung gerufen.
         self.stations = {}
@@ -244,6 +255,12 @@ class DemoNode(StreamDeck):
         msg.pose.orientation.z = math.sin(yaw / 2.0)
         msg.pose.orientation.w = math.cos(yaw / 2.0)
         self.pub_goal.publish(msg)
+
+    def _latched_json(self, key, msg: String):
+        data = status_line.parse(msg.data)
+        if data is not None:
+            setattr(self, key, data)
+            setattr(self, key + "_t", time.monotonic())
 
     def _temperatures(self, msg: String):
         data = g1t.parse_payload(msg.data)
@@ -940,6 +957,10 @@ class DemoGUI(QWidget):
         self.jog_timer = QTimer(self)
         self.jog_timer.timeout.connect(self._jog_tick)
         self.jog_timer.start(33)
+        self.info_timer = QTimer(self)
+        self.info_timer.timeout.connect(self._refresh_info)
+        self.info_timer.start(500)
+        self._refresh_info()
 
         # Wie ui_interface: Auto-Start NUR in der Sim (Arme an + BALANCING),
         # wiederholt bis arm_controller und loco_sim quittieren (sim_autostart.py;
@@ -976,6 +997,21 @@ class DemoGUI(QWidget):
         self.btn_start = big_button("Roboter starten", "#455a64", height=60)
         self.btn_start.setVisible(not self.sim_mode)
         root.addWidget(self.btn_start)
+        # Info-Zeile: links Onboard-Modus (nur real), rechts PS4 (nur wenn aktiv;
+        # Klick = Belegung). Reine Anzeige.
+        info = QHBoxLayout()
+        info.setSpacing(16)
+        self.info_onboard = QLabel()
+        self.info_onboard.setVisible(not self.sim_mode)
+        self.info_ps4 = QLabel()
+        self.info_ps4.setVisible(False)
+        self.info_ps4.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.info_ps4.setToolTip("Klicken: Belegung des PS4-Controllers")
+        self.info_ps4.mousePressEvent = lambda e: self._ps4_help()
+        info.addWidget(self.info_onboard)
+        info.addStretch(1)
+        info.addWidget(self.info_ps4)
+        root.addLayout(info)
 
         # Bereich 2: Steuerung des aktiven Modus
         root.addWidget(self._section_label("2  ·  STEUERUNG"))
@@ -1059,6 +1095,36 @@ class DemoGUI(QWidget):
         root.addWidget(self.status)
         root.addLayout(bottom)
         self._status("Startet …", "#aaa")
+
+    @staticmethod
+    def _info_css(color):
+        return (f"color:{color}; font-size:16px; font-weight:700; padding:4px 10px;"
+                f"background:#1a1a1a; border-left:5px solid {color}; border-radius:6px;")
+
+    def _refresh_info(self):
+        """Info-Zeile aus den zuletzt empfangenen Zustaenden (2 Hz)."""
+        n, now = self.node, time.monotonic()
+        if not self.sim_mode:
+            age = None if n.onboard_t is None else now - n.onboard_t
+            walk_req = WALK in (self.mode, self.pending)
+            text, color = status_line.onboard_text(n.onboard, age, walk_requested=walk_req)
+            self.info_onboard.setText(text)
+            self.info_onboard.setStyleSheet(self._info_css(color))
+        age = None if n.ps4_t is None else now - n.ps4_t
+        res = status_line.ps4_text(n.ps4, age, sim=self.sim_mode)
+        self.info_ps4.setVisible(res is not None)
+        if res is not None:
+            self.info_ps4.setText(res[0] + "   ⓘ")
+            self.info_ps4.setStyleSheet(self._info_css(res[1]))
+
+    def _ps4_help(self):
+        rows = "".join(f"<tr><td style='padding:3px 14px 3px 0'><b>{k}</b></td><td>{v}</td></tr>"
+                       for k, v in status_line.ps4_help(self.node.ps4))
+        box = QMessageBox(self)
+        box.setWindowTitle("PS4-Controller: Belegung")
+        box.setTextFormat(Qt.TextFormat.RichText)
+        box.setText(f"<table>{rows}</table><p>Kein Laufen über den Controller.</p>")
+        box.open()
 
     @staticmethod
     def _section_label(text):

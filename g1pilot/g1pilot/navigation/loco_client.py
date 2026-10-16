@@ -8,6 +8,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
+from rclpy.qos import QoSProfile, DurabilityPolicy
 from std_msgs.msg import Bool, String
 from sensor_msgs.msg import Joy
 from geometry_msgs.msg import Twist
@@ -26,6 +27,12 @@ from g1pilot.utils.common import init_dds
 # belegt -> per Parameter walk_fsm_ids anpassbar.
 FSM_READY = 4
 DEFAULT_WALK_FSM_IDS = (500, 501)
+# Klartext fuer die GUI-Anzeige (/g1pilot/onboard_state). Begriffe wie in der
+# Unitree-Handy-App, soweit belegt; unbekannte IDs zeigt die GUI als Zahl.
+FSM_NAMES = {0: "Zero Torque", 1: "Damp", 2: "Hocke", 3: "Sitzen",
+             4: "Preparation", 500: "Walk", 501: "Walk", 702: "Aufstehen",
+             706: "Aufstehen"}
+ONBOARD_STATE_TOPIC = "/g1pilot/onboard_state"
 
 
 def _rpc_get_int(client, api_id):
@@ -112,6 +119,11 @@ class G1LocoClient(Node):
         # FSM-IDs, in denen der Onboard-Regler gehen kann (Handy "Walk").
         self.declare_parameter('walk_fsm_ids', list(DEFAULT_WALK_FSM_IDS))
         self.declare_parameter('state_sync_hz', 2.0)
+        # SetBalanceMode beim Umschalten auf Walk (entering_balancing). Laut
+        # Unitree-SDK: 0 = BalanceStand (steht still), 1 = ContinuousGait (tritt
+        # dauernd auf der Stelle). 1 ist der alte g1pilot-Wert -- auf Hardware
+        # pruefen (docs/70_echtroboter_anleitung.md), dann ggf. 0.
+        self.declare_parameter('balance_mode', 1)
 
         ik_use_waist = self.get_parameter('ik_use_waist').get_parameter_value().bool_value
         ik_alpha = float(self.get_parameter('ik_alpha').value)
@@ -157,6 +169,12 @@ class G1LocoClient(Node):
                               callback_group=self._sync_group)
 
         self.publisher_arms_controlled = self.create_publisher(Bool, '/g1pilot/arms/enabled', 1)
+        # Reiner Lesepfad fuer die GUIs: Onboard-Modus (FSM) + Zustand dieses
+        # Nodes. TRANSIENT_LOCAL -> eine spaeter gestartete GUI sieht ihn sofort.
+        qos_state = QoSProfile(depth=1)
+        qos_state.durability = DurabilityPolicy.TRANSIENT_LOCAL
+        self.state_pub = self.create_publisher(String, ONBOARD_STATE_TOPIC, qos_state)
+        self.create_timer(0.5, self._publish_state)
         self.right_gripper_pub = self.create_publisher(String, '/g1pilot/hand_action/right', 1)
         self.left_gripper_pub = self.create_publisher(String, '/g1pilot/hand_action/left', 1)
         self.publisher_homming_arms = self.create_publisher(Bool, '/g1pilot/arms/home', 1)
@@ -253,15 +271,15 @@ class G1LocoClient(Node):
         und die GUI konnte den G1 nicht bewegen. Umgekehrt: verlaesst der G1 den
         Walk-Zustand (Damp per Fernbedienung), sperrt das hier sofort Move()."""
         if not self.use_robot or self.robot is None or self._entering:
-            return
+            return None
         if not self._rpc_lock.acquire(timeout=0.3 if force else 0.0):
-            return                      # RPC laeuft -> naechster Takt
+            return None                 # RPC laeuft -> naechster Takt
         try:
             fsm = _rpc_get_int(self.robot, ROBOT_API_ID_LOCO_GET_FSM_ID)
         finally:
             self._rpc_lock.release()
         if fsm is None:
-            return
+            return None
         self._onboard_fsm = fsm
         walking = fsm in self._walk_ids()
         if walking:
@@ -271,7 +289,7 @@ class G1LocoClient(Node):
                 self._balanced_at = time.monotonic()
                 self.get_logger().info(
                     f"Onboard-Modus WALK erkannt (FSM {fsm}) -- als balanciert uebernommen.")
-            return
+            return fsm
         # Kein Walk-Zustand: erst nach 2 Polls und 3 s Schonfrist umschalten
         # (Start() braucht einen Moment, bis die FSM-ID 500 meldet).
         self._nonwalk_polls += 1
@@ -283,6 +301,15 @@ class G1LocoClient(Node):
             self.balanced = False
             self.walk_enabled = False
             self._stop_move()
+        return fsm
+
+    def _publish_state(self):
+        """Onboard-Modus + Node-Zustand als JSON (nur Anzeige, keine Logik)."""
+        fsm = self._onboard_fsm
+        st = {"fsm": fsm, "name": FSM_NAMES.get(fsm, "") if fsm is not None else "",
+              "balanced": bool(self.balanced), "walk": bool(self.walk_enabled),
+              "estop": bool(self.robot_stopped), "robot": bool(self.use_robot)}
+        self.state_pub.publish(String(data=json.dumps(st, sort_keys=True)))
 
     def get_fsm_id(self):
         if not self.use_robot or self.robot is None:
@@ -315,22 +342,35 @@ class G1LocoClient(Node):
         if self.use_robot and self.robot is not None and msg.data:
             self.walk_enabled = False
             self._stop_move("START/Standby")
-            if self.robot_stopped and self._estop_legs_kept:
-                # E-Stop ohne Damp: der G1 steht noch unter der Onboard-Regelung.
-                # Quittieren soll ihn NICHT in FSM 4 umschalten (Modusspruenge im
-                # Stand vermeiden) -- Latch loesen, aktuellen Modus uebernehmen.
-                self._estop_legs_kept = False
-                self.robot_stopped = False
-                self.balanced = False
+            legs_kept = self.robot_stopped and self._estop_legs_kept
+            self._estop_legs_kept = False
+            self.robot_stopped = False
+            self.balanced = False
+            # Aktuellen Onboard-Modus lesen (Handy-App/Fernbedienung koennen den
+            # G1 schon aufgestellt haben). Steht er bereits (Walk/Preparation),
+            # schaltet START NICHT um: frueher sprang ein per App auf Walk
+            # gestellter G1 bei »Roboter starten« zurueck nach FSM 4 (Modus-
+            # sprung im Stand, Balance aus). Gilt auch beim Quittieren eines
+            # E-Stops ohne Damp und fuer Steuerkreuz-oben am alten Joystick.
+            fsm = self._sync_onboard_state(force=True)
+            if legs_kept:
                 self._log_once("info", "E-Stop quittiert: Beine blieben stehen, "
                                "Onboard-Modus unveraendert.", "_estop_ack_logged")
                 self._clear_once("_estop_ack_logged")
-                self._sync_onboard_state(force=True)
                 return
-            self._robot_rpc("SetFsmId", 4)
-            self._log_once("info", "Switched to FSM ID 4 (Standby)", "_switch_fsm_id_4_logged")
-            self.robot_stopped = False
-            self.balanced = False
+            if fsm in self._walk_ids():
+                self.get_logger().info(f"START: G1 steht schon im Walk-Modus (FSM {fsm}) "
+                                       "-- uebernommen, kein Umschalten nach FSM 4.")
+                return
+            if fsm == FSM_READY:
+                self.get_logger().info("START: G1 steht schon in Preparation (FSM 4).")
+                return
+            if fsm is None:
+                self.get_logger().warn("START: Onboard-Modus nicht lesbar -- schalte NICHT "
+                                       "blind um (erneut START bzw. Fernbedienung).")
+                return
+            code = self._robot_rpc("SetFsmId", FSM_READY)
+            self.get_logger().info(f"START: FSM {fsm} -> 4 (Preparation/Standby), Code {code}.")
 
     def start_balancing_callback(self, msg: Bool):
         if not msg.data:
@@ -339,12 +379,33 @@ class G1LocoClient(Node):
         # Roboter bleibt balanciert stehen.
         self.walk_enabled = False
         self._stop_move("START BALANCING")
-        if not self.balanced:
-            self._log_once("info", "Starting balancing procedure...", "_start_balance_req_logged")
-            self.entering_balancing(max_height=0.5, step=0.02)
-            self._log_once("info", "Balancing procedure completed.", "_balance_completed_logged")
-        else:
+        if self.balanced:
             self._log_once("info", "Already balanced, no action taken.", "_already_balanced_notice_logged")
+            return
+        if not self._may_enter_balancing("START BALANCING"):
+            return
+        self._log_once("info", "Starting balancing procedure...", "_start_balance_req_logged")
+        self.entering_balancing(max_height=0.5, step=0.02)
+        self._log_once("info", "Balancing procedure completed.", "_balance_completed_logged")
+
+    def _may_enter_balancing(self, what):
+        """Hoehenrampe + Start() nur aus Preparation (FSM 4) und ohne E-Stop.
+        Frueher startete START BALANCING (= GREIFEN der Demo-GUI) den Walk-
+        Regler auch aus Damp/Zero-Torque/Sitzen -- LAUFEN war schon gesperrt."""
+        if not self.use_robot or self.robot is None:
+            return True
+        if self.robot_stopped:
+            self.get_logger().warn(f"{what} ignoriert: E-Stop aktiv (erst START).")
+            return False
+        fsm = self._sync_onboard_state(force=True)
+        if self.balanced:
+            return False                # per App/Fernbedienung schon auf Walk
+        if fsm != FSM_READY:
+            self.get_logger().warn(
+                f"{what} ignoriert: G1 steht nicht in Preparation (FSM {fsm}) -- erst "
+                "START bzw. per Fernbedienung/Handy aufstellen.")
+            return False
+        return True
 
     # ── Streamdeck-Walk (WALK-Button + virtueller Joystick der UI) ───────────
 
@@ -365,7 +426,7 @@ class G1LocoClient(Node):
             # LAUFEN in der GUI stellt den ECHTEN Modus um: aus Preparation
             # (FSM 4) wie bei GREIFEN per Hoehenrampe + Start() in den Walk-
             # Zustand. Aus Damp/Zero-Torque/Sitzen NIE von selbst aufstehen.
-            fsm = self._onboard_fsm
+            fsm = self._onboard_fsm if self.use_robot else FSM_READY
             if fsm != FSM_READY:
                 self._log_once("warn",
                                f"WALK ignoriert: G1 steht nicht in Preparation/Walk "
@@ -476,12 +537,8 @@ class G1LocoClient(Node):
 
             up_on, up_off = self._axis_edge(axis_last, self.prev_axis_last, -1.0)
             if up_on:
-                self._robot_rpc("SetFsmId", 4)
-                self._log_once("info", "Switched to FSM ID 4 (Standby)", "_switch_fsm_id_4_logged")
-                self.robot_stopped = False
-                self.balanced = False
-            if up_off:
-                self._clear_once("_switch_fsm_id_4_logged")
+                # Wie START in den GUIs (kein Umschalten, wenn der G1 schon steht).
+                self.start_callback(Bool(data=True))
 
             if self._btn_rising(msg, 0):
                 self.control_arms = not self.control_arms
@@ -526,16 +583,8 @@ class G1LocoClient(Node):
                 self.left_gripper_pub.publish(String(data="close"))
 
             if self._btn_rising(msg, 6):
-                if not self.balanced:
-                    self._log_once("info", "Starting balancing procedure...", "_start_balance_r1_logged")
-                    self.entering_balancing(max_height=0.5, step=0.02)
-                    self._log_once("info", "Balancing procedure completed.", "_balance_completed_r1_logged")
-                else:
-                    self._log_once("info", "Already balanced, no action taken.", "_already_balanced_notice_r1_logged")
-            if self._btn_falling(msg, 6):
-                self._clear_once("_start_balance_r1_logged")
-                self._clear_once("_balance_completed_r1_logged")
-                self._clear_once("_already_balanced_notice_r1_logged")
+                # Wie START BALANCING (nur aus Preparation, nicht im E-Stop).
+                self.start_balancing_callback(Bool(data=True))
 
             # PS4-Deadman (Button 8): solange gedrueckt steuert der Controller,
             # der Streamdeck-cmd_vel-Pfad pausiert (_cmd_vel_tick prueft das).
@@ -587,21 +636,32 @@ class G1LocoClient(Node):
 
     def _enter_balancing_inner(self, max_height, step):
         height = 0.0
+        problem = None
         while height < max_height and not self.robot_stopped:
             height += step
             self._robot_rpc("SetStandHeight", height)
-            if self.get_fsm_mode() == 0 and height >= 0.2:
+            mode = self.get_fsm_mode()
+            if mode == 0 and height >= 0.2:
                 self._log_once("info", f"Reached max height: {height}", "_balance_reach_height_logged")
                 break
-            elif self.get_fsm_mode() != 0:
-                self._log_once("warn", "Problems during balancing, stopping...", "_balance_problem_stop_logged")
+            elif mode != 0:
+                # mode != 0: Fuesse nicht belastet (haengt?), None: RPC-Fehler.
+                problem = mode
                 break
         # E-Stop waehrend der Rampe? Dann NICHT BalanceStand/Start nachschieben
         # (Damp() ist bereits raus, der Roboter haengt/sackt kontrolliert).
         if self.robot_stopped:
             self.get_logger().warn("Balancing abgebrochen (robot_stopped/E-Stop).")
             return
-        self._robot_rpc("BalanceStand", 1)
+        if problem is not None or height < 0.2 - 1e-6:
+            # Frueher kam hier trotzdem BalanceStand + Start(): der Walk-Regler
+            # lief dann z.B. mit Fuessen in der Luft an. Jetzt: kein Start.
+            self.get_logger().error(
+                f"Balancing abgebrochen: FSM-Mode {problem} bei Hoehe {height:.2f} "
+                "(Fuesse nicht belastet oder keine Antwort) -- KEIN Start(), G1 bleibt "
+                "in Preparation. Aufstellen per Fernbedienung/Handy oder Gantry pruefen.")
+            return
+        self._robot_rpc("BalanceStand", int(self.get_parameter('balance_mode').value))
         self._robot_rpc("SetStandHeight", height)
         self._robot_rpc("Start")
         self.balanced = True

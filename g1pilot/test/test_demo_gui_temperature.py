@@ -64,3 +64,33 @@ def test_gui_sim_hides_temperatures(monkeypatch):
         assert g.temp_panel.isHidden() and not g.temp_panel.timer.isActive()
     finally:
         _close(node, g)
+
+
+def test_gui_info_line_onboard_and_ps4(monkeypatch):
+    """Info-Zeile: Onboard-Modus (nur real) + PS4-Auswahl (Review 2026-10-16)."""
+    from std_msgs.msg import String
+    app, node, g = _gui(monkeypatch, sim=False)
+    try:
+        g._refresh_info()
+        assert not g.info_onboard.isHidden() and "keine Daten" in g.info_onboard.text()
+        assert g.info_ps4.isHidden(), "ohne PS4-Arm-Modus keine Anzeige"
+        node._latched_json("onboard", String(
+            data='{"fsm": 500, "name": "Walk", "walk": false, "estop": false}'))
+        node._latched_json("ps4", String(
+            data='{"selection": "right", "mode": "move", "speed": "Langsam", '
+                 '"connected": true, "estop": false}'))
+        g._refresh_info()
+        assert g.info_onboard.text() == "G1: Walk (FSM 500) · bereit"
+        assert not g.info_ps4.isHidden() and "Hand RECHTS" in g.info_ps4.text()
+        g._ps4_help()                                  # darf nicht werfen
+    finally:
+        _close(node, g)
+
+
+def test_gui_sim_hides_onboard_line(monkeypatch):
+    app, node, g = _gui(monkeypatch, sim=True)
+    try:
+        g._refresh_info()
+        assert g.info_onboard.isHidden()
+    finally:
+        _close(node, g)

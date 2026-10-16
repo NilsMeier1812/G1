@@ -278,6 +278,32 @@ erneuert): stirbt der Node, stoppt der Onboard-Regler selbst. Bleibt der
 Joy-Strom (PS4/Auto-Nav) bei gedrücktem Deadman aus, gilt `cmd_vel_timeout`
 (0,5 s) → StopMove. FSM-ID 501 ist aus dem Repo nicht belegt.
 
+Seit 2026-10-16 (Review des Real-Ablaufs):
+
+- **START / »Roboter starten« schaltet nur noch aus Damp/Zero-Torque/Sitzen
+  nach FSM 4.** Steht der G1 schon in Walk (z. B. per Handy-App) oder in
+  Preparation, wird nur übernommen — früher sprang ein per App balancierender
+  G1 beim Klick zurück nach FSM 4. Ist der Modus nicht lesbar, schaltet START
+  nicht blind um (Log „Onboard-Modus nicht lesbar"). Gilt auch für
+  Steuerkreuz-oben am alten Joystick.
+- **GREIFEN / START BALANCING stellt nur noch aus Preparation (FSM 4) auf
+  Walk um**, wie LAUFEN. Aus Damp/Zero-Torque/Sitzen und im E-Stop: Log
+  „START BALANCING ignoriert …".
+- **Höhenrampe bricht ohne `Start()` ab**, wenn der FSM-Mode ≠ 0 meldet (Füße
+  nicht belastet, z. B. hängend) oder keine Antwort kommt. Früher kam danach
+  trotzdem `BalanceStand` + `Start()` (Walk-Regler mit Füßen in der Luft).
+- **`balance_mode`** (Parameter, Default 1 wie bisher): Wert für
+  `SetBalanceMode` beim Umschalten. Laut Unitree-SDK ist 0 = BalanceStand
+  (steht still), 1 = ContinuousGait (tritt auf der Stelle). Am Gantry prüfen,
+  was der G1 nach GREIFEN aus Preparation tut.
+- **Demo-GUI zeigt den Onboard-Modus** („G1: Walk (FSM 500) · bereit",
+  Topic `/g1pilot/onboard_state`) und — im PS4-Arm-Modus — die gewählte Hand,
+  Verschieben/Drehen und das Tempo. Klick auf die PS4-Anzeige zeigt die Belegung.
+- **Alter Joystick (PS4 = Gehen):** Bei Trennung oder hängender Funkverbindung
+  publiziert er nichts mehr (früher: letzter Zustand mit gedrücktem Deadman
+  weiter), `joy_mux` gibt nur noch frische Eingänge weiter → `loco_client`
+  stoppt nach 0,5 s.
+
 ## Fehlerbehebung
 
 | Symptom | Ursache / Fix |

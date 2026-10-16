@@ -399,3 +399,168 @@ def test_streamdeck_deadman_still_stops(lc_module):
         assert robot.vel == (0.0, 0.0, 0.0)
     finally:
         _close(node)
+
+
+# ── START / Aufstellen nach Start per Handy-App (Review 2026-10-16) ─────
+
+def test_start_keeps_walk_set_by_phone_app(lc_module):
+    """Befund: G1 per Handy auf Walk, dann »Roboter starten« in der GUI ->
+    frueher SetFsmId(4): Sprung aus dem balancierenden Walk nach Preparation."""
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = 500
+        node.start_callback(_bool(True))
+        assert ("SetFsmId", 4) not in robot.calls and robot.fsm == 500
+        assert node.balanced and not node.robot_stopped and not node.walk_enabled
+    finally:
+        _close(node)
+
+
+def test_start_in_preparation_sends_nothing(lc_module):
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = 4
+        node.start_callback(_bool(True))
+        assert "SetFsmId" not in robot.names() and not node.balanced
+    finally:
+        _close(node)
+
+
+@pytest.mark.parametrize("fsm", [0, 1])
+def test_start_from_damp_still_goes_to_standby(lc_module, fsm):
+    """Unveraendert (Gantry-Ablauf aus docs/70): START aus Damp -> FSM 4."""
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = fsm
+        node.start_callback(_bool(True))
+        assert ("SetFsmId", 4) in robot.calls and robot.fsm == 4
+    finally:
+        _close(node)
+
+
+def test_start_with_unreadable_fsm_does_not_switch_blindly(lc_module):
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = 500
+        robot._Call = lambda *a: (3104, None)        # RPC-Timeout
+        node.start_callback(_bool(True))
+        assert "SetFsmId" not in robot.names() and robot.fsm == 500
+    finally:
+        _close(node)
+
+
+def test_legacy_dpad_up_does_not_leave_walk(lc_module):
+    """Alter Joystick: Steuerkreuz oben = START. Frueher immer SetFsmId(4)."""
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = 500
+        node._sync_onboard_state(force=True)
+        node.joystick_callback(_joy())
+        node.joystick_callback(_joy(axes={7: -1.0}))
+        assert ("SetFsmId", 4) not in robot.calls and robot.fsm == 500
+        assert node.balanced
+    finally:
+        _close(node)
+
+
+@pytest.mark.parametrize("fsm", [0, 1, 3])
+def test_start_balancing_never_starts_walker_from_damp(lc_module, fsm):
+    """GREIFEN (start_balancing) aus Damp/Zero-Torque/Sitzen: frueher Rampe +
+    BalanceStand + Start() -> Walk-Regler aus dem schlaffen Zustand."""
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = fsm
+        node.start_balancing_callback(_bool(True))
+        assert "Start" not in robot.names() and "SetStandHeight" not in robot.names()
+        assert robot.fsm == fsm and not node.balanced
+    finally:
+        _close(node)
+
+
+def test_start_balancing_from_preparation_still_works(lc_module):
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = 4
+        node.start_balancing_callback(_bool(True))
+        assert robot.fsm == 500 and node.balanced and not node.walk_enabled
+        assert ("BalanceStand", 1) in robot.calls, "Default unveraendert"
+    finally:
+        _close(node)
+
+
+def test_start_balancing_adopts_phone_walk_without_ramp(lc_module):
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = 500
+        node.start_balancing_callback(_bool(True))
+        assert node.balanced and "SetStandHeight" not in robot.names()
+    finally:
+        _close(node)
+
+
+def test_start_balancing_ignored_during_estop(lc_module):
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = 4
+        node.emergency_callback(_bool(True))
+        robot.calls.clear()
+        node.start_balancing_callback(_bool(True))
+        assert "SetStandHeight" not in robot.names() and "Start" not in robot.names()
+    finally:
+        _close(node)
+
+
+def test_balancing_problem_aborts_without_start(lc_module):
+    """FSM-Mode != 0 (Fuesse nicht belastet, z.B. haengend): frueher brach die
+    Rampe ab und rief TROTZDEM BalanceStand + Start()."""
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = 4
+        robot.mode = 2
+        node.start_walking_callback(_bool(True))
+        assert "Start" not in robot.names() and "BalanceStand" not in robot.names()
+        assert robot.fsm == 4 and not node.balanced and not node.walk_enabled
+    finally:
+        _close(node)
+
+
+def test_balancing_mode_rpc_failure_aborts_without_start(lc_module):
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = 4
+        orig = robot._Call
+        robot._Call = lambda api, p: (orig(api, p) if api == "GET_FSM_ID" else (3104, None))
+        node.start_balancing_callback(_bool(True))
+        assert "Start" not in robot.names() and not node.balanced
+    finally:
+        _close(node)
+
+
+def test_balance_mode_parameter(lc_module):
+    node, robot = _make(lc_module, balance_mode=0)
+    try:
+        robot.fsm = 4
+        node.start_balancing_callback(_bool(True))
+        assert ("BalanceStand", 0) in robot.calls
+    finally:
+        _close(node)
+
+
+def test_onboard_state_published_for_gui(lc_module):
+    import json
+    node, robot = _make(lc_module)
+    got = []
+    from std_msgs.msg import String
+    node.state_pub.publish = lambda m: got.append(json.loads(m.data))
+    try:
+        robot.fsm = 500
+        node._sync_onboard_state(force=True)
+        node.start_walking_callback(_bool(True))
+        node._publish_state()
+        assert got[-1] == {"fsm": 500, "name": "Walk", "balanced": True, "walk": True,
+                           "estop": False, "robot": True}
+        node.emergency_callback(_bool(True))
+        node._publish_state()
+        assert got[-1]["estop"] and not got[-1]["walk"]
+    finally:
+        _close(node)
