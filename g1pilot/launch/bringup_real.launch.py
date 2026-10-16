@@ -109,6 +109,9 @@ def generate_launch_description():
                 # Schleppfehler-Begrenzung + Anfahrrampe (siehe 70_echtroboter_anleitung.md).
                 'max_tracking_error': os.environ.get('G1_ARM_MAX_TRACKING_ERROR', '0.3'),
                 'arm_accel_limit':    os.environ.get('G1_ARM_ACCEL_LIMIT', '3.0'),
+                # Marker-/Jog-IK im eigenen Prozess (Arm ratterte beim Joggen,
+                # Real-Test 2026-10-16). G1_IK_ASYNC=0 = altes Verhalten.
+                'ik_async': 'false' if os.environ.get('G1_IK_ASYNC', '1') == '0' else 'true',
                 'kp_low':   '60.0',
                 'kd_low':   '1.5',
                 'kp_wrist': '40.0',

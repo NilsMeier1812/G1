@@ -44,6 +44,9 @@ def generate_launch_description():
         # Glaettung zeitbasiert fuer diese Bezugsrate [Hz] (0 = pro Takt wie
         # bisher). Sim: 50, damit der Arm auf langsamen PCs nicht nachhinkt.
         DeclareLaunchArgument("smoothing_ref_hz", default_value="0.0"),
+        # Marker-/Jog-IK im eigenen Prozess (true) statt im Regeltakt (false =
+        # altes Verhalten: Takt nur ~20-40 Hz beim Joggen, Arm rattert).
+        DeclareLaunchArgument("ik_async", default_value="true"),
         # PD-Gains des arm_controller. Defaults = Sim-Tuning (MuJoCo braucht
         # hohe Daempfung); bringup_real ueberschreibt mit den Unitree-
         # Beispielwerten (kp=60, kd=1.5).
@@ -121,6 +124,7 @@ def generate_launch_description():
                     LaunchConfiguration("hand_only_settle_s"), value_type=float),
                 'smoothing_ref_hz': ParameterValue(
                     LaunchConfiguration("smoothing_ref_hz"), value_type=float),
+                'ik_async': ParameterValue(LaunchConfiguration("ik_async"), value_type=bool),
                 'kp_low': ParameterValue(LaunchConfiguration("kp_low"), value_type=float),
                 'kd_low': ParameterValue(LaunchConfiguration("kd_low"), value_type=float),
                 'kp_wrist': ParameterValue(LaunchConfiguration("kp_wrist"), value_type=float),
