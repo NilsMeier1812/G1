@@ -160,6 +160,7 @@ class DemoNode(StreamDeck):
         self.ps4 = self.ps4_t = None
         qos_latched = QoSProfile(depth=1)
         qos_latched.durability = DurabilityPolicy.TRANSIENT_LOCAL
+        self.pub_loco_request = self.create_publisher(String, "/g1pilot/loco_request", 10)
         self.create_subscription(String, "/g1pilot/onboard_state",
                                  lambda m: self._latched_json("onboard", m), qos_latched)
         self.create_subscription(String, "/g1pilot/ps4/status",
@@ -997,6 +998,24 @@ class DemoGUI(QWidget):
         self.btn_start = big_button("Roboter starten", "#455a64", height=60)
         self.btn_start.setVisible(not self.sim_mode)
         root.addWidget(self.btn_start)
+        # Startleiste (nur real): Onboard-Modus wie in der Handy-App umschalten.
+        # Freigabe je nach Onboard-Modus (status_line.start_buttons), Damp aus
+        # dem Stehen und Walk brauchen einen zweiten Klick.
+        self.start_bar = QWidget()
+        bar = QHBoxLayout(self.start_bar)
+        bar.setContentsMargins(0, 0, 0, 0)
+        bar.setSpacing(12)
+        self.start_btns = {}
+        for step in status_line.START_STEPS:
+            b = big_button(status_line.START_LABEL[step], "#37474f", font=18, height=50)
+            b.clicked.connect(lambda _=False, s=step: self._start_step(s))
+            bar.addWidget(b)
+            self.start_btns[step] = b
+        self._start_armed = None      # Schritt, der auf den zweiten Klick wartet
+        self._start_armed_n = 0
+        self._last_note = None
+        self.start_bar.setVisible(not self.sim_mode)
+        root.addWidget(self.start_bar)
         # Info-Zeile: links Onboard-Modus (nur real), rechts PS4 (nur wenn aktiv;
         # Klick = Belegung). Reine Anzeige.
         info = QHBoxLayout()
@@ -1110,12 +1129,67 @@ class DemoGUI(QWidget):
             text, color = status_line.onboard_text(n.onboard, age, walk_requested=walk_req)
             self.info_onboard.setText(text)
             self.info_onboard.setStyleSheet(self._info_css(color))
+            self._refresh_start_bar()
         age = None if n.ps4_t is None else now - n.ps4_t
         res = status_line.ps4_text(n.ps4, age, sim=self.sim_mode)
         self.info_ps4.setVisible(res is not None)
         if res is not None:
             self.info_ps4.setText(res[0] + "   ⓘ")
             self.info_ps4.setStyleSheet(self._info_css(res[1]))
+
+    def _refresh_start_bar(self):
+        n, now = self.node, time.monotonic()
+        age = None if n.onboard_t is None else now - n.onboard_t
+        allowed = status_line.start_buttons(n.onboard, age)
+        if self._start_armed and not allowed[self._start_armed][0]:
+            self._start_disarm()
+        for step, b in self.start_btns.items():
+            b.setEnabled(allowed[step][0])
+        note = (n.onboard or {}).get("note") if age is not None else None
+        if note and note != self._last_note and self._last_note is not None:
+            self._status(note, "#ef5350" if "abgelehnt" in note else "#aaa")
+        if note:
+            self._last_note = note
+        elif self._last_note is None:
+            self._last_note = ""
+
+    def _start_step(self, step):
+        """Startleiste: Anforderung an den loco_client (der prueft erneut)."""
+        n, now = self.node, time.monotonic()
+        age = None if n.onboard_t is None else now - n.onboard_t
+        enabled, confirm = status_line.start_buttons(n.onboard, age)[step]
+        if not enabled:
+            return
+        if confirm and self._start_armed != step:
+            self._start_disarm()
+            self._start_armed = step
+            self._start_armed_n += 1
+            armed = self._start_armed_n
+            b = self.start_btns[step]
+            b.setText("Kran gelockert?\nnochmal tippen" if step == "walk"
+                      else "Wirklich Damp?\nnochmal tippen")
+            QTimer.singleShot(QUIT_CONFIRM_MS,
+                              lambda: armed == self._start_armed_n and self._start_disarm())
+            return
+        self._start_disarm()
+        if step != "walk":
+            # Damp/Preparation beenden einen GUI-Modus (Gehen/Greifen).
+            self._cancel_sequence()
+            self.set_auto_nav(False)
+            self.walk_panel.reset()
+            if self.mode == WALK or self.pending == WALK:
+                n.publish_bool(n.pub_start_walking, False)
+                self.mode = self.pending = None
+                self._refresh()
+        n.pub_loco_request.publish(String(data=step))
+        self._status(f"{status_line.START_LABEL[step]} angefordert …", "#aaa")
+
+    def _start_disarm(self):
+        if self._start_armed:
+            self.start_btns[self._start_armed].setText(
+                status_line.START_LABEL[self._start_armed])
+        self._start_armed = None
+        self._start_armed_n += 1
 
     def _ps4_help(self):
         rows = "".join(f"<tr><td style='padding:3px 14px 3px 0'><b>{k}</b></td><td>{v}</td></tr>"
@@ -1223,11 +1297,20 @@ class DemoGUI(QWidget):
             self._reload_sequence_buttons()
         elif mode == MANIP:
             # BALANCING: Fuesse geplant, Arme frei -> sofort bestaetigt.
+            # REAL: nur Arme, solange der G1 nicht im Walk steht (z.B. am Kran
+            # in Preparation) -- kein implizites Umschalten auf Walk.
             n.publish_bool(n.pub_arms_enabled, True)
-            n.publish_bool(n.pub_start_balancing, True)
+            if self.sim_mode or self._onboard_walk():
+                n.publish_bool(n.pub_start_balancing, True)
             self.mode, self.pending = MANIP, None
             self._status("Greifen bereit — Bewegung auswählen.", MODE_COLOR[MANIP])
             self._reload_sequence_buttons()
+        elif not self.sim_mode and not self._onboard_walk():
+            # REAL: GEHEN stellt den Onboard-Modus nicht mehr selbst um --
+            # das macht die Startleiste (Walk, mit Rueckfrage zum Kran).
+            self._status("Gehen gesperrt: G1 steht nicht im Walk-Modus — "
+                         "erst Startleiste Damp → Preparation → Walk.", "#ef5350")
+            return
         else:
             # WALK: Arme fahren erst in die Lauf-Pose -> "wechselt", bis
             # arms/walk_ready kommt (oder Timeout).
@@ -1239,6 +1322,14 @@ class DemoGUI(QWidget):
             QTimer.singleShot(WALK_SWITCH_TIMEOUT_MS,
                               lambda: req == self._walk_req and self._on_walk_ready(True))
         self._refresh()
+
+    def _onboard_walk(self):
+        n = self.node
+        if n.onboard is None or n.onboard_t is None:
+            return False
+        if time.monotonic() - n.onboard_t > status_line.STALE_S:
+            return False
+        return n.onboard.get("fsm") in status_line.WALK_FSM
 
     def _on_walk_ready(self, ready):
         if ready and self.pending == WALK:

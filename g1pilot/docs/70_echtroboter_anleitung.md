@@ -299,6 +299,20 @@ Seit 2026-10-16 (Review des Real-Ablaufs):
 - **Demo-GUI zeigt den Onboard-Modus** („G1: Walk (FSM 500) · bereit",
   Topic `/g1pilot/onboard_state`) und — im PS4-Arm-Modus — die gewählte Hand,
   Verschieben/Drehen und das Tempo. Klick auf die PS4-Anzeige zeigt die Belegung.
+- **Startleiste in der Demo-GUI (nur real): Damp · Preparation · Walk** —
+  der Start am Kran ohne Handy-App. Ablauf: G1 einschalten → **Damp** →
+  **Preparation** → Kran lockern → **Walk** (zweiter Klick: „Kran gelockert?").
+  Die Knöpfe sind nur freigegeben, wo der Schritt passt (Preparation nur aus
+  Damp/Walk, Walk nur aus Preparation, beides nicht im NOT-HALT); **Damp** aus
+  dem Stehen braucht ebenfalls einen zweiten Klick (der G1 sackt in den Kran).
+  `loco_client` prüft jede Anforderung (`/g1pilot/loco_request`) noch einmal.
+  **Walk** = `BalanceStand` + `Start()` wie die App, **ohne Höhenrampe**, und
+  nur wenn der FSM-Mode 0 meldet (Füße belastet). Hängt der G1 noch straff,
+  kommt „Walk: abgelehnt — Füße ohne Last … Kran lockern" in der Statuszeile.
+  Die alte Rampe gibt es weiter mit `walk_height_ramp:=true`.
+- **GEHEN/GREIFEN schalten den Onboard-Modus nicht mehr selbst um.** GEHEN ist
+  gesperrt, bis die Info-Zeile Walk zeigt; GREIFEN in Preparation (am Kran)
+  übernimmt nur die Arme. Die Handy-App funktioniert weiter wie bisher.
 - **Alter Joystick (PS4 = Gehen):** Bei Trennung oder hängender Funkverbindung
   publiziert er nichts mehr (früher: letzter Zustand mit gedrücktem Deadman
   weiter), `joy_mux` gibt nur noch frische Eingänge weiter → `loco_client`
@@ -312,7 +326,8 @@ Seit 2026-10-16 (Review des Real-Ablaufs):
 | „create domain error" im Log | `ROS_DOMAIN_ID` == Unitree-Domain (muss auf real 1 vs. 0 sein — Compose setzt das automatisch; eigene Terminals ebenfalls auf `ROS_DOMAIN_ID=1` setzen). |
 | Hand „NICHT VERBUNDEN" | IP/Port prüfen (`nc -zv <ip> 6000`); Hand mit Strom versorgt? |
 | „No joystick found" | `/dev/input` gemountet (Compose-Profil `real` braucht `privileged: true`)? Gerätename weicht ab → `JOYSTICK_NAME` setzen. Geräte anzeigen: `python3 -c "import evdev;[print(p, evdev.InputDevice(p).name) for p in evdev.list_devices()]"` |
-| WALK-Klick ohne Wirkung | Erst START → START BALANCING. |
+| WALK-Klick ohne Wirkung | Demo-GUI: G1 erst über die Startleiste (Damp → Preparation → Walk) oder die App auf Walk stellen. Streamdeck: erst START → START BALANCING. |
+| »Walk« abgelehnt „Füße ohne Last" | G1 hängt noch straff am Kran (FSM-Mode ≠ 0): Kran lockern, bis die Füße tragen, dann erneut. |
 | Arme ruckeln beim Enable | Rampe verkürzt/0? `arm_weight_ramp_up_s` prüfen (Default 2.0 auf real; < 1 s wird auf real korrigiert). |
 | DISABLE dauert mehrere Sekunden | Gewollt: Rückfahrt in die Onboard-Pose vor der Übergabe (max. 12 s). Log „Rueckgabe an den Onboard-Regler". |
 | Log „Onboard-Pose unbekannt" bei DISABLE | ENABLE kam aus dem E-Stop-Latch o. ä. ohne gemessene Pose → alte direkte 2-s-Rampe. Arme vorher von Hand/Ziel in eine neutrale Pose bringen. |

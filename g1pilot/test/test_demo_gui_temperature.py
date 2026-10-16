@@ -94,3 +94,85 @@ def test_gui_sim_hides_onboard_line(monkeypatch):
         assert g.info_onboard.isHidden()
     finally:
         _close(node, g)
+
+
+def _onboard(node, fsm, estop=False, note=""):
+    import json
+    from std_msgs.msg import String
+    node._latched_json("onboard", String(data=json.dumps(
+        {"fsm": fsm, "name": "x", "walk": False, "estop": estop, "note": note})))
+
+
+def test_gui_start_bar_crane_sequence(monkeypatch):
+    """Startleiste: Damp -> Preparation -> Walk (Walk erst nach zweitem Klick)."""
+    app, node, g = _gui(monkeypatch, sim=False)
+    sent = []
+    node.pub_loco_request.publish = lambda m: sent.append(m.data)
+    try:
+        assert not g.start_bar.isHidden()
+        g._refresh_info()
+        assert not any(b.isEnabled() for b in g.start_btns.values()), "ohne Daten gesperrt"
+        _onboard(node, 0)
+        g._refresh_info()
+        g._start_step("walk")
+        g._start_step("damp")
+        assert sent == ["damp"], "Walk aus Zero Torque gesperrt, Damp ohne Rueckfrage"
+        _onboard(node, 1)
+        g._refresh_info()
+        g._start_step("preparation")
+        assert sent[-1] == "preparation"
+        _onboard(node, 4)
+        g._refresh_info()
+        g._start_step("walk")
+        assert sent[-1] == "preparation" and "Kran" in g.start_btns["walk"].text()
+        g._start_step("walk")
+        assert sent[-1] == "walk" and g.start_btns["walk"].text() == "Walk"
+    finally:
+        _close(node, g)
+
+
+def test_gui_start_bar_damp_from_walk_needs_confirm(monkeypatch):
+    app, node, g = _gui(monkeypatch, sim=False)
+    sent = []
+    node.pub_loco_request.publish = lambda m: sent.append(m.data)
+    try:
+        _onboard(node, 500)
+        g._refresh_info()
+        g._start_step("damp")
+        assert sent == []
+        g._start_step("damp")
+        assert sent == ["damp"]
+    finally:
+        _close(node, g)
+
+
+def test_gui_walk_tile_refused_unless_onboard_walk(monkeypatch):
+    """REAL: GEHEN stellt nicht mehr selbst auf Walk um; GREIFEN in Preparation
+    schaltet nur die Arme ein (kein start_balancing)."""
+    from g1pilot.teleoperation import demo_gui as dg
+    app, node, g = _gui(monkeypatch, sim=False)
+    pubs = []
+    node.publish_bool = lambda pub, v: pubs.append((pub, v))
+    try:
+        g.started = True
+        _onboard(node, 4)
+        g.request_mode(dg.WALK)
+        assert g.pending is None and g.mode is None
+        assert (node.pub_start_walking, True) not in pubs
+        g.request_mode(dg.MANIP)
+        assert g.mode == dg.MANIP
+        assert (node.pub_arms_enabled, True) in pubs
+        assert (node.pub_start_balancing, True) not in pubs
+        _onboard(node, 500)
+        g.request_mode(dg.WALK)
+        assert g.pending == dg.WALK and (node.pub_start_walking, True) in pubs
+    finally:
+        _close(node, g)
+
+
+def test_gui_start_bar_hidden_in_sim(monkeypatch):
+    app, node, g = _gui(monkeypatch, sim=True)
+    try:
+        assert g.start_bar.isHidden()
+    finally:
+        _close(node, g)

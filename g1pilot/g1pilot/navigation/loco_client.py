@@ -33,6 +33,7 @@ FSM_NAMES = {0: "Zero Torque", 1: "Damp", 2: "Hocke", 3: "Sitzen",
              4: "Preparation", 500: "Walk", 501: "Walk", 702: "Aufstehen",
              706: "Aufstehen"}
 ONBOARD_STATE_TOPIC = "/g1pilot/onboard_state"
+LOCO_REQUEST_TOPIC = "/g1pilot/loco_request"
 
 
 def _rpc_get_int(client, api_id):
@@ -124,6 +125,10 @@ class G1LocoClient(Node):
         # dauernd auf der Stelle). 1 ist der alte g1pilot-Wert -- auf Hardware
         # pruefen (docs/70_echtroboter_anleitung.md), dann ggf. 0.
         self.declare_parameter('balance_mode', 1)
+        # Preparation -> Walk: false (Default, 2026-10-16) = direkt BalanceStand +
+        # Start() wie die Handy-App, nur mit belasteten Fuessen (FSM-Mode 0).
+        # true = alte Hoehenrampe aus dem Haenge-Boot (SetStandHeight 0.02..0.2).
+        self.declare_parameter('walk_height_ramp', False)
 
         ik_use_waist = self.get_parameter('ik_use_waist').get_parameter_value().bool_value
         ik_alpha = float(self.get_parameter('ik_alpha').value)
@@ -161,6 +166,10 @@ class G1LocoClient(Node):
         # Streamdeck-Walk: dieselben Topics, die in der Sim loco_sim bedient.
         self.create_subscription(Bool, '/g1pilot/start_walking', self.start_walking_callback, 10)
         self.create_subscription(Twist, '/g1pilot/loco_cmd_vel', self.cmd_vel_callback, 10)
+        # Startleiste der Demo-GUI: Onboard-Modus ausdruecklich anfordern
+        # ("damp" | "preparation" | "walk") -- damit der Start ohne Handy-App geht.
+        self.create_subscription(String, LOCO_REQUEST_TOPIC, self.mode_request_callback, 10)
+        self._note = ""                  # letzte Rueckmeldung fuer die GUI
         rate_hz = max(1.0, float(self.get_parameter('cmd_vel_rate_hz').value))
         self.create_timer(1.0 / rate_hz, self._cmd_vel_tick)
         sync_hz = float(self.get_parameter('state_sync_hz').value)
@@ -308,7 +317,8 @@ class G1LocoClient(Node):
         fsm = self._onboard_fsm
         st = {"fsm": fsm, "name": FSM_NAMES.get(fsm, "") if fsm is not None else "",
               "balanced": bool(self.balanced), "walk": bool(self.walk_enabled),
-              "estop": bool(self.robot_stopped), "robot": bool(self.use_robot)}
+              "estop": bool(self.robot_stopped), "robot": bool(self.use_robot),
+              "note": self._note}
         self.state_pub.publish(String(data=json.dumps(st, sort_keys=True)))
 
     def get_fsm_id(self):
@@ -623,6 +633,65 @@ class G1LocoClient(Node):
             self.walk_enabled = False
             self._move_active = False
 
+    def _set_note(self, text, level="info"):
+        self._note = text
+        # rclpy: je Aufrufstelle nur EINE Log-Stufe -> getrennte Aufrufe.
+        log = self.get_logger()
+        if level == "error":
+            log.error(text)
+        elif level == "warn":
+            log.warn(text)
+        else:
+            log.info(text)
+
+    def mode_request_callback(self, msg: String):
+        """Startleiste: damp | preparation | walk (wie die Handy-App).
+
+        damp        immer erlaubt (Richtung sicher; am Kran haengend gedacht).
+        preparation nur aus Damp oder Walk, nicht im E-Stop -> FSM 4.
+        walk        nur aus Preparation, nicht im E-Stop, nur mit belasteten
+                    Fuessen -> BalanceStand + Start() (siehe walk_height_ramp)."""
+        req = (msg.data or "").strip().lower()
+        if not self.use_robot or self.robot is None:
+            return
+        self.walk_enabled = False
+        self._stop_move(f"Startleiste: {req}")
+        if req == "damp":
+            self.balanced = False
+            code = self._robot_rpc_urgent("SetFsmId", 1)
+            self._set_note(f"Damp angefordert (Code {code}).", "warn")
+            return
+        if self.robot_stopped:
+            self._set_note(f"{req}: abgelehnt -- NOT-HALT aktiv, erst quittieren.", "warn")
+            return
+        fsm = self._sync_onboard_state(force=True)
+        if req == "preparation":
+            if fsm == FSM_READY:
+                self._set_note("Preparation: G1 steht schon in FSM 4.")
+                return
+            if fsm is None:
+                self._set_note("Preparation: Modus nicht lesbar -- nichts umgeschaltet.", "warn")
+                return
+            if fsm != 1 and fsm not in self._walk_ids():
+                # Ablauf am Kran: Einschalten -> Damp -> Preparation. Aus Zero
+                # Torque (schlaff) o.ae. nicht direkt hochfahren.
+                self._set_note(f"Preparation: abgelehnt -- nur aus Damp oder Walk "
+                               f"(FSM {fsm}). Erst Damp.", "warn")
+                return
+            self.balanced = False
+            code = self._robot_rpc("SetFsmId", FSM_READY)
+            self._set_note(f"Preparation: FSM {fsm} -> 4 (Code {code}).")
+        elif req == "walk":
+            if self.balanced:
+                self._set_note(f"Walk: G1 ist schon im Walk-Modus (FSM {fsm}).")
+                return
+            if fsm != FSM_READY:
+                self._set_note(f"Walk: abgelehnt -- nur aus Preparation (FSM {fsm}).", "warn")
+                return
+            self.entering_balancing()
+        else:
+            self.get_logger().warn(f"Startleiste: unbekannte Anforderung '{req}'.")
+
     def entering_balancing(self, max_height=0.5, step=0.02):
         if not self.use_robot or self.robot is None:
             self.balanced = True
@@ -630,9 +699,30 @@ class G1LocoClient(Node):
             return
         self._entering = True
         try:
-            self._enter_balancing_inner(max_height, step)
+            if bool(self.get_parameter('walk_height_ramp').value):
+                self._enter_balancing_inner(max_height, step)
+            else:
+                self._enter_walk_direct()
         finally:
             self._entering = False
+
+    def _enter_walk_direct(self):
+        """Preparation -> Walk wie in der Handy-App: ohne Hoehenrampe. Nur wenn
+        die Fuesse Last haben (FSM-Mode 0); haengt der G1 noch straff am Kran
+        (Mode != 0) oder kommt keine Antwort: kein Start()."""
+        mode = self.get_fsm_mode()
+        if mode != 0:
+            self._set_note(f"Walk: abgelehnt -- Fuesse ohne Last (FSM-Mode {mode}). "
+                           "Kran lockern, dann erneut.", "error")
+            return
+        if self.robot_stopped:
+            return
+        self._robot_rpc("BalanceStand", int(self.get_parameter('balance_mode').value))
+        code = self._robot_rpc("Start")
+        self.balanced = True
+        self._balanced_at = time.monotonic()
+        self._nonwalk_polls = 0
+        self._set_note(f"Walk: BalanceStand + Start() gesendet (Code {code}).")
 
     def _enter_balancing_inner(self, max_height, step):
         height = 0.0

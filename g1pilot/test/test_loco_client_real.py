@@ -295,9 +295,20 @@ def test_laufen_in_gui_switches_real_mode_from_preparation(lc_module):
         robot.fsm = 4
         node.start_walking_callback(_bool(True))
         assert robot.fsm == 500
-        assert robot.names().count("SetStandHeight") >= 2
+        # Default seit 2026-10-16: wie die Handy-App, ohne Hoehenrampe.
+        assert "SetStandHeight" not in robot.names()
         assert "BalanceStand" in robot.names() and "Start" in robot.names()
         assert node.balanced and node.walk_enabled
+    finally:
+        _close(node)
+
+
+def test_walk_height_ramp_parameter_keeps_old_ramp(lc_module):
+    node, robot = _make(lc_module, walk_height_ramp=True)
+    try:
+        robot.fsm = 4
+        node.start_walking_callback(_bool(True))
+        assert robot.names().count("SetStandHeight") >= 2 and node.balanced
     finally:
         _close(node)
 
@@ -558,9 +569,132 @@ def test_onboard_state_published_for_gui(lc_module):
         node.start_walking_callback(_bool(True))
         node._publish_state()
         assert got[-1] == {"fsm": 500, "name": "Walk", "balanced": True, "walk": True,
-                           "estop": False, "robot": True}
+                           "estop": False, "robot": True, "note": ""}
         node.emergency_callback(_bool(True))
         node._publish_state()
         assert got[-1]["estop"] and not got[-1]["walk"]
+    finally:
+        _close(node)
+
+
+# ── Startleiste der Demo-GUI (/g1pilot/loco_request) ──────────────────────
+
+def _req(node, what):
+    from std_msgs.msg import String
+    node.mode_request_callback(String(data=what))
+
+
+def test_startbar_full_crane_sequence(lc_module):
+    """Einschalten (Zero Torque) -> Damp -> Preparation -> Kran lockern -> Walk."""
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = 0
+        _req(node, "damp")
+        assert robot.fsm == 1
+        _req(node, "preparation")
+        assert robot.fsm == 4
+        _req(node, "walk")
+        assert robot.fsm == 500 and node.balanced and not node.walk_enabled
+        assert ("BalanceStand", 1) in robot.calls and "SetStandHeight" not in robot.names()
+        node.start_walking_callback(_bool(True))
+        assert node.walk_enabled
+    finally:
+        _close(node)
+
+
+def test_startbar_walk_refused_while_feet_unloaded(lc_module):
+    """Haengt straff am Kran (FSM-Mode != 0): kein Start(), Hinweis fuer die GUI."""
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm, robot.mode = 4, 2
+        _req(node, "walk")
+        assert "Start" not in robot.names() and "BalanceStand" not in robot.names()
+        assert robot.fsm == 4 and not node.balanced
+        assert "Kran" in node._note
+    finally:
+        _close(node)
+
+
+def test_startbar_walk_refused_on_unreadable_mode(lc_module):
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = 4
+        orig = robot._Call
+        robot._Call = lambda api, p: (orig(api, p) if api == "GET_FSM_ID" else (3104, None))
+        _req(node, "walk")
+        assert "Start" not in robot.names() and not node.balanced
+    finally:
+        _close(node)
+
+
+@pytest.mark.parametrize("fsm", [0, 1, 702])
+def test_startbar_walk_only_from_preparation(lc_module, fsm):
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = fsm
+        _req(node, "walk")
+        assert robot.fsm == fsm and "Start" not in robot.names()
+    finally:
+        _close(node)
+
+
+@pytest.mark.parametrize("fsm", [0, 702])
+def test_startbar_preparation_not_from_zero_torque(lc_module, fsm):
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = fsm
+        _req(node, "preparation")
+        assert robot.fsm == fsm and "SetFsmId" not in robot.names()
+    finally:
+        _close(node)
+
+
+def test_startbar_preparation_from_walk_stops_first(lc_module):
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = 500
+        node.start_walking_callback(_bool(True))
+        node.cmd_vel_callback(_cmd(vx=0.5))
+        node._move_active = True
+        _req(node, "preparation")
+        assert robot.fsm == 4 and not node.walk_enabled and not node.balanced
+        names = robot.names()
+        assert names.index("SetVelocity") < names.index("SetFsmId")
+    finally:
+        _close(node)
+
+
+def test_startbar_refused_during_estop_except_damp(lc_module):
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = 4
+        node.emergency_callback(_bool(True))
+        robot.calls.clear()
+        _req(node, "walk")
+        _req(node, "preparation")
+        assert "Start" not in robot.names() and "SetFsmId" not in robot.names()
+        _req(node, "damp")
+        assert robot.fsm == 1
+    finally:
+        _close(node)
+
+
+def test_startbar_damp_from_walk(lc_module):
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = 500
+        node.start_walking_callback(_bool(True))
+        _req(node, "damp")
+        assert robot.fsm == 1 and not node.walk_enabled and not node.balanced
+    finally:
+        _close(node)
+
+
+def test_startbar_ignored_in_sim(lc_module):
+    node, robot = _make(lc_module, use_robot=False)
+    try:
+        before = list(robot.calls) if robot is not None else []
+        _req(node, "damp")
+        assert (list(robot.calls) if robot is not None else []) == before
     finally:
         _close(node)

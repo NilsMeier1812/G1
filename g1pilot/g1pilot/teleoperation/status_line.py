@@ -49,9 +49,9 @@ def onboard_text(state, age_s, walk_requested=False):
         text += " · Gehen aktiv" if state.get("walk") else " · bereit"
         return text, GREEN
     if fsm == 4:
-        return text + " · GEHEN/GREIFEN stellt auf Walk um", AMBER
+        return text + " · Kran lockern, dann »Walk«", AMBER
     if walk_requested:
-        return text + " · Gehen gesperrt – per Handy/Fernbedienung aufstellen", RED
+        return text + " · Gehen gesperrt – erst Damp → Preparation → Walk", RED
     return text, RED if fsm in (0, 1) else AMBER
 
 
@@ -72,6 +72,30 @@ def ps4_text(status, age_s, sim=False):
     speed = status.get("speed", "")
     color = _hex(COLORS[sel]) if sel in COLORS else GREY
     return f"PS4: Hand {label} · {mode} · {speed}", color
+
+
+# Startleiste (nur real): Damp -> Preparation -> Walk wie in der Handy-App.
+START_STEPS = ("damp", "preparation", "walk")
+START_LABEL = {"damp": "Damp", "preparation": "Preparation", "walk": "Walk"}
+
+
+def start_buttons(state, age_s):
+    """-> {schritt: (freigegeben, rueckfrage)} fuer die Startleiste.
+
+    Ohne frische Daten vom loco_client ist alles gesperrt. Damp geht immer
+    (Rueckfrage, ausser der G1 ist schon schlaff/Damp: er sackt sonst in den
+    Kran). Preparation nur aus Damp oder Walk, Walk nur aus Preparation --
+    beides nicht im NOT-HALT; Walk immer mit Rueckfrage (Kran gelockert?)."""
+    off = {k: (False, False) for k in START_STEPS}
+    if state is None or age_s is None or age_s > STALE_S:
+        return off
+    fsm = state.get("fsm")
+    estop = bool(state.get("estop"))
+    return {
+        "damp": (fsm != 1, fsm not in (0, 1)),
+        "preparation": (not estop and (fsm == 1 or fsm in WALK_FSM), False),
+        "walk": (not estop and fsm == 4, True),
+    }
 
 
 # Belegung (wie ps4_arm_teleop / docs/43_ps4_controller.md).

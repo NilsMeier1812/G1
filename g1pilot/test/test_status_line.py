@@ -42,3 +42,21 @@ def test_ps4_help_follows_ps_estop():
 def test_parse_ignores_garbage():
     assert sl.parse("kaputt") is None and sl.parse("[1]") is None
     assert sl.parse('{"fsm": 4}') == {"fsm": 4}
+
+
+def test_start_buttons_follow_onboard_mode():
+    off = {k: (False, False) for k in sl.START_STEPS}
+    assert sl.start_buttons(None, None) == off
+    assert sl.start_buttons({"fsm": 4}, 10.0) == off          # veraltet
+    b = sl.start_buttons({"fsm": 0}, 0.1)                    # nach dem Einschalten
+    assert b["damp"] == (True, False) and not b["preparation"][0] and not b["walk"][0]
+    b = sl.start_buttons({"fsm": 1}, 0.1)
+    assert not b["damp"][0] and b["preparation"][0] and not b["walk"][0]
+    b = sl.start_buttons({"fsm": 4}, 0.1)
+    assert b["damp"] == (True, True) and not b["preparation"][0] and b["walk"] == (True, True)
+    b = sl.start_buttons({"fsm": 500}, 0.1)
+    assert b["damp"] == (True, True) and b["preparation"][0] and not b["walk"][0]
+    b = sl.start_buttons({"fsm": 4, "estop": True}, 0.1)
+    assert b["damp"][0] and not b["preparation"][0] and not b["walk"][0]
+    b = sl.start_buttons({"fsm": None}, 0.1)                 # Modus unbekannt
+    assert b["damp"] == (True, True) and not b["walk"][0]
