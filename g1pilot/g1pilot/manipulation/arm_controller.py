@@ -32,6 +32,7 @@ from g1pilot.manipulation.pose_store import PoseStore
 from g1pilot.manipulation import arm_command as ac
 from g1pilot.manipulation.arm_geometry import ArmGeometry, Environment, HAND_LINK_MIN
 from g1pilot.manipulation.arm_planner_process import PlannerProcess
+from g1pilot.manipulation.ik_servo_process import IkServoProcess
 from g1pilot.manipulation.arm_planner import DEFAULTS as PLANNER_DEFAULTS
 from g1pilot.manipulation.waist_hold import WaistHold
 
@@ -245,6 +246,19 @@ class ArmController(Node):
         # umgerechnet (gleiches Zeitverhalten unabhaengig von der Rate).
         # 0 = pro Takt wie bisher (Real-Default). bringup_sim setzt 50.
         self.declare_parameter("smoothing_ref_hz", 0.0)
+        # Marker-/Jog-IK (PS4, Demo-GUI-Joystick, RViz-Marker) in einem EIGENEN
+        # Prozess rechnen (ik_servo_process.py). Frueher lief sie im Regeltakt:
+        # ~45 ms je Tick (60 Iterationen je Arm), die Senderate an rt/arm_sdk
+        # fiel von 250 Hz auf ~20-40 Hz und der Motor bekam alle 25-50 ms einen
+        # Sollwert-Sprung -> Arm rattert/hackt beim Joggen (geplante Fahrten/
+        # Home ohne IK liefen mit 250 Hz sauber). So sendet der Takt weiter mit
+        # voller Rate und fuehrt das Kommando in kleinen Schritten zum letzten
+        # IK-Ergebnis. false = altes Verhalten (IK im Takt).
+        self.declare_parameter("ik_async", True)
+        # Fruehes Ende der Servo-IK, sobald eine Iteration weniger als das [rad]
+        # bewegt (Fixpunkt erreicht; Ergebnis praktisch gleich, ~4x schneller
+        # -> frischere IK-Ziele). 0.0 = immer alle Iterationen wie frueher.
+        self.declare_parameter("ik_servo_step_tol", 2e-4)
         self.declare_parameter("ik_orientation_mode", "full")
         self.declare_parameter("ik_max_ori_step_rad", 0.35)
         # Staerke der IK-Nullraum-Regularisierung zur Ruhe-Pose (0 = aus). Verhindert,
@@ -382,6 +396,12 @@ class ArmController(Node):
         self._goal_left_filt = None
         self._goal_right_filt = None
         self._ik_hold_goal = {}          # Halteziele aus _align_ik_to_config
+        # Asynchrone Marker-IK (siehe Parameter ik_async): _ik_gen wird bei
+        # jedem Neuaufsetzen der IK (Enable, Home, Ende einer geplanten Fahrt,
+        # Zweigwechsel) erhoeht -> Ergebnisse aelterer Auftraege werden verworfen.
+        self._ik_gen = 0
+        self._ik_branch_last = False     # lief im letzten Tick der IK-Zweig?
+        self._ik_proc = None
         self._reset_after_home = False
         self._initialized = False
 
@@ -466,6 +486,13 @@ class ArmController(Node):
             logger=self.get_logger())
         self._planner.start_async()
         self.ik_solver = G1IKSolver(urdf_path=urdf_path, mesh_dir=mesh_dir, debug=False)
+        self.ik_solver.servo_step_tol = float(self.get_parameter("ik_servo_step_tol").value) or None
+        if bool(self.get_parameter("ik_async").value):
+            self._ik_proc = IkServoProcess(
+                urdf_path, mesh_dir,
+                rest={"left": self.home_left, "right": self.home_right},
+                logger=self.get_logger())
+            self._ik_proc.start_async()
         # Kugelmodell der Arme (Abstaende zu Objekten, siehe arm_geometry.py) fuer
         # das Laufzeit-Gate; der Planer-Prozess baut sich dasselbe Modell.
         self.arm_geom = ArmGeometry(self.ik_solver.model, self.ik_solver.collision_model)
@@ -1896,6 +1923,7 @@ class ArmController(Node):
             # Arme beim Uebernehmen (ENABLE) in die Ruhe-Konfiguration: Hand
             # bleibt, Ellbogen dreht bis ~0.25 rad weg.
             self._ik_hold_goal = {"left": T_left.copy(), "right": T_right.copy()}
+            self._ik_gen += 1
             if hasattr(self.ik_solver, "set_goal"):
                 self.ik_solver.set_goal("left",  T_left.copy())
                 self.ik_solver.set_goal("right", T_right.copy())
@@ -2582,6 +2610,8 @@ class ArmController(Node):
         self.get_logger().info(f"Fahre geplante Bewegung zu {name} ab.")
 
     def destroy_node(self):
+        if self._ik_proc is not None:
+            self._ik_proc.shutdown()
         try:
             self._planner.shutdown()
         except Exception:
@@ -2686,6 +2716,7 @@ class ArmController(Node):
                 "left":  self._last_q_target[0:7].copy(),
                 "right": self._last_q_target[7:14].copy()
             })
+            self._ik_gen += 1
 
         msg_tf = self._transform_pose_to_world(msg)
         o, p = msg_tf.pose.orientation, msg_tf.pose.position
@@ -2760,6 +2791,7 @@ class ArmController(Node):
                 "left":  self._last_q_target[0:7].copy(),
                 "right": self._last_q_target[7:14].copy()
             })
+            self._ik_gen += 1
 
         msg_tf = self._transform_pose_to_world(msg)
         o, p = msg_tf.pose.orientation, msg_tf.pose.position
@@ -2935,6 +2967,26 @@ class ArmController(Node):
             o.x, o.y, o.z, o.w = float(q.x), float(q.y), float(q.z), float(q.w)
             self.pub_hand_cmd_pose[side].publish(msg)
 
+    def _ik_async_targets(self, held: dict, current_all: np.ndarray) -> dict:
+        """ik_async: neuesten IK-Auftrag an den IK-Prozess geben und das letzte
+        passende Ergebnis zurueckliefern ({side: q7}). Bis das erste Ergebnis
+        der aktuellen Generation da ist (oder bei Divergenz) fehlt die Seite
+        -> der Arm haelt, wie bisher ohne IK-Loesung."""
+        goals = {}
+        for side in ("left", "right"):
+            g = self.ik_solver._goal_left if side == "left" else self.ik_solver._goal_right
+            if not held[side] and g is not None:
+                goals[side] = g
+        res = self._ik_proc.result()
+        if goals:
+            self._ik_proc.submit(self._ik_gen, goals, current_all, {
+                "null_space_gain": float(self.ik_solver.null_space_gain),
+                "orientation_mode": self.ik_orientation_mode,
+                "servo_step_tol": float(self.ik_solver.servo_step_tol or 0.0)})
+        if res is None or res[0] != self._ik_gen:
+            return {}
+        return {s: q for s, q in res[1].items() if q is not None and s in goals}
+
     def _alpha_dt(self, alpha: float, dt: float) -> float:
         """Glaettungs-Alpha (gilt pro Takt bei smoothing_ref_hz) auf den echten
         Zeitschritt umrechnen: 1 - (1 - a)^(dt * ref). smoothing_ref_hz <= 0
@@ -3062,6 +3114,7 @@ class ArmController(Node):
             # in self.msg geschrieben -- die gehoeren nicht in rt/arm_sdk.)
             return
 
+        ik_branch = False
         if self.walk_mode and not self._walk_transition:
             # WALK: Arme auf die Lauf-Pose halten (Marker ignoriert). Die
             # Geschwindigkeitsbegrenzung unten faehrt sie sanft dorthin (kein Teleport).
@@ -3219,6 +3272,11 @@ class ArmController(Node):
             q_target = self._last_q_target.copy()
 
         else:
+            if not self._ik_branch_last:
+                # IK-Zweig beginnt (nach Home/geplanter Fahrt/WALK/Enable):
+                # Ergebnisse von vorher sind ungueltig.
+                self._ik_gen += 1
+            ik_branch = True
             # IK-Seed: Arm-Gelenke aus dem LETZTEN ZIEL (deterministisch), nicht
             # aus der Messung. Wuerde man aus der Messung seeden, fuehrt Mess-/
             # Sim-Rauschen zu leicht anderen IK-Loesungen -> minimal anderes
@@ -3253,8 +3311,11 @@ class ArmController(Node):
             self.ik_solver.goal_filter_alpha = self._ik_goal_alpha_base
 
             held = {side: self._ik_side_held(side) for side in ("left", "right")}
-            q_dict = ({} if held["left"] and held["right"]
-                      else self.ik_solver.get_joint_targets(current_all))
+            if self._ik_proc is not None and self._ik_proc.ready:
+                q_dict = self._ik_async_targets(held, current_all)
+            else:
+                q_dict = ({} if held["left"] and held["right"]
+                          else self.ik_solver.get_joint_targets(current_all))
             for side in ("left", "right"):
                 if held[side]:
                     q_dict.pop(side, None)      # Gelenke exakt halten
@@ -3269,6 +3330,7 @@ class ArmController(Node):
             if "right" in q_dict:
                 q_target[7:14] = q_dict["right"]
 
+        self._ik_branch_last = ik_branch
         dt = self._compute_dt()
         max_step = self.arm_velocity_limit * dt
         # Richtungserhaltend skalieren statt je Gelenk zu clippen: sonst laufen

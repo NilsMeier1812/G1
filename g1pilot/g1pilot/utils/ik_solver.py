@@ -55,6 +55,14 @@ class G1IKSolver:
         self.max_dq_step = max_dq_step
         self.damping = damping
         self.max_iter = max_iter
+        # Fruehes Ende im SERVO-Schritt (solve/solve_servo): ist der Gelenk-
+        # schritt einer Iteration kleiner als das [rad], hat die Iteration ihren
+        # Fixpunkt erreicht -- weitere Iterationen aendern nichts mehr. tol (1e-4
+        # auf dem 6D-Fehler) wird wegen Nullraum-Term und IK-Restfehler praktisch
+        # nie erreicht, deshalb liefen bisher IMMER alle max_iter Iterationen
+        # (~45 ms je Tick fuer beide Arme). None/0 = aus. solve_pose() nutzt es nicht.
+        self.servo_step_tol = None
+        self.last_iters = 0
         self.tol = tol
         self.pos_gain = pos_gain
         self.ori_gain = ori_gain
@@ -512,6 +520,20 @@ class G1IKSolver:
             "rounds_used": used,
         }
 
+    def solve_servo(self, side: str, goal: SE3, current_all: np.ndarray, data):
+        """Ein Servo-Schritt wie solve(), aber THREAD-SICHER: explizites Ziel
+        (bereits gefiltert) und eigenes pin.Data -- fuer die IK im Hintergrund-
+        Thread des arm_controller (der Regeltakt wartet so nie auf die IK).
+
+        -> (q7, diverged). diverged=True: die Iteration haette den Fehler
+        vergroessert, q7 ist dann die unveraenderte Ausgangsstellung."""
+        q = self._q_full_from(None, current_all)
+        goal = self._clamp_goal_to_reach(side, goal, q, data)
+        seed = np.array([q[self._name_to_q_index[self._ros_joint_names[i]]]
+                         for i in self._arm_indices(side)])
+        q7 = self._solve_to_goal(side, goal, q, data, step_tol=self.servo_step_tol)
+        return q7, bool(np.array_equal(q7, seed))
+
     def solve(self, side: str, q_init: np.ndarray, current_all: np.ndarray) -> np.ndarray:
         """Compute 7-DOF IK solution for one arm (collision-aware).
 
@@ -523,9 +545,10 @@ class G1IKSolver:
         q = self._q_full_from(q_init, current_all)
         # Unerreichbare Ziele auf die Reichweiten-Kugel klemmen (s.o.).
         goal = self._clamp_goal_to_reach(side, goal, q)
-        return self._solve_to_goal(side, goal, q, self.data)
+        return self._solve_to_goal(side, goal, q, self.data, step_tol=self.servo_step_tol)
 
-    def _solve_to_goal(self, side: str, goal: SE3, q: np.ndarray, data) -> np.ndarray:
+    def _solve_to_goal(self, side: str, goal: SE3, q: np.ndarray, data,
+                       step_tol=None) -> np.ndarray:
         """Getunte DLS-Iteration auf `goal`, auf den uebergebenen Buffern.
         `q` (voller Konfigurationsvektor) wird in place iteriert; zurueck kommt
         die Arm-Teilmenge (7 DOF)."""
@@ -542,7 +565,8 @@ class G1IKSolver:
         err0 = np.linalg.norm(pin.log(data.oMf[fid].inverse() * goal).vector)
 
         # Iterative IK loop
-        for _ in range(self.max_iter):
+        it = 0
+        for it in range(1, self.max_iter + 1):
             pin.forwardKinematics(self.model, data, q)
             pin.updateFramePlacements(self.model, data)
             M_cur = data.oMf[fid]
@@ -620,9 +644,15 @@ class G1IKSolver:
             max_abs = float(np.max(np.abs(dq_red))) if len(dq_red) else 0.0
             if max_abs > self.max_dq_step:
                 dq_red = dq_red * (self.max_dq_step / max_abs)
+            moved = 0.0
             for i, arm_i in enumerate(arm_ids):
                 qi = self._name_to_q_index[self._ros_joint_names[arm_i]]
+                q_old = q[qi]
                 q[qi] = np.clip(q[qi] + dq_red[i], *JOINT_LIMITS_RAD[arm_i])
+                moved = max(moved, abs(q[qi] - q_old))
+            if step_tol and moved < step_tol:
+                break
+        self.last_iters = it
 
         # Divergenz-Schutz: hat die Iteration den Pose-Fehler VERGROESSERT
         # (Singulaeritaet/Grenzlage), lieber die Ausgangskonfiguration halten,

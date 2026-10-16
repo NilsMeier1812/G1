@@ -82,6 +82,25 @@ sie nur einmal pro `main_loop`-Takt. Kommen Ziele schneller als der Takt
 Ein Marker-Griff bricht **immer** eine laufende geplante Bewegung ab
 (`_abort_planned_motion("Marker bewegt")`) — manuelle Eingabe hat Vorrang.
 
+#### IK im eigenen Prozess (`ik_servo_process.py`, Parameter `ik_async`)
+
+Die Servo-IK (60 DLS-Iterationen je Arm) kostet ~45 ms. Lief sie im
+`main_loop`, kam der 250-Hz-Takt beim Joggen (PS4, Demo-GUI-Joystick,
+RViz-Marker) nur auf ~20–40 Hz: der Motor bekam alle 25–50 ms einen
+Sollwert-Sprung von 10–25 mrad, der Arm ratterte hörbar (Real-Test
+2026-10-16). Geplante Fahrten und Home rechnen keine IK und liefen sauber.
+
+Jetzt schickt der Takt je Tick den neuesten Auftrag (gefilterte Ziele +
+Konfiguration) an einen eigenen Prozess (`IkServoProcess`; ein Thread reicht
+nicht, die IK hält das GIL). Das letzte Ergebnis ist das Gelenkziel, zu dem
+der Takt das Kommando mit allen Limits in kleinen Schritten fährt.
+`_ik_gen` verwirft Ergebnisse nach ENABLE/Home/geplanter Fahrt. Bis der
+Prozess geladen ist (oder falls er ausfällt), rechnet der Takt wie früher.
+`ik_servo_step_tol` (2e-4 rad) beendet die Iteration am Fixpunkt (~15 statt 60
+Iterationen, gleiches Ergebnis innerhalb weniger mrad). Rückfall: real
+`G1_IK_ASYNC=0`, sonst `ik_async:=false` und `ik_servo_step_tol:=0.0`.
+Messsonde ohne Hardware: `test/teleop_jitter_probe.py`.
+
 #### Ziel-Rückmeldung an den Marker (`/g1pilot/hand_goal_status`)
 
 Jedes Marker-Ziel wird je Seite verfolgt (`_track_marker_goal`), bis es
@@ -380,6 +399,8 @@ Bahn:
 | `rate_hz` | Regeltakt des `main_loop` (Default 250) |
 | `ik_alpha`, `ik_goal_filter_alpha` | Glättung Servoing-Pfad (`ik_goal_filter_alpha` pro Ziel-Nachricht, `ik_alpha` und der Ziel-Filter im Solver pro Takt) |
 | `smoothing_ref_hz` | 0 = Glättung pro Takt (Real-Default). > 0: die Alphas pro Takt gelten für diese Bezugsrate und werden auf das echte `dt` umgerechnet, `1-(1-a)^(dt·ref)` — gleiches Zeitverhalten bei niedriger Regelrate. `bringup_sim` setzt 50 |
+| `ik_async` | Marker-/Jog-IK im eigenen Prozess (Default true; false = IK im Takt, alt) |
+| `ik_servo_step_tol` | Fruehes Ende der Servo-IK [rad] (Default 2e-4, 0.0 = immer alle Iterationen) |
 | `ik_orientation_mode` | `full` / weitere Modi, siehe `set_orientation_mode` |
 | `ik_null_space_gain` | Stärke der Nullraum-Regularisierung |
 | `planned_motion_tolerance` | Toleranz [rad], ab der das Bahnende als erreicht gilt |
