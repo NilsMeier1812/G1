@@ -136,7 +136,7 @@ class ArmTeleopLogic:
     def status(self):
         return {"selection": self.selection, "sides": list(self.sides),
                 "mode": self.mode, "speed": self.speed, "estop": self.estop,
-                "label": self.label()}
+                "ps_estop": self.ps_estop, "label": self.label()}
 
     def clear_estop(self):
         """NOT-HALT quittiert (START aus GUI/Streamdeck gesehen)."""

@@ -61,6 +61,7 @@ from g1pilot.teleoperation.ui_interface import (
     StreamDeck, VirtualJoystick, PoseSaveDialog, PoseLoadDialog,
 )
 from g1pilot.teleoperation.hand_panel import HandPanel
+from g1pilot.teleoperation import status_line
 from g1pilot.teleoperation.hand_jog import (
     JOG_FRAME, JOG_TF, JOG_SPEEDS, JOG_CMD_TOPIC, CommandedPoses, HoldStreamer, hold_pose,
     lead_limits, jog_step,
@@ -153,6 +154,17 @@ class DemoNode(StreamDeck):
         self.temps = None
         self.temps_t = None
         self.create_subscription(String, "/g1pilot/temperatures", self._temperatures, 10)
+        # Info-Zeile (nur Anzeige): Onboard-Modus des echten G1 (loco_client)
+        # und Auswahl/Tempo des PS4-Controllers (ps4_arm_teleop). Beide latched.
+        self.onboard = self.onboard_t = None
+        self.ps4 = self.ps4_t = None
+        qos_latched = QoSProfile(depth=1)
+        qos_latched.durability = DurabilityPolicy.TRANSIENT_LOCAL
+        self.pub_loco_request = self.create_publisher(String, "/g1pilot/loco_request", 10)
+        self.create_subscription(String, "/g1pilot/onboard_state",
+                                 lambda m: self._latched_json("onboard", m), qos_latched)
+        self.create_subscription(String, "/g1pilot/ps4/status",
+                                 lambda m: self._latched_json("ps4", m), qos_latched)
         # Stations-Ziele aus der Szene (station_<Name>, siehe scene_bridge.py):
         # name -> (x, y, yaw). on_stations wird nur bei Aenderung gerufen.
         self.stations = {}
@@ -244,6 +256,12 @@ class DemoNode(StreamDeck):
         msg.pose.orientation.z = math.sin(yaw / 2.0)
         msg.pose.orientation.w = math.cos(yaw / 2.0)
         self.pub_goal.publish(msg)
+
+    def _latched_json(self, key, msg: String):
+        data = status_line.parse(msg.data)
+        if data is not None:
+            setattr(self, key, data)
+            setattr(self, key + "_t", time.monotonic())
 
     def _temperatures(self, msg: String):
         data = g1t.parse_payload(msg.data)
@@ -940,6 +958,10 @@ class DemoGUI(QWidget):
         self.jog_timer = QTimer(self)
         self.jog_timer.timeout.connect(self._jog_tick)
         self.jog_timer.start(33)
+        self.info_timer = QTimer(self)
+        self.info_timer.timeout.connect(self._refresh_info)
+        self.info_timer.start(500)
+        self._refresh_info()
 
         # Wie ui_interface: Auto-Start NUR in der Sim (Arme an + BALANCING),
         # wiederholt bis arm_controller und loco_sim quittieren (sim_autostart.py;
@@ -976,6 +998,39 @@ class DemoGUI(QWidget):
         self.btn_start = big_button("Roboter starten", "#455a64", height=60)
         self.btn_start.setVisible(not self.sim_mode)
         root.addWidget(self.btn_start)
+        # Startleiste (nur real): Onboard-Modus wie in der Handy-App umschalten.
+        # Freigabe je nach Onboard-Modus (status_line.start_buttons), Damp aus
+        # dem Stehen und Walk brauchen einen zweiten Klick.
+        self.start_bar = QWidget()
+        bar = QHBoxLayout(self.start_bar)
+        bar.setContentsMargins(0, 0, 0, 0)
+        bar.setSpacing(12)
+        self.start_btns = {}
+        for step in status_line.START_STEPS:
+            b = big_button(status_line.START_LABEL[step], "#37474f", font=18, height=50)
+            b.clicked.connect(lambda _=False, s=step: self._start_step(s))
+            bar.addWidget(b)
+            self.start_btns[step] = b
+        self._start_armed = None      # Schritt, der auf den zweiten Klick wartet
+        self._start_armed_n = 0
+        self._last_note = None
+        self.start_bar.setVisible(not self.sim_mode)
+        root.addWidget(self.start_bar)
+        # Info-Zeile: links Onboard-Modus (nur real), rechts PS4 (nur wenn aktiv;
+        # Klick = Belegung). Reine Anzeige.
+        info = QHBoxLayout()
+        info.setSpacing(16)
+        self.info_onboard = QLabel()
+        self.info_onboard.setVisible(not self.sim_mode)
+        self.info_ps4 = QLabel()
+        self.info_ps4.setVisible(False)
+        self.info_ps4.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.info_ps4.setToolTip("Klicken: Belegung des PS4-Controllers")
+        self.info_ps4.mousePressEvent = lambda e: self._ps4_help()
+        info.addWidget(self.info_onboard)
+        info.addStretch(1)
+        info.addWidget(self.info_ps4)
+        root.addLayout(info)
 
         # Bereich 2: Steuerung des aktiven Modus
         root.addWidget(self._section_label("2  ·  STEUERUNG"))
@@ -1059,6 +1114,91 @@ class DemoGUI(QWidget):
         root.addWidget(self.status)
         root.addLayout(bottom)
         self._status("Startet …", "#aaa")
+
+    @staticmethod
+    def _info_css(color):
+        return (f"color:{color}; font-size:16px; font-weight:700; padding:4px 10px;"
+                f"background:#1a1a1a; border-left:5px solid {color}; border-radius:6px;")
+
+    def _refresh_info(self):
+        """Info-Zeile aus den zuletzt empfangenen Zustaenden (2 Hz)."""
+        n, now = self.node, time.monotonic()
+        if not self.sim_mode:
+            age = None if n.onboard_t is None else now - n.onboard_t
+            walk_req = WALK in (self.mode, self.pending)
+            text, color = status_line.onboard_text(n.onboard, age, walk_requested=walk_req)
+            self.info_onboard.setText(text)
+            self.info_onboard.setStyleSheet(self._info_css(color))
+            self._refresh_start_bar()
+        age = None if n.ps4_t is None else now - n.ps4_t
+        res = status_line.ps4_text(n.ps4, age, sim=self.sim_mode)
+        self.info_ps4.setVisible(res is not None)
+        if res is not None:
+            self.info_ps4.setText(res[0] + "   ⓘ")
+            self.info_ps4.setStyleSheet(self._info_css(res[1]))
+
+    def _refresh_start_bar(self):
+        n, now = self.node, time.monotonic()
+        age = None if n.onboard_t is None else now - n.onboard_t
+        allowed = status_line.start_buttons(n.onboard, age)
+        if self._start_armed and not allowed[self._start_armed][0]:
+            self._start_disarm()
+        for step, b in self.start_btns.items():
+            b.setEnabled(allowed[step][0])
+        note = (n.onboard or {}).get("note") if age is not None else None
+        if note and note != self._last_note and self._last_note is not None:
+            self._status(note, "#ef5350" if "abgelehnt" in note else "#aaa")
+        if note:
+            self._last_note = note
+        elif self._last_note is None:
+            self._last_note = ""
+
+    def _start_step(self, step):
+        """Startleiste: Anforderung an den loco_client (der prueft erneut)."""
+        n, now = self.node, time.monotonic()
+        age = None if n.onboard_t is None else now - n.onboard_t
+        enabled, confirm = status_line.start_buttons(n.onboard, age)[step]
+        if not enabled:
+            return
+        if confirm and self._start_armed != step:
+            self._start_disarm()
+            self._start_armed = step
+            self._start_armed_n += 1
+            armed = self._start_armed_n
+            b = self.start_btns[step]
+            b.setText("Kran gelockert?\nnochmal tippen" if step == "walk"
+                      else "Wirklich Damp?\nnochmal tippen")
+            QTimer.singleShot(QUIT_CONFIRM_MS,
+                              lambda: armed == self._start_armed_n and self._start_disarm())
+            return
+        self._start_disarm()
+        if step != "walk":
+            # Damp/Preparation beenden einen GUI-Modus (Gehen/Greifen).
+            self._cancel_sequence()
+            self.set_auto_nav(False)
+            self.walk_panel.reset()
+            if self.mode == WALK or self.pending == WALK:
+                n.publish_bool(n.pub_start_walking, False)
+                self.mode = self.pending = None
+                self._refresh()
+        n.pub_loco_request.publish(String(data=step))
+        self._status(f"{status_line.START_LABEL[step]} angefordert …", "#aaa")
+
+    def _start_disarm(self):
+        if self._start_armed:
+            self.start_btns[self._start_armed].setText(
+                status_line.START_LABEL[self._start_armed])
+        self._start_armed = None
+        self._start_armed_n += 1
+
+    def _ps4_help(self):
+        rows = "".join(f"<tr><td style='padding:3px 14px 3px 0'><b>{k}</b></td><td>{v}</td></tr>"
+                       for k, v in status_line.ps4_help(self.node.ps4))
+        box = QMessageBox(self)
+        box.setWindowTitle("PS4-Controller: Belegung")
+        box.setTextFormat(Qt.TextFormat.RichText)
+        box.setText(f"<table>{rows}</table><p>Kein Laufen über den Controller.</p>")
+        box.open()
 
     @staticmethod
     def _section_label(text):
@@ -1157,11 +1297,20 @@ class DemoGUI(QWidget):
             self._reload_sequence_buttons()
         elif mode == MANIP:
             # BALANCING: Fuesse geplant, Arme frei -> sofort bestaetigt.
+            # REAL: nur Arme, solange der G1 nicht im Walk steht (z.B. am Kran
+            # in Preparation) -- kein implizites Umschalten auf Walk.
             n.publish_bool(n.pub_arms_enabled, True)
-            n.publish_bool(n.pub_start_balancing, True)
+            if self.sim_mode or self._onboard_walk():
+                n.publish_bool(n.pub_start_balancing, True)
             self.mode, self.pending = MANIP, None
             self._status("Greifen bereit — Bewegung auswählen.", MODE_COLOR[MANIP])
             self._reload_sequence_buttons()
+        elif not self.sim_mode and not self._onboard_walk():
+            # REAL: GEHEN stellt den Onboard-Modus nicht mehr selbst um --
+            # das macht die Startleiste (Walk, mit Rueckfrage zum Kran).
+            self._status("Gehen gesperrt: G1 steht nicht im Walk-Modus — "
+                         "erst Startleiste Damp → Preparation → Walk.", "#ef5350")
+            return
         else:
             # WALK: Arme fahren erst in die Lauf-Pose -> "wechselt", bis
             # arms/walk_ready kommt (oder Timeout).
@@ -1173,6 +1322,14 @@ class DemoGUI(QWidget):
             QTimer.singleShot(WALK_SWITCH_TIMEOUT_MS,
                               lambda: req == self._walk_req and self._on_walk_ready(True))
         self._refresh()
+
+    def _onboard_walk(self):
+        n = self.node
+        if n.onboard is None or n.onboard_t is None:
+            return False
+        if time.monotonic() - n.onboard_t > status_line.STALE_S:
+            return False
+        return n.onboard.get("fsm") in status_line.WALK_FSM
 
     def _on_walk_ready(self, ready):
         if ready and self.pending == WALK:

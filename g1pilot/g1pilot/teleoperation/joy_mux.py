@@ -30,6 +30,12 @@ class JoyMux(Node):
         self.declare_parameter('wz_limit',0.4)
         self.declare_parameter('yaw_kp',1.5)
         self.declare_parameter('manual_priority_window',0.05)
+        # Nur FRISCHE Eingaenge weitergeben. Frueher wurde die letzte Joy-
+        # Nachricht (manuell oder Nav) endlos mit 50 Hz wiederholt -- starb der
+        # Joystick-Node oder nav2point mit gedruecktem Deadman, ging der echte
+        # G1 weiter (loco_client sah ja einen frischen Strom). Jetzt verstummt
+        # der Ausgang, der Empfaenger stoppt ueber seinen eigenen Timeout.
+        self.declare_parameter('input_timeout',0.3)
         self.path_topic=self.get_parameter('path_topic').value
         self.odom_topic=self.get_parameter('odom_topic').value
         self.manual_topic=self.get_parameter('manual_topic').value
@@ -43,6 +49,7 @@ class JoyMux(Node):
         self.wz_lim=float(self.get_parameter('wz_limit').value)
         self.yaw_kp=float(self.get_parameter('yaw_kp').value)
         self.man_win=float(self.get_parameter('manual_priority_window').value)
+        self.input_timeout=float(self.get_parameter('input_timeout').value)
         qos=QoSProfile(depth=10)
         self.sub_odom=self.create_subscription(Odometry,self.odom_topic,self.cb_odom,qos)
         self.sub_path=self.create_subscription(Path,self.path_topic,self.cb_path,qos)
@@ -52,6 +59,7 @@ class JoyMux(Node):
         self.timer=self.create_timer(1.0/self.rate,self.loop)
         self.sub_auto = self.create_subscription(Joy, '/g1pilot/auto_joy', self.cb_auto, qos)
         self.last_auto = None
+        self.t_last_auto = 0.0
         self.x=self.y=self.yaw=0.0
         self.have_pose=False
         self.path=[]
@@ -64,6 +72,7 @@ class JoyMux(Node):
 
     def cb_auto(self, msg: Joy):
         self.last_auto = msg
+        self.t_last_auto = time.monotonic()
 
     def cb_odom(self,msg:Odometry):
         self.x=float(msg.pose.pose.position.x)
@@ -86,7 +95,7 @@ class JoyMux(Node):
 
     def cb_manual(self, msg: Joy):
         self.last_manual = msg
-        self.t_last_manual = time.time()
+        self.t_last_manual = time.monotonic()
 
     def cb_enable(self,msg:Bool):
         was_enabled = self.auto_enabled
@@ -146,10 +155,14 @@ class JoyMux(Node):
 
 
     def loop(self):
-        now = time.time()
-        use_manual = (self.last_manual is not None) and (not self.auto_enabled or (now - self.t_last_manual) < self.man_win)
+        now = time.monotonic()
+        fresh_manual = (self.last_manual is not None
+                        and (now - self.t_last_manual) <= self.input_timeout)
+        fresh_auto = (self.last_auto is not None
+                      and (now - self.t_last_auto) <= self.input_timeout)
+        use_manual = fresh_manual and (not self.auto_enabled or (now - self.t_last_manual) < self.man_win)
 
-        if self.auto_enabled and self.last_auto is not None:
+        if self.auto_enabled and fresh_auto:
             self.pub.publish(self.last_auto)
             return
         elif use_manual:
