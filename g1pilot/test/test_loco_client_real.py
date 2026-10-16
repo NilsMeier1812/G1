@@ -569,7 +569,7 @@ def test_onboard_state_published_for_gui(lc_module):
         node.start_walking_callback(_bool(True))
         node._publish_state()
         assert got[-1] == {"fsm": 500, "name": "Walk", "balanced": True, "walk": True,
-                           "estop": False, "robot": True, "note": ""}
+                           "estop": False, "robot": True, "note": "", "rpc_err": None}
         node.emergency_callback(_bool(True))
         node._publish_state()
         assert got[-1]["estop"] and not got[-1]["walk"]
@@ -696,5 +696,37 @@ def test_startbar_ignored_in_sim(lc_module):
         before = list(robot.calls) if robot is not None else []
         _req(node, "damp")
         assert (list(robot.calls) if robot is not None else []) == before
+    finally:
+        _close(node)
+
+
+def test_rpc_read_error_reported_in_state(lc_module):
+    """FSM nicht lesbar (z. B. 3104): Code landet im Anzeige-JSON, nach Erfolg weg."""
+    import json as _json
+    node, robot = _make(lc_module)
+    try:
+        got = []
+        node.state_pub.publish = lambda m: got.append(_json.loads(m.data))
+        orig = robot._Call
+        robot._Call = lambda *a: (3104, None)
+        node._sync_onboard_state(force=True)
+        node._publish_state()
+        assert got[-1]["rpc_err"] == 3104
+        robot._Call = orig
+        robot.fsm = 4
+        node._sync_onboard_state(force=True)
+        node._publish_state()
+        assert got[-1]["rpc_err"] is None and got[-1]["fsm"] == 4
+    finally:
+        _close(node)
+
+
+def test_state_publish_not_in_default_group(lc_module):
+    """Die Anzeige laeuft in eigener Callback-Gruppe (haengender RPC friert sie
+    nicht ein)."""
+    node, robot = _make(lc_module)
+    try:
+        timers = [t for t in node.timers if t.callback == node._publish_state]
+        assert timers and timers[0].callback_group is node._state_group
     finally:
         _close(node)

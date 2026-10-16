@@ -39,6 +39,11 @@ def onboard_text(state, age_s, walk_requested=False):
     if state is None or age_s is None or age_s > STALE_S:
         return "G1: keine Daten vom loco_client", GREY
     fsm = state.get("fsm")
+    err = state.get("rpc_err")
+    if err is not None:
+        # Lesefehler hat Vorrang: der zuletzt bekannte Modus koennte veraltet sein.
+        why = "Zeitüberschreitung" if err == 3104 else f"RPC-Fehler {err}"
+        return f"G1: keine Antwort vom Onboard-Regler ({why}) – Modus unbekannt", AMBER
     if fsm is None:
         return "G1: Modus unbekannt (keine Antwort vom Roboter)", AMBER
     name = state.get("name") or "Modus"

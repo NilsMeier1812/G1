@@ -60,3 +60,12 @@ def test_start_buttons_follow_onboard_mode():
     assert b["damp"][0] and not b["preparation"][0] and not b["walk"][0]
     b = sl.start_buttons({"fsm": None}, 0.1)                 # Modus unbekannt
     assert b["damp"] == (True, True) and not b["walk"][0]
+
+
+def test_onboard_text_rpc_error():
+    """Real 2026-10-16: Roboter beantwortet die Loco-RPCs nicht -> klare Meldung
+    statt »keine Daten vom loco_client«."""
+    t, _ = sl.onboard_text({"fsm": 4, "name": "Preparation", "rpc_err": 3104}, 0.1)
+    assert "keine Antwort vom Onboard-Regler" in t and "Zeitüberschreitung" in t
+    t, _ = sl.onboard_text({"fsm": None, "rpc_err": 3205}, 0.1)
+    assert "3205" in t

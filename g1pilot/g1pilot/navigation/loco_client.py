@@ -36,14 +36,28 @@ ONBOARD_STATE_TOPIC = "/g1pilot/onboard_state"
 LOCO_REQUEST_TOPIC = "/g1pilot/loco_request"
 
 
-def _rpc_get_int(client, api_id):
+# RPC-Fehlercodes (unitree_sdk2py/rpc/internal.py) als Klartext fuer Log/GUI.
+RPC_ERR_TEXT = {3102: "Senden fehlgeschlagen", 3103: "API nicht registriert",
+                3104: "Zeitueberschreitung, Roboter antwortet nicht",
+                3105: "API-Version passt nicht", 3106: "Antwort unlesbar",
+                3107: "Lease ungueltig", 3201: "Server-Sendefehler",
+                3202: "Server-interner Fehler", 3203: "API vom Roboter nicht unterstuetzt",
+                3204: "Parameter abgelehnt", 3205: "Lease verweigert (anderer Client hat Vorrang?)"}
+
+
+def _rpc_get(client, api_id):
+    """-> (Wert oder None, RPC-Code; -1 = Ausnahme/leere Antwort)."""
     try:
         code, data = client._Call(api_id, "{}")
         if code == 0 and data:
-            return json.loads(data).get("data")
+            return json.loads(data).get("data"), 0
+        return None, int(code) if code else -1
     except Exception:
-        pass
-    return None
+        return None, -1
+
+
+def _rpc_get_int(client, api_id):
+    return _rpc_get(client, api_id)[0]
 
 
 class G1LocoClient(Node):
@@ -74,6 +88,8 @@ class G1LocoClient(Node):
         # Abgleich mit dem ONBOARD-Zustand (Handy-App/Fernbedienung schalten den
         # G1 ausserhalb dieses Nodes um): letzte gelesene FSM-ID, Entprellung.
         self._onboard_fsm = None
+        self._rpc_err = None             # letzter Lesefehler (Code) oder None
+        self._state_group = MutuallyExclusiveCallbackGroup()
         self._balanced_at = 0.0
         self._nonwalk_polls = 0
         self._entering = False
@@ -183,7 +199,9 @@ class G1LocoClient(Node):
         qos_state = QoSProfile(depth=1)
         qos_state.durability = DurabilityPolicy.TRANSIENT_LOCAL
         self.state_pub = self.create_publisher(String, ONBOARD_STATE_TOPIC, qos_state)
-        self.create_timer(0.5, self._publish_state)
+        # Eigene Gruppe: haengt ein RPC (bis SetTimeout), meldet die Anzeige
+        # trotzdem weiter -- sonst zeigte die GUI "keine Daten vom loco_client".
+        self.create_timer(0.5, self._publish_state, callback_group=self._state_group)
         self.right_gripper_pub = self.create_publisher(String, '/g1pilot/hand_action/right', 1)
         self.left_gripper_pub = self.create_publisher(String, '/g1pilot/hand_action/left', 1)
         self.publisher_homming_arms = self.create_publisher(Bool, '/g1pilot/arms/home', 1)
@@ -284,11 +302,19 @@ class G1LocoClient(Node):
         if not self._rpc_lock.acquire(timeout=0.3 if force else 0.0):
             return None                 # RPC laeuft -> naechster Takt
         try:
-            fsm = _rpc_get_int(self.robot, ROBOT_API_ID_LOCO_GET_FSM_ID)
+            fsm, code = _rpc_get(self.robot, ROBOT_API_ID_LOCO_GET_FSM_ID)
         finally:
             self._rpc_lock.release()
         if fsm is None:
+            if code != self._rpc_err:
+                self.get_logger().warn(
+                    f"FSM-ID nicht lesbar: RPC-Code {code} "
+                    f"({RPC_ERR_TEXT.get(code, 'unbekannt')}).")
+            self._rpc_err = code
             return None
+        if self._rpc_err is not None:
+            self.get_logger().info(f"FSM-ID wieder lesbar (FSM {fsm}).")
+        self._rpc_err = None
         self._onboard_fsm = fsm
         walking = fsm in self._walk_ids()
         if walking:
@@ -318,7 +344,7 @@ class G1LocoClient(Node):
         st = {"fsm": fsm, "name": FSM_NAMES.get(fsm, "") if fsm is not None else "",
               "balanced": bool(self.balanced), "walk": bool(self.walk_enabled),
               "estop": bool(self.robot_stopped), "robot": bool(self.use_robot),
-              "note": self._note}
+              "note": self._note, "rpc_err": self._rpc_err}
         self.state_pub.publish(String(data=json.dumps(st, sort_keys=True)))
 
     def get_fsm_id(self):
