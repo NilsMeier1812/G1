@@ -38,12 +38,15 @@ Belegung (Details: g1pilot/docs/43_ps4_controller.md):
                Vorzeitig loslassen bricht ab. Zurueck: START quittiert,
                der G1 bleibt in Damp; Aufstehen nur ueber die Startleiste
                (Preparation -> Walk).
+  L2 halten    Gehen (ps4_walk, nur mit walk_deadman): Sticks + Steuerkreuz
+               gehoeren dann dem Gehen, die Arme halten ihre Lage
 """
 import json
 import math
 import time
 
 from g1pilot.teleoperation import ps4_layout as L
+from g1pilot.teleoperation.ps4_walk import deadman_held
 from g1pilot.teleoperation.hand_jog import (
     JOG_FRAME, JOG_TF, JOG_SPEEDS, JOG_SPEED_ORDER, JOG_CMD_TOPIC, CommandedPoses,
     HoldStreamer, hold_pose, lead_limits, jog_step,
@@ -57,6 +60,8 @@ SELECTIONS = {
     "both":   ("left", "right"),
     "mirror": ("left", "right"),
 }
+DPAD_SELECTION = ((L.DPAD_LEFT, "left"), (L.DPAD_RIGHT, "right"),
+                  (L.DPAD_UP, "both"), (L.DPAD_DOWN, "mirror"))
 SELECTION_LABEL = {"left": "LINKS", "right": "RECHTS", "both": "BEIDE",
                    "mirror": "BEIDE gespiegelt"}
 MODE_LABEL = {"move": "Verschieben", "turn": "Drehen"}
@@ -101,7 +106,8 @@ class ArmTeleopLogic:
 
     def __init__(self, deadzone=0.12, expo=0.4, speed="Normal", home_hold_s=1.0,
                  selection="right", max_speed="Schnell", ps_estop=True,
-                 full_estop_hold_s=2.0, full_estop_gap_s=0.3):
+                 full_estop_hold_s=2.0, full_estop_gap_s=0.3,
+                 walk_deadman=False):
         self.deadzone = float(deadzone)
         self.expo = float(expo)
         self.home_hold_s = float(home_hold_s)
@@ -125,6 +131,10 @@ class ArmTeleopLogic:
         self._full_since = None      # Beginn des Haltens (None = nicht gehalten)
         self._full_last = None       # letzte Joy-Nachricht waehrend des Haltens
         self._full_sent = False      # in diesem Halten schon ausgeloest
+        # L2 = Deadman fuers Gehen (ps4_walk): solange gehalten, pausiert die
+        # Arm-Steuerung (Sticks/Steuerkreuz). False = L2 frei (alter Stand).
+        self.walk_deadman = bool(walk_deadman)
+        self.walking = False
         self._prev = [0] * L.NUM_BUTTONS
         self._share_since = None
         self._home_sent = False
@@ -247,9 +257,9 @@ class ArmTeleopLogic:
         if self.estop:
             return out   # bis zur Quittung in der GUI: nichts bewegen
 
-        # Auswahl der Hand / Haende (Steuerkreuz)
-        for btn, sel in ((L.DPAD_LEFT, "left"), (L.DPAD_RIGHT, "right"),
-                         (L.DPAD_UP, "both"), (L.DPAD_DOWN, "mirror")):
+        self.walking = self.walk_deadman and deadman_held(axes, b)
+        # Auswahl der Hand / Haende (Steuerkreuz; mit L2 = Geh-Tempo)
+        for btn, sel in (() if self.walking else DPAD_SELECTION):
             if rise[btn] and sel != self.selection:
                 dropped = tuple(s for s in self.sides if s not in SELECTIONS[sel])
                 if dropped:
@@ -292,7 +302,7 @@ class ArmTeleopLogic:
 
     def twist(self, axes):
         """-> {side: ((vx, vy, vz) m/s, (wx, wy, wz) rad/s)} im JOG_FRAME."""
-        if self.estop:
+        if self.estop or (self.walk_deadman and (self.walking or deadman_held(axes, ()))):
             return {}
         a = list(axes) + [0.0] * max(0, L.NUM_AXES - len(axes))
         s = lambda i: shape_axis(a[i], self.deadzone, self.expo)   # noqa: E731
@@ -348,6 +358,9 @@ def main(args=None):
             # Voll-Notaus: R1 + R2 + PS so lange halten (s), Controller vibriert
             # waehrenddessen. 0 = Voll-Notaus am Controller abgeschaltet.
             self.declare_parameter("full_estop_hold_s", 2.0)
+            # L2 = Deadman fuers Gehen (Node ps4_walk laeuft mit): solange
+            # gehalten, pausiert die Arm-Steuerung. false = L2 ohne Wirkung.
+            self.declare_parameter("walk_deadman", False)
             # Bleibt der Joy-Stream laenger aus (Funkabriss, Akku leer), haelt
             # die Hand an -- der ps4_joystick publiziert nur bei Verbindung.
             self.declare_parameter("joy_timeout_s", 0.5)
@@ -365,7 +378,8 @@ def main(args=None):
             self.logic = ArmTeleopLogic(gp("deadzone"), gp("expo"), gp("speed"),
                                         gp("home_hold_s"), max_speed=gp("max_speed"),
                                         ps_estop=gp("ps_estop"),
-                                        full_estop_hold_s=gp("full_estop_hold_s"))
+                                        full_estop_hold_s=gp("full_estop_hold_s"),
+                                        walk_deadman=gp("walk_deadman"))
             self.joy_timeout = float(gp("joy_timeout_s"))
             self.options_balancing = bool(gp("options_starts_balancing"))
             self.cmd_poses = CommandedPoses()

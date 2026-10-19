@@ -1,9 +1,11 @@
-# PS4-Controller für den Oberkörper (Arme + Hände)
+# PS4-Controller für den Oberkörper (Arme + Hände) und Gehen
 
 Ein PS4-Controller (DualShock 4) steuert die Hände des G1: Position und
 Drehung beider Hände, Hände auf/zu, Grundstellung, Stopp und NOT-HALT.
-**Laufen ist bewusst nicht belegt** — der Controller kann den Roboter weder
-loslaufen lassen noch drehen.
+**Gehen** geht nur, solange **L2 gehalten** wird (Deadman, seit
+2026-10-19), und nur, wenn der G1 schon im Walk-Modus steht — siehe
+[Gehen mit L2](#gehen-mit-l2). Den Modus der Beine schaltet der Controller
+nie um.
 
 Funktioniert in der **Simulation und am echten Roboter** (Unterschiede am
 echten Roboter: siehe [Echter Roboter](#echter-roboter)). Ohne den Schalter
@@ -44,7 +46,8 @@ Am echten Roboter erst in der GUI starten, siehe unten.
 | Share **1 s halten** | Grundstellung (Arme neben den Körper, geplant um Hindernisse herum) |
 | PS | **NOT-HALT** (wie in den GUIs: Arme schlaff, Roboter gedämpft — real sackt er zusammen) |
 | **R1 + R2 + PS 2 s halten** | **VOLL-NOTAUS**: ganzer G1 in Damp, auch die Beine. Controller vibriert während des Haltens, vorzeitig loslassen bricht ab. Siehe [Voll-Notaus](#voll-notaus-r1--r2--ps) |
-| L2, L3, R3, Touchpad | frei (Reserve) |
+| **L2 halten** | **Gehen** (Deadman): Sticks und Steuerkreuz ▲/▼ gehören dann dem Gehen, siehe [Gehen mit L2](#gehen-mit-l2) |
+| L3, R3, Touchpad | frei (Reserve) |
 
 Richtungen gelten **aus Sicht des Roboters** (vor = in Blickrichtung des
 Roboters, links = Roboter-links). Steht man dem Roboter gegenüber, sind
@@ -65,6 +68,33 @@ arm_controllers ab, siehe [Reaktionszeit](#reaktionszeit).
 
 Hände öffnen/schließen wirkt mit **Inspire-Händen**; mit den starren Händen
 passiert dabei nichts.
+
+## Gehen mit L2
+
+| Mit **L2 gehalten** | Wirkung |
+|---|---|
+| Linker Stick | **vor/zurück** + **seitlich** gehen |
+| Rechter Stick (horizontal) | **drehen** (links/rechts) |
+| Steuerkreuz ▲ / ▼ | Geh-Tempo schneller / langsamer: Langsam 35 % · Normal 65 % · Schnell 100 % der Geh-Limits (`G1_MAX_VX` 0,4 m/s, `G1_MAX_VY` 0,3 m/s, `G1_MAX_VYAW` 0,4 rad/s). Start **Langsam** (kurze Vibration je Stufe) |
+| L2 loslassen | **sofort Stopp** |
+
+- Solange L2 gehalten wird, **pausiert die Arm-Steuerung**: die Arme halten
+  ihre Lage (Halte-Ziel wie beim Loslassen des Sticks), das Steuerkreuz
+  wählt keine Hand. Kreis/Viereck (Hände), Kreuz und PS wirken weiter.
+- Gehen nur, wenn der G1 **schon im Walk-Modus** steht (Real: Startleiste
+  »Walk« der Demo-GUI bzw. Handy-App; Sim: GEHEN/WALK). Sonst passiert
+  nichts — L2 vibriert dann einmal lang und das Log sagt
+  „G1 steht nicht im Walk-Modus“.
+- Der Controller schaltet Damp/Preparation/Walk **nie** selbst um und braucht
+  kein LAUFEN in der GUI — die Arme werden also auch nicht in eine
+  Lauf-Pose gefahren.
+- Erst **scharf nach einmal Loslassen**: wird L2 beim Start, nach einem
+  Funkabriss oder nach einem NOT-HALT noch gehalten, läuft der G1 nicht los.
+- NOT-HALT (PS oder GUI) sperrt auch das Gehen, bis quittiert ist.
+- Abriss: kommt 0,3 s kein Joy (Funkabriss, Stall-Erkennung), sendet
+  `ps4_walk` einmal Stopp; `loco_client` stoppt zusätzlich selbst nach 0,5 s
+  ohne Befehl, und jedes `Move()` gilt am Roboter nur 1 s.
+- Abschalten: `G1_PS4_WALK=0` (L2 wieder ohne Wirkung).
 
 ## NOT-HALT und Quittieren
 
@@ -115,11 +145,14 @@ den ganzen Roboter).
 Vorher [70_echtroboter_anleitung.md](70_echtroboter_anleitung.md) lesen.
 Mit dem Schalter gilt am echten Roboter:
 
-- **Kein Gehen per Controller.** Der alte `joystick`-Node startet nicht,
-  `loco_client` bekommt keine Sticks mehr (auch kein Deadman-Gehen).
-  Gehen geht weiter über die GUI (Demo-GUI GEHEN, Streamdeck WALK).
+- **Gehen nur mit L2 gehalten** (siehe [Gehen mit L2](#gehen-mit-l2)):
+  `ps4_walk` → `/g1pilot/ps4/walk_cmd` → `loco_client` → `Move()` (1 s
+  Dauer, 20 Hz erneuert). Der alte `joystick`-Node startet nicht. Gehen über
+  die GUI (Demo-GUI GEHEN, Streamdeck WALK) geht weiter; solange L2 gehalten
+  wird, hat der Controller Vorrang.
 - **Der Controller ändert nie den Zustand der Beine.** Options übernimmt nur
-  die Arme, kein Aufstehen/Balancing. Starten und Stehen bleiben in der GUI.
+  die Arme, kein Aufstehen/Balancing; L2 geht nur, wenn der G1 schon im
+  Walk-Modus steht. Starten und Stehen bleiben in der GUI.
   Einzige Ausnahme ist PS (NOT-HALT).
 - **Langsamer:** Start-Tempo Langsam (5 cm/s), mit R1 höchstens Normal
   (15 cm/s). Der arm_controller begrenzt real zusätzlich auf 0,25 m/s.
@@ -157,6 +190,11 @@ Ablauf:
    Bluetooth zusätzlich: Controller mit ausgelenktem Stick abschirmen bzw.
    außer Reichweite bringen (Funk hängt, ohne sauber zu trennen). Erwartung:
    Log „seit 0.3 s keine Daten“, Hand steht nach < 1 s.
+7. **Gehen (Kran locker, Platz frei):** in der Startleiste »Walk«. L2 halten,
+   linken Stick **wenig** nach vorn. Erwartung: G1 geht langsam, Arme bleiben
+   wo sie sind; L2 loslassen → steht. Dann Drehen (rechter Stick), dann
+   Tempo mit L2 + ▲. Abriss-Test wie oben mit gehaltenem L2 + Stick:
+   G1 bleibt nach < 1 s stehen.
 
 | Env-Variable (Real) | Default | Bedeutung |
 |---|---|---|
@@ -164,6 +202,9 @@ Ablauf:
 | `G1_PS4_SPEED` | `Langsam` | Start-Tempo |
 | `G1_PS4_MAX_SPEED` | `Normal` | höchstes Tempo per R1 |
 | `G1_PS4_PS_ESTOP` | `1` | `0` = PS nur Stopp (wie Kreuz) statt NOT-HALT |
+| `G1_PS4_WALK` | `1` | `0` = kein Gehen per Controller (L2 ohne Wirkung) |
+| `G1_PS4_WALK_SPEED` | `Langsam` | Start-Geh-Tempo |
+| `G1_PS4_WALK_MAX_SPEED` | `Schnell` | höchstes Geh-Tempo per L2 + ▲ (Schnell = volle `G1_MAX_VX/VY/VYAW`) |
 
 ## Verbindung, Container, LED
 
@@ -189,7 +230,8 @@ Ablauf:
 | Hand bleibt an einer Stelle hängen | Kollisions-Gate (Log: „Kollisions-Gate …“) oder Reichweite erreicht → in eine andere Richtung bewegen. |
 | Sim: Hand reagiert spürbar verzögert / fährt nach dem Loslassen weiter | PC ausgelastet → arm_controller regelt nur mit 10–15 Hz. RViz und Navigation abschalten (`USE_RVIZ=false G1_ENABLE_NAV=0`), Last mit `top` prüfen. Siehe [Reaktionszeit](#reaktionszeit). |
 | Nach PS reagiert nichts mehr | NOT-HALT aktiv → in der GUI quittieren (Sim: Modus wählen, Real: Roboter starten). |
-| Real: Controller lässt den Roboter nicht mehr gehen | So gewollt im PS4-Arm-Modus. Fürs Gehen per Controller ohne den Schalter starten (`G1_PS4_ARMS=0`). |
+| L2 + Stick: G1 geht nicht, lange Vibration | G1 steht nicht im Walk-Modus → Startleiste »Walk« (Real) bzw. GEHEN (Sim). Nach NOT-HALT erst quittieren. |
+| L2 + Stick: G1 geht nicht, keine Vibration | L2 war beim Start/Verbinden schon gedrückt → einmal loslassen. Oder `G1_PS4_WALK=0`. |
 
 ---
 
@@ -201,14 +243,18 @@ Ablauf:
 |---|---|
 | `g1pilot/teleoperation/ps4_joystick.py` | Node `ps4_joystick`: evdev → `/g1pilot/ps4/joy` in fester Belegung, Wiederverbinden, LED (sysfs) + Vibration (Force-Feedback) aus `/g1pilot/ps4/feedback` |
 | `g1pilot/teleoperation/ps4_layout.py` | feste Belegung (Indizes) und evdev-Code-Zuordnung, ohne ROS/evdev testbar |
-| `g1pilot/teleoperation/ps4_arm_teleop.py` | `ArmTeleopLogic` (reine Bedienlogik) + Node `ps4_arm_teleop` |
+| `g1pilot/teleoperation/ps4_arm_teleop.py` | `ArmTeleopLogic` (reine Bedienlogik) + Node `ps4_arm_teleop`; `walk_deadman`: pausiert bei gehaltenem L2 |
+| `g1pilot/teleoperation/ps4_walk.py` | `WalkLogic` (reine Bedienlogik) + Node `ps4_walk`: L2-Deadman → `/g1pilot/ps4/walk_cmd` (Twist, normiert), `/g1pilot/ps4/walk_status` |
+| `navigation/loco_client.py` | `/g1pilot/ps4/walk_cmd` → `Move()` nur im Walk-Modus, ohne E-Stop; Timeout → StopMove; Vorrang vor `loco_cmd_vel` |
+| `navigation/loco_sim.py` | Sim: `/g1pilot/ps4/walk_cmd` wie `loco_cmd_vel`, mit Vorrang (die GUIs senden dort dauernd 0) |
 | `g1pilot/teleoperation/hand_jog.py` | Jog-Rechnung (Ziel = Hand + Geschwindigkeit, Vorlauf entlang der Bewegung begrenzt), Halte-Ziel (`hold_pose`, `HoldStreamer`), gemeinsam mit der Demo-GUI |
-| `launch/teleoperation_launcher.launch.py` | Argument `ps4_arms` (Default `false`): startet `ps4_joystick` + `ps4_arm_teleop` statt `joystick`; `ps4_speed`, `ps4_max_speed`, `ps4_options_balancing`, `ps4_ps_estop` |
+| `launch/teleoperation_launcher.launch.py` | Argument `ps4_arms` (Default `false`): startet `ps4_joystick` + `ps4_arm_teleop` statt `joystick`; `ps4_speed`, `ps4_max_speed`, `ps4_options_balancing`, `ps4_ps_estop`; `ps4_walk` (Default `true`) startet zusätzlich `ps4_walk`, `ps4_walk_speed`, `ps4_walk_max_speed` |
 | `launch/bringup_sim.launch.py` | setzt `ps4_arms` aus `G1_PS4_ARMS` (Sim-Defaults) |
 | `launch/bringup_real.launch.py` | setzt `ps4_arms` aus `G1_PS4_ARMS` mit Real-Werten (Langsam/max Normal, Options ohne `start_balancing`) |
 | `teleoperation/demo_gui.py`, `teleoperation/ui_interface.py` | zeigen einen NOT-HALT von außen (PS-Taste) an |
 | `docker-compose.ps4.yml` | `/dev/input` + `device_cgroup_rules: c 13:* rmw` für `g1pilot-sim` |
 | `test/test_ps4_arm_teleop.py`, `test/test_ps4_joystick.py` | Unit-Tests (Belegung, Logik, Jog, simuliertes evdev-Gerät inkl. hängender Funkverbindung) |
+| `test/test_ps4_walk.py`, `test/test_loco_client_ps4_walk.py`, `test/test_ps4_walk_node.py` | Gehen: Deadman, Tempo, NOT-HALT, Abriss, Arme pausieren; loco_client nur im Walk-Modus, Timeout, Vorrang; Node mit simuliertem Joy |
 | `test/test_ps4_arm_teleop_node.py` | Node mit Real-Einstellungen gegen simuliertes Joy + TF (Options, Tempo, NOT-HALT von außen, kein Laufbefehl) |
 | `test/test_gui_external_estop.py` | Demo-GUI + Streamdeck folgen einem NOT-HALT von außen (Sim und Real, offscreen) |
 | `test/test_demo_gui_jog_hold.py` | Demo-GUI »Hand bewegen«: Halte-Ziel beim Loslassen (auf der Linie, 1 s wiederholt, Grundstellung löscht es) |
@@ -228,11 +274,13 @@ DualShock 4 ──evdev──> ps4_joystick ──/g1pilot/ps4/joy (Joy, feste B
                                                                                      ├─> /g1pilot/emergency_stop (PS)
                                                                                      ├─> /g1pilot/ps4/status (JSON, latched)
                                                                                      └─> /g1pilot/ps4/markers (RViz)
+                       /g1pilot/ps4/joy ──> ps4_walk (L2 gehalten) ──/g1pilot/ps4/walk_cmd──> loco_client (real, Move) / loco_sim (Sim)
 ```
 
 Bewusst **nicht** über `joy_mux`/`/g1pilot/joy`: dort hängen `joy_to_cmdvel`
 (Sim, mit Navigation) und `loco_client` (real) — die Sticks würden sonst den
-Roboter laufen lassen. Der alte `joystick`-Node startet im PS4-Modus nicht,
+Roboter auch beim Bewegen der Hände laufen lassen. Gehen hat ein eigenes
+Topic, das nur bei gehaltenem L2 gesendet wird. Der alte `joystick`-Node startet im PS4-Modus nicht,
 weil er denselben Controller lesen würde.
 
 Eingänge außer dem Joy: `/g1pilot/emergency_stop` (NOT-HALT aus der GUI →
