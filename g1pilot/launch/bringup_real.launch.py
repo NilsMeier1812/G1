@@ -163,6 +163,8 @@ def generate_launch_description():
                 'max_vyaw':        float(max_vyaw),
                 'cmd_vel_timeout': 0.5,
                 'damp_on_init':    False,
+                # RPC-Dienst des Onboard-Reglers (aktuelle Firmware: 'sport').
+                'loco_service':    os.environ.get('G1_LOCO_SERVICE', 'sport'),
                 # E-Stop: Beine nur StopMove (kein Damp). G1_ESTOP_DAMP_LEGS=1 = alt.
                 'estop_damp_legs': _env_bool('G1_ESTOP_DAMP_LEGS'),
             }]

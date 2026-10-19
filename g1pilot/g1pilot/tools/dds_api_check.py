@@ -63,9 +63,11 @@ def main():
         print(f"   {'R' if t in readers else ' '}{'W' if t in writers else ' '}  {t}")
 
     print("\nGetFsmId ueber LocoClient (Timeout 3 s):")
-    from unitree_sdk2py.g1.loco.g1_loco_client import LocoClient
+    import unitree_sdk2py.g1.loco.g1_loco_client as mod
     from unitree_sdk2py.g1.loco.g1_loco_api import ROBOT_API_ID_LOCO_GET_FSM_ID
-    c = LocoClient()
+    print(f"   installiertes SDK: Dienst '{mod.LOCO_SERVICE_NAME}' -- getestet wird 'sport'")
+    mod.LOCO_SERVICE_NAME = "sport"
+    c = mod.LocoClient()
     c.SetTimeout(3.0)
     c.Init()
     code, data = c._Call(ROBOT_API_ID_LOCO_GET_FSM_ID, "{}")

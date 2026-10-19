@@ -13,6 +13,7 @@ from std_msgs.msg import Bool, String
 from sensor_msgs.msg import Joy
 from geometry_msgs.msg import Twist
 
+import unitree_sdk2py.g1.loco.g1_loco_client as _loco_mod
 from unitree_sdk2py.g1.loco.g1_loco_client import LocoClient
 from unitree_sdk2py.g1.loco.g1_loco_api import (
     ROBOT_API_ID_LOCO_GET_FSM_ID,
@@ -23,7 +24,7 @@ from g1pilot.utils.common import init_dds
 
 
 # Onboard-FSM-IDs (Unitree G1): 4 = Ready/"Preparation" (Standby), 500/501 = Walk
-# (Hauptbetrieb). 500 stammt aus LocoClient.Start(); 501 ist aus dem Repo NICHT
+# (Hauptbetrieb). 500 = Start() im aktuellen Unitree-SDK; 501 ist aus dem Repo NICHT
 # belegt -> per Parameter walk_fsm_ids anpassbar.
 FSM_READY = 4
 DEFAULT_WALK_FSM_IDS = (500, 501)
@@ -145,6 +146,16 @@ class G1LocoClient(Node):
         # Start() wie die Handy-App, nur mit belasteten Fuessen (FSM-Mode 0).
         # true = alte Hoehenrampe aus dem Haenge-Boot (SetStandHeight 0.02..0.2).
         self.declare_parameter('walk_height_ramp', False)
+        # RPC-Dienst des Onboard-Reglers. Unitree hat ihn am 2025-06-23 von
+        # "loco" in "sport" umbenannt ("to support ai_sport >= 8.2.0.0",
+        # unitree_sdk2_python 60e8358). Das Real-Image installiert einen
+        # aelteren SDK-Stand mit "loco" -> der G1 hat auf rt/api/loco/request
+        # keinen Leser -> jeder RPC endete mit 3102. Hier fest vorgegeben,
+        # unabhaengig vom installierten SDK.
+        self.declare_parameter('loco_service', 'sport')
+        # FSM-ID fuer "Start" (Walk). Altes SDK: Start() = 200, aktuelles
+        # (unitree_sdk2_python 82d7dde, 2026-04-20): 500. Explizit statt Start().
+        self.declare_parameter('start_fsm_id', 500)
 
         ik_use_waist = self.get_parameter('ik_use_waist').get_parameter_value().bool_value
         ik_alpha = float(self.get_parameter('ik_alpha').value)
@@ -153,7 +164,15 @@ class G1LocoClient(Node):
 
         if self.use_robot:
             init_dds(interface, self.get_logger())
+            service = str(self.get_parameter('loco_service').value)
+            sdk_service = getattr(_loco_mod, 'LOCO_SERVICE_NAME', '?')
+            # LocoClient.__init__ liest den Namen aus dem Modul -> vor dem
+            # Erzeugen setzen (gilt nur fuer diesen Prozess).
+            _loco_mod.LOCO_SERVICE_NAME = service
             self.robot = LocoClient()
+            self.get_logger().info(
+                f"Loco-RPC-Dienst: '{service}' (rt/api/{service}/request); "
+                f"installiertes SDK haette '{sdk_service}'.")
             self.robot.SetTimeout(10.0)
             self.robot.Init()
             if bool(self.get_parameter('damp_on_init').value):
@@ -732,6 +751,11 @@ class G1LocoClient(Node):
         finally:
             self._entering = False
 
+    def _start_walk(self):
+        """Statt LocoClient.Start(): dessen FSM-ID haengt vom SDK-Stand ab
+        (200 alt, 500 aktuell) und es liefert keinen Antwort-Code."""
+        return self._robot_rpc("SetFsmId", int(self.get_parameter('start_fsm_id').value))
+
     def _enter_walk_direct(self):
         """Preparation -> Walk wie in der Handy-App: ohne Hoehenrampe. Nur wenn
         die Fuesse Last haben (FSM-Mode 0); haengt der G1 noch straff am Kran
@@ -744,7 +768,7 @@ class G1LocoClient(Node):
         if self.robot_stopped:
             return
         self._robot_rpc("BalanceStand", int(self.get_parameter('balance_mode').value))
-        code = self._robot_rpc("Start")
+        code = self._start_walk()
         self.balanced = True
         self._balanced_at = time.monotonic()
         self._nonwalk_polls = 0
@@ -779,7 +803,7 @@ class G1LocoClient(Node):
             return
         self._robot_rpc("BalanceStand", int(self.get_parameter('balance_mode').value))
         self._robot_rpc("SetStandHeight", height)
-        self._robot_rpc("Start")
+        self._start_walk()
         self.balanced = True
         self._balanced_at = time.monotonic()
         self._nonwalk_polls = 0

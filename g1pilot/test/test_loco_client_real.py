@@ -31,6 +31,8 @@ class FakeLoco:
 
     def __init__(self):
         FakeLoco.last = self
+        # Wie das echte LocoClient: Dienstname zur Erzeugungszeit aus dem Modul.
+        self.service = sys.modules["unitree_sdk2py.g1.loco.g1_loco_client"].LOCO_SERVICE_NAME
         self.fsm = 4
         self.mode = 0
         self.calls = []
@@ -56,6 +58,8 @@ class FakeLoco:
 
     def SetFsmId(self, i):
         self._rec("SetFsmId", i)
+        if i == 500:
+            self.calls.append(("Start",))    # Walk-Start fuer die Pruefungen
         self.fsm = i
         return 0
 
@@ -93,6 +97,8 @@ def lc_module():
                  "unitree_sdk2py.g1.loco.g1_loco_api"):
         stubs[name] = types.ModuleType(name)
     stubs["unitree_sdk2py.g1.loco.g1_loco_client"].LocoClient = FakeLoco
+    # Wie das im Real-Image installierte SDK (lnotspotl 7c661d2): alter Name.
+    stubs["unitree_sdk2py.g1.loco.g1_loco_client"].LOCO_SERVICE_NAME = "loco"
     api = stubs["unitree_sdk2py.g1.loco.g1_loco_api"]
     api.ROBOT_API_ID_LOCO_GET_FSM_ID = "GET_FSM_ID"
     api.ROBOT_API_ID_LOCO_GET_FSM_MODE = "GET_FSM_MODE"
@@ -728,5 +734,27 @@ def test_state_publish_not_in_default_group(lc_module):
     try:
         timers = [t for t in node.timers if t.callback == node._publish_state]
         assert timers and timers[0].callback_group is node._state_group
+    finally:
+        _close(node)
+
+
+def test_loco_service_is_sport_even_with_old_sdk(lc_module):
+    """Real 2026-10-16: alle Loco-RPCs 3102. Das Real-Image installiert ein SDK
+    mit Dienst "loco"; der G1 (ai_sport >= 8.2) hoert nur auf "sport"."""
+    node, robot = _make(lc_module)
+    try:
+        assert robot.service == "sport"
+    finally:
+        _close(node)
+
+
+def test_walk_start_uses_fsm_500_not_sdk_start(lc_module):
+    """Start() ist im alten SDK FSM 200, im aktuellen 500 -> explizit 500."""
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = 4
+        node.start_walking_callback(_bool(True))
+        assert ("SetFsmId", 500) in robot.calls
+        assert ("SetFsmId", 200) not in robot.calls
     finally:
         _close(node)
