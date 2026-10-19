@@ -736,3 +736,34 @@ def test_waist_hold_off_in_sim_mode(ac_module):
     finally:
         os.environ["G1_SIM_MODE"] = "false"
         _close(node)
+
+
+def test_full_estop_makes_waist_passive_too(ac_module):
+    """Voll-Notaus (PS4 R1+R2+PS): Arme schlaff wie beim E-Stop UND die Taille
+    passiv (kp=0, gedaempft), auch mit estop_waist_hold=true. arm_sdk behaelt
+    Gewicht 1 (kein Onboard-Snap, falls der Damp-RPC ausfaellt). Auch nach
+    einem vorherigen normalen E-Stop (PS zuerst gedrueckt)."""
+    for first_estop in (False, True):
+        _reset_robot()
+        node = _make_node(ac_module)
+        try:
+            node._arms_controlled_callback(_bool(True))
+            _run(node, 2.4)
+            if first_estop:
+                node._on_emergency_stop(_bool(True))
+                _run(node, 0.2)
+                assert not node._waist.passive
+            node._on_full_emergency_stop(_bool(True))
+            assert node.estop_active and node._arm_slack and node._waist.passive
+            ROBOT.waist_writes.clear()
+            _run(node, 0.5)
+            for w, q, kp, kd in ROBOT.waist_writes:
+                assert w == 1.0 and float(np.max(kp)) == 0.0 and np.allclose(kd, 3.0)
+            assert float(np.max(ROBOT.writes[-1][2])) == 0.0 and ROBOT.writes[-1][0] == 1.0
+            # ENABLE gesperrt bis START
+            node._arms_controlled_callback(_bool(True))
+            assert not node.arms_enabled
+            node._on_start(_bool(True))
+            assert not node.estop_active
+        finally:
+            _close(node)

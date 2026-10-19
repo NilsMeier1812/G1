@@ -60,7 +60,7 @@ class FakeDevice:
         return 3
 
     def erase_effect(self, eid):
-        pass
+        self.erased = getattr(self, "erased", 0) + 1
 
     def write(self, etype, code, value):
         self.ff_written.append((etype, code, value))
@@ -176,6 +176,24 @@ def test_feedback_led_and_rumble(env):
     assert wait_for(lambda: rd("green") == "200")
     assert rd("red") == "0" and rd("blue") == "60"
     assert wait_for(lambda: dev.ff_written == [(EV_FF, 3, 1)])
+
+
+def test_rumble_stop_never_uploads_endless_effect(env):
+    """{"rumble": {"ms": 0}} (Voll-Notaus abgebrochen) stoppt die laufende
+    Vibration und laedt KEIN neues Effekt hoch -- Replay(0) waere endlos."""
+    dev = FakeDevice("Wireless Controller")
+    env.fake.devices[dev.path] = dev
+    assert wait_for(lambda: len(env.got) > 1)
+    env.fb.publish(String(data=json.dumps({"rumble": {"ms": 2300, "strong": 1.0, "weak": 1.0}})))
+    assert wait_for(lambda: len(dev.ff_written) == 1)
+    assert dev.last_effect[4] == (2300, 0)            # Replay(Laenge, Verzoegerung)
+    env.fb.publish(String(data=json.dumps({"rumble": {"ms": 0}})))
+    assert wait_for(lambda: getattr(dev, "erased", 0) == 1)
+    time.sleep(0.1)
+    assert len(dev.ff_written) == 1 and dev.last_effect[4] == (2300, 0)
+    env.fb.publish(String(data=json.dumps({"rumble": {"ms": "kaputt"}})))   # ignoriert
+    time.sleep(0.1)
+    assert len(dev.ff_written) == 1
 
 
 def test_stall_detection_motion_sensors(env):
