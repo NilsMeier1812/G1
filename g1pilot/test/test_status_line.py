@@ -34,9 +34,25 @@ def test_ps4_texts():
 
 
 def test_ps4_help_follows_ps_estop():
-    assert sl.ps4_help({"ps_estop": True})[-1][1] == "NOT-HALT"
-    assert "STOPP" in sl.ps4_help({"ps_estop": False})[-1][1]
+    ps = lambda rows: dict(rows)["PS"]   # noqa: E731
+    assert ps(sl.ps4_help({"ps_estop": True})) == "NOT-HALT"
+    assert "STOPP" in ps(sl.ps4_help({"ps_estop": False}))
     assert len(sl.ps4_help()) == len(sl.PS4_HELP)
+    assert "VOLL-NOTAUS" in dict(sl.ps4_help())["R1 + R2 + PS (2 s halten)"]
+
+
+def test_full_estop_texts():
+    t, c = sl.onboard_text({"fsm": 1, "name": "Damp", "estop": True, "full_estop": True}, 0.1)
+    assert "VOLL-NOTAUS" in t and "Startleiste" in t and c == sl.RED
+    st = {"selection": "left", "mode": "move", "speed": "Langsam", "connected": True}
+    t, c = sl.ps4_text(dict(st, full_arming=True), 0.2)
+    assert "loslassen bricht ab" in t and c == sl.RED
+    t, c = sl.ps4_text(dict(st, estop=True, full_estop=True), 0.2)
+    assert "VOLL-NOTAUS" in t and "Roboter starten" in t
+    # Startleiste nach Voll-Notaus (Damp): erst quittieren, dann Preparation.
+    b = sl.start_buttons({"fsm": 1, "estop": True, "full_estop": True}, 0.1)
+    assert not b["preparation"][0] and not b["walk"][0]
+    assert sl.start_buttons({"fsm": 1}, 0.1)["preparation"][0]
 
 
 def test_parse_ignores_garbage():

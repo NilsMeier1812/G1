@@ -14,6 +14,7 @@ arm_controller bzw. in der Inspire-Bridge:
   /g1pilot/arms/home            Bool         Grundstellung (Impuls)
   /g1pilot/pose_store/cancel    Bool         laufende geplante Bewegung abbrechen
   /g1pilot/emergency_stop       Bool         NOT-HALT (wie in den GUIs)
+  /g1pilot/full_emergency_stop  Bool         VOLL-NOTAUS: ganzer G1 Damp (R1+R2+PS)
 
 KEIN Laufen: der Node publiziert nichts an loco_cmd_vel / joy_mux. Rueckmeldung:
   /g1pilot/ps4/feedback  String(JSON)  LED-Farbe + Vibration -> ps4_joystick
@@ -32,6 +33,11 @@ Belegung (Details: g1pilot/docs/43_ps4_controller.md):
                options_starts_balancing -- real aus)
   Share (1 s halten)  Grundstellung
   PS           NOT-HALT (ps_estop=false: nur Stopp wie Kreuz)
+  R1 + R2 + PS (2 s halten, Controller vibriert)  VOLL-NOTAUS: ganzer G1
+               in Damp (auch die Beine, /g1pilot/full_emergency_stop).
+               Vorzeitig loslassen bricht ab. Zurueck: START quittiert,
+               der G1 bleibt in Damp; Aufstehen nur ueber die Startleiste
+               (Preparation -> Walk).
 """
 import json
 import math
@@ -88,12 +94,14 @@ class ArmTeleopLogic:
 
     update(axes, buttons, now) -> Liste von Befehlen (Tupel), z.B.
       ("hand", side, "open"|"close"), ("enable",), ("home",), ("cancel",),
-      ("estop",), ("hold", sides), ("changed",)
+      ("estop",), ("hold", sides), ("changed",),
+      ("full_arm",), ("full_abort",), ("full_estop",)   -- Voll-Notaus
     twist(axes) -> {side: (lin, ang)} fuer die gerade aktiven Seiten (oder {}).
     """
 
     def __init__(self, deadzone=0.12, expo=0.4, speed="Normal", home_hold_s=1.0,
-                 selection="right", max_speed="Schnell", ps_estop=True):
+                 selection="right", max_speed="Schnell", ps_estop=True,
+                 full_estop_hold_s=2.0, full_estop_gap_s=0.3):
         self.deadzone = float(deadzone)
         self.expo = float(expo)
         self.home_hold_s = float(home_hold_s)
@@ -107,6 +115,16 @@ class ArmTeleopLogic:
         # PS: True = NOT-HALT (wie die GUIs), False = nur Stopp wie Kreuz.
         self.ps_estop = bool(ps_estop)
         self.estop = False
+        # Voll-Notaus (R1 + R2 + PS halten): <= 0 schaltet ihn ab.
+        self.full_hold_s = float(full_estop_hold_s)
+        # Laengere Luecke im Joy-Strom waehrend des Haltens -> Abbruch (sonst
+        # loeste ein nach einem Funkabriss weiter "gedrueckt" gemeldeter
+        # Zustand sofort aus, ohne dass jemand die 2 s gehalten hat).
+        self.full_gap_s = float(full_estop_gap_s)
+        self.full_estop = False
+        self._full_since = None      # Beginn des Haltens (None = nicht gehalten)
+        self._full_last = None       # letzte Joy-Nachricht waehrend des Haltens
+        self._full_sent = False      # in diesem Halten schon ausgeloest
         self._prev = [0] * L.NUM_BUTTONS
         self._share_since = None
         self._home_sent = False
@@ -121,7 +139,7 @@ class ArmTeleopLogic:
         return SELECTIONS[self.selection]
 
     def color(self):
-        if self.estop:
+        if self.estop or self.full_estop:
             return COLORS["estop"]
         c = COLORS[self.selection]
         if self.mode == "turn":
@@ -129,6 +147,8 @@ class ArmTeleopLogic:
         return c
 
     def label(self):
+        if self.full_estop:
+            return "PS4 · VOLL-NOTAUS (G1 in Damp, mit START quittieren)"
         if self.estop:
             return "PS4 · NOT-HALT (in GUI quittieren)"
         return f"PS4 · {SELECTION_LABEL[self.selection]} · {MODE_LABEL[self.mode]} · {self.speed}"
@@ -136,12 +156,14 @@ class ArmTeleopLogic:
     def status(self):
         return {"selection": self.selection, "sides": list(self.sides),
                 "mode": self.mode, "speed": self.speed, "estop": self.estop,
-                "ps_estop": self.ps_estop, "label": self.label()}
+                "ps_estop": self.ps_estop, "full_estop": self.full_estop,
+                "full_arming": self.full_arming, "label": self.label()}
 
     def clear_estop(self):
         """NOT-HALT quittiert (START aus GUI/Streamdeck gesehen)."""
-        if self.estop:
+        if self.estop or self.full_estop:
             self.estop = False
+            self.full_estop = False
             return True
         return False
 
@@ -152,12 +174,67 @@ class ArmTeleopLogic:
             return True
         return False
 
+    @property
+    def full_arming(self):
+        """True, solange R1 + R2 + PS gehalten werden (noch nicht ausgeloest)."""
+        return self._full_since is not None and not self._full_sent
+
+    @staticmethod
+    def full_combo(axes, buttons):
+        """R1 + R2 + PS gleichzeitig gedrueckt? R2 zaehlt als Taste ODER als
+        weit durchgedrueckter Trigger (Treiber melden BTN_TR2 unterschiedlich frueh)."""
+        b = list(buttons) + [0] * max(0, L.NUM_BUTTONS - len(buttons))
+        a = list(axes) + [0.0] * max(0, L.NUM_AXES - len(axes))
+        r2 = bool(b[L.R2]) or a[L.R2_AXIS] >= 0.8
+        return bool(b[L.R1]) and r2 and bool(b[L.PS])
+
+    def abort_full(self):
+        """Halten abbrechen (Loslassen, Joy-Timeout). True, wenn es lief."""
+        was = self.full_arming
+        self._full_since = self._full_last = None
+        self._full_sent = False
+        return was
+
+    def _update_full(self, axes, buttons, now):
+        """Voll-Notaus: R1 + R2 + PS ununterbrochen full_hold_s lang halten."""
+        if self.full_hold_s <= 0.0:
+            return []
+        if not self.full_combo(axes, buttons):
+            return [("full_abort",)] if self.abort_full() else []
+        if self._full_last is not None and now - self._full_last > self.full_gap_s:
+            # Luecke im Strom: neu anfangen (Vibration laeuft weiter/neu).
+            self._full_since = None
+            self._full_sent = False
+        self._full_last = now
+        if self._full_since is None:
+            self._full_since = now
+            return [("full_arm",)]
+        if not self._full_sent and now - self._full_since >= self.full_hold_s:
+            self._full_sent = True
+            self.full_estop = True
+            self.estop = True
+            return [("hold", ("left", "right")), ("full_estop",), ("changed",)]
+        return []
+
     # ── Eingabe ─────────────────────────────────────────────────────────
     def update(self, axes, buttons, now):
         b = list(buttons) + [0] * max(0, L.NUM_BUTTONS - len(buttons))
         rise = [1 if (b[i] and not self._prev[i]) else 0 for i in range(L.NUM_BUTTONS)]
         self._prev = b[:L.NUM_BUTTONS]
-        out = []
+        # Voll-Notaus zuerst: wirkt auch im NOT-HALT (PS hat den Oberkoerper
+        # beim Druecken schon gedaempft) und unabhaengig von ps_estop.
+        out = self._update_full(axes, b, now)
+        if self.full_arming or self._full_sent:
+            # Waehrend R1 + R2 + PS gehalten werden: nur PS-NOT-HALT (unten),
+            # keine anderen Tasten (R1 waere sonst "schneller").
+            if rise[L.PS] and self.ps_estop:
+                out[:0] = [("hold", ("left", "right")), ("estop",)]
+                if not self.estop:
+                    self.estop = True
+                    out.append(("changed",))
+            elif rise[L.PS] and not self.estop:
+                out[:0] = [("hold", ("left", "right")), ("cancel",)]
+            return out
 
         # NOT-HALT zuerst und unabhaengig von allem anderen.
         if rise[L.PS] and self.ps_estop:
@@ -268,6 +345,9 @@ def main(args=None):
             # zusammen). false -> PS wirkt nur wie Kreuz (Stopp).
             self.declare_parameter("ps_estop", True)
             self.declare_parameter("home_hold_s", 1.0)
+            # Voll-Notaus: R1 + R2 + PS so lange halten (s), Controller vibriert
+            # waehrenddessen. 0 = Voll-Notaus am Controller abgeschaltet.
+            self.declare_parameter("full_estop_hold_s", 2.0)
             # Bleibt der Joy-Stream laenger aus (Funkabriss, Akku leer), haelt
             # die Hand an -- der ps4_joystick publiziert nur bei Verbindung.
             self.declare_parameter("joy_timeout_s", 0.5)
@@ -284,7 +364,8 @@ def main(args=None):
 
             self.logic = ArmTeleopLogic(gp("deadzone"), gp("expo"), gp("speed"),
                                         gp("home_hold_s"), max_speed=gp("max_speed"),
-                                        ps_estop=gp("ps_estop"))
+                                        ps_estop=gp("ps_estop"),
+                                        full_estop_hold_s=gp("full_estop_hold_s"))
             self.joy_timeout = float(gp("joy_timeout_s"))
             self.options_balancing = bool(gp("options_starts_balancing"))
             self.cmd_poses = CommandedPoses()
@@ -310,6 +391,7 @@ def main(args=None):
             self.pub_home = self.create_publisher(Bool, "/g1pilot/arms/home", 10)
             self.pub_cancel = self.create_publisher(Bool, "/g1pilot/pose_store/cancel", 10)
             self.pub_estop = self.create_publisher(Bool, "/g1pilot/emergency_stop", 10)
+            self.pub_full_estop = self.create_publisher(Bool, "/g1pilot/full_emergency_stop", 10)
             self.pub_feedback = self.create_publisher(String, "/g1pilot/ps4/feedback", 10)
             latched = QoSProfile(depth=1)
             latched.durability = DurabilityPolicy.TRANSIENT_LOCAL
@@ -333,7 +415,9 @@ def main(args=None):
             self.get_logger().info(
                 f"PS4-Arm-Steuerung bereit ({gp('joy_topic')}): {self.logic.label()} "
                 f"(max. {JOG_SPEED_ORDER[self.logic.max_idx]}, PS="
-                f"{'NOT-HALT' if self.logic.ps_estop else 'Stopp'}, Options"
+                f"{'NOT-HALT' if self.logic.ps_estop else 'Stopp'}, R1+R2+PS "
+                f"{f'{self.logic.full_hold_s:.1f} s = VOLL-NOTAUS' if self.logic.full_hold_s > 0 else 'aus'}"
+                f", Options"
                 f"{' + start_balancing' if self.options_balancing else ' = nur Arme'})")
 
         # ── Eingaenge ──────────────────────────────────────────────────
@@ -402,6 +486,28 @@ def main(args=None):
                 self.pub_estop.publish(Bool(data=True))
                 self.get_logger().warn("NOT-HALT (PS-Taste). Quittieren in GUI/Streamdeck.")
                 self._send_feedback(rumble_ms=600, strong=1.0, weak=1.0)
+            elif kind == "full_arm":
+                # Vibration ueber die ganze Haltezeit: "jetzt wird es ernst".
+                self._send_feedback(rumble_ms=self.logic.full_hold_s * 1000.0 + 300.0,
+                                    strong=1.0, weak=1.0, force=True)
+                self.get_logger().warn(
+                    f"R1 + R2 + PS gehalten: VOLL-NOTAUS in {self.logic.full_hold_s:.1f} s "
+                    "(loslassen = Abbruch).")
+                self._publish_status()
+            elif kind == "full_abort":
+                self._send_feedback(rumble_ms=0, stop_rumble=True)
+                self.get_logger().info("Voll-Notaus abgebrochen (vor Ablauf losgelassen).")
+                self._publish_status()
+            elif kind == "full_estop":
+                self.holds.clear()
+                # Zuerst der Voll-Notaus (loco_client: Damp), dann der normale
+                # NOT-HALT (arm_controller/GUIs sperren wie bei PS).
+                self.pub_full_estop.publish(Bool(data=True))
+                self.pub_estop.publish(Bool(data=True))
+                self.get_logger().error(
+                    "VOLL-NOTAUS (R1 + R2 + PS): ganzer G1 in Damp. Quittieren mit "
+                    "START, Aufstehen danach nur ueber die Startleiste.")
+                self._send_feedback(rumble_ms=1500, strong=1.0, weak=1.0, force=True)
             elif kind == "changed":
                 self._changed()
 
@@ -412,9 +518,14 @@ def main(args=None):
             self._publish_markers()
 
         # ── Rueckmeldung ───────────────────────────────────────────────
-        def _send_feedback(self, rumble_ms=0, strong=0.0, weak=0.5):
+        def _send_feedback(self, rumble_ms=0, strong=0.0, weak=0.5, force=False,
+                           stop_rumble=False):
             fb = {"rgb": list(self.logic.color())}
-            if rumble_ms > 0:
+            if stop_rumble:
+                fb["rumble"] = {"ms": 0}
+            elif rumble_ms > 0 and (force or not self.logic.full_arming):
+                # Waehrend R1 + R2 + PS gehalten werden, darf keine kurze
+                # Quittungs-Vibration die Halte-Vibration ueberschreiben.
                 fb["rumble"] = {"ms": int(rumble_ms), "strong": strong, "weak": weak}
             self.pub_feedback.publish(String(data=json.dumps(fb)))
 
@@ -522,6 +633,10 @@ def main(args=None):
                 self._home_off_at = None
                 self.pub_home.publish(Bool(data=False))
             if self.t_joy is not None and now - self.t_joy > self.joy_timeout:
+                if self.logic.abort_full():
+                    self.get_logger().warn("Voll-Notaus-Halten abgebrochen: keine "
+                                           "Controller-Daten mehr.")
+                    self._send_feedback(stop_rumble=True)
                 if self.connected:
                     self.connected = False
                     self.get_logger().warn("PS4-Controller: keine Daten mehr -> Hand haelt an.")

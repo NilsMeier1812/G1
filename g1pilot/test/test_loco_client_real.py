@@ -273,6 +273,96 @@ def test_start_after_damp_estop_goes_to_standby(lc_module):
         _close(node)
 
 
+# ── VOLL-NOTAUS (PS4 R1 + R2 + PS) ─────────────────────────────────────
+
+def test_full_estop_damps_whole_robot_even_without_estop_damp_legs(lc_module):
+    """Voll-Notaus: Damp (FSM 1) ZUERST, unabhaengig von estop_damp_legs=false,
+    danach StopMove; Gehen gesperrt, Zustand fuer die GUI."""
+    node, robot = _make(lc_module)
+    try:
+        assert node.get_parameter("estop_damp_legs").value is False
+        robot.fsm = 500
+        node._sync_onboard_state(force=True)
+        node.start_walking_callback(_bool(True))
+        node.cmd_vel_callback(_cmd(vx=1.0))
+        node._cmd_vel_tick()
+        robot.calls.clear()
+        node.full_emergency_callback(_bool(True))
+        assert robot.calls[0] == ("SetFsmId", 1), "Damp zuerst"
+        assert robot.fsm == 1 and robot.vel == (0.0, 0.0, 0.0)
+        assert node.robot_stopped and not node.balanced and not node.walk_enabled
+        assert node._full_estop and "VOLL-NOTAUS" in node._note
+        node.cmd_vel_callback(_cmd(vx=1.0))
+        robot.calls.clear()
+        node._cmd_vel_tick()
+        assert "SetVelocity" not in robot.names()
+        # False auf dem Topic tut nichts
+        node.full_emergency_callback(_bool(False))
+        assert node._full_estop
+    finally:
+        _close(node)
+
+
+def test_full_estop_after_ps_estop_still_damps(lc_module):
+    """Ablauf am Controller: PS (NOT-HALT, Beine bleiben stehen), 2 s spaeter
+    Voll-Notaus -> jetzt doch Damp."""
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = 500
+        node.emergency_callback(_bool(True))
+        assert robot.fsm == 500
+        node.full_emergency_callback(_bool(True))
+        assert robot.fsm == 1 and not node._estop_legs_kept
+        # Ein spaeter eintreffender NOT-HALT macht den Voll-Notaus nicht weicher.
+        node.emergency_callback(_bool(True))
+        assert robot.fsm == 1 and node._full_estop
+    finally:
+        _close(node)
+
+
+def test_full_estop_not_blocked_by_busy_rpc_lock_or_rpc_error(lc_module):
+    node, robot = _make(lc_module)
+    try:
+        node._rpc_lock.acquire()
+        t0 = time.monotonic()
+        node.full_emergency_callback(_bool(True))
+        dt = time.monotonic() - t0
+        node._rpc_lock.release()
+        assert dt < 2.0 and robot.fsm == 1
+        robot.fail = {"SetFsmId", "SetVelocity"}
+        node.full_emergency_callback(_bool(True))      # darf nicht werfen
+        assert node.robot_stopped
+    finally:
+        _close(node)
+
+
+def test_start_after_full_estop_only_acknowledges(lc_module):
+    """START nach Voll-Notaus: quittiert, aber KEIN Aufstehen (kein FSM 4) --
+    anders als nach einem NOT-HALT mit estop_damp_legs. Zurueck geht es
+    ueber die Startleiste: Preparation (aus Damp erlaubt), dann Walk."""
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = 500
+        node.full_emergency_callback(_bool(True))
+        # Vor dem Quittieren: Preparation abgelehnt
+        from std_msgs.msg import String
+        node.mode_request_callback(String(data="preparation"))
+        assert robot.fsm == 1
+        robot.calls.clear()
+        node.start_callback(_bool(True))
+        assert ("SetFsmId", 4) not in robot.calls and robot.fsm == 1
+        assert not node.robot_stopped and not node._full_estop and not node.balanced
+        assert "quittiert" in node._note
+        # Startleiste: Preparation -> FSM 4
+        node.mode_request_callback(String(data="preparation"))
+        assert robot.fsm == 4
+        # Ein normaler START danach verhaelt sich wieder wie immer.
+        node.start_callback(_bool(True))
+        assert robot.fsm == 4
+    finally:
+        _close(node)
+
+
 # ── Abgleich mit dem Onboard-Zustand / GUI-Umschalten ──────────────────
 
 def test_walk_set_by_phone_app_is_adopted_and_gui_can_move(lc_module):
@@ -575,8 +665,8 @@ def test_onboard_state_published_for_gui(lc_module):
         node.start_walking_callback(_bool(True))
         node._publish_state()
         assert got[-1] == {"fsm": 500, "name": "Walk", "balanced": True, "walk": True,
-                           "estop": False, "robot": True, "note": "", "rpc_err": None,
-                           "walk_fsm": 501}
+                           "estop": False, "full_estop": False, "robot": True, "note": "",
+                           "rpc_err": None, "walk_fsm": 501}
         node.emergency_callback(_bool(True))
         node._publish_state()
         assert got[-1]["estop"] and not got[-1]["walk"]

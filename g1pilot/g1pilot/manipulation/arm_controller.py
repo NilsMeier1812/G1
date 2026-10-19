@@ -596,6 +596,10 @@ class ArmController(Node):
         # E-Stop: sofort verstummen + Arme schlaff schalten (Weight=0, kp/kd=0).
         # /g1pilot/start quittiert den Latch (wie robot_stopped im loco_client).
         self.create_subscription(Bool, "/g1pilot/emergency_stop", self._on_emergency_stop, 10)
+        # Voll-Notaus (PS4 R1+R2+PS): wie E-Stop, zusaetzlich Taille schlaff --
+        # loco_client schaltet den ganzen G1 in Damp, nichts bleibt steif.
+        self.create_subscription(Bool, "/g1pilot/full_emergency_stop",
+                                 self._on_full_emergency_stop, 10)
         self.create_subscription(Bool, "/g1pilot/start", self._on_start, 10)
 
         # Umgebungs-Objekte (Hindernisse + Greif-Objekte), siehe scene_bridge.py.
@@ -1742,6 +1746,20 @@ class ArmController(Node):
         self.get_logger().warn("EMERGENCY STOP: Arme drehmomentfrei/gedaempft "
                                "(arm_sdk behaelt Autoritaet, KEIN Sprung in "
                                f"Home), {waist_txt}. Quittieren: START.")
+
+    def _on_full_emergency_stop(self, msg: Bool):
+        """VOLL-NOTAUS: E-Stop-Latch wie oben (falls noch nicht aktiv) und die
+        Taille unabhaengig von estop_waist_hold passiv (kp=0, gedaempft). Die
+        Beine daempft loco_client (Damp). arm_sdk behaelt Gewicht 1: faellt der
+        Damp-RPC aus, posiert der Onboard-Regler die Arme trotzdem nicht."""
+        if not msg.data:
+            return
+        self._on_emergency_stop(msg)
+        if getattr(self, "_waist", None) is not None and not self._waist.passive:
+            self._waist.go_passive()
+            self._publish_arm_slack()
+        self.get_logger().warn("VOLL-NOTAUS: Arme und Taille schlaff/gedaempft, "
+                               "Beine per Damp (loco_client). Quittieren: START.")
 
     def _on_start(self, msg: Bool):
         """START (Streamdeck) quittiert den E-Stop-Latch. Die Arme bleiben

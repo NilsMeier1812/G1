@@ -259,6 +259,10 @@ class Ps4Joystick(Node):
             if self._ff_effect is not None:
                 dev.erase_effect(self._ff_effect)
                 self._ff_effect = None
+            if ms <= 0:
+                # Stopp (z.B. Voll-Notaus-Halten abgebrochen). NIE Replay(0)
+                # hochladen: Laenge 0 heisst beim Kernel "endlos".
+                return
             rumble = evdev.ff.Rumble(strong_magnitude=int(0xFFFF * max(0.0, min(1.0, strong))),
                                      weak_magnitude=int(0xFFFF * max(0.0, min(1.0, weak))))
             effect = evdev.ff.Effect(
@@ -279,8 +283,12 @@ class Ps4Joystick(Node):
             self._rgb = tuple(max(0, min(255, int(c))) for c in fb["rgb"])
             self._set_led(self._rgb)
         r = fb.get("rumble")
-        if r and evdev is not None:
-            self._rumble(r.get("ms", 100), r.get("strong", 0.0), r.get("weak", 0.5))
+        if isinstance(r, dict) and evdev is not None:
+            try:
+                ms = int(r.get("ms", 100))
+            except (TypeError, ValueError):
+                return
+            self._rumble(ms, r.get("strong", 0.0), r.get("weak", 0.5))
 
     def destroy_node(self):
         self._stop = True

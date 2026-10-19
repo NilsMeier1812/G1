@@ -58,6 +58,8 @@ def onboard_text(state, age_s, walk_requested=False):
         return "G1: Modus unbekannt (keine Antwort vom Roboter)", AMBER
     name = state.get("name") or "Modus"
     text = f"G1: {name} (FSM {fsm})"
+    if state.get("full_estop"):
+        return text + " · VOLL-NOTAUS – »Roboter starten« quittiert, dann Startleiste", RED
     if state.get("estop"):
         return text + " · NOT-HALT – mit »Roboter starten« quittieren", RED
     if fsm in WALK_FSM:
@@ -78,6 +80,11 @@ def ps4_text(status, age_s, sim=False):
         return None
     if age_s is None or age_s > STALE_S:
         return "PS4: Steuerung antwortet nicht", GREY
+    if status.get("full_arming"):
+        return "PS4: VOLL-NOTAUS wird ausgelöst – loslassen bricht ab", RED
+    if status.get("full_estop"):
+        how = "Modus wählen" if sim else "»Roboter starten«"
+        return f"PS4: VOLL-NOTAUS (ganzer G1 Damp) – gesperrt bis {how}", RED
     if status.get("estop"):
         how = "Modus wählen" if sim else "»Roboter starten«"
         return f"PS4: NOT-HALT – gesperrt bis {how}", RED
@@ -128,6 +135,7 @@ PS4_HELP = (
     ("Options", "Arme übernehmen"),
     ("Share (1 s halten)", "Grundstellung"),
     ("PS", "NOT-HALT"),
+    ("R1 + R2 + PS (2 s halten)", "VOLL-NOTAUS: ganzer G1 in Damp (vibriert, loslassen = Abbruch)"),
 )
 
 
@@ -135,5 +143,6 @@ def ps4_help(status=None):
     """Belegung als (Taste, Wirkung)-Paare; PS je nach ps_estop des Nodes."""
     rows = list(PS4_HELP)
     if status is not None and status.get("ps_estop") is False:
-        rows[-1] = ("PS", "STOPP wie Kreuz (kein NOT-HALT)")
+        i = [k for k, _ in rows].index("PS")
+        rows[i] = ("PS", "STOPP wie Kreuz (kein NOT-HALT)")
     return rows

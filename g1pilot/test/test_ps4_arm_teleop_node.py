@@ -54,7 +54,7 @@ def rig():
         node = rclpy.create_node("ps4_real_probe")
         got = {k: [] for k in ("goal_left", "goal_right", "enabled", "balance", "estop",
                                "hand_right", "hand_left", "feedback", "status", "walk",
-                               "markers")}
+                               "markers", "full")}
         sub = lambda t, typ, key: node.create_subscription(   # noqa: E731
             typ, t, lambda m: got[key].append((time.monotonic(), m)), 50)
         sub("/g1pilot/hand_goal/left", PoseStamped, "goal_left")
@@ -62,6 +62,7 @@ def rig():
         sub("/g1pilot/arms/enabled", Bool, "enabled")
         sub("/g1pilot/start_balancing", Bool, "balance")
         sub("/g1pilot/emergency_stop", Bool, "estop")
+        sub("/g1pilot/full_emergency_stop", Bool, "full")
         sub("/g1pilot/hand_action/right", String, "hand_right")
         sub("/g1pilot/hand_action/left", String, "hand_left")
         sub("/g1pilot/ps4/feedback", String, "feedback")
@@ -226,3 +227,48 @@ def test_real_settings_end_to_end(rig):
                        for m in arr.markers)
     assert any(m.ns == "ps4_label" and m.action == Marker.DELETE
                for m in g["markers"][-1][1].markers)
+
+
+def test_full_estop_hold_rumble_abort_and_trigger(rig):
+    """R1 + R2 + PS: Vibration ueber die Haltezeit, vorzeitiges Loslassen
+    stoppt sie und loest nichts aus; 2 s gehalten -> full_emergency_stop
+    (vor emergency_stop), lange Vibration, Status VOLL-NOTAUS; START gibt frei."""
+    g, st = rig.got, rig.state
+    rumbles = lambda: [json.loads(m.data).get("rumble") for _, m in g["feedback"]  # noqa: E731
+                       if "rumble" in json.loads(m.data)]
+    # 1) 1 s halten, dann loslassen -> Abbruch
+    n_fb = len(rumbles())
+    for b in (L.R1, L.R2, L.PS):
+        st["buttons"][b] = 1
+    assert wait_for(lambda: rig.status().get("full_arming") is True, 2.0)
+    time.sleep(0.9)
+    for b in (L.R1, L.R2, L.PS):
+        st["buttons"][b] = 0
+    assert wait_for(lambda: {"ms": 0} in rumbles()[n_fb:], 2.0)
+    hold_rumble = [r for r in rumbles()[n_fb:] if r.get("ms", 0) > 0]
+    assert hold_rumble and hold_rumble[0]["ms"] >= 2000 and hold_rumble[0]["strong"] == 1.0
+    assert len(hold_rumble) == 1, "Quittungs-Vibration (PS-NOT-HALT) darf nicht dazwischen"
+    time.sleep(0.5)
+    assert g["full"] == []
+    assert g["estop"], "PS allein: Oberkoerper-NOT-HALT wie bisher"
+    # 2) START quittiert den PS-NOT-HALT, dann 2 s halten -> Voll-Notaus
+    rig.start()
+    assert wait_for(lambda: rig.status().get("estop") is False, 3.0)
+    t_press = time.monotonic()
+    for b in (L.R1, L.R2, L.PS):
+        st["buttons"][b] = 1
+    assert wait_for(lambda: len(g["full"]) == 1, 4.0)
+    t_full = g["full"][0][0]
+    assert 1.9 <= t_full - t_press <= 2.6
+    assert g["full"][0][1].data is True
+    late = [t for t, m in g["estop"] if t >= t_full - 0.01]
+    assert late, "nach dem Voll-Notaus auch emergency_stop"
+    assert wait_for(lambda: rig.status().get("full_estop") is True, 2.0)
+    assert any(r.get("ms") == 1500 for r in rumbles())
+    time.sleep(1.0)
+    assert len(g["full"]) == 1, "weiter gehalten: nur einmal"
+    for b in (L.R1, L.R2, L.PS):
+        st["buttons"][b] = 0
+    rig.start()
+    assert wait_for(lambda: rig.status().get("full_estop") is False, 3.0)
+    assert g["walk"] == []
