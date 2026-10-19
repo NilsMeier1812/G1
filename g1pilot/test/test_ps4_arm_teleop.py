@@ -241,6 +241,112 @@ def test_external_estop_latches_once():
     assert lg.clear_estop() and not lg.estop
 
 
+# ── Voll-Notaus: R1 + R2 + PS halten ──────────────────────────────────────
+COMBO = (L.R1, L.R2, L.PS)
+
+
+def hold_combo(lg, t0, t1, dt=0.02, buttons=COMBO, **axes):
+    """Kombination von t0 bis t1 im 50-Hz-Takt halten -> alle Befehle."""
+    out, t = [], t0
+    while t <= t1 + 1e-9:
+        a, b = joy(buttons, **axes)
+        out += lg.update(a, b, t)
+        t += dt
+    return out
+
+
+def test_full_estop_after_two_seconds_hold():
+    lg = ArmTeleopLogic()
+    out = hold_combo(lg, 0.0, 1.9)
+    # PS allein wirkt sofort wie heute (Oberkoerper-NOT-HALT), dazu startet das Halten.
+    assert out[:3] == [("hold", ("left", "right")), ("estop",), ("full_arm",)]
+    assert ("full_estop",) not in out and lg.full_arming and not lg.full_estop
+    assert lg.status()["full_arming"] is True
+    out = hold_combo(lg, 1.92, 2.1)
+    assert out.count(("full_estop",)) == 1                  # genau einmal
+    assert lg.full_estop and lg.estop and not lg.full_arming
+    assert lg.color() == COLORS["estop"] and "VOLL-NOTAUS" in lg.label()
+    assert lg.status()["full_estop"] is True
+    assert hold_combo(lg, 2.12, 4.0) == []                  # weiter gehalten: nichts mehr
+    a, b = joy()
+    assert lg.update(a, b, 4.1) == []                       # Loslassen: kein Abbruch-Signal
+    assert lg.full_estop                                    # bleibt bis START
+    assert press(lg, L.CIRCLE, 4.2) == [] and lg.twist(joy(LY=1.0)[0]) == {}
+    assert lg.clear_estop() and not lg.full_estop and not lg.estop
+
+
+def test_full_estop_aborts_on_early_release():
+    lg = ArmTeleopLogic()
+    hold_combo(lg, 0.0, 1.5)
+    a, b = joy([L.R1, L.R2])                                # PS los
+    assert lg.update(a, b, 1.52) == [("full_abort",)]
+    assert not lg.full_arming and not lg.full_estop
+    assert lg.estop                                         # PS-NOT-HALT bleibt
+    # Neues Halten zaehlt von vorn, nicht ab dem ersten Druecken.
+    out = hold_combo(lg, 1.6, 3.4)
+    assert ("full_estop",) not in out and ("full_arm",) in out
+    assert ("full_estop",) in hold_combo(lg, 3.42, 3.7)
+
+
+@pytest.mark.parametrize("missing", COMBO)
+def test_full_estop_needs_all_three(missing):
+    lg = ArmTeleopLogic()
+    out = hold_combo(lg, 0.0, 5.0, buttons=[x for x in COMBO if x != missing])
+    assert not any(c[0].startswith("full") for c in out) and not lg.full_estop
+
+
+def test_full_estop_r2_as_trigger_axis():
+    lg = ArmTeleopLogic()
+    out = hold_combo(lg, 0.0, 2.1, buttons=(L.R1, L.PS), R2_AXIS=0.95)
+    assert ("full_estop",) in out
+    lg = ArmTeleopLogic()
+    out = hold_combo(lg, 0.0, 3.0, buttons=(L.R1, L.PS), R2_AXIS=0.5)   # halb gedrueckt
+    assert ("full_estop",) not in out
+
+
+def test_full_estop_gap_in_stream_restarts_hold():
+    """Funkabriss mitten im Halten: kommt der Strom nach 1.5 s mit weiter
+    gedrueckten Tasten zurueck, loest das NICHT sofort aus -- neu 2 s halten."""
+    lg = ArmTeleopLogic()
+    hold_combo(lg, 0.0, 1.0)
+    out = hold_combo(lg, 2.5, 2.6)                          # Luecke 1.5 s
+    assert ("full_estop",) not in out and ("full_arm",) in out
+    assert ("full_estop",) not in hold_combo(lg, 2.62, 4.4)
+    assert ("full_estop",) in hold_combo(lg, 4.42, 4.6)
+
+
+def test_full_estop_works_while_estop_latched_and_without_ps_estop():
+    lg = ArmTeleopLogic()
+    lg.latch_estop()                                        # NOT-HALT aus der GUI
+    assert ("full_estop",) in hold_combo(lg, 0.0, 2.1)
+    lg = ArmTeleopLogic(ps_estop=False)
+    out = hold_combo(lg, 0.0, 2.1)
+    assert ("cancel",) in out and ("estop",) not in out[:3]
+    assert ("full_estop",) in out and lg.full_estop and lg.estop
+
+
+def test_full_estop_combo_blocks_r1_speed_step():
+    lg = ArmTeleopLogic(ps_estop=False)                     # nicht durch NOT-HALT gesperrt
+    a, b = joy([L.PS, L.R2])
+    lg.update(a, b, 0.0)
+    a, b = joy(COMBO)                                       # R1 zuletzt
+    out = lg.update(a, b, 0.02)
+    assert ("full_arm",) in out and ("changed",) not in out and lg.speed == "Normal"
+
+
+def test_full_estop_disabled_with_zero_hold():
+    lg = ArmTeleopLogic(full_estop_hold_s=0.0)
+    out = hold_combo(lg, 0.0, 5.0)
+    assert not any(c[0].startswith("full") for c in out) and lg.estop
+
+
+def test_full_estop_abort_via_timeout_helper():
+    lg = ArmTeleopLogic()
+    hold_combo(lg, 0.0, 0.5)
+    assert lg.abort_full() and not lg.full_arming
+    assert not lg.abort_full()
+
+
 # ── Logik: Bewegung ───────────────────────────────────────────────────────
 def test_shape_axis_deadzone_and_expo():
     assert shape_axis(0.1, 0.12, 0.4) == 0.0

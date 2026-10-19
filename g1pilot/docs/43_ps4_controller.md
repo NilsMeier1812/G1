@@ -43,7 +43,8 @@ Am echten Roboter erst in der GUI starten, siehe unten.
 | Options | **Arme übernehmen**. Sim zusätzlich Greifen-Modus (stehen), wie die Kachel GREIFEN; Real nur die Arme |
 | Share **1 s halten** | Grundstellung (Arme neben den Körper, geplant um Hindernisse herum) |
 | PS | **NOT-HALT** (wie in den GUIs: Arme schlaff, Roboter gedämpft — real sackt er zusammen) |
-| L2, R2, L3, R3, Touchpad | frei (Reserve) |
+| **R1 + R2 + PS 2 s halten** | **VOLL-NOTAUS**: ganzer G1 in Damp, auch die Beine. Controller vibriert während des Haltens, vorzeitig loslassen bricht ab. Siehe [Voll-Notaus](#voll-notaus-r1--r2--ps) |
+| L2, L3, R3, Touchpad | frei (Reserve) |
 
 Richtungen gelten **aus Sicht des Roboters** (vor = in Blickrichtung des
 Roboters, links = Roboter-links). Steht man dem Roboter gegenüber, sind
@@ -76,6 +77,38 @@ Danach ignoriert der Controller alles außer PS, bis quittiert ist: Sim in
 der Demo-GUI einen Modus wählen, Real »Roboter starten« bzw. Streamdeck
 START. Das Quittieren liegt absichtlich nicht auf dem Controller: in der Sim
 setzt START den Roboter auch zurück, real schaltet es den Roboter in Standby.
+
+## Voll-Notaus (R1 + R2 + PS)
+
+Zusätzlich zum NOT-HALT (PS allein, Oberkörper) gibt es einen **kompletten
+Notaus für den ganzen G1**: R1, R2 und PS gleichzeitig **2 s halten**.
+
+1. Beim Drücken von PS greift sofort der normale NOT-HALT (Arme schlaff),
+   der Controller beginnt durchgehend stark zu vibrieren und die Demo-GUI
+   zeigt „PS4: VOLL-NOTAUS wird ausgelöst – loslassen bricht ab“.
+2. **Vorzeitig losgelassen** (eine der drei Tasten, vor Ablauf der 2 s):
+   Vibration stoppt, kein Voll-Notaus. Der PS-NOT-HALT bleibt bestehen.
+   Bricht die Funkverbindung während des Haltens ab, zählt das ebenfalls als
+   Abbruch; danach beginnen die 2 s von vorn.
+3. **2 s gehalten**: `/g1pilot/full_emergency_stop` (danach zusätzlich
+   `/g1pilot/emergency_stop`), lange Vibration (1,5 s), LED rot.
+   - loco_client: **Damp (FSM 1) sofort**, unabhängig von
+     `estop_damp_legs`, danach StopMove. Der G1 sackt in den Kran bzw. fällt.
+   - arm_controller: Arme schlaff wie beim NOT-HALT und **Taille passiv**
+     (auch mit `estop_waist_hold=true`). arm_sdk behält Gewicht 1, damit der
+     Onboard-Regler die Arme nicht posiert, falls der Damp-RPC ausfällt.
+   - Demo-GUI: „G1: Damp (FSM 1) · VOLL-NOTAUS – »Roboter starten« quittiert,
+     dann Startleiste“.
+
+**Zurück:** »Roboter starten« (bzw. Streamdeck START) **quittiert nur** –
+anders als nach einem normalen NOT-HALT schaltet der G1 danach **nicht** von
+selbst nach Preparation, er bleibt in Damp. Aufstehen ausdrücklich über die
+Startleiste der Demo-GUI: **Preparation** (am Kran), dann **Walk**; danach
+Arme wieder mit Options/ENABLE übernehmen.
+
+Abschalten: Parameter `full_estop_hold_s:=0` am `ps4_arm_teleop`.
+In der Sim wirkt der Voll-Notaus wie der NOT-HALT (loco_sim dämpft dort ohnehin
+den ganzen Roboter).
 
 ## Echter Roboter
 
@@ -307,6 +340,7 @@ kippt die Hand in beiden Varianten während der Fahrt kurz bis ~10°
 | `max_speed` | `Schnell` (Real `Normal`) | höchstes Tempo per R1 |
 | `ps_estop` | `true` | PS = NOT-HALT; `false` = PS wirkt wie Kreuz |
 | `home_hold_s` | 1.0 | Share-Haltezeit für Grundstellung |
+| `full_estop_hold_s` | 2.0 | Haltezeit R1 + R2 + PS für den Voll-Notaus; `0` = aus |
 | `joy_timeout_s` | 0.5 | Abriss-Erkennung |
 | `options_starts_balancing` | `true` (Real `false`) | Options sendet zusätzlich `start_balancing` |
 | `jog_reference` | `command` (Real `tf`) | Startpose neuer Jog-Ziele: kommandierte Hand (`/g1pilot/hand_cmd_pose`) oder gemessene (TF) |

@@ -35,6 +35,8 @@ FSM_NAMES = {0: "Zero Torque", 1: "Damp", 2: "Hocke", 3: "Sitzen",
              706: "Aufstehen"}
 ONBOARD_STATE_TOPIC = "/g1pilot/onboard_state"
 LOCO_REQUEST_TOPIC = "/g1pilot/loco_request"
+# Voll-Notaus (PS4 R1+R2+PS): ganzer G1 in Damp, auch die Beine.
+FULL_ESTOP_TOPIC = "/g1pilot/full_emergency_stop"
 
 
 # RPC-Fehlercodes (unitree_sdk2py/rpc/internal.py) als Klartext fuer Log/GUI.
@@ -95,6 +97,11 @@ class G1LocoClient(Node):
         self._nonwalk_polls = 0
         self._entering = False
         self._estop_legs_kept = False    # letzter E-Stop liess die Beine stehen
+        # Voll-Notaus (PS4 R1+R2+PS, /g1pilot/full_emergency_stop): ganzer G1
+        # in Damp. Eigene Callback-Gruppe -> laeuft parallel zu einem noch
+        # haengenden NOT-HALT-StopMove, der Damp wartet nicht darauf.
+        self._full_estop = False
+        self._full_estop_group = MutuallyExclusiveCallbackGroup()
         self._cmd_lock = threading.Lock()
         self._cmd_vel = (0.0, 0.0, 0.0)  # normiert [-1,1] aus /g1pilot/loco_cmd_vel
         self._cmd_stamp = None           # time.monotonic() des letzten Empfangs
@@ -195,6 +202,9 @@ class G1LocoClient(Node):
         self.create_subscription(Bool, '/g1pilot/emergency_stop',
                                  self.emergency_callback, 10,
                                  callback_group=self._estop_group)
+        self.create_subscription(Bool, FULL_ESTOP_TOPIC,
+                                 self.full_emergency_callback, 10,
+                                 callback_group=self._full_estop_group)
         self.create_subscription(Bool, '/g1pilot/start', self.start_callback, 10)
         self.create_subscription(Bool, '/g1pilot/start_balancing', self.start_balancing_callback, 10)
         self.create_subscription(Joy, '/g1pilot/joy', self.joystick_callback, 10)
@@ -363,6 +373,7 @@ class G1LocoClient(Node):
         st = {"fsm": fsm, "name": FSM_NAMES.get(fsm, "") if fsm is not None else "",
               "balanced": bool(self.balanced), "walk": bool(self.walk_enabled),
               "estop": bool(self.robot_stopped), "robot": bool(self.use_robot),
+              "full_estop": bool(self._full_estop),
               "note": self._note, "rpc_err": self._rpc_err}
         self.state_pub.publish(String(data=json.dumps(st, sort_keys=True)))
 
@@ -393,7 +404,42 @@ class G1LocoClient(Node):
         else:
             self._clear_once("_e_stop_activated_logged")
 
+    def full_emergency_callback(self, msg: Bool):
+        """VOLL-NOTAUS: ganzer G1 in Damp -- auch die Beine, unabhaengig von
+        estop_damp_legs. Damp ZUERST (ein haengender StopMove-RPC darf ihn
+        nicht verzoegern), StopMove danach nur als Rest. Der Roboter sackt in
+        den Kran bzw. faellt. Quittieren mit START schaltet NICHT um: der G1
+        bleibt in Damp, Aufstehen nur ueber die Startleiste (Preparation)."""
+        if not msg.data:
+            return
+        self.robot_stopped = True
+        self.balanced = False
+        self.walk_enabled = False
+        self._move_active = False
+        self._full_estop = True
+        self._estop_legs_kept = False
+        code_damp = self._robot_rpc_urgent("SetFsmId", 1)
+        code_stop = self._robot_rpc_urgent("SetVelocity", 0.0, 0.0, 0.0, 1.0)
+        self._set_note(f"VOLL-NOTAUS: Damp (Code {code_damp}), StopMove (Code {code_stop}). "
+                       "Quittieren mit START, dann Startleiste.", "error")
+        if self.control_arms:
+            self.control_arms = False
+            self.publisher_arms_controlled.publish(Bool(data=False))
+
     def start_callback(self, msg: Bool):
+        if self.use_robot and self.robot is not None and msg.data and self._full_estop:
+            # Nach dem Voll-Notaus nur quittieren: KEIN SetFsmId(4) -- der G1
+            # haengt schlaff (Kran/Boden), ein Aufstehen von selbst waere ein
+            # Sprung. Weiter ausdruecklich ueber die Startleiste.
+            self.walk_enabled = False
+            self._full_estop = False
+            self._estop_legs_kept = False
+            self.robot_stopped = False
+            self.balanced = False
+            self._sync_onboard_state(force=True)
+            self._set_note("Voll-Notaus quittiert -- G1 bleibt in Damp. Aufstehen: "
+                           "Startleiste Preparation, dann Walk.", "warn")
+            return
         if self.use_robot and self.robot is not None and msg.data:
             self.walk_enabled = False
             self._stop_move("START/Standby")
