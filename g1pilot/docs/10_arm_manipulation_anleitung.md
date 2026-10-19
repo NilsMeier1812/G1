@@ -61,8 +61,15 @@ Im Gehen-Modus (`/g1pilot/start_walking`) kommt es auf den Lauf-Regler an:
   Box halten und dabei gehen. Nur das Nachführen der Marker pausiert, bis man
   wieder zu Greifen wechselt. Die Taille bewegt sich beim Laufen mit, die Hände
   wandern dadurch um einige Zentimeter mit dem Oberkörper.
-- **Echter Roboter** (Unitree-Onboard-Regler) **und Simulation mit der alten
-  Policy** (Standard): Die Arme fahren in die Lauf-Pose
+- **Echter Roboter mit aktivierten Armen** (seit 2026-10-19): Die Arme bleiben
+  genau in ihrer Pose, eine laufende Armfahrt endet an der aktuellen Stelle.
+  `arm_sdk` behält Arme und Taille (Taille wie beim Greifen gehalten). Marker
+  bleiben sichtbar, neue Ziele wirken weiter. NOT-HALT wie bisher (Arme
+  schlaff, Taille gehalten). Altes Verhalten (Lauf-Pose) mit
+  `G1_WALK_PARK_ARMS=true`. Sind die Arme nicht aktiviert, führt sie der
+  Onboard-Regler.
+- **Simulation mit der alten Policy** (Standard, bzw. real mit
+  `G1_WALK_PARK_ARMS=true`): Die Arme fahren in die Lauf-Pose
   und die Marker sind ausgeblendet. Der Weg in die Lauf-Pose wird geplant (um
   Tisch und Hindernisse herum), genau wie bei Grundstellung und Pose anfahren. Beim Wechsel zu Greifen bzw. START
   BALANCING (`/g1pilot/start_balancing`) erscheinen sie wieder an der aktuellen
@@ -70,7 +77,7 @@ Im Gehen-Modus (`/g1pilot/start_walking`) kommt es auf den Lauf-Regler an:
 
 Gesteuert wird das über das Launch-Argument `walk_park_arms` von
 `manipulation_launcher.launch.py` (`bringup_sim` setzt es passend zur
-Lauf-Policy, real gilt immer `true`).
+Lauf-Policy, `bringup_real` aus `G1_WALK_PARK_ARMS`, Default `false`).
 
 **3. Home-Position**
 
