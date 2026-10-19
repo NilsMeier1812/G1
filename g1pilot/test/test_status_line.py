@@ -7,7 +7,7 @@ from g1pilot.teleoperation import status_line as sl
 def test_onboard_texts():
     assert "keine Daten" in sl.onboard_text(None, None)[0]
     assert "keine Daten" in sl.onboard_text({"fsm": 500}, 10.0)[0]
-    t, c = sl.onboard_text({"fsm": 500, "name": "Walk", "walk": False}, 0.1)
+    t, c = sl.onboard_text({"fsm": 500, "name": "Walk", "walk": False, "walk_fsm": 500}, 0.1)
     assert t == "G1: Walk (FSM 500) · bereit" and c == sl.GREEN
     t, c = sl.onboard_text({"fsm": 500, "name": "Walk", "walk": True}, 0.1)
     assert "Gehen aktiv" in t
@@ -54,7 +54,7 @@ def test_start_buttons_follow_onboard_mode():
     assert not b["damp"][0] and b["preparation"][0] and not b["walk"][0]
     b = sl.start_buttons({"fsm": 4}, 0.1)
     assert b["damp"] == (True, True) and not b["preparation"][0] and b["walk"] == (True, True)
-    b = sl.start_buttons({"fsm": 500}, 0.1)
+    b = sl.start_buttons({"fsm": 501}, 0.1)
     assert b["damp"] == (True, True) and b["preparation"][0] and not b["walk"][0]
     b = sl.start_buttons({"fsm": 4, "estop": True}, 0.1)
     assert b["damp"][0] and not b["preparation"][0] and not b["walk"][0]
@@ -69,3 +69,22 @@ def test_onboard_text_rpc_error():
     assert "keine Antwort vom Onboard-Regler" in t and "Zeitüberschreitung" in t
     t, _ = sl.onboard_text({"fsm": None, "rpc_err": 3205}, 0.1)
     assert "3205" in t
+
+
+def test_walk_501_shown_and_500_offers_switch():
+    """Nils 2026-10-19: Walk = 501 (Walk with waist). Steht der G1 per App in
+    500, zeigt die Info-Zeile das und die Startleiste bietet »Walk« zum
+    Umschalten an (mit Rueckfrage)."""
+    st = {"fsm": 501, "name": "Walk mit Taille", "walk_fsm": 501}
+    t, c = sl.onboard_text(st, 0.1)
+    assert t == "G1: Walk mit Taille (FSM 501) · bereit" and c == sl.GREEN
+    assert not sl.start_buttons(st, 0.1)["walk"][0]
+    st = {"fsm": 500, "name": "Walk", "walk_fsm": 501}
+    t, c = sl.onboard_text(st, 0.1)
+    assert "»Walk« schaltet auf FSM 501" in t and c == sl.GREEN
+    assert sl.start_buttons(st, 0.1)["walk"] == (True, True)
+    assert not sl.start_buttons(dict(st, estop=True), 0.1)["walk"][0]
+    # Ziel 500 konfiguriert (G1_WALK_FSM_ID=500): 500 ist dann richtig.
+    st = {"fsm": 500, "name": "Walk", "walk_fsm": 500}
+    assert "schaltet" not in sl.onboard_text(st, 0.1)[0]
+    assert not sl.start_buttons(st, 0.1)["walk"][0]

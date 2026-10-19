@@ -165,6 +165,8 @@ def generate_launch_description():
                 'damp_on_init':    False,
                 # RPC-Dienst des Onboard-Reglers (aktuelle Firmware: 'sport').
                 'loco_service':    os.environ.get('G1_LOCO_SERVICE', 'sport'),
+                # Walk-Modus beim Start: 501 = Walk with waist, 500 = Walk (Taille fest).
+                'start_fsm_id':    int(os.environ.get('G1_WALK_FSM_ID', '501')),
                 # E-Stop: Beine nur StopMove (kein Damp). G1_ESTOP_DAMP_LEGS=1 = alt.
                 'estop_damp_legs': _env_bool('G1_ESTOP_DAMP_LEGS'),
             }]

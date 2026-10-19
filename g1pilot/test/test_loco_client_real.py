@@ -58,7 +58,7 @@ class FakeLoco:
 
     def SetFsmId(self, i):
         self._rec("SetFsmId", i)
-        if i == 500:
+        if i in (500, 501):
             self.calls.append(("Start",))    # Walk-Start fuer die Pruefungen
         self.fsm = i
         return 0
@@ -300,7 +300,7 @@ def test_laufen_in_gui_switches_real_mode_from_preparation(lc_module):
     try:
         robot.fsm = 4
         node.start_walking_callback(_bool(True))
-        assert robot.fsm == 500
+        assert robot.fsm == 501
         # Default seit 2026-10-16: wie die Handy-App, ohne Hoehenrampe.
         assert "SetStandHeight" not in robot.names()
         assert "BalanceStand" in robot.names() and "Start" in robot.names()
@@ -499,7 +499,7 @@ def test_start_balancing_from_preparation_still_works(lc_module):
     try:
         robot.fsm = 4
         node.start_balancing_callback(_bool(True))
-        assert robot.fsm == 500 and node.balanced and not node.walk_enabled
+        assert robot.fsm == 501 and node.balanced and not node.walk_enabled
         assert ("BalanceStand", 1) in robot.calls, "Default unveraendert"
     finally:
         _close(node)
@@ -575,7 +575,8 @@ def test_onboard_state_published_for_gui(lc_module):
         node.start_walking_callback(_bool(True))
         node._publish_state()
         assert got[-1] == {"fsm": 500, "name": "Walk", "balanced": True, "walk": True,
-                           "estop": False, "robot": True, "note": "", "rpc_err": None}
+                           "estop": False, "robot": True, "note": "", "rpc_err": None,
+                           "walk_fsm": 501}
         node.emergency_callback(_bool(True))
         node._publish_state()
         assert got[-1]["estop"] and not got[-1]["walk"]
@@ -600,7 +601,7 @@ def test_startbar_full_crane_sequence(lc_module):
         _req(node, "preparation")
         assert robot.fsm == 4
         _req(node, "walk")
-        assert robot.fsm == 500 and node.balanced and not node.walk_enabled
+        assert robot.fsm == 501 and node.balanced and not node.walk_enabled
         assert ("BalanceStand", 1) in robot.calls and "SetStandHeight" not in robot.names()
         node.start_walking_callback(_bool(True))
         assert node.walk_enabled
@@ -748,13 +749,127 @@ def test_loco_service_is_sport_even_with_old_sdk(lc_module):
         _close(node)
 
 
-def test_walk_start_uses_fsm_500_not_sdk_start(lc_module):
-    """Start() ist im alten SDK FSM 200, im aktuellen 500 -> explizit 500."""
+def test_walk_start_uses_fsm_501_not_sdk_start(lc_module):
+    """Start() ist im alten SDK FSM 200, im aktuellen 500. Nils 2026-10-19:
+    Walk soll 501 (Walk with waist) sein -> explizit SetFsmId(501)."""
     node, robot = _make(lc_module)
     try:
         robot.fsm = 4
         node.start_walking_callback(_bool(True))
-        assert ("SetFsmId", 500) in robot.calls
+        assert ("SetFsmId", 501) in robot.calls
+        assert ("SetFsmId", 500) not in robot.calls
         assert ("SetFsmId", 200) not in robot.calls
+    finally:
+        _close(node)
+
+
+@pytest.mark.parametrize("entry", ["startbar", "laufen", "greifen"])
+def test_all_walk_entries_use_start_fsm_501(lc_module, entry):
+    """Startleiste »Walk«, LAUFEN und GREIFEN (START BALANCING) starten alle
+    denselben Walk-Modus 501 -- und das Polling haelt ihn als Walk."""
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = 4
+        if entry == "startbar":
+            _req(node, "walk")
+        elif entry == "laufen":
+            node.start_walking_callback(_bool(True))
+        else:
+            node.start_balancing_callback(_bool(True))
+        assert robot.fsm == 501 and node.balanced
+        node._balanced_at -= 10.0           # Schonfrist vorbei
+        for _ in range(3):
+            node._sync_onboard_state(force=True)
+        assert node.balanced, "501 muss als Walk erkannt bleiben"
+    finally:
+        _close(node)
+
+
+def test_start_fsm_id_configurable_back_to_500(lc_module):
+    """G1_WALK_FSM_ID=500 -> alter Walk (Taille fest)."""
+    node, robot = _make(lc_module, start_fsm_id=500)
+    try:
+        robot.fsm = 4
+        _req(node, "walk")
+        assert robot.fsm == 500 and ("SetFsmId", 501) not in robot.calls
+    finally:
+        _close(node)
+
+
+def test_start_fsm_id_always_counts_as_walk(lc_module):
+    """Eigene Start-ID fehlt in walk_fsm_ids -> zaehlt trotzdem als Walk."""
+    node, robot = _make(lc_module, start_fsm_id=801, walk_fsm_ids="[500]")
+    try:
+        robot.fsm = 4
+        _req(node, "walk")
+        assert robot.fsm == 801 and node.balanced
+        node._balanced_at -= 10.0
+        for _ in range(3):
+            node._sync_onboard_state(force=True)
+        assert node.balanced
+    finally:
+        _close(node)
+
+
+def test_startbar_walk_switches_phone_500_to_501(lc_module):
+    """Per Handy-App auf 500 gestellt: Startleiste »Walk« wechselt nur den
+    Walk-Modus auf 501 (kein BalanceStand, keine FSM 4 dazwischen)."""
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = 500
+        node._sync_onboard_state(force=True)
+        assert node.balanced
+        robot.calls.clear()
+        _req(node, "walk")
+        assert robot.fsm == 501 and node.balanced
+        assert ("SetFsmId", 501) in robot.calls
+        assert ("SetFsmId", 4) not in robot.calls and "BalanceStand" not in robot.names()
+        assert "501" in node._note
+        # Schon in 501: nichts mehr senden.
+        robot.calls.clear()
+        _req(node, "walk")
+        assert "SetFsmId" not in robot.names()
+    finally:
+        _close(node)
+
+
+def test_startbar_walk_switch_keeps_gui_walking_but_stops_move(lc_module):
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = 500
+        node.start_walking_callback(_bool(True))
+        node.cmd_vel_callback(_cmd(vx=1.0))
+        node._cmd_vel_tick()
+        assert node._move_active
+        robot.calls.clear()
+        _req(node, "walk")
+        names = robot.names()
+        assert names.index("SetVelocity") < names.index("SetFsmId"), "erst StopMove"
+        assert robot.fsm == 501 and node.walk_enabled
+    finally:
+        _close(node)
+
+
+def test_startbar_walk_switch_refused_during_estop(lc_module):
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = 500
+        node.emergency_callback(_bool(True))
+        robot.calls.clear()
+        _req(node, "walk")
+        assert "SetFsmId" not in robot.names() and robot.fsm == 500
+    finally:
+        _close(node)
+
+
+def test_laufen_does_not_switch_phone_500(lc_module):
+    """LAUFEN/GREIFEN schalten den Walk-Modus nicht implizit um (nur die
+    Startleiste) -- ein per App gestellter 500 wird wie bisher uebernommen."""
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = 500
+        node.start_walking_callback(_bool(True))
+        node.start_balancing_callback(_bool(True))
+        assert "SetFsmId" not in robot.names() and robot.fsm == 500
     finally:
         _close(node)
