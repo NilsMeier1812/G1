@@ -7,6 +7,11 @@ Drehung beider Hände, Hände auf/zu, Grundstellung, Stopp und NOT-HALT.
 [Gehen mit L2](#gehen-mit-l2). Den Modus der Beine schaltet der Controller
 nie um.
 
+Statt des PS4-Controllers geht auch ein **Xbox-Controller** (Xbox One /
+Series, z. B. „Shock Blue“) mit denselben Funktionen auf denselben
+Positionen, siehe [Xbox-Controller](#xbox-controller). Er wird automatisch
+erkannt.
+
 Funktioniert in der **Simulation und am echten Roboter** (Unterschiede am
 echten Roboter: siehe [Echter Roboter](#echter-roboter)). Ohne den Schalter
 bleibt alles wie bisher — am echten Roboter steuert der Controller dann wie
@@ -140,6 +145,100 @@ Abschalten: Parameter `full_estop_hold_s:=0` am `ps4_arm_teleop`.
 In der Sim wirkt der Voll-Notaus wie der NOT-HALT (loco_sim dämpft dort ohnehin
 den ganzen Roboter).
 
+## Xbox-Controller
+
+Seit 2026-10-19. Ein Xbox-Wireless-Controller (Xbox One, Xbox Series X|S,
+z. B. „Shock Blue“) kann alles, was der PS4-Controller kann — die Tasten
+sind **nach Position** zugeordnet, man muss nichts Neues lernen. Er wird
+automatisch erkannt (Name/Hersteller Microsoft); der Schalter im Startmenü
+bleibt **PS4-Controller** (`G1_PS4_ARMS=1`). Ohne den Schalter (alter
+`joystick`-Node, Gehen über `loco_client`) ist der Xbox-Controller nicht
+vorgesehen.
+
+![Belegung Xbox](images/xbox_belegung.svg)
+
+| PS4 | Xbox | Wirkung (wie oben) |
+|---|---|---|
+| Kreuz | **A** | Stopp |
+| Kreis | **B** | Hand öffnen |
+| Viereck | **X** | Hand schließen |
+| Dreieck | **Y** | Verschieben ↔ Drehen |
+| L1 / R1 | **LB / RB** | Tempo langsamer / schneller |
+| **L2 halten** | **LT halten** | **Gehen** (Deadman) |
+| Share 1 s | **View** 1 s (linke kleine Taste) | Grundstellung |
+| Options | **Menu** (rechte kleine Taste) | Arme übernehmen |
+| PS | **Xbox-Taste** | **NOT-HALT** (Oberkörper) |
+| R1 + R2 + PS 2 s | **RB + RT + Xbox-Taste 2 s** | **VOLL-NOTAUS**, Controller vibriert beim Halten |
+| Sticks, Steuerkreuz | gleich | gleich |
+| L3, R3, Touchpad | L3, R3 (Stick drücken) | frei; die Share-Taste der Series-Controller (Mitte) ist frei |
+
+**Was gleich ist:** Totmann (LT), NOT-HALT, Voll-Notaus mit 2 s Halten und
+Vibration, Tempo-Stufen, Abriss-Erkennung über den Joy-Timeout, Vorrang
+PS4 → Xbox: sind beide verbunden, gilt der PS4-Controller.
+`G1_CONTROLLER=xbox` (oder `ps4`) erzwingt einen.
+
+**Was anders ist:**
+
+- **Keine LED-Farbe** (der Xbox-Controller hat keine RGB-LED). Welche Hand
+  aktiv ist, zeigen RViz (Kugel an der Hand) und die Vibration.
+- **Xbox-Taste:** sie kommt normalerweise an (USB: `BTN_MODE`, Bluetooth je
+  nach Firmware `BTN_MODE` oder als `KEY_HOMEPAGE` auf dem Teilgerät
+  „… Consumer Control“, das wird mitgelesen). Abgefangen wird sie, wenn auf
+  dem Rechner **Steam** läuft (Big Picture) oder der Desktop sie belegt —
+  dann den Test „Xbox-Taste = NOT-HALT“ unten unbedingt machen. Falls sie
+  nicht ankommt: **`G1_XBOX_PS_BUTTON=view`** → **View** ist dann NOT-HALT
+  (und mit RB + RT der Voll-Notaus), die Grundstellung wandert auf die
+  **Share-Taste** in der Mitte (nur Series-Controller). Die Xbox-Taste hat
+  dann keine Wirkung. Hinweis: Xbox-Taste **lange** (mehrere Sekunden) halten
+  schaltet den Controller aus — für die 2 s des Voll-Notaus kein Problem; ausgeschaltet
+  heißt Abriss, die Hand bzw. der G1 hält an.
+- **Hängende Funkverbindung (Bluetooth):** der PS4 hat dafür das
+  Sensor-Teilgerät (0,3 s). Der Xbox-Controller hat keins. Stattdessen liest
+  `ps4_joystick` den rohen HID-Strom (`/dev/hidrawN`) desselben Controllers
+  und nimmt ihn als Lebenszeichen — **aber nur, wenn er nachweislich auch
+  ohne Eingabe-Änderung durchläuft** (20 Berichte am Stück, ohne dass sich an
+  Tasten/Sticks etwas ändert; Log „HID-Strom läuft durchgehend –
+  Lebendprüfung aktiv“). Sendet der Controller nur bei Änderungen, bleibt es
+  ohne Lebendprüfung (sonst würde ein ruhig gehaltener Stick fälschlich
+  stoppen); dann merkt der Kernel einen Funkabriss erst nach dem
+  Supervision-Timeout (BlueZ-Standard 4,2 s, in `/etc/bluetooth/main.conf`
+  unter `[LE]` mit `ConnectionSupervisionTimeout=50` = 0,5 s einstellbar).
+  **Am echten Roboter daher USB-Kabel empfohlen** — Ziehen des Kabels meldet
+  der Kernel sofort. Im Sim-Container ist `/dev/hidraw*` nicht eingebunden
+  (nur `/dev/input`), dort also immer ohne diese Prüfung.
+- **Treiber:** USB läuft über `xpad` (im Kernel). Bluetooth geht mit dem
+  Standard-Kernel (`hid-generic`/`hid-microsoft`, Firmware des Controllers
+  aktuell halten — ältere Xbox-One-S-Firmware meldet die Tasten anders) oder
+  mit `xpadneo`. Die Achsen unterscheiden sich je Treiber (beim Standard-
+  Bluetooth liegt der rechte Stick auf `ABS_Z/ABS_RZ`, die Trigger auf
+  `ABS_BRAKE/ABS_GAS`); das erkennt `ps4_joystick` selbst. Der
+  Xbox-Funkadapter (USB-Dongle) braucht den Zusatztreiber `xone`, ist aber
+  nicht getestet.
+- **Vibration** geht über Force-Feedback mit `xpad`, `xpadneo` und
+  `hid-microsoft` (je nach Kernel). Ohne Force-Feedback fehlt sie — das ist dann
+  nur Komfort, der Voll-Notaus löst trotzdem nach 2 s aus.
+- Falls ein Treiber X und Y vertauscht meldet (X oben): Parameter
+  `xbox_swap_xy:=true` am `ps4_joystick`.
+
+Koppeln (Bluetooth): Controller einschalten, Pairing-Taste oben an der
+Stirnseite gedrückt halten, bis die Xbox-Taste schnell blinkt, dann
+`bluetoothctl` → `scan on` → `pair <MAC>` → `trust <MAC>` → `connect <MAC>`.
+Log beim Verbinden: `Xbox-Controller verbunden: Xbox Wireless Controller …
+-- NOT-HALT-Taste: Xbox`.
+
+**Erster Test mit dem Xbox-Controller** (vor dem Roboter, Sim reicht):
+`ros2 topic echo /g1pilot/ps4/joy` — jede Taste einmal drücken und prüfen,
+dass sie am richtigen Index ankommt (Tabelle [Feste Belegung](#feste-belegung-g1pilotps4joy));
+**Xbox-Taste → `buttons[10]` = 1**, LT ganz durchgedrückt → `axes[4]` ≈ 1.
+Kommt die Xbox-Taste nicht an: `G1_XBOX_PS_BUTTON=view`. Danach am Roboter
+dieselben Schritte wie unter [Echter Roboter](#echter-roboter) mit den
+Xbox-Tasten.
+
+| Env-Variable | Default | Bedeutung |
+|---|---|---|
+| `G1_CONTROLLER` | `auto` | `auto` = PS4 oder Xbox (beide da: PS4), `ps4` / `xbox` = nur dieser |
+| `G1_XBOX_PS_BUTTON` | `xbox` | `view` = View-Taste ist NOT-HALT (statt der Xbox-Taste) |
+
 ## Echter Roboter
 
 Vorher [70_echtroboter_anleitung.md](70_echtroboter_anleitung.md) lesen.
@@ -217,7 +316,9 @@ Ablauf:
   Vibration. Ein Hinweis steht einmal im Log. Real (privileged) geht es.
 - Gerätename: Bluetooth meldet „Wireless Controller“, USB je nach Treiber
   „Sony Interactive Entertainment Wireless Controller“ — beides wird erkannt.
-  Anderer Name: `JOYSTICK_NAME=...`.
+  Anderer Name: `JOYSTICK_NAME=...`. Xbox-Controller („Xbox Wireless
+  Controller“, „Microsoft Xbox Series S|X Controller“, „Microsoft X-Box One
+  S pad“ …) werden am Namen bzw. am Hersteller Microsoft erkannt.
 - Unter WSL gibt es kein `/dev/input` → der Controller ist dort nicht nutzbar
   (start.sh warnt).
 
@@ -225,6 +326,8 @@ Ablauf:
 
 | Symptom | Ursache / Abhilfe |
 |---|---|
+| Xbox: NOT-HALT per Xbox-Taste tut nichts | Taste wird abgefangen (Steam/Desktop) → `G1_XBOX_PS_BUTTON=view`, siehe [Xbox-Controller](#xbox-controller). |
+| Xbox: Tasten/Sticks vertauscht | `ros2 topic echo /g1pilot/ps4/joy` prüfen; X/Y vertauscht → `xbox_swap_xy:=true`; sonst Controller-Firmware aktualisieren (Xbox-Zubehör-App) oder `xpadneo` nehmen. |
 | Log: „Kein PS4-Controller gefunden … Warte“ | Controller nicht gekoppelt oder Container ohne `/dev/input` (über start.sh starten bzw. `COMPOSE_FILE=…:docker-compose.ps4.yml`). |
 | LED/Kugel zeigt die Auswahl, aber die Hand bewegt sich nicht | Arme nicht übernommen → **Options** drücken (oder GUI: GREIFEN / ENABLE MANIPULATION). Im Gehen-Modus hängen die Arme in der Lauf-Pose. Real nach NOT-HALT: erst »Roboter starten«, dann Options. |
 | Hand bleibt an einer Stelle hängen | Kollisions-Gate (Log: „Kollisions-Gate …“) oder Reichweite erreicht → in eine andere Richtung bewegen. |
@@ -241,8 +344,8 @@ Ablauf:
 
 | Datei | Inhalt |
 |---|---|
-| `g1pilot/teleoperation/ps4_joystick.py` | Node `ps4_joystick`: evdev → `/g1pilot/ps4/joy` in fester Belegung, Wiederverbinden, LED (sysfs) + Vibration (Force-Feedback) aus `/g1pilot/ps4/feedback` |
-| `g1pilot/teleoperation/ps4_layout.py` | feste Belegung (Indizes) und evdev-Code-Zuordnung, ohne ROS/evdev testbar |
+| `g1pilot/teleoperation/ps4_joystick.py` | Node `ps4_joystick`: evdev → `/g1pilot/ps4/joy` in fester Belegung, PS4/Xbox erkennen, Wiederverbinden, LED (sysfs) + Vibration (Force-Feedback) aus `/g1pilot/ps4/feedback`, Lebendprüfung (PS4: Sensor-Teilgerät, Xbox: HID-Rohstrom) |
+| `g1pilot/teleoperation/ps4_layout.py` | feste Belegung (Indizes) und evdev-Code-Zuordnung, PS4 (`Ps4State`) und Xbox (`XboxState`, drei Treiber-Varianten), ohne ROS/evdev testbar |
 | `g1pilot/teleoperation/ps4_arm_teleop.py` | `ArmTeleopLogic` (reine Bedienlogik) + Node `ps4_arm_teleop`; `walk_deadman`: pausiert bei gehaltenem L2 |
 | `g1pilot/teleoperation/ps4_walk.py` | `WalkLogic` (reine Bedienlogik) + Node `ps4_walk`: L2-Deadman → `/g1pilot/ps4/walk_cmd` (Twist, normiert), `/g1pilot/ps4/walk_status` |
 | `navigation/loco_client.py` | `/g1pilot/ps4/walk_cmd` → `Move()` nur im Walk-Modus, ohne E-Stop; Timeout → StopMove; Vorrang vor `loco_cmd_vel` |
@@ -253,7 +356,8 @@ Ablauf:
 | `launch/bringup_real.launch.py` | setzt `ps4_arms` aus `G1_PS4_ARMS` mit Real-Werten (Langsam/max Normal, Options ohne `start_balancing`) |
 | `teleoperation/demo_gui.py`, `teleoperation/ui_interface.py` | zeigen einen NOT-HALT von außen (PS-Taste) an |
 | `docker-compose.ps4.yml` | `/dev/input` + `device_cgroup_rules: c 13:* rmw` für `g1pilot-sim` |
-| `test/test_ps4_arm_teleop.py`, `test/test_ps4_joystick.py` | Unit-Tests (Belegung, Logik, Jog, simuliertes evdev-Gerät inkl. hängender Funkverbindung) |
+| `test/test_ps4_arm_teleop.py`, `test/test_ps4_joystick.py` | Unit-Tests (Belegung, Logik, Jog, simuliertes evdev-Gerät inkl. hängender Funkverbindung; Xbox per USB/Bluetooth, Auswahl, Consumer-Control, HID-Lebendprüfung) |
+| `test/test_xbox_layout.py` | Xbox ohne ROS: Erkennung, drei Treiber-Varianten, Zuordnung nach Position, View-Ersatz, Gehen mit LT, NOT-HALT, Voll-Notaus RB + RT + Xbox |
 | `test/test_ps4_walk.py`, `test/test_loco_client_ps4_walk.py`, `test/test_ps4_walk_node.py` | Gehen: Deadman, Tempo, NOT-HALT, Abriss, Arme pausieren; loco_client nur im Walk-Modus, Timeout, Vorrang; Node mit simuliertem Joy |
 | `test/test_ps4_arm_teleop_node.py` | Node mit Real-Einstellungen gegen simuliertes Joy + TF (Options, Tempo, NOT-HALT von außen, kein Laufbefehl) |
 | `test/test_gui_external_estop.py` | Demo-GUI + Streamdeck folgen einem NOT-HALT von außen (Sim und Real, offscreen) |
@@ -300,7 +404,9 @@ Achsen wie beim ROS-Paket `joy`: links = +1, oben = +1; Trigger 0…1.
 | 6–7 | Steuerkreuz X, Y | | |
 
 Die evdev-Codes sind die des Linux-Treibers (hid-sony ab Kernel 4.10,
-hid-playstation). Der alte `joystick`-Node nummeriert dagegen in
+hid-playstation). Der Xbox-Controller landet nach Position in derselben
+Belegung (A = Index 0 usw., Xbox-Taste = 10, LT/RT = Achsen 4/5);
+`header.frame_id` ist `ps4` bzw. `xbox`. Der alte `joystick`-Node nummeriert dagegen in
 Geräte-Reihenfolge — für eine Tastenbelegung zu wackelig.
 
 ### Sicherheit
@@ -397,7 +503,7 @@ kippt die Hand in beiden Varianten während der Fahrt kurz bis ~10°
 
 ```bash
 # Unit-Tests (ohne Controller/Roboter; die ROS-/GUI-Tests brauchen rclpy/PyQt6 -> im Container)
-python3 -m pytest -q test/test_ps4_arm_teleop.py test/test_ps4_joystick.py \
+python3 -m pytest -q test/test_ps4_arm_teleop.py test/test_ps4_joystick.py test/test_xbox_layout.py \
     test/test_ps4_arm_teleop_node.py test/test_gui_external_estop.py \
     test/test_demo_gui_jog_hold.py
 

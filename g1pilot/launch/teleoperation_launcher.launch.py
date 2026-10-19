@@ -76,7 +76,11 @@ def generate_launch_description():
             name='ps4_joystick',
             output='screen',
             parameters=[
-                {'joystick_name': joystick_name}],
+                {'joystick_name': joystick_name,
+                 # PS4 oder Xbox (gleiche Belegung nach Position), siehe
+                 # g1pilot/docs/43_ps4_controller.md#xbox-controller
+                 'controller': os.environ.get('G1_CONTROLLER', 'auto').strip().lower() or 'auto',
+                 'xbox_ps_button': os.environ.get('G1_XBOX_PS_BUTTON', 'xbox').strip().lower() or 'xbox'}],
             condition=IfCondition(ps4_arms),
         ),
 

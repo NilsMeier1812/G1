@@ -1,5 +1,5 @@
 # ══════════════════════════════════════════════════════════════════════
-# PS4-Controller-Zusatz fuer die Sim (Oberkoerper: Arme + Haende, kein Laufen).
+# PS4-/Xbox-Controller-Zusatz fuer die Sim (Oberkoerper: Arme + Haende, kein Laufen).
 #
 # Der g1pilot-sim-Container sieht sonst keine Eingabegeraete. Hier bekommt er
 # /dev/input (Bind-Mount: auch ein SPAETER gekoppelter/eingesteckter Controller
@@ -21,6 +21,9 @@ services:
       # evdev-Name; Bluetooth "Wireless Controller", per USB je nach Treiber
       # "Sony Interactive Entertainment Wireless Controller" (wird auch erkannt).
       - JOYSTICK_NAME=${JOYSTICK_NAME:-Wireless Controller}
+      # Xbox-Controller geht auch (gleiche Belegung): auto | ps4 | xbox
+      - G1_CONTROLLER=${G1_CONTROLLER:-auto}
+      - G1_XBOX_PS_BUTTON=${G1_XBOX_PS_BUTTON:-xbox}
     volumes:
       - /dev/input:/dev/input
     device_cgroup_rules:
