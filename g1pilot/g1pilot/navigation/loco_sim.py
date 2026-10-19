@@ -250,6 +250,10 @@ class LocoSim(Node):
         self.create_subscription(Bool, "/g1pilot/emergency_stop", self._on_emergency, 10)
         self.create_subscription(Bool, "/g1pilot/start", self._on_start, 10)
         self.create_subscription(Twist, "/g1pilot/loco_cmd_vel", self._on_cmd_vel, 10)
+        # PS4-Gehen (ps4_walk, L2-Deadman): Vorrang vor loco_cmd_vel, solange
+        # frisch -- die GUIs senden dort dauernd 0 und wuerden ihn sonst bremsen.
+        self._ps4_walk_t = -1e9
+        self.create_subscription(Twist, "/g1pilot/ps4/walk_cmd", self._on_ps4_walk, 10)
         self.create_subscription(Bool, "/g1pilot/arms/walk_ready", self._on_arms_walk_ready, 10)
         self.arms_enabled_pub = self.create_publisher(Bool, "/g1pilot/arms/enabled", 1)
 
@@ -500,7 +504,16 @@ class LocoSim(Node):
         except OSError as e:
             self.get_logger().warn(f"GRASP BOX nicht gesendet: {e}")
 
+    def _on_ps4_walk(self, msg: Twist):
+        self._ps4_walk_t = time.monotonic()
+        self._apply_cmd_vel(msg)
+
     def _on_cmd_vel(self, msg: Twist):
+        if time.monotonic() - self._ps4_walk_t < 0.3:
+            return
+        self._apply_cmd_vel(msg)
+
+    def _apply_cmd_vel(self, msg: Twist):
         if self.state not in (STAND, WALK):
             return
         cmd = self.walk_policy.scale_command(msg.linear.x, msg.linear.y, msg.angular.z)

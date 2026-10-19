@@ -40,9 +40,9 @@ def generate_launch_description():
     hand_port = int(os.environ.get('G1_HAND_PORT', '6000'))
     joystick_name = os.environ.get('JOYSTICK_NAME', 'Wireless Controller').strip()
     enable_lidar = _env_bool('G1_ENABLE_LIDAR')
-    # PS4-Controller fuer den OBERKOERPER (Arme + Haende) statt fuers Laufen.
-    # Dann startet der alte joystick-Node nicht -> loco_client bekommt keine
-    # Controller-Sticks mehr (kein Deadman-Gehen). Real vorsichtiger als Sim:
+    # PS4-Controller fuer den OBERKOERPER (Arme + Haende) und Gehen mit L2 als
+    # Deadman (ps4_walk -> /g1pilot/ps4/walk_cmd -> loco_client). Der alte
+    # joystick-Node startet dann nicht. Real vorsichtiger als Sim:
     # Start-Tempo Langsam, hoechstens Normal (15 cm/s < EE-Limit 0.25 m/s),
     # Options uebernimmt nur die Arme (kein start_balancing -> der Controller
     # aendert den Zustand der Beine nie; PS = NOT-HALT wie die GUIs).
@@ -51,6 +51,11 @@ def generate_launch_description():
     ps4_speed = os.environ.get('G1_PS4_SPEED', 'Langsam').strip()
     ps4_max_speed = os.environ.get('G1_PS4_MAX_SPEED', 'Normal').strip()
     ps4_ps_estop = 'true' if _env_bool('G1_PS4_PS_ESTOP', '1') else 'false'
+    # Gehen per PS4 (L2 halten + Sticks, loco_client Move() nur im Walk-Modus).
+    # G1_PS4_WALK=0 -> L2 ohne Wirkung (Stand vor 2026-10-19).
+    ps4_walk = 'true' if _env_bool('G1_PS4_WALK', '1') else 'false'
+    ps4_walk_speed = os.environ.get('G1_PS4_WALK_SPEED', 'Langsam').strip()
+    ps4_walk_max_speed = os.environ.get('G1_PS4_WALK_MAX_SPEED', 'Schnell').strip()
     # Konservative Geh-Limits fuer die ersten Tests (normierte UI-Kommandos
     # werden in loco_client damit skaliert; gilt auch fuer den PS4-Pfad).
     max_vx = os.environ.get('G1_MAX_VX', '0.4')
@@ -129,7 +134,7 @@ def generate_launch_description():
         # ── 3. Teleoperation: Streamdeck-UI + PS4-Controller (evdev) ────────
         #    G1_PS4_ARMS=0: alter joystick-Node -> joy_mux -> loco_client (Gehen
         #    mit Deadman). G1_PS4_ARMS=1: ps4_joystick + ps4_arm_teleop (Arme +
-        #    Haende, kein Laufen).
+        #    Haende) + ps4_walk (L2 halten + Sticks = Gehen, G1_PS4_WALK=0 aus).
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 os.path.join(pkg_share, 'launch', 'teleoperation_launcher.launch.py')
@@ -141,6 +146,9 @@ def generate_launch_description():
                 'ps4_max_speed': ps4_max_speed,
                 'ps4_options_balancing': 'false',
                 'ps4_ps_estop': ps4_ps_estop,
+                'ps4_walk': ps4_walk,
+                'ps4_walk_speed': ps4_walk_speed,
+                'ps4_walk_max_speed': ps4_walk_max_speed,
             } if ps4_arms else {
                 'joystick_name': joystick_name,
             }).items()

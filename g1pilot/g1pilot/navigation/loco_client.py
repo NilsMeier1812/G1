@@ -98,6 +98,11 @@ class G1LocoClient(Node):
         self._cmd_lock = threading.Lock()
         self._cmd_vel = (0.0, 0.0, 0.0)  # normiert [-1,1] aus /g1pilot/loco_cmd_vel
         self._cmd_stamp = None           # time.monotonic() des letzten Empfangs
+        # PS4-Gehen (ps4_walk, L2-Deadman): normiert wie loco_cmd_vel. Solange
+        # der Strom frisch ist, hat er Vorrang vor dem Streamdeck-Pfad.
+        self._ps4_cmd = (0.0, 0.0, 0.0)
+        self._ps4_stamp = None
+        self._ps4_active = False
 
         self.declare_parameter('use_robot', True)
         self.use_robot = bool(self.get_parameter('use_robot').value)
@@ -201,6 +206,9 @@ class G1LocoClient(Node):
         # Streamdeck-Walk: dieselben Topics, die in der Sim loco_sim bedient.
         self.create_subscription(Bool, '/g1pilot/start_walking', self.start_walking_callback, 10)
         self.create_subscription(Twist, '/g1pilot/loco_cmd_vel', self.cmd_vel_callback, 10)
+        # PS4-Gehen (ps4_walk): wirkt nur, wenn der G1 schon im Walk-Modus steht
+        # (balanced) -- schaltet den Modus der Beine nie selbst um.
+        self.create_subscription(Twist, '/g1pilot/ps4/walk_cmd', self.ps4_walk_callback, 10)
         # Startleiste der Demo-GUI: Onboard-Modus ausdruecklich anfordern
         # ("damp" | "preparation" | "walk") -- damit der Start ohne Handy-App geht.
         self.create_subscription(String, LOCO_REQUEST_TOPIC, self.mode_request_callback, 10)
@@ -510,6 +518,52 @@ class G1LocoClient(Node):
             self._cmd_vel = (nx, ny, nz)
             self._cmd_stamp = time.monotonic()
 
+    def ps4_walk_callback(self, msg: Twist):
+        nx = max(-1.0, min(1.0, float(msg.linear.x)))
+        ny = max(-1.0, min(1.0, float(msg.linear.y)))
+        nz = max(-1.0, min(1.0, float(msg.angular.z)))
+        with self._cmd_lock:
+            self._ps4_cmd = (nx, ny, nz)
+            self._ps4_stamp = time.monotonic()
+
+    def _ps4_walk_tick(self):
+        """PS4-Gehen. -> True, solange der PS4-Strom frisch ist (dann pausiert
+        der Streamdeck-Pfad). Bleibt er aus (L2 los ohne 0, Node tot), einmal
+        StopMove. Move() nur balanciert und ohne E-Stop; walk_enabled (LAUFEN
+        in der GUI) ist NICHT noetig -- wie frueher der Joystick-Deadman."""
+        with self._cmd_lock:
+            (nx, ny, nz), stamp = self._ps4_cmd, self._ps4_stamp
+        timeout = float(self.get_parameter('cmd_vel_timeout').value)
+        if stamp is None or time.monotonic() - stamp > timeout:
+            if self._ps4_active:
+                self._ps4_active = False
+                self._stop_move("PS4-Gehen: Timeout")
+            return False
+        self._ps4_active = True
+        if (not self.balanced or self.robot_stopped
+                or (abs(nx) < 0.03 and abs(ny) < 0.03 and abs(nz) < 0.03)):
+            self._stop_move("PS4-Gehen: Stopp" if self._move_active else "")
+            return True
+        vx = nx * float(self.get_parameter('max_vx').value)
+        vy = ny * float(self.get_parameter('max_vy').value)
+        vyaw = nz * float(self.get_parameter('max_vyaw').value)
+        if self.use_robot and self.robot is not None:
+            try:
+                self._move_robot(vx, vy, vyaw)
+            except Exception as e:
+                self.get_logger().error(f"Move (PS4) fehlgeschlagen: {e} -> StopMove")
+                try:
+                    self._halt_legs("Move-Fehler (PS4)")
+                except Exception:
+                    pass
+                self.robot_stopped = True
+                self.balanced = False
+                self.walk_enabled = False
+                self._move_active = False
+                return True
+        self._move_active = True
+        return True
+
     def _stop_move(self, reason=""):
         """StopMove genau einmal senden (kein Dauerfeuer an die RPC-Schnittstelle)."""
         if not self._move_active:
@@ -541,6 +595,8 @@ class G1LocoClient(Node):
                 return
             self._joy_deadman = False
             self._stop_move("Joy-Timeout")
+        if self._ps4_walk_tick():
+            return
         if not (self.balanced and not self.robot_stopped and self.walk_enabled):
             self._stop_move()
             return
