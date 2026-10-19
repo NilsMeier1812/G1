@@ -188,6 +188,8 @@ services:
       # Alt-Verhalten: G1_ESTOP_WAIST_HOLD=false und/oder G1_ESTOP_DAMP_LEGS=1.
       - G1_ESTOP_WAIST_HOLD=${G1_ESTOP_WAIST_HOLD:-true}
       - G1_ESTOP_DAMP_LEGS=${G1_ESTOP_DAMP_LEGS:-0}
+      # LAUFEN: Arme bleiben in ihrer Pose (false) oder parken in der Lauf-Pose (true).
+      - G1_WALK_PARK_ARMS=${G1_WALK_PARK_ARMS:-false}
       # Loco-RPC-Dienst (Unitree: 'loco' bis ai_sport 8.1, 'sport' ab 8.2).
       - G1_LOCO_SERVICE=${G1_LOCO_SERVICE:-sport}
       # Konservative Walk-Limits fuer die ersten Tests (loco_client skaliert

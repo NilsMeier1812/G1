@@ -38,12 +38,17 @@ Der Node hält mehrere unabhängige, aber interagierende Zustände:
 - `homing_active` / `homing_reached` — Fahrt zur Home-Pose.
 - `walk_mode` — während `WALK` (siehe [31_loco_technik.md](31_loco_technik.md))
   hält der Controller die Arme in einer definierten Lauf-Pose. Nur mit
-  `walk_park_arms=true` (Standard, real immer). In der Sim setzt
+  `walk_park_arms=true` (Node-Standard). Real setzt `bringup_real` es aus
+  `G1_WALK_PARK_ARMS` (Default `false`, Nils 2026-10-19): die Arme bleiben beim
+  LAUFEN in ihrer Pose, `_on_walk_mode` bricht eine laufende geplante Fahrt und
+  Marker-Ziele ab und hält die Gelenke per `_align_ik_to_config` exakt an der
+  kommandierten Stellung; `arm_sdk` behält Gewicht 1, die Taille bleibt
+  gehalten. In der Sim setzt
   `bringup_sim` es passend zur Lauf-Policy: `true` bei der alten Policy
   `g1_wholebody` (Standard), `false` bei den AGILE-Policies. Die brauchen keine
   Armpose, `walk_mode` bleibt aus, die Arme halten ihre Stellung und bleiben
   bedienbar, und `/g1pilot/arms/walk_ready` kommt sofort (die Demo-GUI wartet
-  darauf). `walk_park_arms=false` außerhalb der Sim wird mit Warnung ignoriert.
+  darauf).
 - `_walk_transition` (nur mit `walk_park_arms=true`) — der Weg **in** die Lauf-Pose läuft beim WALK-Start
   als geplante Bewegung (wie Homing, um Tisch/Hindernisse herum). Erst danach
   hält der WALK-Zweig die Pose und meldet `walk_ready`. Findet der Planer

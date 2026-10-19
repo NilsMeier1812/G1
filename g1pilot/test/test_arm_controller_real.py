@@ -736,3 +736,142 @@ def test_waist_hold_off_in_sim_mode(ac_module):
     finally:
         os.environ["G1_SIM_MODE"] = "false"
         _close(node)
+
+
+# ── LAUFEN mit aktiven Armen (Nils 2026-10-19) ──────────────────────────
+# Real (bringup_real, G1_WALK_PARK_ARMS=false): die Arme bleiben beim Wechsel
+# nach LAUFEN in ihrer Pose, statt in die Lauf-Pose zu fahren. arm_sdk behaelt
+# Gewicht 1, Arme und Taille werden gehalten.
+
+
+def _enable_and_raise(ac, node):
+    from std_msgs.msg import String
+    _wait_planner(node)
+    node._arms_controlled_callback(_bool(True))
+    _run(node, 2.4)
+    assert node._weight_state == "on"
+    node._on_arm_command(String(data=json.dumps({"id": "vor", "type": "joints", **RAISED})))
+    goal = np.array(RAISED["left"] + RAISED["right"])
+    assert _run(node, 20.0, until=lambda: (not node._planned_motion_active
+                                           and float(np.max(np.abs(node._last_q_target - goal))) < 0.03))
+    _run(node, 0.5)
+    return goal
+
+
+def test_real_walk_keeps_arms_in_pose(ac_module):
+    """GREIFEN (Arme vorn) -> LAUFEN: walk_ready sofort, Arme bleiben exakt
+    stehen (kein Parken, kein Sprung), Gewicht 1, Taille gehalten.
+    Zurueck nach GREIFEN: Arme stehen weiter, walk_ready zurueckgenommen."""
+    _reset_robot()
+    node = _make_node(ac_module, walk_park_arms=False)
+    sent = []
+    orig_pub = node.walk_ready_publisher.publish
+    node.walk_ready_publisher.publish = lambda m: (sent.append(m.data), orig_pub(m))
+    try:
+        goal = _enable_and_raise(ac_module, node)
+        q_before = node._last_q_target.copy()
+        meas_before = ROBOT.measured().copy()
+        ROBOT.writes.clear()
+        ROBOT.waist_writes.clear()
+        node._on_walk_mode(_bool(True))
+        assert sent == [True], "walk_ready muss sofort kommen"
+        assert not node.walk_mode and not node._walk_transition
+        assert not node._planned_motion_active
+        _run(node, 2.0)
+        assert len(ROBOT.writes) > 50
+        for w, q, kp in ROBOT.writes:
+            assert w == 1.0 and float(np.min(kp)) > 0.0
+            assert float(np.max(np.abs(q - q_before))) < 1e-6, "Arm-Soll darf sich nicht bewegen"
+        assert float(np.max(np.abs(ROBOT.measured() - meas_before))) < 0.01
+        assert float(np.max(np.abs(ROBOT.measured() - goal))) < 0.05
+        for w, q, kp, kd in ROBOT.waist_writes:
+            assert w == 1.0 and np.allclose(q, ONBOARD_WAIST, atol=1e-6) and float(np.min(kp)) > 100.0
+        assert float(np.max(np.abs(ROBOT.waist() - ONBOARD_WAIST))) < 0.01
+        # Zurueck nach GREIFEN: Arme bleiben, Meldung zurueckgenommen.
+        node._on_balance_mode(_bool(True))
+        assert sent == [True, False]
+        _run(node, 0.5)
+        assert float(np.max(np.abs(node._last_q_target - q_before))) < 1e-6
+    finally:
+        _close(node)
+
+
+def test_real_walk_stops_running_motion_in_place(ac_module):
+    """LAUFEN waehrend einer geplanten Armfahrt: die Fahrt endet, die Arme
+    bleiben, wo sie gerade sind -- ohne Sprung zum alten Ziel oder zur
+    Lauf-Pose."""
+    from std_msgs.msg import String
+    _reset_robot()
+    node = _make_node(ac_module, walk_park_arms=False)
+    try:
+        _wait_planner(node)
+        node._arms_controlled_callback(_bool(True))
+        _run(node, 2.4)
+        node._on_arm_command(String(data=json.dumps({"id": "vor", "type": "joints", **RAISED})))
+        assert _run(node, 20.0, until=lambda: (node._planned_motion_active and
+                                               float(np.max(np.abs(node._last_q_target - ONBOARD))) > 0.2))
+        node._on_walk_mode(_bool(True))
+        assert not node._planned_motion_active
+        q_hold = node._last_q_target.copy()
+        ROBOT.writes.clear()
+        _run(node, 2.0)
+        qs = np.array([q for _, q, _ in ROBOT.writes])
+        # Bremsen mit der Beschleunigungsgrenze ist erlaubt, danach Stillstand.
+        assert float(np.max(np.abs(qs - q_hold))) < 0.15
+        assert float(np.max(np.abs(qs[-1] - qs[-20]))) < 1e-6, "Arme muessen stehen bleiben"
+        goal = np.array(RAISED["left"] + RAISED["right"])
+        assert float(np.max(np.abs(qs[-1] - goal))) > 0.1, "darf nicht zum alten Ziel weiterfahren"
+        walk = np.concatenate((node.walk_left, node.walk_right))
+        assert float(np.max(np.abs(qs[-1] - walk))) > 0.1, "darf nicht in die Lauf-Pose fahren"
+        assert _max_step(ROBOT.writes) < 0.02
+    finally:
+        _close(node)
+
+
+def test_real_walk_estop_unchanged(ac_module):
+    """NOT-HALT im LAUFEN mit gehaltenen Armen: wie bisher Arme schlaff
+    (kp 0, Gewicht 1), Taille gehalten."""
+    _reset_robot()
+    node = _make_node(ac_module, walk_park_arms=False)
+    try:
+        node._arms_controlled_callback(_bool(True))
+        _run(node, 2.4)
+        node._on_walk_mode(_bool(True))
+        _run(node, 0.3)
+        node._on_emergency_stop(_bool(True))
+        ROBOT.waist_writes.clear()
+        _run(node, 1.0)
+        assert node.estop_active and node._arm_slack
+        assert float(np.max(ROBOT.writes[-1][2])) == 0.0 and ROBOT.writes[-1][0] == 1.0
+        for w, q, kp, kd in ROBOT.waist_writes:
+            assert w == 1.0 and float(np.min(kp)) > 100.0
+        assert float(np.max(np.abs(ROBOT.waist() - ONBOARD_WAIST))) < 0.01
+    finally:
+        _close(node)
+
+
+def test_real_walk_park_arms_true_keeps_old_parking(ac_module):
+    """G1_WALK_PARK_ARMS=true: wie frueher -- geplante Fahrt in die Lauf-Pose,
+    walk_ready erst dort."""
+    _reset_robot()
+    node = _make_node(ac_module, walk_park_arms=True)
+    sent = []
+    orig_pub = node.walk_ready_publisher.publish
+    node.walk_ready_publisher.publish = lambda m: (sent.append(m.data), orig_pub(m))
+    try:
+        _wait_planner(node)
+        node._arms_controlled_callback(_bool(True))
+        _run(node, 2.4)
+        node._on_walk_mode(_bool(True))
+        assert node.walk_mode and sent == []
+        walk = np.concatenate((node.walk_left, node.walk_right))
+        assert _run(node, 25.0, until=lambda: sent == [True])
+        assert float(np.max(np.abs(node._last_q_target - walk))) < 0.06
+    finally:
+        _close(node)
+
+
+def test_bringup_real_defaults_to_holding_arms():
+    """bringup_real reicht G1_WALK_PARK_ARMS (Default false) an walk_park_arms."""
+    src = open(os.path.join(PKG, "launch", "bringup_real.launch.py")).read()
+    assert "'walk_park_arms': os.environ.get('G1_WALK_PARK_ARMS', 'false')" in src

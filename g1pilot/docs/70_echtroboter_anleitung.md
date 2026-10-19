@@ -313,6 +313,10 @@ Seit 2026-10-16 (Review des Real-Ablaufs):
 - **GEHEN/GREIFEN schalten den Onboard-Modus nicht mehr selbst um.** GEHEN ist
   gesperrt, bis die Info-Zeile Walk zeigt; GREIFEN in Preparation (am Kran)
   übernimmt nur die Arme. Die Handy-App funktioniert weiter wie bisher.
+- **GEHEN mit aktivierten Armen (2026-10-19):** Die Arme bleiben in ihrer
+  aktuellen Pose (kein Einklappen in die Lauf-Pose), `arm_sdk` hält Arme und
+  Taille weiter. Altes Verhalten: `G1_WALK_PARK_ARMS=true`. Wer den Walker mit
+  eigenem Armschwung will, deaktiviert die Arme vor GEHEN (DISABLE).
 - **Alter Joystick (PS4 = Gehen):** Bei Trennung oder hängender Funkverbindung
   publiziert er nichts mehr (früher: letzter Zustand mit gedrücktem Deadman
   weiter), `joy_mux` gibt nur noch frische Eingänge weiter → `loco_client`
