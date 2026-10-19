@@ -1166,8 +1166,12 @@ class DemoGUI(QWidget):
             self._start_armed_n += 1
             armed = self._start_armed_n
             b = self.start_btns[step]
-            b.setText("Kran gelockert?\nnochmal tippen" if step == "walk"
-                      else "Wirklich Damp?\nnochmal tippen")
+            if step != "walk":
+                b.setText("Wirklich Damp?\nnochmal tippen")
+            elif status_line.walk_switch(n.onboard):
+                b.setText("Walk-Modus wechseln?\nnochmal tippen")
+            else:
+                b.setText("Kran gelockert?\nnochmal tippen")
             QTimer.singleShot(QUIT_CONFIRM_MS,
                               lambda: armed == self._start_armed_n and self._start_disarm())
             return

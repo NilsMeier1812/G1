@@ -24,14 +24,16 @@ from g1pilot.utils.common import init_dds
 
 
 # Onboard-FSM-IDs (Unitree G1): 4 = Ready/"Preparation" (Standby), 500/501 = Walk
-# (Hauptbetrieb). 500 = Start() im aktuellen Unitree-SDK; 501 ist aus dem Repo NICHT
-# belegt -> per Parameter walk_fsm_ids anpassbar.
+# (Hauptbetrieb). 500 = Start() im aktuellen Unitree-SDK (Walk, Taille fest),
+# 501 = "Walk with waist" (Nils, Real-Test 2026-10-19). Welche ID der Walk-Start
+# setzt: Parameter start_fsm_id (Default 501); beide gelten als Walk.
 FSM_READY = 4
 DEFAULT_WALK_FSM_IDS = (500, 501)
+DEFAULT_START_FSM_ID = 501
 # Klartext fuer die GUI-Anzeige (/g1pilot/onboard_state). Begriffe wie in der
 # Unitree-Handy-App, soweit belegt; unbekannte IDs zeigt die GUI als Zahl.
 FSM_NAMES = {0: "Zero Torque", 1: "Damp", 2: "Hocke", 3: "Sitzen",
-             4: "Preparation", 500: "Walk", 501: "Walk", 702: "Aufstehen",
+             4: "Preparation", 500: "Walk", 501: "Walk mit Taille", 702: "Aufstehen",
              706: "Aufstehen"}
 ONBOARD_STATE_TOPIC = "/g1pilot/onboard_state"
 LOCO_REQUEST_TOPIC = "/g1pilot/loco_request"
@@ -154,8 +156,9 @@ class G1LocoClient(Node):
         # unabhaengig vom installierten SDK.
         self.declare_parameter('loco_service', 'sport')
         # FSM-ID fuer "Start" (Walk). Altes SDK: Start() = 200, aktuelles
-        # (unitree_sdk2_python 82d7dde, 2026-04-20): 500. Explizit statt Start().
-        self.declare_parameter('start_fsm_id', 500)
+        # (unitree_sdk2_python 82d7dde, 2026-04-20): 500 (Walk, Taille fest).
+        # Default 501 = Walk with waist (Nils 2026-10-19). Explizit statt Start().
+        self.declare_parameter('start_fsm_id', DEFAULT_START_FSM_ID)
 
         ik_use_waist = self.get_parameter('ik_use_waist').get_parameter_value().bool_value
         ik_alpha = float(self.get_parameter('ik_alpha').value)
@@ -282,10 +285,13 @@ class G1LocoClient(Node):
                 self._rpc_lock.release()
 
     def _walk_ids(self):
+        """Walk-IDs fuer den Abgleich; die eigene Start-ID zaehlt immer dazu
+        (sonst gaebe das Polling einen gerade gestarteten Walk wieder auf)."""
         try:
-            return {int(i) for i in self.get_parameter('walk_fsm_ids').value}
+            ids = {int(i) for i in self.get_parameter('walk_fsm_ids').value}
         except Exception:
-            return set(DEFAULT_WALK_FSM_IDS)
+            ids = set(DEFAULT_WALK_FSM_IDS)
+        return ids | {self._start_fsm_id()}
 
     def _move_robot(self, vx, vy, vyaw):
         """Move() mit begrenzter Dauer (move_duration_s), vom 20-Hz-Takt erneuert."""
@@ -345,7 +351,7 @@ class G1LocoClient(Node):
                     f"Onboard-Modus WALK erkannt (FSM {fsm}) -- als balanciert uebernommen.")
             return fsm
         # Kein Walk-Zustand: erst nach 2 Polls und 3 s Schonfrist umschalten
-        # (Start() braucht einen Moment, bis die FSM-ID 500 meldet).
+        # (Start() braucht einen Moment, bis die FSM-ID 500/501 meldet).
         self._nonwalk_polls += 1
         if (self.balanced and self._nonwalk_polls >= 2
                 and time.monotonic() - self._balanced_at > 3.0):
@@ -363,7 +369,8 @@ class G1LocoClient(Node):
         st = {"fsm": fsm, "name": FSM_NAMES.get(fsm, "") if fsm is not None else "",
               "balanced": bool(self.balanced), "walk": bool(self.walk_enabled),
               "estop": bool(self.robot_stopped), "robot": bool(self.use_robot),
-              "note": self._note, "rpc_err": self._rpc_err}
+              "note": self._note, "rpc_err": self._rpc_err,
+              "walk_fsm": self._start_fsm_id()}
         self.state_pub.publish(String(data=json.dumps(st, sort_keys=True)))
 
     def get_fsm_id(self):
@@ -695,10 +702,13 @@ class G1LocoClient(Node):
         damp        immer erlaubt (Richtung sicher; am Kran haengend gedacht).
         preparation nur aus Damp oder Walk, nicht im E-Stop -> FSM 4.
         walk        nur aus Preparation, nicht im E-Stop, nur mit belasteten
-                    Fuessen -> BalanceStand + Start() (siehe walk_height_ramp)."""
+                    Fuessen -> BalanceStand + Start() (siehe walk_height_ramp).
+                    Steht der G1 schon in einem ANDEREN Walk-Modus (z. B. 500
+                    per Handy-App), nur Umschalten auf start_fsm_id (501)."""
         req = (msg.data or "").strip().lower()
         if not self.use_robot or self.robot is None:
             return
+        was_walk = self.walk_enabled
         self.walk_enabled = False
         self._stop_move(f"Startleiste: {req}")
         if req == "damp":
@@ -727,6 +737,18 @@ class G1LocoClient(Node):
             code = self._robot_rpc("SetFsmId", FSM_READY)
             self._set_note(f"Preparation: FSM {fsm} -> 4 (Code {code}).")
         elif req == "walk":
+            target = self._start_fsm_id()
+            if fsm in self._walk_ids() and fsm != target:
+                # Steht schon (z. B. 500 per Handy-App): nur den Walk-Modus
+                # wechseln, StopMove ist oben schon raus. Ein aktives GEHEN der
+                # GUI bleibt aktiv (sonst haengt die GUI in LAUFEN ohne Wirkung).
+                code = self._start_walk()
+                self.walk_enabled = was_walk
+                self.balanced = True
+                self._balanced_at = time.monotonic()
+                self._nonwalk_polls = 0
+                self._set_note(f"Walk: FSM {fsm} -> {target} umgeschaltet (Code {code}).")
+                return
             if self.balanced:
                 self._set_note(f"Walk: G1 ist schon im Walk-Modus (FSM {fsm}).")
                 return
@@ -751,10 +773,17 @@ class G1LocoClient(Node):
         finally:
             self._entering = False
 
+    def _start_fsm_id(self):
+        try:
+            return int(self.get_parameter('start_fsm_id').value)
+        except Exception:
+            return DEFAULT_START_FSM_ID
+
     def _start_walk(self):
         """Statt LocoClient.Start(): dessen FSM-ID haengt vom SDK-Stand ab
-        (200 alt, 500 aktuell) und es liefert keinen Antwort-Code."""
-        return self._robot_rpc("SetFsmId", int(self.get_parameter('start_fsm_id').value))
+        (200 alt, 500 aktuell) und es liefert keinen Antwort-Code. Hier
+        start_fsm_id (Default 501 = Walk with waist)."""
+        return self._robot_rpc("SetFsmId", self._start_fsm_id())
 
     def _enter_walk_direct(self):
         """Preparation -> Walk wie in der Handy-App: ohne Hoehenrampe. Nur wenn

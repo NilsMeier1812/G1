@@ -75,12 +75,13 @@ def test_gui_info_line_onboard_and_ps4(monkeypatch):
         assert not g.info_onboard.isHidden() and "keine Daten" in g.info_onboard.text()
         assert g.info_ps4.isHidden(), "ohne PS4-Arm-Modus keine Anzeige"
         node._latched_json("onboard", String(
-            data='{"fsm": 500, "name": "Walk", "walk": false, "estop": false}'))
+            data='{"fsm": 501, "name": "Walk mit Taille", "walk": false, '
+                 '"estop": false, "walk_fsm": 501}'))
         node._latched_json("ps4", String(
             data='{"selection": "right", "mode": "move", "speed": "Langsam", '
                  '"connected": true, "estop": false}'))
         g._refresh_info()
-        assert g.info_onboard.text() == "G1: Walk (FSM 500) · bereit"
+        assert g.info_onboard.text() == "G1: Walk mit Taille (FSM 501) · bereit"
         assert not g.info_ps4.isHidden() and "Hand RECHTS" in g.info_ps4.text()
         g._ps4_help()                                  # darf nicht werfen
     finally:

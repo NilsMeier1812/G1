@@ -19,6 +19,7 @@ from g1pilot.teleoperation.ps4_arm_teleop import COLORS, MODE_LABEL, SELECTION_L
 STALE_S = 3.0           # aelter -> "keine Daten"
 GREY, GREEN, AMBER, RED = "#888888", "#66bb6a", "#ffb300", "#ef5350"
 WALK_FSM = (500, 501)
+WALK_FSM_DEFAULT = 501   # Walk with waist (loco_client start_fsm_id)
 
 
 def parse(text):
@@ -32,6 +33,15 @@ def parse(text):
 
 def _hex(rgb):
     return "#%02x%02x%02x" % tuple(int(c) for c in rgb)
+
+
+def walk_switch(state):
+    """True: G1 steht in einem Walk-Modus, aber nicht im Ziel-Walk des
+    loco_client (z. B. 500 per Handy-App statt 501) -> »Walk« schaltet um."""
+    if not state:
+        return False
+    fsm = state.get("fsm")
+    return fsm in WALK_FSM and fsm != state.get("walk_fsm", WALK_FSM_DEFAULT)
 
 
 def onboard_text(state, age_s, walk_requested=False):
@@ -52,6 +62,8 @@ def onboard_text(state, age_s, walk_requested=False):
         return text + " · NOT-HALT – mit »Roboter starten« quittieren", RED
     if fsm in WALK_FSM:
         text += " · Gehen aktiv" if state.get("walk") else " · bereit"
+        if walk_switch(state):
+            text += f" · »Walk« schaltet auf FSM {state.get('walk_fsm', WALK_FSM_DEFAULT)}"
         return text, GREEN
     if fsm == 4:
         return text + " · Kran lockern, dann »Walk«", AMBER
@@ -99,7 +111,7 @@ def start_buttons(state, age_s):
     return {
         "damp": (fsm != 1, fsm not in (0, 1)),
         "preparation": (not estop and (fsm == 1 or fsm in WALK_FSM), False),
-        "walk": (not estop and fsm == 4, True),
+        "walk": (not estop and (fsm == 4 or walk_switch(state)), True),
     }
 
 
