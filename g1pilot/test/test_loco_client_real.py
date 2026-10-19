@@ -273,7 +273,7 @@ def test_start_after_damp_estop_goes_to_standby(lc_module):
         _close(node)
 
 
-# ── VOLL-NOTAUS (PS4 R1 + R2 + PS) ─────────────────────────────────────
+# ── VOLL-NOTAUS (PS4 R1 + L1 + PS) ─────────────────────────────────────
 
 def test_full_estop_damps_whole_robot_even_without_estop_damp_legs(lc_module):
     """Voll-Notaus: Damp (FSM 1) ZUERST, unabhaengig von estop_damp_legs=false,

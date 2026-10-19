@@ -596,7 +596,7 @@ class ArmController(Node):
         # E-Stop: sofort verstummen + Arme schlaff schalten (Weight=0, kp/kd=0).
         # /g1pilot/start quittiert den Latch (wie robot_stopped im loco_client).
         self.create_subscription(Bool, "/g1pilot/emergency_stop", self._on_emergency_stop, 10)
-        # Voll-Notaus (PS4 R1+R2+PS): wie E-Stop, zusaetzlich Taille schlaff --
+        # Voll-Notaus (PS4 R1+L1+PS): wie E-Stop, zusaetzlich Taille schlaff --
         # loco_client schaltet den ganzen G1 in Damp, nichts bleibt steif.
         self.create_subscription(Bool, "/g1pilot/full_emergency_stop",
                                  self._on_full_emergency_stop, 10)

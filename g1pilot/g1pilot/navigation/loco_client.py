@@ -37,7 +37,7 @@ FSM_NAMES = {0: "Zero Torque", 1: "Damp", 2: "Hocke", 3: "Sitzen",
              706: "Aufstehen"}
 ONBOARD_STATE_TOPIC = "/g1pilot/onboard_state"
 LOCO_REQUEST_TOPIC = "/g1pilot/loco_request"
-# Voll-Notaus (PS4 R1+R2+PS): ganzer G1 in Damp, auch die Beine.
+# Voll-Notaus (PS4 R1+L1+PS): ganzer G1 in Damp, auch die Beine.
 FULL_ESTOP_TOPIC = "/g1pilot/full_emergency_stop"
 
 
@@ -99,7 +99,7 @@ class G1LocoClient(Node):
         self._nonwalk_polls = 0
         self._entering = False
         self._estop_legs_kept = False    # letzter E-Stop liess die Beine stehen
-        # Voll-Notaus (PS4 R1+R2+PS, /g1pilot/full_emergency_stop): ganzer G1
+        # Voll-Notaus (PS4 R1+L1+PS, /g1pilot/full_emergency_stop): ganzer G1
         # in Damp. Eigene Callback-Gruppe -> laeuft parallel zu einem noch
         # haengenden NOT-HALT-StopMove, der Damp wartet nicht darauf.
         self._full_estop = False

@@ -38,7 +38,7 @@ def test_ps4_help_follows_ps_estop():
     assert ps(sl.ps4_help({"ps_estop": True})) == "NOT-HALT"
     assert "STOPP" in ps(sl.ps4_help({"ps_estop": False}))
     assert len(sl.ps4_help()) == len(sl.PS4_HELP)
-    assert "VOLL-NOTAUS" in dict(sl.ps4_help())["R1 + R2 + PS (2 s halten)"]
+    assert "VOLL-NOTAUS" in dict(sl.ps4_help())["R1 + L1 + PS (2 s halten)"]
 
 
 def test_full_estop_texts():
@@ -104,3 +104,8 @@ def test_walk_501_shown_and_500_offers_switch():
     st = {"fsm": 500, "name": "Walk", "walk_fsm": 500}
     assert "schaltet" not in sl.onboard_text(st, 0.1)[0]
     assert not sl.start_buttons(st, 0.1)["walk"][0]
+
+
+def test_ps4_text_walk_mode_locked():
+    text, _ = sl.ps4_text({"connected": True, "arms_locked": True, "selection": "right"}, 0.1)
+    assert "GEHEN" in text and "R2" in text

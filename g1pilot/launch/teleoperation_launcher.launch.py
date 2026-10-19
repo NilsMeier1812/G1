@@ -24,6 +24,8 @@ def generate_launch_description():
         'ps_estop': ParameterValue(LaunchConfiguration('ps4_ps_estop'), value_type=bool),
         # L2 = Gehen (ps4_walk): Arm-Steuerung pausiert, solange L2 gehalten.
         'walk_deadman': ParameterValue(LaunchConfiguration('ps4_walk'), value_type=bool),
+        # L2 druecken = Modus GEHEN (danach halten = laufen), R2 = GREIFEN.
+        'trigger_modes': ParameterValue(LaunchConfiguration('ps4_walk'), value_type=bool),
     }
     ps4_walk_on = PythonExpression(["'", ps4_arms, "'.lower() == 'true' and '",
                                     LaunchConfiguration('ps4_walk'), "'.lower() == 'true'"])

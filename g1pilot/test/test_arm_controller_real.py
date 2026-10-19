@@ -878,7 +878,7 @@ def test_bringup_real_defaults_to_holding_arms():
 
 
 def test_full_estop_makes_waist_passive_too(ac_module):
-    """Voll-Notaus (PS4 R1+R2+PS): Arme schlaff wie beim E-Stop UND die Taille
+    """Voll-Notaus (PS4 R1+L1+PS): Arme schlaff wie beim E-Stop UND die Taille
     passiv (kp=0, gedaempft), auch mit estop_waist_hold=true. arm_sdk behaelt
     Gewicht 1 (kein Onboard-Snap, falls der Damp-RPC ausfaellt). Auch nach
     einem vorherigen normalen E-Stop (PS zuerst gedrueckt)."""

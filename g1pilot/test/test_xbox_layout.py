@@ -8,7 +8,7 @@
   * Zuordnung nach Position, Steuerkreuz als Hat oder Tasten
   * Ersatz-NOT-HALT-Taste View
   * Funktionen Ende-zu-Ende ueber die Bedienlogik: Gehen mit LT (Totmann),
-    NOT-HALT mit der Xbox-Taste, Voll-Notaus RB + RT + Xbox 2 s
+    NOT-HALT mit der Xbox-Taste, Voll-Notaus RB + LB + Xbox 2 s
 Laeuft mit pytest (stdlib only).
 """
 import pytest
@@ -190,13 +190,13 @@ def test_xbox_button_is_upper_body_estop():
     assert ("estop",) in lg.update(s.axes, s.buttons, 0.02)
 
 
-@pytest.mark.parametrize("absinfo,rt", [(XPAD_ABS, L.ABS_RZ), (GENERIC_BT_ABS, L.ABS_GAS)])
-def test_xbox_full_estop_rb_rt_xbox_two_seconds(absinfo, rt):
+@pytest.mark.parametrize("absinfo", [XPAD_ABS, GENERIC_BT_ABS])
+def test_xbox_full_estop_rb_lb_xbox_two_seconds(absinfo):
     s = L.XboxState(absinfo)
     lg = ArmTeleopLogic()
     lg.update(s.axes, s.buttons, 0.0)
     s.apply(K, BTN_TR, 1)
-    s.apply(L.EV_ABS, rt, 1023)
+    s.apply(K, BTN_TL, 1)
     s.apply(K, BTN_MODE, 1)
     out, t = [], 0.02
     while t < 1.9:
@@ -213,9 +213,8 @@ def test_xbox_full_estop_with_view_alternative():
     s = L.XboxState(XPAD_ABS, ps_button="view")
     lg = ArmTeleopLogic()
     lg.update(s.axes, s.buttons, 0.0)
-    for code in (BTN_TR, BTN_SELECT):
+    for code in (BTN_TR, BTN_TL, BTN_SELECT):
         s.apply(K, code, 1)
-    s.apply(L.EV_ABS, L.ABS_RZ, 1023)
     out, t = [], 0.02
     while t < 2.2:
         out += lg.update(s.axes, s.buttons, t)

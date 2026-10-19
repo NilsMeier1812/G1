@@ -41,7 +41,7 @@
   <!-- Beschriftungen links -->
   <g fill="#263238">
     <text x="20" y="40" font-weight="bold" font-size="16">Xbox-Controller → gleiche Funktionen wie PS4 (Zuordnung nach Position)</text>
-    <text x="20" y="104" font-weight="bold" fill="#e65100">LT halten</text><text x="100" y="104" fill="#e65100">GEHEN</text>
+    <text x="20" y="96" font-weight="bold" fill="#e65100">LT drücken</text><text x="110" y="96" fill="#e65100">Modus GEHEN</text><text x="20" y="112" font-weight="bold" fill="#e65100">LT halten</text><text x="110" y="112" fill="#e65100">laufen</text><text x="700" y="104" font-weight="bold" fill="#2e7d32">RT</text><text x="728" y="104" fill="#2e7d32">Modus GREIFEN</text>
     <text x="20" y="128" font-weight="bold">LB</text><text x="50" y="128">Tempo langsamer</text>
     <text x="20" y="428" font-weight="bold">Linker Stick</text>
     <text x="20" y="446">Verschieben: vor/zurück + links/rechts</text>
@@ -63,14 +63,14 @@
     <text x="580" y="446">Verschieben: hoch/runter</text>
     <text x="580" y="464">Drehen: rollen</text>
     <text x="450" y="352" text-anchor="middle" font-weight="bold" fill="#c62828">Xbox-Taste: NOT-HALT (Oberkörper)</text>
-    <text x="450" y="370" text-anchor="middle" font-size="12" fill="#c62828">RB + RT + Xbox 2 s halten (vibriert): VOLL-NOTAUS</text>
+    <text x="450" y="370" text-anchor="middle" font-size="12" fill="#c62828">RB + LB + Xbox 2 s halten (vibriert): VOLL-NOTAUS</text>
   </g>
   <!-- Gehen (LT gehalten) -->
   <rect x="15" y="484" width="870" height="66" rx="8" fill="#fff3e0" stroke="#e65100"/>
   <g fill="#263238">
-    <text x="28" y="504" font-weight="bold" fill="#e65100">LT gehalten = GEHEN (Deadman, nur im Walk-Modus)</text>
+    <text x="28" y="504" font-weight="bold" fill="#e65100">LT drücken = Modus GEHEN · LT gehalten = laufen (Totmann, nur im Walk-Modus) · RT drücken = GREIFEN</text>
     <text x="28" y="524"><tspan font-weight="bold">Linker Stick</tspan> vor/zurück + seitlich · <tspan font-weight="bold">Rechter Stick</tspan> drehen · <tspan font-weight="bold">▲ / ▼</tspan> Geh-Tempo schneller / langsamer</text>
-    <text x="28" y="542">Arme halten solange ihre Lage · <tspan font-weight="bold">LT loslassen = sofort Stopp</tspan> · Start-Tempo Langsam</text>
+    <text x="28" y="542"><tspan font-weight="bold">LT loslassen = sofort Stopp</tspan>, GEHEN bleibt: Arme am Controller gesperrt (LED orange) bis RT</text>
   </g>
   <text x="20" y="572" font-size="12" fill="#546e7a">Falls die Xbox-Taste nicht ankommt: G1_XBOX_PS_BUTTON=view → View = NOT-HALT, Share-Taste (Mitte) = Grundstellung.</text>
   <line x1="450" y1="185" x2="450" y2="336" stroke="#c62828"/>

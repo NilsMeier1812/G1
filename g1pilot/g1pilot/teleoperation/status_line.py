@@ -90,6 +90,8 @@ def ps4_text(status, age_s, sim=False):
         return f"PS4: NOT-HALT – gesperrt bis {how}", RED
     if not status.get("connected"):
         return "PS4: nicht verbunden", GREY
+    if status.get("arms_locked"):
+        return "PS4: GEHEN – L2 halten = laufen, R2 = Greifen", _hex(COLORS["walk"])
     sel = status.get("selection", "")
     label = SELECTION_LABEL.get(sel, sel.upper())
     mode = MODE_LABEL.get(status.get("mode"), status.get("mode", ""))
@@ -134,10 +136,12 @@ PS4_HELP = (
     ("Kreuz", "STOPP: Hand hält sofort an, Bewegung abbrechen"),
     ("Options", "Arme übernehmen"),
     ("Share (1 s halten)", "Grundstellung"),
+    ("L2 drücken", "Modus GEHEN (Arm-Tasten gesperrt, LED orange)"),
     ("L2 halten", "GEHEN: linker Stick vor/seitlich, rechter Stick drehen, "
                   "▲/▼ Geh-Tempo (nur im Walk-Modus)"),
+    ("R2 drücken", "Modus GREIFEN (Arme übernehmen)"),
     ("PS", "NOT-HALT"),
-    ("R1 + R2 + PS (2 s halten)", "VOLL-NOTAUS: ganzer G1 in Damp (vibriert, loslassen = Abbruch)"),
+    ("R1 + L1 + PS (2 s halten)", "VOLL-NOTAUS: ganzer G1 in Damp (vibriert, loslassen = Abbruch)"),
 )
 
 
