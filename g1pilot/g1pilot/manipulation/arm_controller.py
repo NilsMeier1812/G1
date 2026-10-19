@@ -558,13 +558,12 @@ class ArmController(Node):
         # staendig bewegten Armen trainiert und braucht keine bestimmte Armpose ->
         # die Arme halten ihre Stellung und bleiben per Marker/Kommando bedienbar
         # (z.B. eine Box tragen). walk_ready kommt dann sofort.
-        # NUR SIM: Real fuehrt beim Laufen Unitrees Onboard-Regler -- dort bleibt
-        # es immer beim Parken, egal was der Parameter sagt.
+        # REAL (bringup_real, Env G1_WALK_PARK_ARMS, Default false; Nils
+        # 2026-10-19): Arme bleiben beim Laufen in ihrer aktuellen Pose, arm_sdk
+        # behaelt Gewicht 1 und haelt Arme + Taille. Sind die Arme nicht
+        # aktiviert, fuehrt sie weiter der Onboard-Regler.
         self.declare_parameter("walk_park_arms", True)
         self.walk_park_arms = bool(self.get_parameter("walk_park_arms").value)
-        if not self.walk_park_arms and not is_sim_mode():
-            self.get_logger().warn("walk_park_arms=false gilt nur in der Sim -> real: Arme parken.")
-            self.walk_park_arms = True
         # Uebergang in die Lauf-Pose laeuft noch als GEPLANTE Bewegung (um Tisch/
         # Hindernisse herum, wie HOMING). Erst danach haelt der WALK-Zweig in
         # main_loop die Lauf-Pose und meldet walk_ready.
@@ -1956,9 +1955,17 @@ class ArmController(Node):
             # weiter. Arme aktiv halten (sonst haelt die Bridge sie in der Null-
             # Pose) und sofort walk_ready melden (Demo-GUI wartet darauf).
             self._sim_auto_enable_arms("WALK")
+            if not is_sim_mode() and self.arms_enabled and not self.estop_active:
+                # Real: Arme bleiben GENAU, wo sie sind -- eine laufende geplante
+                # Fahrt oder ein Marker-Ziel endet hier, die Gelenke werden an
+                # der aktuell kommandierten Stellung exakt gehalten (kein IK-
+                # Nachdrehen). Neue Ziele (Marker/PS4) wirken danach weiter.
+                self._abort_planned_motion("WALK gestartet (Arme bleiben)")
+                self._cancel_marker_goals("WALK gestartet")
+                self._align_ik_to_config(self._last_q_target[0:7], self._last_q_target[7:14])
             self._walk_ready_sent = True
             self.walk_ready_publisher.publish(Bool(data=True))
-            self.get_logger().info("WALK-Modus: Arme bleiben frei (walk_park_arms=false).")
+            self.get_logger().info("WALK-Modus: Arme bleiben in ihrer Pose (walk_park_arms=false).")
             return
         self.walk_mode = True
         self.homing_active = False

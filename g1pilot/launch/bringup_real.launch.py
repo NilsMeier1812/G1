@@ -123,6 +123,9 @@ def generate_launch_description():
                 'kd_waist': os.environ.get('G1_WAIST_KD', '4.0'),
                 # E-Stop laesst die Taille gehalten (Real-Test 2026-10-15).
                 'estop_waist_hold': os.environ.get('G1_ESTOP_WAIST_HOLD', 'true'),
+                # LAUFEN: Arme bleiben in ihrer Pose (Nils 2026-10-19). Mit
+                # G1_WALK_PARK_ARMS=true wie frueher in die Lauf-Pose parken.
+                'walk_park_arms': os.environ.get('G1_WALK_PARK_ARMS', 'false'),
             }.items()
         ),
 
