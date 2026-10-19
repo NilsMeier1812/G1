@@ -818,7 +818,7 @@ class SimFrame(tk.Frame):
         toggle_row(s, "Navigation", self.v_nav,
                    "Planer + Stationen / AUTO NAV in der Demo-GUI")
         toggle_row(s, "PS4-Controller", self.v_ps4,
-                   "steuert Arme + Hände (kein Laufen); Belegung: docs/43_ps4_controller.md")
+                   "PS4 oder Xbox: Arme + Hände, Gehen mit L2/LT; Belegung: docs/43_ps4_controller.md")
         self._rviz_row = toggle_row(s, "RViz", self.v_rviz,
                                     "Zusatzfenster mit TF/Markern; MuJoCo-Fenster kommt immer")
         for v in (self.v_hands, self.v_gui, self.v_nav):
@@ -965,7 +965,7 @@ class RealFrame(tk.Frame):
         self._open_row, self._hand_hint = hand_gui_rows(self._hand_box, self.v_open_guis)
         toggle_row(s, "RViz", self.v_rviz, "empfohlen: Arm-Marker + Zustand sichtbar")
         toggle_row(s, "PS4-Controller für Arme + Hände", self.v_ps4,
-                   "kein Laufen; aus = Gehen mit Deadman (bisher)")
+                   "PS4 oder Xbox; aus = Gehen mit Deadman (bisher, nur PS4)")
         for v in (self.v_hands, self.v_gui):
             v.trace_add("write", lambda *_: self._sync())
 

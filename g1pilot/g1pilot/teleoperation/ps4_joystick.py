@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
-ps4_joystick — PS4-Controller (evdev) -> /g1pilot/ps4/joy in FESTER Belegung.
+ps4_joystick — PS4- oder Xbox-Controller (evdev) -> /g1pilot/ps4/joy in
+FESTER Belegung.
+
+Welcher Controller, erkennt der Node selbst (Name/Hersteller, Parameter
+`controller` = auto | ps4 | xbox). Der Xbox-Controller wird nach Position auf
+die PS4-Belegung abgebildet (ps4_layout.XboxState) -- alle Nodes dahinter
+bleiben unveraendert.
 
 Unterschiede zum alten `joystick`-Node (der fuer loco_client/joy_mux bleibt
 und hier NICHT angefasst wird):
@@ -19,10 +25,18 @@ und hier NICHT angefasst wird):
     liefert mit jedem Funkbericht Ereignisse (u.a. MSC_TIMESTAMP); bleiben
     sie (und Tasten/Sticks) laenger als `stall_timeout_s` aus, wird nichts
     mehr publiziert, bis wieder Daten kommen.
+    Der Xbox-Controller hat kein Sensor-Teilgeraet. Ueber Bluetooth wird
+    stattdessen der rohe HID-Strom (/dev/hidrawN desselben Geraets) gelesen
+    -- aber erst dann als Lebenszeichen genommen, wenn er nachweislich auch
+    ohne Eingabe-Aenderung weiterlaeuft (`hidraw_arm_reports` Berichte am
+    Stueck, ohne dass sich an Tasten/Sticks etwas aendert). Ein Controller,
+    der nur bei Aenderungen sendet, bleibt so ohne Lebendpruefung, statt
+    beim ruhig gehaltenen Stick faelschlich abzuschalten.
 """
 import glob
 import json
 import os
+import select
 import threading
 import time
 
@@ -49,7 +63,23 @@ class Ps4Joystick(Node):
         self.declare_parameter("publish_rate", 50.0)
         self.declare_parameter("reconnect_period_s", 1.0)
         self.declare_parameter("stall_timeout_s", 0.3)
+        # auto: PS4 oder Xbox, was da ist (beide da: PS4, wie bisher)
+        self.declare_parameter("controller", "auto")
+        # Xbox: welche Taste ist "PS" (NOT-HALT, Voll-Notaus)? xbox | view
+        self.declare_parameter("xbox_ps_button", "xbox")
+        self.declare_parameter("xbox_swap_xy", False)
+        self.declare_parameter("hidraw_arm_reports", 20)
         self.wanted = self.get_parameter("joystick_name").value
+        self.kind_wanted = str(self.get_parameter("controller").value).strip().lower() or "auto"
+        if self.kind_wanted not in ("auto", "ps4", "xbox"):
+            self.get_logger().warn(f"controller='{self.kind_wanted}' unbekannt -> auto")
+            self.kind_wanted = "auto"
+        self.xbox_ps = str(self.get_parameter("xbox_ps_button").value).strip().lower()
+        if self.xbox_ps not in L.XBOX_PS_BUTTONS:
+            self.get_logger().warn(f"xbox_ps_button='{self.xbox_ps}' unbekannt -> xbox")
+            self.xbox_ps = "xbox"
+        self.xbox_swap = bool(self.get_parameter("xbox_swap_xy").value)
+        self.hidraw_arm_n = max(1, int(self.get_parameter("hidraw_arm_reports").value))
         self.reconnect_s = float(self.get_parameter("reconnect_period_s").value)
         self.stall_s = float(self.get_parameter("stall_timeout_s").value)
 
@@ -69,33 +99,148 @@ class Ps4Joystick(Node):
         self._alive_t = None
         self._gen = 0             # Verbindungs-Nummer (alte Sensor-Threads ignorieren)
         self._stalled = False
+        self.kind = None          # 'ps4' | 'xbox' des verbundenen Controllers
+        self._quiet_reports = 0   # hidraw-Berichte seit der letzten evdev-Aenderung
 
         if evdev is None:
-            self.get_logger().error("Python-Paket 'evdev' fehlt -- kein PS4-Controller.")
+            self.get_logger().error("Python-Paket 'evdev' fehlt -- kein Controller.")
             return
         self.thread = threading.Thread(target=self._reader, daemon=True)
         self.thread.start()
         self.create_timer(1.0 / float(self.get_parameter("publish_rate").value), self._publish)
 
     # ── Geraet finden / lesen ──────────────────────────────────────────
+    @staticmethod
+    def _vendor(dev):
+        info = getattr(dev, "info", None)
+        return getattr(info, "vendor", None)
+
+    def _kind_of(self, dev):
+        kind = L.controller_kind(dev.name, self._vendor(dev), self.wanted)
+        if kind is None and dev.name == self.wanted:
+            kind = "ps4"          # eigener Name per JOYSTICK_NAME: wie bisher PS4
+        if self.kind_wanted != "auto" and kind != self.kind_wanted:
+            return None
+        return kind
+
     def _find(self):
+        """-> (Geraet, 'ps4' | 'xbox') oder (None, None). Exakter Name
+        (`joystick_name`) zuerst, sonst PS4 vor Xbox."""
         candidates = []
         for path in evdev.list_devices():
             try:
                 dev = evdev.InputDevice(path)
             except OSError:
                 continue
-            if dev.name == self.wanted:
-                for extra in candidates:
-                    extra.close()
-                return dev
-            if L.is_ps4_name(dev.name, self.wanted):
-                candidates.append(dev)
-            else:
+            kind = self._kind_of(dev)
+            if kind is None:
                 dev.close()
-        for extra in candidates[1:]:
+                continue
+            if dev.name == self.wanted:
+                for extra, _ in candidates:
+                    extra.close()
+                return dev, kind
+            candidates.append((dev, kind))
+        candidates.sort(key=lambda c: 0 if c[1] == "ps4" else 1)
+        for extra, _ in candidates[1:]:
             extra.close()
-        return candidates[0] if candidates else None
+        return candidates[0] if candidates else (None, None)
+
+    def _find_companions(self, dev):
+        """Xbox ueber Bluetooth: weitere evdev-Teilgeraete desselben Controllers
+        (z.B. "<Name> Consumer Control" mit der Xbox-Taste als KEY_HOMEPAGE).
+        Gleicher Namensanfang und gleiche uniq/phys."""
+        phys = getattr(dev, "phys", "") or ""
+        uniq = getattr(dev, "uniq", "") or ""
+        if not (phys or uniq):
+            return []
+        found = []
+        for path in evdev.list_devices():
+            if path == dev.path:
+                continue
+            try:
+                c = evdev.InputDevice(path)
+            except OSError:
+                continue
+            same = ((uniq and getattr(c, "uniq", "") == uniq)
+                    or (phys and getattr(c, "phys", "") == phys))
+            if c.name != dev.name and c.name.startswith(dev.name) and same:
+                found.append(c)
+            else:
+                c.close()
+        return found
+
+    def _companion_reader(self, cdev, gen):
+        try:
+            for ev in cdev.read_loop():
+                with self.lock:
+                    if self._gen != gen or self._stop:
+                        break
+                    if ev.type == L.EV_KEY and self.state.apply(ev.type, ev.code, ev.value):
+                        self._quiet_reports = 0
+                        if self._alive_t is not None:
+                            self._alive_t = time.monotonic()
+        except OSError:
+            pass
+        try:
+            cdev.close()
+        except Exception:   # noqa: BLE001
+            pass
+
+    @staticmethod
+    def _find_hidraw(dev):
+        """/dev/hidrawN desselben HID-Geraets (nur HID-Treiber, also Bluetooth;
+        xpad/USB hat keins). None, wenn keins da oder nicht lesbar."""
+        ev = os.path.basename(dev.path)
+        base = os.path.realpath(f"/sys/class/input/{ev}/device/device")
+        for p in sorted(glob.glob(os.path.join(base, "hidraw", "hidraw*"))):
+            node = "/dev/" + os.path.basename(p)
+            if os.access(node, os.R_OK):
+                return node
+        return None
+
+    def _hidraw_reader(self, path, gen):
+        """Roh-Berichte zaehlen. Scharf (Lebenszeichen) erst nach
+        `hidraw_arm_n` Berichten ohne evdev-Aenderung dazwischen."""
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        except OSError:
+            return
+        try:
+            while True:
+                with self.lock:
+                    if self._gen != gen or self._stop:
+                        break
+                r, _, _ = select.select([fd], [], [], 0.1)
+                if not r:
+                    continue
+                try:
+                    data = os.read(fd, 128)
+                except BlockingIOError:
+                    continue
+                if not data:        # (nur Test-FIFO ohne Schreiber) -> abwarten
+                    time.sleep(0.05)
+                    continue
+                with self.lock:
+                    if self._gen != gen:
+                        break
+                    now = time.monotonic()
+                    if self._alive_t is not None:
+                        self._alive_t = now
+                    else:
+                        self._quiet_reports += 1
+                        if self._quiet_reports >= self.hidraw_arm_n:
+                            self._alive_t = now
+                            self.get_logger().info(
+                                "Xbox-Controller: HID-Strom laeuft durchgehend -- "
+                                f"Lebendpruefung aktiv ({self.stall_s:.1f} s).")
+        except OSError:
+            pass
+        finally:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
 
     def _find_motion(self, dev):
         """Sensor-Teilgeraet desselben Controllers: Name + " Motion Sensors"
@@ -134,12 +279,14 @@ class Ps4Joystick(Node):
     def _reader(self):
         missing_logged = False
         while not self._stop:
-            dev = self._find()
+            dev, kind = self._find()
             if dev is None:
                 if not missing_logged:
                     missing_logged = True
+                    what = {"auto": "PS4- oder Xbox-Controller", "ps4": "PS4-Controller",
+                            "xbox": "Xbox-Controller"}[self.kind_wanted]
                     self.get_logger().warn(
-                        f"Kein PS4-Controller gefunden (gesucht: '{self.wanted}'). "
+                        f"Kein {what} gefunden (PS4-Name: '{self.wanted}'). "
                         "Warte ... (Bluetooth koppeln oder per USB anstecken; im "
                         "Container braucht es /dev/input, siehe docs/43_ps4_controller.md)")
                 time.sleep(self.reconnect_s)
@@ -148,40 +295,64 @@ class Ps4Joystick(Node):
             absinfo = {}
             for code, info in dev.capabilities().get(ecodes.EV_ABS, []):
                 absinfo[code] = (info.min, info.max)
-            state = L.Ps4State(absinfo)
+            state = L.make_state(kind, absinfo, ps_button=self.xbox_ps,
+                                 swap_xy=self.xbox_swap)
             # Startwerte (z.B. Trigger halb gedrueckt beim Verbinden)
             for code, info in dev.capabilities().get(ecodes.EV_ABS, []):
                 state.apply(L.EV_ABS, code, info.value)
-            motion = self._find_motion(dev)
+            motion = self._find_motion(dev) if kind == "ps4" else None
+            companions = self._find_companions(dev) if kind == "xbox" else []
+            hidraw = self._find_hidraw(dev) if kind == "xbox" else None
             with self.lock:
                 self.state = state
                 self.device = dev
+                self.kind = kind
                 self._gen += 1
                 self._alive_t = None
                 self._stalled = False
-            if motion is not None:
-                threading.Thread(target=self._motion_reader, args=(motion, self._gen),
+                self._quiet_reports = 0
+                gen = self._gen
+            for c in companions:
+                threading.Thread(target=self._companion_reader, args=(c, gen),
                                  daemon=True).start()
-            else:
+            if motion is not None:
+                threading.Thread(target=self._motion_reader, args=(motion, gen),
+                                 daemon=True).start()
+            elif hidraw is not None:
+                threading.Thread(target=self._hidraw_reader, args=(hidraw, gen),
+                                 daemon=True).start()
+            elif kind == "ps4":
                 self.get_logger().info(
                     "Kein Sensor-Teilgeraet zum Controller gefunden -- ohne "
                     "Lebendpruefung (Trennung erst, wenn der Kernel sie meldet).")
-            self._led = self._find_led(dev)
+            if kind == "xbox" and hidraw is None:
+                self.get_logger().info(
+                    "Xbox-Controller ohne HID-Rohstrom (USB/xpad oder kein Zugriff) -- "
+                    "Lebendpruefung nur ueber die Trennung durch den Kernel.")
+            self._led = self._find_led(dev) if kind == "ps4" else None
             self._ff_effect = None
-            self.get_logger().info(f"PS4-Controller verbunden: {dev.name} ({dev.path})"
-                                   + ("" if self._led else " -- LED nicht steuerbar"))
+            label = "PS4" if kind == "ps4" else "Xbox"
+            extra = ""
+            if kind == "ps4" and not self._led:
+                extra = " -- LED nicht steuerbar"
+            elif kind == "xbox":
+                extra = (f" -- NOT-HALT-Taste: {'View' if self.xbox_ps == 'view' else 'Xbox'}"
+                         + (", Bluetooth ohne xpadneo" if state.generic_bt else ""))
+            self.get_logger().info(f"{label}-Controller verbunden: {dev.name} ({dev.path}){extra}")
             if self._rgb is not None:
                 self._set_led(self._rgb)
             try:
                 for ev in dev.read_loop():
                     with self.lock:
-                        self.state.apply(ev.type, ev.code, ev.value)
+                        if self.state.apply(ev.type, ev.code, ev.value):
+                            self._quiet_reports = 0
                         if self._alive_t is not None:
                             self._alive_t = time.monotonic()
             except OSError as e:
-                self.get_logger().warn(f"PS4-Controller getrennt ({e}). Warte auf Wiederverbindung ...")
+                self.get_logger().warn(f"{label}-Controller getrennt ({e}). Warte auf Wiederverbindung ...")
             with self.lock:
                 self.device = None
+                self.kind = None
                 self.state.reset()
                 self._gen += 1           # Sensor-Thread dieser Verbindung beenden
                 self._alive_t = None
@@ -200,15 +371,15 @@ class Ps4Joystick(Node):
                 self._stalled = stalled
                 if stalled:
                     self.get_logger().warn(
-                        f"PS4-Controller: seit {self.stall_s:.1f} s keine Daten "
+                        f"Controller: seit {self.stall_s:.1f} s keine Daten "
                         "(Funkverbindung haengt?) -- publiziere nichts, Hand haelt an.")
                 else:
-                    self.get_logger().info("PS4-Controller: Daten kommen wieder.")
+                    self.get_logger().info("Controller: Daten kommen wieder.")
             if stalled:
                 return
             msg = Joy()
             msg.header.stamp = self.get_clock().now().to_msg()
-            msg.header.frame_id = "ps4"
+            msg.header.frame_id = self.kind or "ps4"
             msg.axes = [float(a) for a in self.state.axes]
             msg.buttons = list(self.state.buttons)
         self.pub.publish(msg)

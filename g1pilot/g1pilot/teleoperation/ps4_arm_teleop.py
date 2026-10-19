@@ -14,7 +14,7 @@ arm_controller bzw. in der Inspire-Bridge:
   /g1pilot/arms/home            Bool         Grundstellung (Impuls)
   /g1pilot/pose_store/cancel    Bool         laufende geplante Bewegung abbrechen
   /g1pilot/emergency_stop       Bool         NOT-HALT (wie in den GUIs)
-  /g1pilot/full_emergency_stop  Bool         VOLL-NOTAUS: ganzer G1 Damp (R1+R2+PS)
+  /g1pilot/full_emergency_stop  Bool         VOLL-NOTAUS: ganzer G1 Damp (R1+L1+PS)
 
 KEIN Laufen: der Node publiziert nichts an loco_cmd_vel / joy_mux. Rueckmeldung:
   /g1pilot/ps4/feedback  String(JSON)  LED-Farbe + Vibration -> ps4_joystick
@@ -33,13 +33,19 @@ Belegung (Details: g1pilot/docs/43_ps4_controller.md):
                options_starts_balancing -- real aus)
   Share (1 s halten)  Grundstellung
   PS           NOT-HALT (ps_estop=false: nur Stopp wie Kreuz)
-  R1 + R2 + PS (2 s halten, Controller vibriert)  VOLL-NOTAUS: ganzer G1
+  R1 + L1 + PS (2 s halten, Controller vibriert)  VOLL-NOTAUS: ganzer G1
                in Damp (auch die Beine, /g1pilot/full_emergency_stop).
                Vorzeitig loslassen bricht ab. Zurueck: START quittiert,
                der G1 bleibt in Damp; Aufstehen nur ueber die Startleiste
                (Preparation -> Walk).
   L2 halten    Gehen (ps4_walk, nur mit walk_deadman): Sticks + Steuerkreuz
                gehoeren dann dem Gehen, die Arme halten ihre Lage
+  L2 druecken  Modus GEHEN, R2 druecken = Modus GREIFEN (trigger_modes), wie die
+               Kacheln der Demo-GUI. Im GEHEN laeuft der G1 nur, solange L2
+               gehalten wird; losgelassen bleibt GEHEN, die Arm-Tasten und
+               Sticks sind dann gesperrt (LED orange) bis R2/Options.
+               Real nur, wenn der G1 schon im Walk-Modus steht -- der
+               Controller stellt die Beine nie selbst auf.
 """
 import json
 import math
@@ -73,6 +79,7 @@ COLORS = {
     "both":   (170, 0, 255),    # violett
     "mirror": (0, 200, 200),    # tuerkis
     "estop":  (255, 0, 0),      # rot
+    "walk":   (255, 110, 0),    # orange: Modus GEHEN, Arme am Controller gesperrt
 }
 TURN_DIM = 0.35   # DREHEN: LED gedimmt (gleiche Farbe), Verschieben = voll
 
@@ -107,7 +114,7 @@ class ArmTeleopLogic:
     def __init__(self, deadzone=0.12, expo=0.4, speed="Normal", home_hold_s=1.0,
                  selection="right", max_speed="Schnell", ps_estop=True,
                  full_estop_hold_s=2.0, full_estop_gap_s=0.3,
-                 walk_deadman=False):
+                 walk_deadman=False, trigger_modes=False):
         self.deadzone = float(deadzone)
         self.expo = float(expo)
         self.home_hold_s = float(home_hold_s)
@@ -121,7 +128,7 @@ class ArmTeleopLogic:
         # PS: True = NOT-HALT (wie die GUIs), False = nur Stopp wie Kreuz.
         self.ps_estop = bool(ps_estop)
         self.estop = False
-        # Voll-Notaus (R1 + R2 + PS halten): <= 0 schaltet ihn ab.
+        # Voll-Notaus (R1 + L1 + PS halten): <= 0 schaltet ihn ab.
         self.full_hold_s = float(full_estop_hold_s)
         # Laengere Luecke im Joy-Strom waehrend des Haltens -> Abbruch (sonst
         # loeste ein nach einem Funkabriss weiter "gedrueckt" gemeldeter
@@ -131,10 +138,21 @@ class ArmTeleopLogic:
         self._full_since = None      # Beginn des Haltens (None = nicht gehalten)
         self._full_last = None       # letzte Joy-Nachricht waehrend des Haltens
         self._full_sent = False      # in diesem Halten schon ausgeloest
+        # Tempo vor dem ersten L1/R1-Schritt, solange L1 oder R1 gehalten:
+        # wird daraus der Voll-Notaus (R1 + L1 + PS), zuruecknehmen.
+        self._speed_undo = None
         # L2 = Deadman fuers Gehen (ps4_walk): solange gehalten, pausiert die
         # Arm-Steuerung (Sticks/Steuerkreuz). False = L2 frei (alter Stand).
         self.walk_deadman = bool(walk_deadman)
         self.walking = False
+        # L2 druecken = Modus GEHEN, R2 druecken = GREIFEN (Flanke, mit Hysterese:
+        # die Trigger sind analog).
+        self.trigger_modes = bool(trigger_modes)
+        self._trig_held = {L.L2: False, L.R2: False}
+        # Modus des Roboters, soweit bekannt: None (unbekannt, Arme frei wie
+        # bisher), "walk" (GEHEN: Arme am Controller gesperrt) oder "grasp".
+        # Der Node gleicht ihn mit start_walking/start_balancing (GUIs) ab.
+        self.robot_mode = None
         self._prev = [0] * L.NUM_BUTTONS
         self._share_since = None
         self._home_sent = False
@@ -148,9 +166,23 @@ class ArmTeleopLogic:
     def sides(self):
         return SELECTIONS[self.selection]
 
+    @property
+    def arms_locked(self):
+        """GEHEN-Modus: Arm-Funktionen am Controller gesperrt."""
+        return self.trigger_modes and self.robot_mode == "walk"
+
+    def set_robot_mode(self, mode):
+        """Modus von aussen (GUI-Kachel) oder vom Node zuruecknehmen. -> geaendert?"""
+        if mode == self.robot_mode:
+            return False
+        self.robot_mode = mode
+        return True
+
     def color(self):
         if self.estop or self.full_estop:
             return COLORS["estop"]
+        if self.arms_locked:
+            return COLORS["walk"]
         c = COLORS[self.selection]
         if self.mode == "turn":
             c = tuple(int(round(v * TURN_DIM)) for v in c)
@@ -161,13 +193,16 @@ class ArmTeleopLogic:
             return "PS4 · VOLL-NOTAUS (G1 in Damp, mit START quittieren)"
         if self.estop:
             return "PS4 · NOT-HALT (in GUI quittieren)"
+        if self.arms_locked:
+            return "PS4 · GEHEN (L2 halten = laufen, R2 = Greifen)"
         return f"PS4 · {SELECTION_LABEL[self.selection]} · {MODE_LABEL[self.mode]} · {self.speed}"
 
     def status(self):
         return {"selection": self.selection, "sides": list(self.sides),
                 "mode": self.mode, "speed": self.speed, "estop": self.estop,
                 "ps_estop": self.ps_estop, "full_estop": self.full_estop,
-                "full_arming": self.full_arming, "label": self.label()}
+                "full_arming": self.full_arming, "robot_mode": self.robot_mode,
+                "arms_locked": self.arms_locked, "label": self.label()}
 
     def clear_estop(self):
         """NOT-HALT quittiert (START aus GUI/Streamdeck gesehen)."""
@@ -186,17 +221,14 @@ class ArmTeleopLogic:
 
     @property
     def full_arming(self):
-        """True, solange R1 + R2 + PS gehalten werden (noch nicht ausgeloest)."""
+        """True, solange R1 + L1 + PS gehalten werden (noch nicht ausgeloest)."""
         return self._full_since is not None and not self._full_sent
 
     @staticmethod
     def full_combo(axes, buttons):
-        """R1 + R2 + PS gleichzeitig gedrueckt? R2 zaehlt als Taste ODER als
-        weit durchgedrueckter Trigger (Treiber melden BTN_TR2 unterschiedlich frueh)."""
+        """R1 + L1 + PS gleichzeitig gedrueckt? (Xbox: RB + LB + Xbox-Taste)"""
         b = list(buttons) + [0] * max(0, L.NUM_BUTTONS - len(buttons))
-        a = list(axes) + [0.0] * max(0, L.NUM_AXES - len(axes))
-        r2 = bool(b[L.R2]) or a[L.R2_AXIS] >= 0.8
-        return bool(b[L.R1]) and r2 and bool(b[L.PS])
+        return bool(b[L.R1]) and bool(b[L.L1]) and bool(b[L.PS])
 
     def abort_full(self):
         """Halten abbrechen (Loslassen, Joy-Timeout). True, wenn es lief."""
@@ -206,7 +238,7 @@ class ArmTeleopLogic:
         return was
 
     def _update_full(self, axes, buttons, now):
-        """Voll-Notaus: R1 + R2 + PS ununterbrochen full_hold_s lang halten."""
+        """Voll-Notaus: R1 + L1 + PS ununterbrochen full_hold_s lang halten."""
         if self.full_hold_s <= 0.0:
             return []
         if not self.full_combo(axes, buttons):
@@ -233,10 +265,18 @@ class ArmTeleopLogic:
         self._prev = b[:L.NUM_BUTTONS]
         # Voll-Notaus zuerst: wirkt auch im NOT-HALT (PS hat den Oberkoerper
         # beim Druecken schon gedaempft) und unabhaengig von ps_estop.
+        if not b[L.L1] and not b[L.R1]:
+            self._speed_undo = None
+        trig_rise = self._trigger_edges(axes, b)
         out = self._update_full(axes, b, now)
+        if ("full_arm",) in out and self._speed_undo is not None:
+            # L1/R1 vor PS gedrueckt: deren Tempo-Schritt gehoerte zum Notaus.
+            self.speed_idx = self._speed_undo
+            self._speed_undo = None
+            out.append(("changed",))
         if self.full_arming or self._full_sent:
-            # Waehrend R1 + R2 + PS gehalten werden: nur PS-NOT-HALT (unten),
-            # keine anderen Tasten (R1 waere sonst "schneller").
+            # Waehrend R1 + L1 + PS gehalten werden: nur PS-NOT-HALT (unten),
+            # keine anderen Tasten (L1/R1 waeren sonst "langsamer/schneller").
             if rise[L.PS] and self.ps_estop:
                 out[:0] = [("hold", ("left", "right")), ("estop",)]
                 if not self.estop:
@@ -257,7 +297,23 @@ class ArmTeleopLogic:
         if self.estop:
             return out   # bis zur Quittung in der GUI: nichts bewegen
 
+        if self.trigger_modes:
+            if trig_rise[L.L2] and self.robot_mode != "walk":
+                self.robot_mode = "walk"
+                out += [("hold", ("left", "right")), ("mode", "walk"), ("changed",)]
+            elif trig_rise[L.R2] and self.robot_mode != "grasp":
+                self.robot_mode = "grasp"
+                out += [("mode", "grasp"), ("changed",)]
         self.walking = self.walk_deadman and deadman_held(axes, b)
+        if self.arms_locked:
+            # GEHEN: nur Kreuz (Stopp) und Options (Arme uebernehmen -> GREIFEN).
+            self._share_since = None
+            if rise[L.CROSS] or (rise[L.PS] and not self.ps_estop):
+                out += [("hold", ("left", "right")), ("cancel",)]
+            if rise[L.OPTIONS]:
+                self.robot_mode = "grasp"
+                out += [("enable",), ("changed",)]
+            return out
         # Auswahl der Hand / Haende (Steuerkreuz; mit L2 = Geh-Tempo)
         for btn, sel in (() if self.walking else DPAD_SELECTION):
             if rise[btn] and sel != self.selection:
@@ -271,9 +327,13 @@ class ArmTeleopLogic:
             self.mode = "turn" if self.mode == "move" else "move"
             out.append(("changed",))
         if rise[L.L1] and self.speed_idx > 0:
+            if self._speed_undo is None:
+                self._speed_undo = self.speed_idx
             self.speed_idx -= 1
             out.append(("changed",))
         if rise[L.R1] and self.speed_idx < self.max_idx:
+            if self._speed_undo is None:
+                self._speed_undo = self.speed_idx
             self.speed_idx += 1
             out.append(("changed",))
 
@@ -300,9 +360,24 @@ class ArmTeleopLogic:
             self._home_sent = False
         return out
 
+    TRIGGER_ON, TRIGGER_OFF = 0.5, 0.3
+
+    def _trigger_edges(self, axes, b):
+        """L2/R2 gedrueckt (Taste oder Achse >= 0.5, los erst < 0.3) -> Flanken."""
+        a = list(axes) + [0.0] * max(0, L.NUM_AXES - len(axes))
+        rise = {}
+        for btn, ax in ((L.L2, L.L2_AXIS), (L.R2, L.R2_AXIS)):
+            was = self._trig_held[btn]
+            thr = self.TRIGGER_OFF if was else self.TRIGGER_ON
+            now = bool(b[btn]) or a[ax] >= thr
+            self._trig_held[btn] = now
+            rise[btn] = now and not was
+        return rise
+
     def twist(self, axes):
         """-> {side: ((vx, vy, vz) m/s, (wx, wy, wz) rad/s)} im JOG_FRAME."""
-        if self.estop or (self.walk_deadman and (self.walking or deadman_held(axes, ()))):
+        if self.estop or self.arms_locked or (
+                self.walk_deadman and (self.walking or deadman_held(axes, ()))):
             return {}
         a = list(axes) + [0.0] * max(0, L.NUM_AXES - len(axes))
         s = lambda i: shape_axis(a[i], self.deadzone, self.expo)   # noqa: E731
@@ -355,12 +430,18 @@ def main(args=None):
             # zusammen). false -> PS wirkt nur wie Kreuz (Stopp).
             self.declare_parameter("ps_estop", True)
             self.declare_parameter("home_hold_s", 1.0)
-            # Voll-Notaus: R1 + R2 + PS so lange halten (s), Controller vibriert
+            # Voll-Notaus: R1 + L1 + PS so lange halten (s), Controller vibriert
             # waehrenddessen. 0 = Voll-Notaus am Controller abgeschaltet.
             self.declare_parameter("full_estop_hold_s", 2.0)
             # L2 = Deadman fuers Gehen (Node ps4_walk laeuft mit): solange
             # gehalten, pausiert die Arm-Steuerung. false = L2 ohne Wirkung.
             self.declare_parameter("walk_deadman", False)
+            # L2 druecken = Modus GEHEN (start_walking), R2 = GREIFEN (wie die
+            # Kacheln der Demo-GUI); im GEHEN sind die Arm-Tasten gesperrt.
+            self.declare_parameter("trigger_modes", False)
+            # Beine nie per Controller aufstellen: start_walking/start_balancing
+            # nur, wenn /g1pilot/onboard_state den Walk-Modus meldet (Real).
+            self.declare_parameter("modes_need_onboard_walk", not is_sim_mode())
             # Bleibt der Joy-Stream laenger aus (Funkabriss, Akku leer), haelt
             # die Hand an -- der ps4_joystick publiziert nur bei Verbindung.
             self.declare_parameter("joy_timeout_s", 0.5)
@@ -379,7 +460,10 @@ def main(args=None):
                                         gp("home_hold_s"), max_speed=gp("max_speed"),
                                         ps_estop=gp("ps_estop"),
                                         full_estop_hold_s=gp("full_estop_hold_s"),
-                                        walk_deadman=gp("walk_deadman"))
+                                        walk_deadman=gp("walk_deadman"),
+                                        trigger_modes=gp("trigger_modes"))
+            self.need_onboard_walk = bool(gp("modes_need_onboard_walk"))
+            self.onboard = self.onboard_t = None
             self.joy_timeout = float(gp("joy_timeout_s"))
             self.options_balancing = bool(gp("options_starts_balancing"))
             self.cmd_poses = CommandedPoses()
@@ -402,6 +486,7 @@ def main(args=None):
                              for s in ("left", "right")}
             self.pub_enable = self.create_publisher(Bool, "/g1pilot/arms/enabled", 10)
             self.pub_balance = self.create_publisher(Bool, "/g1pilot/start_balancing", 10)
+            self.pub_walk = self.create_publisher(Bool, "/g1pilot/start_walking", 10)
             self.pub_home = self.create_publisher(Bool, "/g1pilot/arms/home", 10)
             self.pub_cancel = self.create_publisher(Bool, "/g1pilot/pose_store/cancel", 10)
             self.pub_estop = self.create_publisher(Bool, "/g1pilot/emergency_stop", 10)
@@ -421,6 +506,12 @@ def main(args=None):
             self.create_subscription(Bool, "/g1pilot/start", self._on_start, 10)
             # NOT-HALT aus GUI/Streamdeck sperrt auch den Controller (LED rot).
             self.create_subscription(Bool, "/g1pilot/emergency_stop", self._on_estop, 10)
+            # Modus-Wechsel aus GUIs/Streamdeck (auch die eigenen) mitverfolgen.
+            self.create_subscription(Bool, "/g1pilot/start_walking",
+                                     lambda m: self._on_mode_topic("walk", m), 10)
+            self.create_subscription(Bool, "/g1pilot/start_balancing",
+                                     lambda m: self._on_mode_topic("grasp", m), 10)
+            self.create_subscription(String, "/g1pilot/onboard_state", self._on_onboard, latched)
 
             self.create_timer(1.0 / float(gp("rate_hz")), self._tick)
             self.create_timer(0.2, self._publish_markers)
@@ -429,7 +520,7 @@ def main(args=None):
             self.get_logger().info(
                 f"PS4-Arm-Steuerung bereit ({gp('joy_topic')}): {self.logic.label()} "
                 f"(max. {JOG_SPEED_ORDER[self.logic.max_idx]}, PS="
-                f"{'NOT-HALT' if self.logic.ps_estop else 'Stopp'}, R1+R2+PS "
+                f"{'NOT-HALT' if self.logic.ps_estop else 'Stopp'}, R1+L1+PS "
                 f"{f'{self.logic.full_hold_s:.1f} s = VOLL-NOTAUS' if self.logic.full_hold_s > 0 else 'aus'}"
                 f", Options"
                 f"{' + start_balancing' if self.options_balancing else ' = nur Arme'})")
@@ -451,6 +542,25 @@ def main(args=None):
             p, q = msg.pose.position, msg.pose.orientation
             self.cmd_poses.update(side, (p.x, p.y, p.z), (q.x, q.y, q.z, q.w),
                                   time.monotonic())
+
+        def _on_mode_topic(self, mode, msg):
+            if msg.data and self.logic.trigger_modes and self.logic.set_robot_mode(mode):
+                self._changed()
+
+        def _on_onboard(self, msg):
+            try:
+                self.onboard = json.loads(msg.data)
+            except ValueError:
+                return
+            self.onboard_t = time.monotonic()
+
+        def _onboard_walk(self):
+            from g1pilot.teleoperation import status_line   # (importiert dieses Modul)
+            if self.onboard is None or self.onboard_t is None:
+                return False
+            if time.monotonic() - self.onboard_t > status_line.STALE_S:
+                return False
+            return self.onboard.get("fsm") in status_line.WALK_FSM
 
         def _on_start(self, msg):
             if msg.data and self.logic.clear_estop():
@@ -481,6 +591,27 @@ def main(args=None):
                 self.get_logger().info("Options: Arme uebernommen"
                                        + (" (Greifen-Modus)." if self.options_balancing else "."))
                 self._send_feedback(rumble_ms=150)
+            elif kind == "mode":
+                legs_ok = not self.need_onboard_walk or self._onboard_walk()
+                if cmd[1] == "walk":
+                    if not legs_ok:
+                        # Real, G1 nicht im Walk: nicht aufstellen, Modus zuruecknehmen.
+                        self.logic.set_robot_mode(None)
+                        self.get_logger().warn(
+                            "L2: GEHEN gesperrt -- G1 steht nicht im Walk-Modus "
+                            "(erst Startleiste Preparation -> Walk).")
+                        self._send_feedback(rumble_ms=600, strong=1.0, weak=0.0)
+                        return
+                    self.pub_walk.publish(Bool(data=True))
+                    self.get_logger().info("L2: Modus GEHEN (L2 halten = laufen, Arme gesperrt).")
+                    self._send_feedback(rumble_ms=150)
+                else:
+                    if legs_ok:
+                        self.pub_balance.publish(Bool(data=True))
+                    self.pub_enable.publish(Bool(data=True))
+                    self.get_logger().info("R2: Modus GREIFEN (Arme uebernommen"
+                                           + (")." if legs_ok else ", Beine unveraendert)."))
+                    self._send_feedback(rumble_ms=150)
             elif kind == "home":
                 self._hold(("left", "right"))
                 # KEIN Halte-Strom: jedes Ziel braeche die geplante Grundstellung
@@ -505,7 +636,7 @@ def main(args=None):
                 self._send_feedback(rumble_ms=self.logic.full_hold_s * 1000.0 + 300.0,
                                     strong=1.0, weak=1.0, force=True)
                 self.get_logger().warn(
-                    f"R1 + R2 + PS gehalten: VOLL-NOTAUS in {self.logic.full_hold_s:.1f} s "
+                    f"R1 + L1 + PS gehalten: VOLL-NOTAUS in {self.logic.full_hold_s:.1f} s "
                     "(loslassen = Abbruch).")
                 self._publish_status()
             elif kind == "full_abort":
@@ -519,7 +650,7 @@ def main(args=None):
                 self.pub_full_estop.publish(Bool(data=True))
                 self.pub_estop.publish(Bool(data=True))
                 self.get_logger().error(
-                    "VOLL-NOTAUS (R1 + R2 + PS): ganzer G1 in Damp. Quittieren mit "
+                    "VOLL-NOTAUS (R1 + L1 + PS): ganzer G1 in Damp. Quittieren mit "
                     "START, Aufstehen danach nur ueber die Startleiste.")
                 self._send_feedback(rumble_ms=1500, strong=1.0, weak=1.0, force=True)
             elif kind == "changed":
@@ -538,7 +669,7 @@ def main(args=None):
             if stop_rumble:
                 fb["rumble"] = {"ms": 0}
             elif rumble_ms > 0 and (force or not self.logic.full_arming):
-                # Waehrend R1 + R2 + PS gehalten werden, darf keine kurze
+                # Waehrend R1 + L1 + PS gehalten werden, darf keine kurze
                 # Quittungs-Vibration die Halte-Vibration ueberschreiben.
                 fb["rumble"] = {"ms": int(rumble_ms), "strong": strong, "weak": weak}
             self.pub_feedback.publish(String(data=json.dumps(fb)))

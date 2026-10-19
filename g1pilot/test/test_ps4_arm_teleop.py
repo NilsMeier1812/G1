@@ -241,8 +241,8 @@ def test_external_estop_latches_once():
     assert lg.clear_estop() and not lg.estop
 
 
-# ── Voll-Notaus: R1 + R2 + PS halten ──────────────────────────────────────
-COMBO = (L.R1, L.R2, L.PS)
+# ── Voll-Notaus: R1 + L1 + PS halten ──────────────────────────────────────
+COMBO = (L.R1, L.L1, L.PS)
 
 
 def hold_combo(lg, t0, t1, dt=0.02, buttons=COMBO, **axes):
@@ -278,7 +278,7 @@ def test_full_estop_after_two_seconds_hold():
 def test_full_estop_aborts_on_early_release():
     lg = ArmTeleopLogic()
     hold_combo(lg, 0.0, 1.5)
-    a, b = joy([L.R1, L.R2])                                # PS los
+    a, b = joy([L.R1, L.L1])                                # PS los
     assert lg.update(a, b, 1.52) == [("full_abort",)]
     assert not lg.full_arming and not lg.full_estop
     assert lg.estop                                         # PS-NOT-HALT bleibt
@@ -295,13 +295,34 @@ def test_full_estop_needs_all_three(missing):
     assert not any(c[0].startswith("full") for c in out) and not lg.full_estop
 
 
-def test_full_estop_r2_as_trigger_axis():
+def test_full_estop_r2_no_longer_counts():
+    """Bis 2026-10-19 war es R1 + R2 + PS -- R2 (Taste oder Trigger) loest nichts mehr aus."""
     lg = ArmTeleopLogic()
-    out = hold_combo(lg, 0.0, 2.1, buttons=(L.R1, L.PS), R2_AXIS=0.95)
-    assert ("full_estop",) in out
-    lg = ArmTeleopLogic()
-    out = hold_combo(lg, 0.0, 3.0, buttons=(L.R1, L.PS), R2_AXIS=0.5)   # halb gedrueckt
-    assert ("full_estop",) not in out
+    out = hold_combo(lg, 0.0, 3.0, buttons=(L.R1, L.R2, L.PS), R2_AXIS=1.0)
+    assert not any(c[0].startswith("full") for c in out) and not lg.full_estop
+
+
+@pytest.mark.parametrize("first", [(L.L1,), (L.R1,), (L.L1, L.R1)])
+def test_full_estop_speed_step_before_ps_is_undone(first):
+    """L1/R1 vor PS gedrueckt: deren Tempo-Schritt wird beim Scharfwerden zurueckgenommen."""
+    lg = ArmTeleopLogic(speed="Normal")
+    t = 0.0
+    held = []
+    for btn in first:
+        held.append(btn)
+        a, b = joy(held)
+        lg.update(a, b, t)
+        t += 0.02
+    assert lg.speed != "Normal" or first == (L.L1, L.R1)
+    out = hold_combo(lg, t, t + 0.1)
+    assert ("full_arm",) in out and lg.speed == "Normal"
+
+
+def test_speed_step_alone_still_works():
+    lg = ArmTeleopLogic(speed="Normal")
+    assert press(lg, L.L1) == [("changed",)] and lg.speed == "Langsam"
+    hold_combo(lg, 1.0, 1.2, buttons=(L.PS,))               # PS allein: kein Voll-Notaus
+    assert lg.speed == "Langsam" and not lg.full_arming
 
 
 def test_full_estop_gap_in_stream_restarts_hold():
@@ -327,11 +348,11 @@ def test_full_estop_works_while_estop_latched_and_without_ps_estop():
 
 def test_full_estop_combo_blocks_r1_speed_step():
     lg = ArmTeleopLogic(ps_estop=False)                     # nicht durch NOT-HALT gesperrt
-    a, b = joy([L.PS, L.R2])
+    a, b = joy([L.PS, L.L1])
     lg.update(a, b, 0.0)
     a, b = joy(COMBO)                                       # R1 zuletzt
     out = lg.update(a, b, 0.02)
-    assert ("full_arm",) in out and ("changed",) not in out and lg.speed == "Normal"
+    assert ("full_arm",) in out and lg.speed == "Normal"        # L1-Schritt zurueckgenommen, R1 kein Schritt
 
 
 def test_full_estop_disabled_with_zero_hold():
@@ -648,3 +669,89 @@ def test_jog_step_start_pose_only_for_new_target():
     p2, q2 = hj.jog_step([p, q], hand, (0, 0, 0), (0, 0, 0), 0.03, 0.04, 0.3,
                          start=([9, 9, 9], (0, 0, 0, 1)))
     assert p2 == pytest.approx(p) and q2 == pytest.approx(q)
+
+
+
+# ── L2 = Modus GEHEN (Totmann), R2 = Modus GREIFEN ─────────────────────────
+def trig(lg, t, buttons=(), **axes):
+    a, b = joy(buttons, **axes)
+    return lg.update(a, b, t)
+
+
+def test_trigger_modes_off_by_default():
+    lg = ArmTeleopLogic(walk_deadman=True)
+    assert ("mode", "walk") not in trig(lg, 0.0, L2_AXIS=1.0)
+    assert ("mode", "grasp") not in trig(lg, 0.1, R2_AXIS=1.0)
+    assert not lg.arms_locked
+
+
+def test_l2_switches_to_walk_and_locks_arms_after_release():
+    lg = ArmTeleopLogic(walk_deadman=True, trigger_modes=True)
+    out = trig(lg, 0.0, L2_AXIS=1.0)
+    assert ("mode", "walk") in out and ("hold", ("left", "right")) in out
+    assert lg.robot_mode == "walk" and lg.arms_locked
+    assert trig(lg, 0.1, L2_AXIS=1.0) == []                  # gehalten: kein neuer Wechsel
+    trig(lg, 0.2)                                            # L2 los: GEHEN bleibt
+    assert lg.arms_locked and lg.color() == COLORS["walk"] and "GEHEN" in lg.label()
+    assert lg.twist(joy(LY=1.0)[0]) == {}                    # Sticks gesperrt
+    for btn in (L.CIRCLE, L.SQUARE, L.TRIANGLE, L.L1, L.R1, L.DPAD_LEFT):
+        assert press(lg, btn, 1.0) == [], btn
+    assert lg.speed == "Normal" and lg.selection == "right" and lg.mode == "move"
+    t, out = 2.0, []
+    while t < 4.0:                                           # Share halten: keine Grundstellung
+        out += trig(lg, t, [L.SHARE])
+        t += 0.05
+    assert ("home",) not in out
+    assert ("cancel",) in press(lg, L.CROSS, 5.0)            # Stopp geht
+    a, b = joy([L.PS])
+    assert ("estop",) in lg.update(a, b, 6.0)                # NOT-HALT geht
+
+
+def test_l2_again_in_walk_sends_nothing_and_r2_switches_to_grasp():
+    lg = ArmTeleopLogic(walk_deadman=True, trigger_modes=True)
+    trig(lg, 0.0, L2_AXIS=1.0)
+    trig(lg, 0.1)
+    assert ("mode", "walk") not in trig(lg, 0.2, L2_AXIS=1.0)
+    trig(lg, 0.3)
+    out = trig(lg, 0.4, R2_AXIS=1.0)
+    assert ("mode", "grasp") in out and lg.robot_mode == "grasp" and not lg.arms_locked
+    assert trig(lg, 0.5, R2_AXIS=1.0) == []
+    trig(lg, 0.6)
+    assert lg.twist(joy(LY=1.0)[0])                          # Arme wieder frei
+    assert press(lg, L.CIRCLE, 1.0) == [("hand", "right", "open")]
+
+
+def test_trigger_hysteresis_and_buttons():
+    lg = ArmTeleopLogic(trigger_modes=True)
+    assert ("mode", "grasp") not in trig(lg, 0.0, R2_AXIS=0.45)
+    assert ("mode", "grasp") in trig(lg, 0.1, R2_AXIS=0.55)
+    lg.set_robot_mode(None)
+    trig(lg, 0.2, R2_AXIS=0.35)                               # noch gedrueckt (> 0.3)
+    assert ("mode", "grasp") not in trig(lg, 0.3, R2_AXIS=0.6)
+    trig(lg, 0.4, R2_AXIS=0.1)
+    assert ("mode", "grasp") in trig(lg, 0.5, [L.R2])         # R2 als Taste
+    assert ("mode", "walk") in trig(lg, 0.6, [L.L2])          # L2 als Taste
+
+
+def test_options_unlocks_walk_mode():
+    lg = ArmTeleopLogic(walk_deadman=True, trigger_modes=True)
+    trig(lg, 0.0, L2_AXIS=1.0)
+    trig(lg, 0.1)
+    out = press(lg, L.OPTIONS, 1.0)
+    assert ("enable",) in out and not lg.arms_locked
+
+
+def test_external_mode_follows_gui_and_estop_blocks_switch():
+    lg = ArmTeleopLogic(walk_deadman=True, trigger_modes=True)
+    assert lg.set_robot_mode("walk") and lg.arms_locked      # GUI-Kachel GEHEN
+    assert not lg.set_robot_mode("walk")
+    assert lg.set_robot_mode("grasp") and not lg.arms_locked
+    lg.latch_estop()
+    assert trig(lg, 0.0, L2_AXIS=1.0) == [] and lg.robot_mode == "grasp"
+
+
+def test_full_estop_still_works_in_walk_mode():
+    lg = ArmTeleopLogic(walk_deadman=True, trigger_modes=True)
+    trig(lg, 0.0, L2_AXIS=1.0)
+    trig(lg, 0.1)
+    assert ("full_estop",) in hold_combo(lg, 0.2, 2.4)

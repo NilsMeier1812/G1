@@ -24,6 +24,8 @@ def generate_launch_description():
         'ps_estop': ParameterValue(LaunchConfiguration('ps4_ps_estop'), value_type=bool),
         # L2 = Gehen (ps4_walk): Arm-Steuerung pausiert, solange L2 gehalten.
         'walk_deadman': ParameterValue(LaunchConfiguration('ps4_walk'), value_type=bool),
+        # L2 druecken = Modus GEHEN (danach halten = laufen), R2 = GREIFEN.
+        'trigger_modes': ParameterValue(LaunchConfiguration('ps4_walk'), value_type=bool),
     }
     ps4_walk_on = PythonExpression(["'", ps4_arms, "'.lower() == 'true' and '",
                                     LaunchConfiguration('ps4_walk'), "'.lower() == 'true'"])
@@ -76,7 +78,11 @@ def generate_launch_description():
             name='ps4_joystick',
             output='screen',
             parameters=[
-                {'joystick_name': joystick_name}],
+                {'joystick_name': joystick_name,
+                 # PS4 oder Xbox (gleiche Belegung nach Position), siehe
+                 # g1pilot/docs/43_ps4_controller.md#xbox-controller
+                 'controller': os.environ.get('G1_CONTROLLER', 'auto').strip().lower() or 'auto',
+                 'xbox_ps_button': os.environ.get('G1_XBOX_PS_BUTTON', 'xbox').strip().lower() or 'xbox'}],
             condition=IfCondition(ps4_arms),
         ),
 

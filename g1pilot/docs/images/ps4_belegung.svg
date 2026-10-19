@@ -39,8 +39,8 @@
 
   <!-- Beschriftungen links -->
   <g fill="#263238">
-    <text x="20" y="40" font-weight="bold" font-size="16">PS4-Controller → Arme + Hände · Gehen mit L2</text>
-    <text x="20" y="104" font-weight="bold" fill="#e65100">L2 halten</text><text x="100" y="104" fill="#e65100">GEHEN</text>
+    <text x="20" y="40" font-weight="bold" font-size="16">PS4-Controller → Arme + Hände · GEHEN mit L2 · GREIFEN mit R2</text>
+    <text x="20" y="96" font-weight="bold" fill="#e65100">L2 drücken</text><text x="110" y="96" fill="#e65100">Modus GEHEN</text><text x="20" y="112" font-weight="bold" fill="#e65100">L2 halten</text><text x="110" y="112" fill="#e65100">laufen</text><text x="700" y="104" font-weight="bold" fill="#2e7d32">R2</text><text x="728" y="104" fill="#2e7d32">Modus GREIFEN</text>
     <text x="20" y="128" font-weight="bold">L1</text><text x="50" y="128">Tempo langsamer</text>
     <text x="20" y="175" font-weight="bold">Steuerkreuz</text>
     <text x="20" y="193">◀ links · ▶ rechts</text>
@@ -60,13 +60,14 @@
     <text x="520" y="440" font-weight="bold">Rechter Stick</text>
     <text x="520" y="458">Verschieben: hoch/runter · Drehen: rollen</text>
     <text x="395" y="330" font-weight="bold" fill="#c62828">PS: NOT-HALT</text>
+    <text x="450" y="350" text-anchor="middle" font-size="12" fill="#c62828">R1 + L1 + PS 2 s halten (vibriert): VOLL-NOTAUS</text>
   </g>
   <!-- Gehen (L2 gehalten) -->
   <rect x="15" y="482" width="870" height="66" rx="8" fill="#fff3e0" stroke="#e65100"/>
   <g fill="#263238">
-    <text x="28" y="504" font-weight="bold" fill="#e65100">L2 gehalten = GEHEN (Deadman, nur im Walk-Modus)</text>
+    <text x="28" y="504" font-weight="bold" fill="#e65100">L2 drücken = Modus GEHEN · L2 gehalten = laufen (Totmann, nur im Walk-Modus) · R2 drücken = GREIFEN</text>
     <text x="28" y="524"><tspan font-weight="bold">Linker Stick</tspan> vor/zurück + seitlich · <tspan font-weight="bold">Rechter Stick</tspan> drehen · <tspan font-weight="bold">▲ / ▼</tspan> Geh-Tempo schneller / langsamer</text>
-    <text x="28" y="542">Arme halten solange ihre Lage · <tspan font-weight="bold">L2 loslassen = sofort Stopp</tspan> · Start-Tempo Langsam</text>
+    <text x="28" y="542"><tspan font-weight="bold">L2 loslassen = sofort Stopp</tspan>, GEHEN bleibt: Arme am Controller gesperrt (LED orange) bis R2</text>
   </g>
   <line x1="450" y1="274" x2="450" y2="316" stroke="#c62828"/>
   <line x1="350" y1="305" x2="200" y2="425" stroke="#90a4ae"/>

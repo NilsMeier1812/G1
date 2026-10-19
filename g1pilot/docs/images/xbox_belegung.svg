@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 585" font-family="Helvetica, Arial, sans-serif" font-size="14">
+  <rect width="900" height="585" fill="#ffffff"/>
+  <!-- Gehaeuse (Xbox: linker Stick oben, Steuerkreuz unten) -->
+  <path d="M250 150 Q450 125 650 150 Q725 162 745 245 L775 365 Q785 418 738 422 Q700 424 668 372 L622 310 L278 310 L232 372 Q200 424 162 422 Q115 418 125 365 L155 245 Q175 162 250 150 Z"
+        fill="#d6ecfa" stroke="#1565c0" stroke-width="2"/>
+  <!-- Schultertasten / Trigger -->
+  <rect x="215" y="94" width="90" height="20" rx="8" fill="#ffe0b2" stroke="#e65100"/>
+  <text x="260" y="109" text-anchor="middle" font-weight="bold" fill="#e65100">LT</text>
+  <rect x="595" y="94" width="90" height="20" rx="8" fill="#cfd8dc" stroke="#37474f"/>
+  <text x="640" y="109" text-anchor="middle" font-weight="bold">RT</text>
+  <rect x="215" y="118" width="90" height="22" rx="8" fill="#cfd8dc" stroke="#37474f"/>
+  <text x="260" y="134" text-anchor="middle" font-weight="bold">LB</text>
+  <rect x="595" y="118" width="90" height="22" rx="8" fill="#cfd8dc" stroke="#37474f"/>
+  <text x="640" y="134" text-anchor="middle" font-weight="bold">RB</text>
+  <!-- Linker Stick (oben) -->
+  <circle cx="262" cy="212" r="30" fill="#455a64"/><circle cx="262" cy="212" r="18" fill="#607d8b"/>
+  <!-- Steuerkreuz (unten links) -->
+  <g transform="translate(355,278)" stroke="#37474f">
+    <rect x="-12" y="-38" width="24" height="26" fill="#1565c0" opacity="0.15"/>
+    <rect x="-12" y="12" width="24" height="26" fill="#1565c0" opacity="0.15"/>
+    <rect x="-38" y="-12" width="26" height="24" fill="#1565c0" opacity="0.15"/>
+    <rect x="12" y="-12" width="26" height="24" fill="#1565c0" opacity="0.15"/>
+  </g>
+  <text x="355" y="251" text-anchor="middle" font-size="12">▲</text>
+  <text x="355" y="314" text-anchor="middle" font-size="12">▼</text>
+  <text x="329" y="283" text-anchor="middle" font-size="12">◀</text>
+  <text x="381" y="283" text-anchor="middle" font-size="12">▶</text>
+  <!-- ABXY (Y oben, X links, B rechts, A unten) -->
+  <circle cx="640" cy="180" r="15" fill="#fff" stroke="#37474f"/><text x="640" y="185" text-anchor="middle" font-weight="bold" fill="#f9a825">Y</text>
+  <circle cx="672" cy="210" r="15" fill="#fff" stroke="#37474f"/><text x="672" y="215" text-anchor="middle" font-weight="bold" fill="#c62828">B</text>
+  <circle cx="608" cy="210" r="15" fill="#fff" stroke="#37474f"/><text x="608" y="215" text-anchor="middle" font-weight="bold" fill="#1565c0">X</text>
+  <circle cx="640" cy="240" r="15" fill="#fff" stroke="#37474f"/><text x="640" y="245" text-anchor="middle" font-weight="bold" fill="#2e7d32">A</text>
+  <!-- Mitte: Xbox-Taste oben, View / Share / Menu darunter -->
+  <circle cx="450" cy="168" r="17" fill="#263238"/><text x="450" y="172" text-anchor="middle" fill="#fff" font-size="10">Xbox</text>
+  <rect x="400" y="203" width="26" height="14" rx="5" fill="#cfd8dc" stroke="#37474f"/>
+  <rect x="474" y="203" width="26" height="14" rx="5" fill="#cfd8dc" stroke="#37474f"/>
+  <rect x="440" y="228" width="20" height="10" rx="4" fill="#eceff1" stroke="#90a4ae"/>
+  <!-- Rechter Stick (unten rechts) -->
+  <circle cx="545" cy="278" r="30" fill="#455a64"/><circle cx="545" cy="278" r="18" fill="#607d8b"/>
+
+  <!-- Beschriftungen links -->
+  <g fill="#263238">
+    <text x="20" y="40" font-weight="bold" font-size="16">Xbox-Controller → gleiche Funktionen wie PS4 (Zuordnung nach Position)</text>
+    <text x="20" y="96" font-weight="bold" fill="#e65100">LT drücken</text><text x="110" y="96" fill="#e65100">Modus GEHEN</text><text x="20" y="112" font-weight="bold" fill="#e65100">LT halten</text><text x="110" y="112" fill="#e65100">laufen</text><text x="700" y="104" font-weight="bold" fill="#2e7d32">RT</text><text x="728" y="104" fill="#2e7d32">Modus GREIFEN</text>
+    <text x="20" y="128" font-weight="bold">LB</text><text x="50" y="128">Tempo langsamer</text>
+    <text x="20" y="428" font-weight="bold">Linker Stick</text>
+    <text x="20" y="446">Verschieben: vor/zurück + links/rechts</text>
+    <text x="20" y="464">Drehen: kippen + schwenken</text>
+    <text x="320" y="428" font-weight="bold">Steuerkreuz</text>
+    <text x="320" y="446">◀ links · ▶ rechts</text>
+    <text x="320" y="464">▲ beide · ▼ gespiegelt</text>
+    <text x="430" y="78" text-anchor="end" font-weight="bold" font-size="12">View (1 s halten): Grundstellung</text>
+  </g>
+  <!-- Beschriftungen rechts -->
+  <g fill="#263238">
+    <text x="700" y="128" font-weight="bold">RB</text><text x="728" y="128">Tempo schneller</text>
+    <text x="700" y="178"><tspan font-weight="bold" fill="#f9a825">Y</tspan> Verschieben ↔ Drehen</text>
+    <text x="700" y="203"><tspan font-weight="bold" fill="#c62828">B</tspan> Hand öffnen</text>
+    <text x="700" y="228"><tspan font-weight="bold" fill="#1565c0">X</tspan> Hand schließen</text>
+    <text x="700" y="253"><tspan font-weight="bold" fill="#2e7d32">A</tspan> Stopp</text>
+    <text x="470" y="78" text-anchor="start" font-weight="bold" font-size="12">Menu: Arme übernehmen</text>
+    <text x="580" y="428" font-weight="bold">Rechter Stick</text>
+    <text x="580" y="446">Verschieben: hoch/runter</text>
+    <text x="580" y="464">Drehen: rollen</text>
+    <text x="450" y="352" text-anchor="middle" font-weight="bold" fill="#c62828">Xbox-Taste: NOT-HALT (Oberkörper)</text>
+    <text x="450" y="370" text-anchor="middle" font-size="12" fill="#c62828">RB + LB + Xbox 2 s halten (vibriert): VOLL-NOTAUS</text>
+  </g>
+  <!-- Gehen (LT gehalten) -->
+  <rect x="15" y="484" width="870" height="66" rx="8" fill="#fff3e0" stroke="#e65100"/>
+  <g fill="#263238">
+    <text x="28" y="504" font-weight="bold" fill="#e65100">LT drücken = Modus GEHEN · LT gehalten = laufen (Totmann, nur im Walk-Modus) · RT drücken = GREIFEN</text>
+    <text x="28" y="524"><tspan font-weight="bold">Linker Stick</tspan> vor/zurück + seitlich · <tspan font-weight="bold">Rechter Stick</tspan> drehen · <tspan font-weight="bold">▲ / ▼</tspan> Geh-Tempo schneller / langsamer</text>
+    <text x="28" y="542"><tspan font-weight="bold">LT loslassen = sofort Stopp</tspan>, GEHEN bleibt: Arme am Controller gesperrt (LED orange) bis RT</text>
+  </g>
+  <text x="20" y="572" font-size="12" fill="#546e7a">Falls die Xbox-Taste nicht ankommt: G1_XBOX_PS_BUTTON=view → View = NOT-HALT, Share-Taste (Mitte) = Grundstellung.</text>
+  <line x1="450" y1="185" x2="450" y2="336" stroke="#c62828"/>
+  <line x1="250" y1="241" x2="120" y2="414" stroke="#90a4ae"/>
+  <line x1="355" y1="316" x2="360" y2="414" stroke="#90a4ae"/>
+  <line x1="555" y1="307" x2="610" y2="414" stroke="#90a4ae"/>
+  <line x1="413" y1="83" x2="413" y2="203" stroke="#90a4ae"/>
+  <line x1="487" y1="83" x2="487" y2="203" stroke="#90a4ae"/>
+</svg>
