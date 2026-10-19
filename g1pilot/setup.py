@@ -103,6 +103,7 @@ setup(
             # Siehe g1pilot/docs/43_ps4_controller.md, Start via G1_PS4_ARMS=1.
             'ps4_joystick = g1pilot.teleoperation.ps4_joystick:main',
             'ps4_arm_teleop = g1pilot.teleoperation.ps4_arm_teleop:main',
+            'ps4_walk = g1pilot.teleoperation.ps4_walk:main',
 
             # Navigation Nodes
             'loco_client = g1pilot.navigation.loco_client:main',

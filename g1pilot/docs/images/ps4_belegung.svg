@@ -1,9 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 470" font-family="Helvetica, Arial, sans-serif" font-size="14">
-  <rect width="900" height="470" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 560" font-family="Helvetica, Arial, sans-serif" font-size="14">
+  <rect width="900" height="560" fill="#ffffff"/>
   <!-- Gehaeuse -->
   <path d="M250 150 Q450 120 650 150 Q720 160 740 240 L770 360 Q780 410 735 415 Q700 418 670 370 L620 300 L280 300 L230 370 Q200 418 165 415 Q120 410 130 360 L160 240 Q180 160 250 150 Z"
         fill="#eceff1" stroke="#37474f" stroke-width="2"/>
-  <!-- Schultertasten -->
+  <!-- Schultertasten (L2/R2 = Trigger dahinter) -->
+  <rect x="215" y="94" width="90" height="20" rx="8" fill="#ffe0b2" stroke="#e65100"/>
+  <text x="260" y="109" text-anchor="middle" font-weight="bold" fill="#e65100">L2</text>
+  <rect x="595" y="94" width="90" height="20" rx="8" fill="#cfd8dc" stroke="#37474f"/>
+  <text x="640" y="109" text-anchor="middle" font-weight="bold">R2</text>
   <rect x="215" y="118" width="90" height="22" rx="8" fill="#cfd8dc" stroke="#37474f"/>
   <text x="260" y="134" text-anchor="middle" font-weight="bold">L1</text>
   <rect x="595" y="118" width="90" height="22" rx="8" fill="#cfd8dc" stroke="#37474f"/>
@@ -35,30 +39,38 @@
 
   <!-- Beschriftungen links -->
   <g fill="#263238">
-    <text x="20" y="40" font-weight="bold" font-size="16">PS4-Controller → Arme + Hände (kein Laufen)</text>
+    <text x="20" y="40" font-weight="bold" font-size="16">PS4-Controller → Arme + Hände · Gehen mit L2</text>
+    <text x="20" y="104" font-weight="bold" fill="#e65100">L2 halten</text><text x="100" y="104" fill="#e65100">GEHEN</text>
     <text x="20" y="128" font-weight="bold">L1</text><text x="50" y="128">Tempo langsamer</text>
     <text x="20" y="175" font-weight="bold">Steuerkreuz</text>
     <text x="20" y="193">◀ links · ▶ rechts</text>
     <text x="20" y="211">▲ beide · ▼ gespiegelt</text>
     <text x="20" y="440" font-weight="bold">Linker Stick</text>
     <text x="20" y="458">Verschieben: vor/zurück + links/rechts · Drehen: kippen + schwenken</text>
-    <text x="362" y="92" text-anchor="middle" font-weight="bold" font-size="12">Share (1 s halten): Grundstellung</text>
+    <text x="362" y="78" text-anchor="middle" font-weight="bold" font-size="12">Share (1 s halten): Grundstellung</text>
   </g>
   <!-- Beschriftungen rechts -->
   <g fill="#263238">
     <text x="700" y="128" font-weight="bold">R1</text><text x="725" y="128">Tempo schneller</text>
     <text x="700" y="178"><tspan font-weight="bold">△</tspan> Verschieben ↔ Drehen</text>
     <text x="700" y="203"><tspan font-weight="bold">○</tspan> Hand öffnen</text>
-    <text x="538" y="92" text-anchor="middle" font-weight="bold" font-size="12">Options: Arme übernehmen</text>
+    <text x="538" y="78" text-anchor="middle" font-weight="bold" font-size="12">Options: Arme übernehmen</text>
     <text x="700" y="228"><tspan font-weight="bold">□</tspan> Hand schließen</text>
     <text x="700" y="253"><tspan font-weight="bold">✕</tspan> Stopp</text>
     <text x="520" y="440" font-weight="bold">Rechter Stick</text>
     <text x="520" y="458">Verschieben: hoch/runter · Drehen: rollen</text>
     <text x="395" y="330" font-weight="bold" fill="#c62828">PS: NOT-HALT</text>
   </g>
+  <!-- Gehen (L2 gehalten) -->
+  <rect x="15" y="482" width="870" height="66" rx="8" fill="#fff3e0" stroke="#e65100"/>
+  <g fill="#263238">
+    <text x="28" y="504" font-weight="bold" fill="#e65100">L2 gehalten = GEHEN (Deadman, nur im Walk-Modus)</text>
+    <text x="28" y="524"><tspan font-weight="bold">Linker Stick</tspan> vor/zurück + seitlich · <tspan font-weight="bold">Rechter Stick</tspan> drehen · <tspan font-weight="bold">▲ / ▼</tspan> Geh-Tempo schneller / langsamer</text>
+    <text x="28" y="542">Arme halten solange ihre Lage · <tspan font-weight="bold">L2 loslassen = sofort Stopp</tspan> · Start-Tempo Langsam</text>
+  </g>
   <line x1="450" y1="274" x2="450" y2="316" stroke="#c62828"/>
   <line x1="350" y1="305" x2="200" y2="425" stroke="#90a4ae"/>
   <line x1="550" y1="305" x2="600" y2="425" stroke="#90a4ae"/>
-  <line x1="362" y1="97" x2="362" y2="166" stroke="#90a4ae"/>
-  <line x1="538" y1="97" x2="538" y2="166" stroke="#90a4ae"/>
+  <line x1="362" y1="83" x2="362" y2="166" stroke="#90a4ae"/>
+  <line x1="538" y1="83" x2="538" y2="166" stroke="#90a4ae"/>
 </svg>

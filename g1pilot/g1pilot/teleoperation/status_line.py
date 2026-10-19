@@ -115,6 +115,8 @@ PS4_HELP = (
     ("Kreuz", "STOPP: Hand hält sofort an, Bewegung abbrechen"),
     ("Options", "Arme übernehmen"),
     ("Share (1 s halten)", "Grundstellung"),
+    ("L2 halten", "GEHEN: linker Stick vor/seitlich, rechter Stick drehen, "
+                  "▲/▼ Geh-Tempo (nur im Walk-Modus)"),
     ("PS", "NOT-HALT"),
 )
 
