@@ -318,6 +318,17 @@ Seit 2026-10-16 (Review des Real-Ablaufs):
   weiter), `joy_mux` gibt nur noch frische Eingänge weiter → `loco_client`
   stoppt nach 0,5 s.
 
+Seit 2026-10-19:
+
+- **Walk = FSM 501 („Walk with waist")** statt 500. Startleiste »Walk«, LAUFEN
+  und GREIFEN aus Preparation senden `BalanceStand` + `SetFsmId(501)`
+  (Parameter `start_fsm_id`, Env `G1_WALK_FSM_ID`; `G1_WALK_FSM_ID=500` = alter
+  Walk mit fester Taille). Info-Zeile: „G1: Walk mit Taille (FSM 501)".
+- **G1 steht per Handy-App in 500:** wird wie bisher als Walk übernommen
+  (GEHEN geht). Die Info-Zeile zeigt „»Walk« schaltet auf FSM 501"; ein
+  Doppelklick auf **Walk** wechselt dann nur den Walk-Modus (StopMove vorher,
+  kein Preparation dazwischen). LAUFEN/GREIFEN schalten nicht implizit um.
+
 ## Fehlerbehebung
 
 | Symptom | Ursache / Fix |

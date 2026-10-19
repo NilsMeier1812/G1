@@ -190,6 +190,8 @@ services:
       - G1_ESTOP_DAMP_LEGS=${G1_ESTOP_DAMP_LEGS:-0}
       # Loco-RPC-Dienst (Unitree: 'loco' bis ai_sport 8.1, 'sport' ab 8.2).
       - G1_LOCO_SERVICE=${G1_LOCO_SERVICE:-sport}
+      # Walk-Modus beim Start (Startleiste/LAUFEN): 501 = Walk with waist, 500 = Walk.
+      - G1_WALK_FSM_ID=${G1_WALK_FSM_ID:-501}
       # Konservative Walk-Limits fuer die ersten Tests (loco_client skaliert
       # die normierten UI-/PS4-Kommandos damit).
       - G1_MAX_VX=${G1_MAX_VX:-0.4}
