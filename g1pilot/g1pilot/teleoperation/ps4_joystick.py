@@ -42,10 +42,13 @@ import time
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, DurabilityPolicy
 from sensor_msgs.msg import Joy
 from std_msgs.msg import String
 
 from g1pilot.teleoperation import ps4_layout as L
+
+DEVICE_TOPIC = "/g1pilot/ps4/device"   # {"kind": "ps4"|"xbox"|null, "name": ...}
 
 try:
     import evdev
@@ -84,6 +87,11 @@ class Ps4Joystick(Node):
         self.stall_s = float(self.get_parameter("stall_timeout_s").value)
 
         self.pub = self.create_publisher(Joy, self.get_parameter("topic").value, 10)
+        # Welcher Controller ist verbunden? (Anzeige in der Demo-GUI, latched)
+        latched = QoSProfile(depth=1)
+        latched.durability = DurabilityPolicy.TRANSIENT_LOCAL
+        self.pub_device = self.create_publisher(String, DEVICE_TOPIC, latched)
+        self._publish_device(None, None)
         self.create_subscription(String, "/g1pilot/ps4/feedback", self._on_feedback, 10)
 
         self.lock = threading.Lock()
@@ -108,6 +116,9 @@ class Ps4Joystick(Node):
         self.thread = threading.Thread(target=self._reader, daemon=True)
         self.thread.start()
         self.create_timer(1.0 / float(self.get_parameter("publish_rate").value), self._publish)
+
+    def _publish_device(self, kind, name):
+        self.pub_device.publish(String(data=json.dumps({"kind": kind, "name": name})))
 
     # ── Geraet finden / lesen ──────────────────────────────────────────
     @staticmethod
@@ -339,6 +350,7 @@ class Ps4Joystick(Node):
                 extra = (f" -- NOT-HALT-Taste: {'View' if self.xbox_ps == 'view' else 'Xbox'}"
                          + (", Bluetooth ohne xpadneo" if state.generic_bt else ""))
             self.get_logger().info(f"{label}-Controller verbunden: {dev.name} ({dev.path}){extra}")
+            self._publish_device(kind, dev.name)
             if self._rgb is not None:
                 self._set_led(self._rgb)
             try:
@@ -350,6 +362,7 @@ class Ps4Joystick(Node):
                             self._alive_t = time.monotonic()
             except OSError as e:
                 self.get_logger().warn(f"{label}-Controller getrennt ({e}). Warte auf Wiederverbindung ...")
+            self._publish_device(None, None)
             with self.lock:
                 self.device = None
                 self.kind = None

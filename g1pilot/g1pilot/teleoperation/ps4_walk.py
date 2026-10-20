@@ -25,11 +25,15 @@ NOT-HALT (PS bzw. von GUI/Streamdeck) sperrt das Gehen bis START.
 
 Rueckmeldung: /g1pilot/ps4/walk_status (JSON) + Vibration ueber
 /g1pilot/ps4/feedback (ohne LED-Farbe -- die LED gehoert ps4_arm_teleop).
+Geh-Tempo im gemeinsamen Zustand mit der Demo-GUI (/g1pilot/teleop_state,
+shared_state.py): Stufe am Controller -> GUI zeigt sie, Stufe in der GUI ->
+gilt auch fuer L2 (auf max_speed begrenzt).
 """
 import json
 import time
 
 from g1pilot.teleoperation import ps4_layout as L
+from g1pilot.teleoperation import shared_state
 
 WALK_SPEED_ORDER = ("Langsam", "Normal", "Schnell")
 # Anteil der loco_client-Limits (max_vx/max_vy/max_vyaw) je Stufe.
@@ -82,6 +86,15 @@ class WalkLogic:
     @property
     def speed(self):
         return WALK_SPEED_ORDER[self.speed_idx]
+
+    def set_speed(self, name):
+        """Geh-Tempo von aussen (GUI), auf max_speed begrenzt. -> geaendert?"""
+        if name not in WALK_SPEED_ORDER:
+            return False
+        idx = min(WALK_SPEED_ORDER.index(name), self.max_idx)
+        changed = idx != self.speed_idx
+        self.speed_idx = idx
+        return changed
 
     def status(self):
         return {"active": self.active, "speed": self.speed, "estop": self.estop,
@@ -193,6 +206,12 @@ def main(args=None):
             self.create_subscription(String, "/g1pilot/loco_state", self._on_loco_state,
                                      latched)
             self.create_timer(1.0 / float(gp("rate_hz")), self._tick)
+            # Gemeinsamer Zustand mit der Demo-GUI: Start-Tempo gilt ab Node-Start.
+            self.shared = shared_state.SharedState("ps4_walk")
+            self.shared.set("walk_speed", self.logic.speed)
+            self.pub_shared = self.create_publisher(String, shared_state.TOPIC, latched)
+            self.create_subscription(String, shared_state.TOPIC, self._on_shared, latched)
+            self.pub_shared.publish(String(data=self.shared.to_json()))
             self._publish_status()
             self.get_logger().info(
                 f"PS4-Gehen bereit: L2 halten = Gehen, Tempo {self.logic.speed} "
@@ -214,6 +233,12 @@ def main(args=None):
         def _on_start(self, msg):
             if msg.data and self.logic.clear_estop():
                 self.get_logger().info("NOT-HALT quittiert -- Gehen wieder frei.")
+                self._publish_status()
+
+        def _on_shared(self, msg):
+            ch = self.shared.merge(msg.data)
+            if "walk_speed" in ch and self.logic.set_speed(ch["walk_speed"]):
+                self.get_logger().info(f"Geh-Tempo von der GUI: {self.logic.speed}")
                 self._publish_status()
 
         def _on_onboard(self, msg):
@@ -241,6 +266,8 @@ def main(args=None):
                 self.get_logger().info("Gehen: Stopp (L2 los).")
             elif kind == "speed":
                 self.get_logger().info(f"Geh-Tempo: {self.logic.speed}")
+                if self.shared.set("walk_speed", self.logic.speed):
+                    self.pub_shared.publish(String(data=self.shared.to_json()))
                 self._rumble(60 + 80 * self.logic.speed_idx, strong=0.0, weak=0.6)
             elif kind == "estop":
                 self._send(0.0, 0.0, 0.0)

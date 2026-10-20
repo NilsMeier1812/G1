@@ -21,6 +21,12 @@ Streamdeck-Kacheln gibt es drei klar getrennte Bereiche:
                                              Browser-GUIs der Hand-Bridge).
   3) STATUS (unten)    : was der Roboter gerade tut + immer sichtbarer NOT-HALT.
 
+Controller (PS4/Xbox) und GUI teilen EINEN Bedienzustand (shared_state.py,
+/g1pilot/teleop_state): Modus-Kacheln, Hand-Auswahl, Tempo »Hand bewegen«
+und Geh-Tempo folgen dem Controller und umgekehrt. Die Info-Zeile zeigt
+dazu, was am Controller gerade passiert (Gehen mit L2, Arm-Sperre,
+NOT-HALT, welcher Controller verbunden ist).
+
 Die GUI publiziert auf DIESELBEN Topics wie ui_interface.py (Streamdeck) --
 die Logik bleibt in loco_sim/loco_client/arm_controller. Beide GUIs NICHT
 gleichzeitig starten (doppelter Auto-Start). Auswahl ueber G1_GUI=demo,
@@ -62,6 +68,9 @@ from g1pilot.teleoperation.ui_interface import (
 )
 from g1pilot.teleoperation.hand_panel import HandPanel
 from g1pilot.teleoperation import status_line
+from g1pilot.teleoperation import shared_state
+from g1pilot.teleoperation.ps4_arm_teleop import mirror_twist
+from g1pilot.teleoperation.ps4_joystick import DEVICE_TOPIC
 from g1pilot.teleoperation.hand_jog import (
     JOG_FRAME, JOG_TF, JOG_SPEEDS, JOG_CMD_TOPIC, CommandedPoses, HoldStreamer, hold_pose,
     lead_limits, jog_step,
@@ -77,6 +86,10 @@ MODE_TITLE = {WALK: "GEHEN", MANIP: "GREIFEN"}
 # Geschwindigkeitsstufen (normiert, loco_sim skaliert mit max_cmd ~0.8 m/s).
 # Fuer Vorfuehrungen bewusst gedeckelt -- "Normal" ist nicht Vollgas.
 SPEEDS = {"Langsam": 0.3, "Normal": 0.6}
+# Geh-Tempo ist mit dem Controller geteilt (Langsam/Normal/Schnell). »Schnell«
+# gibt es nur am Controller (L2 + ▲): die GUI zeigt es an, geht selbst aber
+# hoechstens mit »Normal«.
+WALK_GUI_MAX = "Normal"
 
 # Vorgeschlagene Kategorie im Dialog »Pose speichern« (auch demo_sequence.py).
 DEMO_CATEGORY = os.environ.get("G1_DEMO_CATEGORY", "Demo")
@@ -103,7 +116,13 @@ NAV_DONE_COLOR = "#66bb6a"
 # RViz-Marker; der arm_controller loest per IK (inkl. Kollisions-Gate). Tempo,
 # Vorlauf und Jog-Mathematik teilt sich die GUI mit dem PS4-Controller
 # (teleoperation/hand_jog.py).
-JOG_SIDES = {"Links": ("left",), "Rechts": ("right",), "Beide": ("left", "right")}
+# »Gespiegelt« wie Steuerkreuz ▼ am Controller: beide Haende, die linke
+# spiegelbildlich zur rechten (ps4_arm_teleop.mirror_twist).
+JOG_SIDES = {"Links": ("left",), "Rechts": ("right",), "Beide": ("left", "right"),
+             "Gespiegelt": ("left", "right")}
+# GUI-Name <-> Auswahl im gemeinsamen Zustand (= ps4_arm_teleop.SELECTIONS)
+JOG_SIDE_KEY = {"Links": "left", "Rechts": "right", "Beide": "both", "Gespiegelt": "mirror"}
+JOG_SIDE_NAME = {v: k for k, v in JOG_SIDE_KEY.items()}
 
 # »Sim beenden«: Trigger-Datei im bind-gemounteten Repo (docker-compose:
 # .:/ros2_ws/src/g1pilot). Der Host-Watcher docker/sim_shutdown_watcher.sh
@@ -165,6 +184,21 @@ class DemoNode(StreamDeck):
                                  lambda m: self._latched_json("onboard", m), qos_latched)
         self.create_subscription(String, "/g1pilot/ps4/status",
                                  lambda m: self._latched_json("ps4", m), qos_latched)
+        # Gehen am Controller (ps4_walk: L2 gehalten, Geh-Tempo) und welcher
+        # Controller verbunden ist (ps4_joystick). Beide nur bei Aenderung.
+        self.ps4walk = self.ps4walk_t = None
+        self.ps4dev = self.ps4dev_t = None
+        self.create_subscription(String, "/g1pilot/ps4/walk_status",
+                                 lambda m: self._latched_json("ps4walk", m), qos_latched)
+        self.create_subscription(String, DEVICE_TOPIC,
+                                 lambda m: self._latched_json("ps4dev", m), qos_latched)
+        # Gemeinsamer Bedienzustand mit dem Controller (shared_state.py).
+        # on_shared(Aenderungen) wird fuer Wechsel von aussen gerufen.
+        self.t_start_wall = time.time()
+        self.shared = shared_state.SharedState("demo_gui")
+        self.on_shared = None
+        self.pub_shared = self.create_publisher(String, shared_state.TOPIC, qos_latched)
+        self.create_subscription(String, shared_state.TOPIC, self._on_shared, qos_latched)
         # Stations-Ziele aus der Szene (station_<Name>, siehe scene_bridge.py):
         # name -> (x, y, yaw). on_stations wird nur bei Aenderung gerufen.
         self.stations = {}
@@ -256,6 +290,16 @@ class DemoNode(StreamDeck):
         msg.pose.orientation.z = math.sin(yaw / 2.0)
         msg.pose.orientation.w = math.cos(yaw / 2.0)
         self.pub_goal.publish(msg)
+
+    def share(self, field, value, stamp=None):
+        """Eigene Einstellung in den gemeinsamen Zustand (Controller zieht nach)."""
+        if self.shared.set(field, value, stamp):
+            self.pub_shared.publish(String(data=self.shared.to_json()))
+
+    def _on_shared(self, msg: String):
+        ch = self.shared.merge(msg.data)
+        if ch and self.on_shared:
+            self.on_shared(ch)
 
     def _latched_json(self, key, msg: String):
         data = status_line.parse(msg.data)
@@ -515,7 +559,10 @@ class ArmJogPanel(QWidget):
         opts = QVBoxLayout()
         opts.setSpacing(6)
         opts.addWidget(WalkPanel._caption("Arm"))
-        self.side_btns = self._choice_row(opts, JOG_SIDES, self.set_side)
+        # on_change(feld, wert): Auswahl in der GUI geaendert -> gemeinsamer Zustand
+        self.on_change = None
+        self.side_btns = self._choice_row(opts, list(JOG_SIDES)[:2], self.set_side)
+        self.side_btns.update(self._choice_row(opts, list(JOG_SIDES)[2:], self.set_side))
         opts.addSpacing(8)
         opts.addWidget(WalkPanel._caption("Tempo"))
         self.speed_btns = self._choice_row(opts, JOG_SPEEDS, self.set_speed)
@@ -562,7 +609,7 @@ class ArmJogPanel(QWidget):
         for name in choices:
             b = big_button(name, font=15, height=44)
             b.setCheckable(True)
-            b.setFixedWidth(92)
+            b.setFixedWidth(118)
             b.clicked.connect(lambda _, n=name: on_pick(n))
             row.addWidget(b)
             btns[name] = b
@@ -570,18 +617,29 @@ class ArmJogPanel(QWidget):
         parent.addLayout(row)
         return btns
 
-    def set_side(self, name):
+    def set_side(self, name, notify=True):
         self.side = name
         for n, b in self.side_btns.items():
             b.setChecked(n == name)
+        if notify and self.on_change:
+            self.on_change("arm_side", JOG_SIDE_KEY[name])
 
-    def set_speed(self, name):
+    def set_speed(self, name, notify=True):
+        self.speed_name = name
         self.lin_speed, self.ang_speed = JOG_SPEEDS[name]
         for n, b in self.speed_btns.items():
             b.setChecked(n == name)
+        if notify and self.on_change:
+            self.on_change("arm_speed", name)
 
     def sides(self):
         return JOG_SIDES[self.side]
+
+    def side_twist(self, side, lin, ang):
+        """Sollbewegung je Hand: bei »Gespiegelt« die linke spiegelbildlich."""
+        if self.side == "Gespiegelt" and side == "left":
+            return mirror_twist(lin, ang)
+        return lin, ang
 
     def twist(self):
         m, t = self.move_stick, self.turn_stick
@@ -608,6 +666,8 @@ class WalkPanel(QWidget):
         super().__init__()
         self.held = set()        # gerade gehaltene Pfeiltasten
         self.speed = SPEEDS["Langsam"]
+        self.speed_name = "Langsam"
+        self.on_change = None    # on_change("walk_speed", stufe) -> gemeinsamer Zustand
 
         outer = QVBoxLayout(self)
         outer.setSpacing(14)
@@ -650,10 +710,21 @@ class WalkPanel(QWidget):
         right = QVBoxLayout()
         right.addWidget(self._caption("Tempo"))
         self.speed_btns = {}
-        for name, val in SPEEDS.items():
-            b = big_button(name, height=70)
+        for name in shared_state.SPEED_ORDER:
+            gui = name in SPEEDS
+            b = big_button(name if gui else f"{name}\n(Controller)", font=20 if gui else 15,
+                           height=70)
             b.setCheckable(True)
-            b.clicked.connect(lambda _, n=name: self.set_speed(n))
+            if gui:
+                b.clicked.connect(lambda _, n=name: self.set_speed(n))
+            else:
+                # Nur Anzeige: am Controller gewaehlt (L2 + ▲), in der GUI gesperrt.
+                b.setEnabled(False)
+                b.setToolTip("Nur am Controller wählbar (L2 halten + ▲). "
+                             f"Die GUI selbst geht dann mit »{WALK_GUI_MAX}«.")
+                b.setStyleSheet(b.styleSheet() + """
+                    QPushButton:checked:disabled { background:#1b3a1c; color:#ccc;
+                                                   border:2px dashed #80ff80; }""")
             right.addWidget(b)
             self.speed_btns[name] = b
         right.addStretch(1)
@@ -727,10 +798,16 @@ class WalkPanel(QWidget):
             else:
                 b.setStyleSheet(b.default_css)
 
-    def set_speed(self, name):
-        self.speed = SPEEDS[name]
+    def set_speed(self, name, notify=True):
+        """Stufe Langsam/Normal/Schnell; die GUI selbst geht hoechstens WALK_GUI_MAX."""
+        if name not in self.speed_btns:
+            return
+        self.speed_name = name
+        self.speed = SPEEDS[shared_state.capped(name, WALK_GUI_MAX)]
         for n, b in self.speed_btns.items():
             b.setChecked(n == name)
+        if notify and self.on_change:
+            self.on_change("walk_speed", name)
 
     def velocity(self):
         h = self.held
@@ -936,7 +1013,7 @@ class DemoGUI(QWidget):
         self._nav_planning = False  # Station geklickt, Pfad noch nicht da
         self._nav_req = 0           # verwirft veraltete Planungs-Timeouts
         self._jog_targets = {}      # side -> [pos, rot]: laufendes Hand-Ziel
-        self._jog_twist = ((0.0,) * 3, (0.0,) * 3)   # letzte Sollbewegung (lin, ang)
+        self._jog_twist = {}        # side -> letzte Sollbewegung (lin, ang)
         self._jog_holds = HoldStreamer()   # Halte-Ziele nach dem Loslassen
         self._jog_t = time.monotonic()
 
@@ -944,6 +1021,7 @@ class DemoGUI(QWidget):
         node.on_arm_status = self._on_arm_status
         node.on_nav_status = self._on_nav_status
         node.on_emergency_stop = self._external_estop
+        node.on_shared = self._on_shared
 
         self.setWindowTitle("G1 Demo — " + ("SIM" if self.sim_mode else "REAL"))
         self.setStyleSheet("QWidget { background:#111; }")
@@ -951,6 +1029,13 @@ class DemoGUI(QWidget):
         self._build()
         self._wire()
         self._refresh()
+        # Startwerte der GUI nur als Vorschlag (DEFAULT_STAMP): laeuft der
+        # Controller schon bzw. startet er, gelten seine Werte (real: Langsam).
+        jog = self.manip_panel.jog
+        for field, value in (("arm_side", JOG_SIDE_KEY[jog.side]),
+                             ("arm_speed", jog.speed_name),
+                             ("walk_speed", self.walk_panel.speed_name)):
+            node.share(field, value, stamp=shared_state.DEFAULT_STAMP)
 
         self.cmd_timer = QTimer(self)
         self.cmd_timer.timeout.connect(self._publish_cmd_vel)
@@ -1131,11 +1216,15 @@ class DemoGUI(QWidget):
             self.info_onboard.setStyleSheet(self._info_css(color))
             self._refresh_start_bar()
         age = None if n.ps4_t is None else now - n.ps4_t
-        res = status_line.ps4_text(n.ps4, age, sim=self.sim_mode)
+        res = status_line.ps4_text(n.ps4, age, sim=self.sim_mode, walk=n.ps4walk,
+                                   device=n.ps4dev)
         self.info_ps4.setVisible(res is not None)
         if res is not None:
             self.info_ps4.setText(res[0] + "   ⓘ")
             self.info_ps4.setStyleSheet(self._info_css(res[1]))
+            name = (n.ps4dev or {}).get("name")
+            self.info_ps4.setToolTip((f"{name}\n" if name else "")
+                                     + "Klicken: Belegung des Controllers")
 
     def _refresh_start_bar(self):
         n, now = self.node, time.monotonic()
@@ -1198,10 +1287,16 @@ class DemoGUI(QWidget):
     def _ps4_help(self):
         rows = "".join(f"<tr><td style='padding:3px 14px 3px 0'><b>{k}</b></td><td>{v}</td></tr>"
                        for k, v in status_line.ps4_help(self.node.ps4))
+        label = status_line.controller_label(self.node.ps4dev)
         box = QMessageBox(self)
-        box.setWindowTitle("PS4-Controller: Belegung")
+        box.setWindowTitle(f"{label}-Controller: Belegung")
         box.setTextFormat(Qt.TextFormat.RichText)
-        box.setText(f"<table>{rows}</table><p>Kein Laufen über den Controller.</p>")
+        note = ("<p>Xbox: Tasten nach Position wie PS4 (A = Kreuz, B = Kreis, X = Viereck, "
+                "Y = Dreieck, LB/RB = L1/R1, LT/RT = L2/R2, View = Share, Menu = Options, "
+                "Xbox-Taste = PS).</p>" if label == "Xbox" else "")
+        box.setText(f"<table>{rows}</table>{note}<p>Modus, Hand-Auswahl und Tempo sind "
+                    "mit dieser GUI gekoppelt: was am Controller gewählt wird, zeigt die "
+                    "GUI und umgekehrt.</p>")
         box.open()
 
     @staticmethod
@@ -1240,6 +1335,9 @@ class DemoGUI(QWidget):
         mp.btn_goto.clicked.connect(self._pose_goto_dialog)
         mp.btn_save.clicked.connect(self._pose_save_dialog)
         mp.btn_marker.toggled.connect(lambda on: n.publish_bool(n.pub_marker_follow, on))
+        # Einstellungen gehen in den gemeinsamen Zustand (Controller zieht nach).
+        mp.jog.on_change = n.share
+        self.walk_panel.on_change = n.share
 
     # ── Modus ───────────────────────────────────────────────────────────
     def _start_robot(self):
@@ -1295,6 +1393,7 @@ class DemoGUI(QWidget):
         if mode == MANIP and auto:
             # Sim-Auto-Start: senden + wiederholen, bis quittiert (_autostart_done).
             self.autostart.start()
+            n.share("mode", "grasp")
             self.mode, self.pending = MANIP, None
             self._status("Greifen wird eingeschaltet — warte auf Arm-Regler …",
                          MODE_COLOR[MANIP])
@@ -1306,6 +1405,7 @@ class DemoGUI(QWidget):
             n.publish_bool(n.pub_arms_enabled, True)
             if self.sim_mode or self._onboard_walk():
                 n.publish_bool(n.pub_start_balancing, True)
+            n.share("mode", "grasp")
             self.mode, self.pending = MANIP, None
             self._status("Greifen bereit — Bewegung auswählen.", MODE_COLOR[MANIP])
             self._reload_sequence_buttons()
@@ -1319,12 +1419,59 @@ class DemoGUI(QWidget):
             # WALK: Arme fahren erst in die Lauf-Pose -> "wechselt", bis
             # arms/walk_ready kommt (oder Timeout).
             n.publish_bool(n.pub_start_walking, True)
-            self.pending = WALK
-            self._status("Arme werden eingeklappt …", MODE_COLOR[WALK])
-            self._walk_req += 1
-            req = self._walk_req
-            QTimer.singleShot(WALK_SWITCH_TIMEOUT_MS,
-                              lambda: req == self._walk_req and self._on_walk_ready(True))
+            n.share("mode", "walk")
+            self._await_walk("Arme werden eingeklappt …")
+        self._refresh()
+
+    def _await_walk(self, text):
+        """WALK: Arme fahren erst in die Lauf-Pose -> "wechselt", bis
+        arms/walk_ready kommt (oder Timeout)."""
+        self.pending = WALK
+        self._status(text, MODE_COLOR[WALK])
+        self._walk_req += 1
+        req = self._walk_req
+        QTimer.singleShot(WALK_SWITCH_TIMEOUT_MS,
+                          lambda: req == self._walk_req and self._on_walk_ready(True))
+
+    # ── Gemeinsamer Zustand mit dem Controller ──────────────────────────
+    def _on_shared(self, ch):
+        """Wechsel am Controller (oder einer anderen Oberflaeche) nachziehen.
+        Nur Anzeige/Einstellung: es wird NICHTS erneut gesendet."""
+        jog = self.manip_panel.jog
+        if "arm_side" in ch and ch["arm_side"] in JOG_SIDE_NAME:
+            if self._jog_targets:
+                self._jog_stop()
+            jog.set_side(JOG_SIDE_NAME[ch["arm_side"]], notify=False)
+        if "arm_speed" in ch:
+            jog.set_speed(ch["arm_speed"], notify=False)
+        if "walk_speed" in ch:
+            self.walk_panel.set_speed(ch["walk_speed"], notify=False)
+        # Modus nur, wenn er nach dem GUI-Start gewechselt wurde: ein alter
+        # latched Stand beschreibt den Roboter nicht mehr.
+        if "mode" in ch and self.node.shared.stamps.get("mode", 0.0) > self.node.t_start_wall:
+            self._adopt_mode(WALK if ch["mode"] == "walk" else MANIP)
+
+    def _adopt_mode(self, mode):
+        """Modus wurde am Controller gewechselt (L2 / R2 / Options): Kacheln und
+        Steuerbereich folgen. start_walking/start_balancing/arms/enabled hat
+        der Controller schon gesendet (real nur, wenn der G1 im Walk steht)."""
+        if self._real_quit or mode == self.mode or mode == self.pending:
+            return
+        if not self.started:
+            self._status(f"Controller hat {MODE_TITLE[mode]} gewählt — "
+                         "erst »Roboter starten« drücken.", "#ffb300")
+            return
+        self.autostart.cancel("Modus am Controller gewählt")
+        self._cancel_sequence()
+        self.set_auto_nav(False)
+        self.walk_panel.reset()
+        self.manip_panel.jog.reset()
+        if mode == MANIP:
+            self.mode, self.pending = MANIP, None
+            self._status("GREIFEN — am Controller gewählt.", MODE_COLOR[MANIP])
+            self._reload_sequence_buttons()
+        else:
+            self._await_walk("GEHEN — am Controller gewählt, Arme werden eingeklappt …")
         self._refresh()
 
     def _onboard_walk(self):
@@ -1576,10 +1723,11 @@ class DemoGUI(QWidget):
                 continue
             start = (self.node.jog_start_pose(side)
                      if side not in self._jog_targets else None)
-            p, q = jog_step(self._jog_targets.get(side), hand, lin, ang, dt,
+            lin_s, ang_s = jog.side_twist(side, lin, ang)
+            p, q = jog_step(self._jog_targets.get(side), hand, lin_s, ang_s, dt,
                             lead_m, lead_rad, start=start)
             self._jog_targets[side] = [p, q]
-            self._jog_twist = (lin, ang)
+            self._jog_twist[side] = (lin_s, ang_s)
             self.node.publish_hand_goal(side, p, q)
         if missing:
             self._status("Hand bewegen: Handposition unbekannt (TF fehlt) — "
@@ -1594,10 +1742,12 @@ class DemoGUI(QWidget):
         for side, target in self._jog_targets.items():
             hand = self.node.hand_pose(side)
             if hand is not None:
-                pose = hold_pose(target, hand, *self._jog_twist)
+                pose = hold_pose(target, hand,
+                                 *self._jog_twist.get(side, ((0.0,) * 3, (0.0,) * 3)))
                 self._jog_holds.hold(side, pose, now)
                 self.node.publish_hand_goal(side, *pose)
         self._jog_targets = {}
+        self._jog_twist = {}
         if self.mode == MANIP:
             self._status("Hand steht.", MODE_COLOR[MANIP])
 
