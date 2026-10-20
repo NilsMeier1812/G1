@@ -49,7 +49,7 @@ def test_jog_stop_holds_on_line_and_repeats(gui):
     from g1pilot.teleoperation.hand_jog import JOG_HOLD_S
     # laufendes Ziel 5 cm vor der Hand (+x), Hand 3 cm quer abgedriftet
     g._jog_targets = {"right": [[0.40, -0.20, 0.10], (0.0, 0.0, 0.0, 1.0)]}
-    g._jog_twist = ((0.15, 0.0, 0.0), (0.0, 0.0, 0.0))
+    g._jog_twist = {"right": ((0.15, 0.0, 0.0), (0.0, 0.0, 0.0))}
     g._jog_stop()
     assert g._jog_targets == {}
     assert len(sent) == 1
@@ -69,7 +69,7 @@ def test_jog_stop_holds_on_line_and_repeats(gui):
 def test_home_clears_hold(gui):
     g, sent = gui
     g._jog_targets = {"right": [[0.40, -0.20, 0.10], (0.0, 0.0, 0.0, 1.0)]}
-    g._jog_twist = ((0.15, 0.0, 0.0), (0.0, 0.0, 0.0))
+    g._jog_twist = {"right": ((0.15, 0.0, 0.0), (0.0, 0.0, 0.0))}
     g._jog_stop()
     g._home()                                       # geplante Fahrt: kein Halte-Ziel mehr
     n = len(sent)
