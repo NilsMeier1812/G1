@@ -93,6 +93,11 @@ class G1LocoClient(Node):
         # Abgleich mit dem ONBOARD-Zustand (Handy-App/Fernbedienung schalten den
         # G1 ausserhalb dieses Nodes um): letzte gelesene FSM-ID, Entprellung.
         self._onboard_fsm = None
+        # Bodenkontakt-Vorabpruefung fuer die GUI: FSM-Mode, gelesen nur in
+        # Preparation (FSM 4) -- 0 = Fuesse belastet, Walk-Start moeglich.
+        # None = unbekannt bzw. nicht in Preparation. Nur Anzeige: der
+        # Walk-Start selbst liest den Mode erneut (_enter_walk_direct).
+        self._onboard_fsm_mode = None
         self._rpc_err = None             # letzter Lesefehler (Code) oder None
         self._state_group = MutuallyExclusiveCallbackGroup()
         self._balanced_at = 0.0
@@ -346,8 +351,13 @@ class G1LocoClient(Node):
             return None                 # RPC laeuft -> naechster Takt
         try:
             fsm, code = _rpc_get(self.robot, ROBOT_API_ID_LOCO_GET_FSM_ID)
+            mode = None
+            if fsm == FSM_READY:
+                # Vorab, was »Walk« pruefen wird: haben die Fuesse Last?
+                mode = _rpc_get_int(self.robot, ROBOT_API_ID_LOCO_GET_FSM_MODE)
         finally:
             self._rpc_lock.release()
+        self._onboard_fsm_mode = mode if fsm is not None else None
         if fsm is None:
             if code != self._rpc_err:
                 self.get_logger().warn(
@@ -389,7 +399,8 @@ class G1LocoClient(Node):
               "estop": bool(self.robot_stopped), "robot": bool(self.use_robot),
               "full_estop": bool(self._full_estop),
               "note": self._note, "rpc_err": self._rpc_err,
-              "walk_fsm": self._start_fsm_id()}
+              "walk_fsm": self._start_fsm_id(),
+              "fsm_mode": self._onboard_fsm_mode}
         self.state_pub.publish(String(data=json.dumps(st, sort_keys=True)))
 
     def get_fsm_id(self):
@@ -892,6 +903,7 @@ class G1LocoClient(Node):
         die Fuesse Last haben (FSM-Mode 0); haengt der G1 noch straff am Kran
         (Mode != 0) oder kommt keine Antwort: kein Start()."""
         mode = self.get_fsm_mode()
+        self._onboard_fsm_mode = mode
         if mode != 0:
             self._set_note(f"Walk: abgelehnt -- Fuesse ohne Last (FSM-Mode {mode}). "
                            "Kran lockern, dann erneut.", "error")

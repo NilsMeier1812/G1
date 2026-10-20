@@ -446,11 +446,20 @@ class ModeTile(QPushButton):
     def __init__(self, mode):
         super().__init__()
         self.mode = mode
+        self.hint = None        # Untertitel statt »antippen zum Wechseln« (inaktiv)
+        self.state = "inactive"
         self.setMinimumHeight(120)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.set_state("inactive")
 
+    def set_hint(self, hint):
+        """Vorab-Hinweis (real, GEHEN): z. B. »gesperrt · kein Bodenkontakt«."""
+        if hint != self.hint:
+            self.hint = hint
+            self.set_state(self.state)
+
     def set_state(self, state):
+        self.state = state
         color = MODE_COLOR[self.mode]
         title = MODE_TITLE[self.mode]
         if state == "active":
@@ -459,6 +468,8 @@ class ModeTile(QPushButton):
             sub, bg, fg, border = "wechselt …", "#2a2a2a", color, f"4px dashed {color}"
         else:
             sub, bg, fg, border = "antippen zum Wechseln", "#1c1c1c", "#777", "2px solid #333"
+            if self.hint:
+                sub = self.hint
         self.setText(f"{title}\n{sub}")
         self.setStyleSheet(f"""
             QPushButton {{ background:{bg}; color:{fg}; border:{border};
@@ -1215,6 +1226,7 @@ class DemoGUI(QWidget):
             self.info_onboard.setText(text)
             self.info_onboard.setStyleSheet(self._info_css(color))
             self._refresh_start_bar()
+            self._refresh_walk_hint()
         age = None if n.ps4_t is None else now - n.ps4_t
         res = status_line.ps4_text(n.ps4, age, sim=self.sim_mode, walk=n.ps4walk,
                                    device=n.ps4dev)
@@ -1234,6 +1246,8 @@ class DemoGUI(QWidget):
             self._start_disarm()
         for step, b in self.start_btns.items():
             b.setEnabled(allowed[step][0])
+            if step != self._start_armed:
+                b.setText(self._start_label(step))
         note = (n.onboard or {}).get("note") if age is not None else None
         if note and note != self._last_note and self._last_note is not None:
             self._status(note, "#ef5350" if "abgelehnt" in note else "#aaa")
@@ -1277,10 +1291,25 @@ class DemoGUI(QWidget):
         n.pub_loco_request.publish(String(data=step))
         self._status(f"{status_line.START_LABEL[step]} angefordert …", "#aaa")
 
+    def _start_label(self, step):
+        """»Walk« zeigt die Bodenkontakt-Vorabpruefung schon vor dem Klick."""
+        if step != "walk":
+            return status_line.START_LABEL[step]
+        n = self.node
+        age = None if n.onboard_t is None else time.monotonic() - n.onboard_t
+        return status_line.walk_button_label(n.onboard, age)
+
+    def _refresh_walk_hint(self):
+        """Kachel GEHEN (real): vorab zeigen, ob GEHEN jetzt geht."""
+        if self.sim_mode:
+            return
+        n = self.node
+        age = None if n.onboard_t is None else time.monotonic() - n.onboard_t
+        self.tiles[WALK].set_hint(status_line.walk_tile_hint(n.onboard, age))
+
     def _start_disarm(self):
         if self._start_armed:
-            self.start_btns[self._start_armed].setText(
-                status_line.START_LABEL[self._start_armed])
+            self.start_btns[self._start_armed].setText(self._start_label(self._start_armed))
         self._start_armed = None
         self._start_armed_n += 1
 
@@ -1412,8 +1441,12 @@ class DemoGUI(QWidget):
         elif not self.sim_mode and not self._onboard_walk():
             # REAL: GEHEN stellt den Onboard-Modus nicht mehr selbst um --
             # das macht die Startleiste (Walk, mit Rueckfrage zum Kran).
-            self._status("Gehen gesperrt: G1 steht nicht im Walk-Modus — "
-                         "erst Startleiste Damp → Preparation → Walk.", "#ef5350")
+            if status_line.ground_contact(n.onboard) is False:
+                self._status("Gehen gesperrt: kein Bodenkontakt (Füße ohne Last) — "
+                             "Kran lockern, dann Startleiste »Walk«.", "#ef5350")
+            else:
+                self._status("Gehen gesperrt: G1 steht nicht im Walk-Modus — "
+                             "erst Startleiste Damp → Preparation → Walk.", "#ef5350")
             return
         else:
             # WALK: Arme fahren erst in die Lauf-Pose -> "wechselt", bis

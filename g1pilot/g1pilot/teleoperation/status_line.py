@@ -46,6 +46,23 @@ def walk_switch(state):
     return fsm in WALK_FSM and fsm != state.get("walk_fsm", WALK_FSM_DEFAULT)
 
 
+def ground_contact(state):
+    """Bodenkontakt-Vorabpruefung fuer »Walk« aus Preparation (FSM 4).
+
+    True  = Fuesse belastet (FSM-Mode 0) -> der Walk-Start (501) geht.
+    False = Fuesse ohne Last (Mode != 0, z. B. straff am Kran) -> der
+            loco_client wuerde »Walk« ablehnen.
+    None  = unbekannt: nicht in Preparation, Mode nicht lesbar oder ein
+            loco_client ohne das Feld fsm_mode. Dann prueft wie bisher erst
+            der loco_client beim Umschalten."""
+    if not state or state.get("fsm") != 4:
+        return None
+    mode = state.get("fsm_mode")
+    if mode is None:
+        return None
+    return mode == 0
+
+
 def onboard_text(state, age_s, walk_requested=False):
     """-> (Text, Farbe). state = dict von /g1pilot/onboard_state oder None."""
     if state is None or age_s is None or age_s > STALE_S:
@@ -70,6 +87,12 @@ def onboard_text(state, age_s, walk_requested=False):
             text += f" · »Walk« schaltet auf FSM {state.get('walk_fsm', WALK_FSM_DEFAULT)}"
         return text, GREEN
     if fsm == 4:
+        ground = ground_contact(state)
+        if ground:
+            return text + " · Bodenkontakt ✓ – »Walk« möglich", GREEN
+        if ground is False:
+            return (text + f" · kein Bodenkontakt (FSM-Mode {state.get('fsm_mode')})"
+                    " – »Walk« gesperrt, Kran lockern"), RED
         return text + " · Kran lockern, dann »Walk«", AMBER
     if walk_requested:
         return text + " · Gehen gesperrt – erst Damp → Preparation → Walk", RED
@@ -130,7 +153,9 @@ def start_buttons(state, age_s):
     Ohne frische Daten vom loco_client ist alles gesperrt. Damp geht immer
     (Rueckfrage, ausser der G1 ist schon schlaff/Damp: er sackt sonst in den
     Kran). Preparation nur aus Damp oder Walk, Walk nur aus Preparation --
-    beides nicht im NOT-HALT; Walk immer mit Rueckfrage (Kran gelockert?)."""
+    beides nicht im NOT-HALT; Walk immer mit Rueckfrage (Kran gelockert?).
+    Meldet der loco_client vorab »kein Bodenkontakt« (ground_contact False),
+    ist Walk schon vor dem Klick gesperrt -- er wuerde ihn sonst ablehnen."""
     off = {k: (False, False) for k in START_STEPS}
     if state is None or age_s is None or age_s > STALE_S:
         return off
@@ -139,8 +164,42 @@ def start_buttons(state, age_s):
     return {
         "damp": (fsm != 1, fsm not in (0, 1)),
         "preparation": (not estop and (fsm == 1 or fsm in WALK_FSM), False),
-        "walk": (not estop and (fsm == 4 or walk_switch(state)), True),
+        "walk": (not estop and ((fsm == 4 and ground_contact(state) is not False)
+                                or walk_switch(state)), True),
     }
+
+
+def walk_button_label(state, age_s):
+    """Beschriftung von »Walk« in der Startleiste: zeigt das Ergebnis der
+    Bodenkontakt-Vorabpruefung schon vor dem Klick."""
+    if state is None or age_s is None or age_s > STALE_S or walk_switch(state):
+        return START_LABEL["walk"]
+    ground = ground_contact(state)
+    if ground:
+        return "Walk\nBodenkontakt ✓"
+    if ground is False:
+        return "Walk\nkein Bodenkontakt"
+    return START_LABEL["walk"]
+
+
+def walk_tile_hint(state, age_s):
+    """Untertitel der Kachel GEHEN (nur real, inaktiv): geht GEHEN jetzt?
+    None = normaler Text (»antippen zum Wechseln«, G1 steht im Walk)."""
+    if state is None or age_s is None or age_s > STALE_S:
+        return "gesperrt · keine Daten vom G1"
+    fsm = state.get("fsm")
+    if state.get("estop") or state.get("full_estop"):
+        return "gesperrt · NOT-HALT"
+    if fsm in WALK_FSM:
+        return None
+    if fsm == 4:
+        ground = ground_contact(state)
+        if ground:
+            return "erst »Walk« · Bodenkontakt ✓"
+        if ground is False:
+            return "gesperrt · kein Bodenkontakt"
+        return "erst »Walk« (Startleiste)"
+    return "gesperrt · G1 nicht im Walk"
 
 
 # Belegung (wie ps4_arm_teleop / docs/43_ps4_controller.md).

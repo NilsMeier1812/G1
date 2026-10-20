@@ -666,10 +666,129 @@ def test_onboard_state_published_for_gui(lc_module):
         node._publish_state()
         assert got[-1] == {"fsm": 500, "name": "Walk", "balanced": True, "walk": True,
                            "estop": False, "full_estop": False, "robot": True, "note": "",
-                           "rpc_err": None, "walk_fsm": 501}
+                           "rpc_err": None, "walk_fsm": 501, "fsm_mode": None}
         node.emergency_callback(_bool(True))
         node._publish_state()
         assert got[-1]["estop"] and not got[-1]["walk"]
+    finally:
+        _close(node)
+
+
+# ── Bodenkontakt-Vorabpruefung (Nils 2026-10-20) ──────────────────────────
+# Der Walk-Start (501) prueft den Bodenkontakt (FSM-Mode 0). Die GUI soll das
+# Ergebnis schon VOR dem Klick zeigen -> der Abgleich liest den Mode in
+# Preparation mit und meldet ihn als fsm_mode im onboard_state.
+
+def _state(node):
+    import json as _json
+    got = []
+    node.state_pub.publish = lambda m: got.append(_json.loads(m.data))
+    node._publish_state()
+    return got[-1]
+
+
+def _spy_calls(robot):
+    apis = []
+    orig = robot._Call
+    robot._Call = lambda api, p: (apis.append(api), orig(api, p))[1]
+    return apis
+
+
+@pytest.mark.parametrize("mode", [0, 2])
+def test_ground_contact_precheck_published_in_preparation(lc_module, mode):
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm, robot.mode = 4, mode
+        robot.calls.clear()
+        node._sync_onboard_state(force=True)
+        st = _state(node)
+        assert st["fsm"] == 4 and st["fsm_mode"] == mode
+        # Nur gelesen: kein Umschalten, kein BalanceStand/Start/Move.
+        assert robot.calls == [] and not node.balanced
+    finally:
+        _close(node)
+
+
+def test_ground_contact_precheck_follows_crane(lc_module):
+    """Kran gelockert -> Mode 0 -> beim naechsten Abgleich gemeldet (und zurueck)."""
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm, robot.mode = 4, 2
+        node._sync_onboard_state(force=True)
+        assert _state(node)["fsm_mode"] == 2
+        robot.mode = 0
+        node._sync_onboard_state(force=True)
+        assert _state(node)["fsm_mode"] == 0
+        robot.mode = 1
+        node._sync_onboard_state(force=True)
+        assert _state(node)["fsm_mode"] == 1
+    finally:
+        _close(node)
+
+
+@pytest.mark.parametrize("fsm", [0, 1, 500, 501])
+def test_ground_contact_not_read_outside_preparation(lc_module, fsm):
+    """Ausserhalb von FSM 4 ist der Mode fuer »Walk« bedeutungslos: kein
+    zusaetzlicher RPC, fsm_mode None (auch nach vorherigem Wert aus FSM 4)."""
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm, robot.mode = 4, 0
+        node._sync_onboard_state(force=True)
+        robot.fsm = fsm
+        apis = _spy_calls(robot)
+        node._sync_onboard_state(force=True)
+        assert apis == ["GET_FSM_ID"]
+        assert _state(node)["fsm_mode"] is None
+    finally:
+        _close(node)
+
+
+def test_ground_contact_unreadable_is_unknown_not_rpc_error(lc_module):
+    """Mode nicht lesbar: fsm_mode None (GUI: unbekannt), FSM bleibt gueltig."""
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = 4
+        orig = robot._Call
+        robot._Call = lambda api, p: (orig(api, p) if api == "GET_FSM_ID" else (3104, None))
+        node._sync_onboard_state(force=True)
+        st = _state(node)
+        assert st["fsm"] == 4 and st["fsm_mode"] is None and st["rpc_err"] is None
+        robot._Call = lambda *a: (3104, None)          # alles weg -> auch Mode weg
+        node._sync_onboard_state(force=True)
+        st = _state(node)
+        assert st["rpc_err"] == 3104 and st["fsm_mode"] is None
+    finally:
+        _close(node)
+
+
+def test_walk_still_checks_ground_itself_after_ok_precheck(lc_module):
+    """Sicherheitsnetz bleibt: Vorabpruefung sagte ok, dann zieht der Kran
+    wieder an -> »Walk« liest den Mode erneut und lehnt ab."""
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm, robot.mode = 4, 0
+        node._sync_onboard_state(force=True)
+        assert _state(node)["fsm_mode"] == 0
+        robot.mode = 2
+        robot.calls.clear()
+        _req(node, "walk")
+        assert "Start" not in robot.names() and "BalanceStand" not in robot.names()
+        assert robot.fsm == 4 and not node.balanced and "Kran" in node._note
+        assert _state(node)["fsm_mode"] == 2           # Anzeige gleich nachgezogen
+    finally:
+        _close(node)
+
+
+def test_ground_contact_precheck_does_not_wait_for_busy_rpc(lc_module):
+    """Laeuft gerade ein RPC, ueberspringt der Takt (wie bisher) -- auch der
+    Mode-Read haengt sich nicht an den Lock."""
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = 4
+        apis = _spy_calls(robot)
+        with node._rpc_lock:
+            assert node._sync_onboard_state() is None
+        assert apis == []
     finally:
         _close(node)
 
