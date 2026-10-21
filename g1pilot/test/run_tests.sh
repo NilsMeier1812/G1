@@ -7,7 +7,7 @@
 #   test/run_tests.sh <gruppe> [weitere pytest-Argumente]
 # Gruppen:
 #   schnell     alles ausser den drei langsamen Fake-G1-Dateien (~2 min)
-#   sicherheit  Notaus, Totmann, Walk/Modus, Bodenkontakt, Arm-Controller real (~12 min)
+#   sicherheit  Notaus, Totmann, Walk/Modus, Bodenkontakt, Arm-Controller real (~10 min)
 #   voll        komplette Suite (~14 min)
 #   arm | planer | loco | controller | gui | haende | sim | handy   je Bereich
 # Uebersprungene Tests werden mit Grund angezeigt (-rs): fehlt z. B. pinocchio,
