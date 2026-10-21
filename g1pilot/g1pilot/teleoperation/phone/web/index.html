@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111111">
+<title>G1 Handy</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+  :root {
+    --bg: #111; --card: #1b1b1b; --line: #2c2c2c; --text: #eee; --dim: #9a9a9a;
+    --walk: #1e88e5; --grasp: #fb8c00; --ok: #66bb6a; --warn: #ffb300; --stop: #e53935;
+    --info: #4fc3f7;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { padding: 12px 16px calc(132px + env(safe-area-inset-bottom)); max-width: 640px; margin: 0 auto;
+    user-select: none; overscroll-behavior: none; }
+  header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  header h1 { font-size: 20px; margin: 0; flex: 1; letter-spacing: .5px; }
+  .pill { padding: 5px 12px; border-radius: 999px; font-weight: 700; font-size: 14px;
+    background: #333; color: var(--dim); white-space: nowrap; }
+  .pill.ok { background: #1b5e20; color: #c8e6c9; }
+  .pill.stale { background: #7f1d1d; color: #ffcdd2; }
+  .pill.busy { background: #4a3b00; color: #ffe082; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 14px; margin-bottom: 12px; }
+  section h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--dim);
+    margin: 0 0 10px; }
+  .hidden { display: none !important; }
+  label { display: block; font-size: 14px; color: var(--dim); margin: 10px 0 4px; }
+  input[type=text] { width: 100%; font-size: 20px; padding: 12px; border-radius: 10px;
+    border: 1px solid #444; background: #0c0c0c; color: var(--text); }
+  input.code { font-family: ui-monospace, monospace; letter-spacing: 2px; text-transform: uppercase; }
+  button { font: inherit; font-weight: 700; border: 0; border-radius: 12px; color: #fff;
+    background: #333; min-height: 52px; padding: 10px 14px; width: 100%; }
+  button:disabled { opacity: .35; }
+  button.primary { background: #1565c0; }
+  button.walk { background: var(--walk); }
+  button.grasp { background: var(--grasp); }
+  button.ghost { background: transparent; border: 1px solid #444; color: var(--dim); min-height: 44px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+  .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 10px; }
+  .status { border-left: 6px solid #555; padding: 8px 12px; background: #141414; border-radius: 8px;
+    font-size: 18px; font-weight: 700; }
+  .sub { color: var(--dim); font-size: 14px; margin-top: 8px; }
+  .banner { background: var(--stop); color: #fff; font-weight: 800; text-align: center;
+    padding: 12px; border-radius: 12px; margin-bottom: 12px; font-size: 18px; }
+  .stalebar { background: #7f1d1d; color: #ffcdd2; text-align: center; padding: 10px;
+    border-radius: 12px; margin-bottom: 12px; font-weight: 700; }
+  .chips { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .chip { padding: 4px 10px; border-radius: 8px; background: #262626; color: var(--dim); font-size: 14px; }
+  .chip.on.walk { background: var(--walk); color: #fff; } .chip.on.grasp { background: var(--grasp); color: #fff; }
+  .chip.pend { outline: 2px dashed var(--warn); }
+  #estop { position: fixed; left: 16px; right: 16px; bottom: calc(14px + env(safe-area-inset-bottom));
+    width: auto; max-width: 608px; margin: 0 auto; min-height: 96px; font-size: 28px; letter-spacing: 2px;
+    background: var(--stop); border: 4px solid #ffcdd2; border-radius: 18px; z-index: 5;
+    box-shadow: 0 6px 24px rgba(0,0,0,.6); }
+  #estop:disabled { opacity: .5; }
+  #toast { position: fixed; left: 16px; right: 16px; bottom: calc(124px + env(safe-area-inset-bottom));
+    max-width: 608px; margin: 0 auto; padding: 12px; border-radius: 12px; background: #263238;
+    font-weight: 700; z-index: 6; transition: opacity .3s; }
+  #toast.bad { background: #4e342e; color: #ffe0b2; }
+  #sheet { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 10; display: flex;
+    align-items: flex-end; }
+  #sheet .box { background: #1e1e1e; width: 100%; max-width: 640px; margin: 0 auto; padding: 18px 16px
+    calc(20px + env(safe-area-inset-bottom)); border-radius: 18px 18px 0 0; }
+  #sheet h3 { margin: 0 0 8px; font-size: 22px; }
+  #sheet p { color: #ccc; margin: 0 0 16px; }
+  .slide { position: relative; height: 68px; border-radius: 34px; background: #2a2a2a;
+    border: 2px solid #444; overflow: hidden; touch-action: none; }
+  .slide .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #1565c0; }
+  .slide .knob { position: absolute; top: 4px; left: 4px; width: 56px; height: 56px; border-radius: 28px;
+    background: #fff; color: #111; display: grid; place-items: center; font-size: 26px; font-weight: 900; }
+  .slide .lbl { position: absolute; inset: 0 12px 0 68px; display: grid; place-items: center; color: var(--dim);
+    font-weight: 700; pointer-events: none; }
+  .seqs button { margin-top: 8px; text-align: left; }
+  .note { color: var(--dim); font-size: 13px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>G1 Handy</h1>
+  <span id="pill" class="pill">Getrennt</span>
+</header>
+
+<div id="unsupported" class="banner hidden">Dieser Browser kann kein Web Bluetooth. Bitte Chrome auf Android nutzen.</div>
+
+<!-- Koppeln -->
+<section id="pairView" class="hidden">
+  <h2>Handy koppeln</h2>
+  <div class="sub">Am PC in der Demo-GUI oben <b>📱 Handy</b> antippen, dann »Als Bediener koppeln«. Der Code erscheint dort.</div>
+  <label for="pairName">Name dieses Handys</label>
+  <input id="pairName" type="text" maxlength="32" placeholder="z. B. Nils Pixel" autocomplete="off">
+  <label for="pairCode">Kopplungscode vom PC</label>
+  <input id="pairCode" class="code" type="text" maxlength="24" placeholder="XXXX-XXXX-XXXX-XXXX"
+    autocomplete="off" autocapitalize="characters" spellcheck="false">
+  <div class="row" style="grid-template-columns:1fr"><button id="btnPair" class="primary">Verbinden &amp; koppeln</button></div>
+</section>
+
+<!-- Verbinden -->
+<section id="connectView" class="hidden">
+  <h2>Verbindung</h2>
+  <div class="sub" id="connectInfo"></div>
+  <div class="row" style="grid-template-columns:1fr"><button id="btnConnect" class="primary">Mit G1 verbinden</button></div>
+  <div class="row" style="grid-template-columns:1fr"><button id="btnForget" class="ghost">Kopplung auf diesem Handy löschen</button></div>
+</section>
+
+<!-- Bedienung -->
+<div id="mainView" class="hidden">
+  <div id="estopBanner" class="banner hidden">NOT-HALT AKTIV</div>
+  <div id="staleBar" class="stalebar hidden">Daten alt — Bedienung gesperrt</div>
+
+  <section>
+    <h2>Zustand</h2>
+    <div id="stText" class="status">…</div>
+    <div id="stInfo" class="sub"></div>
+    <div class="chips">
+      <span id="chipWalk" class="chip walk">GEHEN</span>
+      <span id="chipGrasp" class="chip grasp">GREIFEN</span>
+      <span id="chipPad" class="chip hidden"></span>
+      <span id="chipBusy" class="chip hidden">Bewegung läuft</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Bedienung</h2>
+    <div id="meInfo" class="sub" style="margin-top:0"></div>
+    <div class="row" style="grid-template-columns:1fr"><button id="btnTake" class="primary">Bedienung übernehmen</button></div>
+    <div class="row" style="grid-template-columns:1fr"><button id="btnStopMove" class="ghost hidden">Bewegung stoppen</button></div>
+  </section>
+
+  <div id="controls">
+    <section id="secAck" class="hidden">
+      <h2>Start</h2>
+      <button id="btnAck" class="primary">NOT-HALT quittieren …</button>
+    </section>
+
+    <section id="secLoco" class="hidden">
+      <h2>Startleiste (echter G1)</h2>
+      <div class="row3">
+        <button id="btnDamp">Damp …</button>
+        <button id="btnPrep">Preparation …</button>
+        <button id="btnWalkFsm">Walk …</button>
+      </div>
+    </section>
+
+    <section id="secMode">
+      <h2>Modus</h2>
+      <div class="row">
+        <button id="btnModeWalk" class="walk">GEHEN …</button>
+        <button id="btnModeGrasp" class="grasp">GREIFEN …</button>
+      </div>
+      <div class="note">Gehen selbst steuerst du mit dem Controller (L2).</div>
+    </section>
+
+    <section id="secGrasp" class="hidden">
+      <h2>Greifen</h2>
+      <div class="row">
+        <button id="btnHandsOpen">Hände öffnen</button>
+        <button id="btnHandsClose">Hände schließen</button>
+      </div>
+      <div class="row">
+        <button id="btnLeftClose" class="ghost">Links schließen</button>
+        <button id="btnRightClose" class="ghost">Rechts schließen</button>
+      </div>
+      <div class="row">
+        <button id="btnSafe">Sichere Pose …</button>
+        <button id="btnHome">Grundstellung …</button>
+      </div>
+      <div class="seqs" id="seqs"></div>
+    </section>
+  </div>
+  <div class="row" style="grid-template-columns:1fr"><button id="btnDisconnect" class="ghost">Trennen</button></div>
+  <div class="note">Der NOT-HALT vom Handy läuft über den PC. Maßgeblich bleiben Controller, Unitree-Fernbedienung und Kran.</div>
+</div>
+
+<button id="estop">NOT-HALT</button>
+<div id="toast" class="hidden"></div>
+
+<div id="sheet" class="hidden">
+  <div class="box">
+    <h3 id="sheetTitle"></h3>
+    <p id="sheetText"></p>
+    <div class="slide" id="slider">
+      <div class="fill"></div>
+      <div class="lbl">Ganz nach rechts schieben</div>
+      <div class="knob">›</div>
+    </div>
+    <div class="row" style="grid-template-columns:1fr"><button id="sheetCancel" class="ghost">Abbrechen</button></div>
+  </div>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

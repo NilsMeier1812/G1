@@ -69,6 +69,7 @@ from g1pilot.teleoperation.ui_interface import (
 from g1pilot.teleoperation.hand_panel import HandPanel
 from g1pilot.teleoperation import status_line
 from g1pilot.teleoperation import shared_state
+from g1pilot.teleoperation.phone import link as phone_link
 from g1pilot.teleoperation.ps4_arm_teleop import mirror_twist
 from g1pilot.teleoperation.ps4_joystick import DEVICE_TOPIC
 from g1pilot.teleoperation.hand_jog import (
@@ -1063,6 +1064,8 @@ class DemoGUI(QWidget):
         self.info_timer.timeout.connect(self._refresh_info)
         self.info_timer.start(500)
         self._refresh_info()
+        # Handy-Bedienung (G1_PHONE=1): ruft dieselben Methoden wie die Knoepfe.
+        self.phone = phone_link.attach(self)
 
         # Wie ui_interface: Auto-Start NUR in der Sim (Arme an + BALANCING),
         # wiederholt bis arm_controller und loco_sim quittieren (sim_autostart.py;
@@ -1099,6 +1102,10 @@ class DemoGUI(QWidget):
         head1.addWidget(self.btn_pad_help)
         # Vollbild immer aus der GUI erreichbar (am Roboter-Rechner fehlt oft die
         # Titelleiste des Fenstermanagers). Tasten: F11 umschalten, Esc verlassen.
+        # Handy-Zugang (nur mit G1_PHONE=1 sichtbar, phone/link.py).
+        self.btn_phone = self._small_button("📱 Handy")
+        self.btn_phone.setVisible(False)
+        head1.addWidget(self.btn_phone)
         self.btn_fullscreen = self._small_button("")
         head1.addWidget(self.btn_fullscreen)
         root.addLayout(head1)
@@ -1309,14 +1316,15 @@ class DemoGUI(QWidget):
         elif self._last_note is None:
             self._last_note = ""
 
-    def _start_step(self, step):
-        """Startleiste: Anforderung an den loco_client (der prueft erneut)."""
+    def _start_step(self, step, confirmed=False):
+        """Startleiste: Anforderung an den loco_client (der prueft erneut).
+        confirmed=True: Rueckfrage schon anderswo bestaetigt (Handy-Schieber)."""
         n, now = self.node, time.monotonic()
         age = None if n.onboard_t is None else now - n.onboard_t
         enabled, confirm = status_line.start_buttons(n.onboard, age)[step]
         if not enabled:
             return
-        if confirm and self._start_armed != step:
+        if confirm and not confirmed and self._start_armed != step:
             self._start_disarm()
             self._start_armed = step
             self._start_armed_n += 1
@@ -2126,6 +2134,7 @@ class DemoGUI(QWidget):
                      f"oder make stop", "#ef5350")
 
     def _status(self, text, color):
+        self._status_color = color
         self.status.setText(text)
         self.status.setStyleSheet(
             f"color:{color}; font-size:20px; font-weight:700; padding:10px 16px;"
@@ -2155,6 +2164,8 @@ def main():
     timer.start(10)
 
     app.exec()
+    if gui.phone is not None:
+        gui.phone.stop()
     node.tf_node.destroy_node()
     node.destroy_node()
     rclpy.shutdown()
