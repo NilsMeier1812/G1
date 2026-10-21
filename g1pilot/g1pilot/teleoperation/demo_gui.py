@@ -43,7 +43,7 @@ import time
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QGridLayout, QPushButton, QVBoxLayout, QHBoxLayout,
     QLabel, QStackedWidget, QFrame, QDialog, QMessageBox, QSizePolicy,
-    QGraphicsOpacityEffect, QTableWidget, QTableWidgetItem,
+    QGraphicsOpacityEffect, QTableWidget, QTableWidgetItem, QScrollArea,
 )
 from PyQt6.QtCore import QTimer, Qt, QRectF, QPointF, QEvent
 from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QKeySequence, QShortcut
@@ -57,7 +57,7 @@ from tf2_ros import Buffer, TransformListener
 
 from g1pilot.navigation import scene_markers as sm
 
-from g1pilot.utils.window_style import DarkStyle
+from g1pilot.utils.window_style import DarkStyle, set_app_identity
 from g1pilot.utils.common import is_sim_mode
 from g1pilot.utils import g1_temperature as g1t
 from g1pilot.utils import push_charge
@@ -453,7 +453,7 @@ class ModeTile(QPushButton):
         self.mode = mode
         self.hint = None        # Untertitel statt »antippen zum Wechseln« (inaktiv)
         self.state = "inactive"
-        self.setMinimumHeight(120)
+        self.setMinimumHeight(100)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.set_state("inactive")
 
@@ -944,9 +944,9 @@ class ManipPanel(QWidget):
 
         row = QHBoxLayout()
         # Haende auf/zu gibt es auf der Seite HAENDE.
-        self.btn_safe = big_button("Sichere Pose")
-        self.btn_home = big_button("Grundstellung")
-        self.btn_cancel = big_button("Bewegung stoppen", "#5d4037")
+        self.btn_safe = big_button("Sichere Pose", font=18, height=50)
+        self.btn_home = big_button("Grundstellung", font=18, height=50)
+        self.btn_cancel = big_button("Bewegung stoppen", "#5d4037", font=18, height=50)
         for b in (self.btn_safe, self.btn_home, self.btn_cancel):
             row.addWidget(b)
         lay.addLayout(row)
@@ -1080,77 +1080,71 @@ class DemoGUI(QWidget):
         if self.sim_mode:
             QTimer.singleShot(3000, self._auto_start)
         else:
-            self._status("REAL: zuerst »Roboter starten« drücken.", "#ffb300")
+            self._status("REAL: zuerst »Start« in der Startleiste drücken.", "#ffb300")
 
     # ── Aufbau ──────────────────────────────────────────────────────────
     def _build(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(20, 16, 20, 16)
-        root.setSpacing(14)
+        root.setContentsMargins(20, 12, 20, 12)
+        root.setSpacing(10)
 
-        # Bereich 1: Modus
-        root.addWidget(self._section_label("1  ·  MODUS"))
+        # Bereich 1: Modus. Rechts in der Kopfzeile: Controller-Belegung (nur
+        # wenn ein Controller aktiv ist) und Vollbild.
+        head1 = QHBoxLayout()
+        head1.setSpacing(10)
+        head1.addWidget(self._section_label("1  ·  MODUS"))
+        head1.addStretch(1)
+        self.btn_pad_help = self._small_button("🎮  Belegung")
+        self.btn_pad_help.setVisible(False)
+        head1.addWidget(self.btn_pad_help)
+        # Vollbild immer aus der GUI erreichbar (am Roboter-Rechner fehlt oft die
+        # Titelleiste des Fenstermanagers). Tasten: F11 umschalten, Esc verlassen.
+        self.btn_fullscreen = self._small_button("")
+        head1.addWidget(self.btn_fullscreen)
+        root.addLayout(head1)
         top = QHBoxLayout()
         top.setSpacing(16)
         self.tiles = {WALK: ModeTile(WALK), MANIP: ModeTile(MANIP)}
         top.addWidget(self.tiles[WALK])
         top.addWidget(self.tiles[MANIP])
         root.addLayout(top)
-        self.btn_start = big_button("Roboter starten", "#455a64", height=60)
-        self.btn_start.setVisible(not self.sim_mode)
-        root.addWidget(self.btn_start)
-        # Startleiste (nur real): Onboard-Modus wie in der Handy-App umschalten.
-        # Freigabe je nach Onboard-Modus (status_line.start_buttons), Damp aus
-        # dem Stehen und Walk brauchen einen zweiten Klick.
+        # Startleiste (nur real), eine Zeile: Start | Damp | Preparation | Walk |
+        # Rueckmeldung des loco_client (Onboard-Modus, wie in der Handy-App).
+        # Start = /g1pilot/start: gibt die Modus-Kacheln frei und quittiert
+        # einen NOT-HALT (arm_controller, loco_client, Controller). Freigabe der
+        # Onboard-Schritte je nach Onboard-Modus (status_line.start_buttons),
+        # Damp aus dem Stehen und Walk brauchen einen zweiten Klick.
         self.start_bar = QWidget()
         bar = QHBoxLayout(self.start_bar)
         bar.setContentsMargins(0, 0, 0, 0)
-        bar.setSpacing(12)
+        bar.setSpacing(10)
+        self.btn_start = big_button("Start", "#e65100", font=18, height=50)
+        bar.addWidget(self.btn_start, 1)
         self.start_btns = {}
         for step in status_line.START_STEPS:
             b = big_button(status_line.START_LABEL[step], "#37474f", font=18, height=50)
             b.clicked.connect(lambda _=False, s=step: self._start_step(s))
-            bar.addWidget(b)
+            bar.addWidget(b, 1)
             self.start_btns[step] = b
         self._start_armed = None      # Schritt, der auf den zweiten Klick wartet
         self._start_armed_n = 0
         self._last_note = None
+        self.info_onboard = QLabel()
+        self.info_onboard.setWordWrap(True)
+        self.info_onboard.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                        QSizePolicy.Policy.Preferred)
+        self.info_onboard.setVisible(not self.sim_mode)
+        bar.addWidget(self.info_onboard, 3)
         self.start_bar.setVisible(not self.sim_mode)
         root.addWidget(self.start_bar)
-        # Info-Zeile: links Onboard-Modus (nur real), rechts PS4 (nur wenn aktiv;
-        # Klick = Belegung). Reine Anzeige.
-        info = QHBoxLayout()
-        info.setSpacing(16)
-        self.info_onboard = QLabel()
-        self.info_onboard.setVisible(not self.sim_mode)
-        self.info_ps4 = QLabel()
-        self.info_ps4.setVisible(False)
-        self.info_ps4.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.info_ps4.setToolTip("Klicken: Belegung des PS4-Controllers")
-        self.info_ps4.mousePressEvent = lambda e: self._ps4_help()
-        info.addWidget(self.info_onboard)
-        info.addStretch(1)
-        info.addWidget(self.info_ps4)
-        # Vollbild immer aus der GUI erreichbar (am Roboter-Rechner fehlt oft die
-        # Titelleiste des Fenstermanagers). Tasten: F11 umschalten, Esc verlassen.
-        self.btn_fullscreen = QPushButton()
-        self.btn_fullscreen.setFixedHeight(34)
-        self.btn_fullscreen.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.btn_fullscreen.setStyleSheet("""
-            QPushButton { background:#263238; color:#ddd; font-size:15px; font-weight:700;
-                          border:1px solid #555; border-radius:8px; padding:4px 12px; }
-            QPushButton:hover { border:2px solid #aaa; }
-            QPushButton:pressed { background:#555; }
-        """)
-        info.addWidget(self.btn_fullscreen)
-        root.addLayout(info)
+        self._update_start_button()
 
         # Bereich 2: Steuerung des aktiven Modus
         root.addWidget(self._section_label("2  ·  STEUERUNG"))
         self.panel_frame = QFrame()
         self.panel_frame.setObjectName("panel")
         pf = QVBoxLayout(self.panel_frame)
-        pf.setContentsMargins(18, 14, 18, 14)
+        pf.setContentsMargins(18, 10, 18, 10)
         self.walk_panel = WalkPanel()
         self.manip_panel = ManipPanel(self)
         # Titelzeile: Modus-Titel + (nur GREIFEN) Umschalter ARME | HAENDE,
@@ -1174,7 +1168,16 @@ class DemoGUI(QWidget):
         self.idle_panel.setStyleSheet("color:#666; font-size:22px;")
         for w in (self.idle_panel, self.walk_panel, self.manip_panel):
             self.stack.addWidget(w)
-        pf.addWidget(self.stack, 1)
+        # Scrollbereich als Reserve: die Mindesthoehe des Fensters haengt so
+        # nicht mehr am groessten Panel. Frueher lag sie real bei ~1160 px --
+        # hoeher als ein 1080er-Schirm, darum bot der Fenstermanager kein
+        # Maximieren an und auch Vollbild blieb groesser als der Schirm.
+        self.panel_scroll = QScrollArea()
+        self.panel_scroll.setWidgetResizable(True)
+        self.panel_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.panel_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.panel_scroll.setWidget(self.stack)
+        pf.addWidget(self.panel_scroll, 1)
         root.addWidget(self.panel_frame, 1)
 
         # Bereich 3: Status + Sicherheit
@@ -1182,7 +1185,7 @@ class DemoGUI(QWidget):
         bottom.setSpacing(14)
         self.status = QLabel()
         self.status.setWordWrap(True)
-        self.status.setMinimumHeight(56)
+        self.status.setMinimumHeight(48)
         # Real: Temperaturen des G1 (links; in der Sim ausgeblendet, kein Messwert).
         self.temp_panel = TempPanel(self.node)
         self.temp_panel.setVisible(not self.sim_mode)
@@ -1230,11 +1233,15 @@ class DemoGUI(QWidget):
 
     # ── Vollbild ────────────────────────────────────────────────────────
     def set_fullscreen(self, on):
-        """Vollbild an/aus; aus kehrt zur vorigen Fenstergroesse zurueck."""
+        """Vollbild an/aus; aus kehrt zum vorigen Zustand zurueck (maximiert
+        bzw. Fenster)."""
         if on == self.isFullScreen():
             return
         if on:
+            self._max_before_fs = self.isMaximized()
             self.showFullScreen()
+        elif getattr(self, "_max_before_fs", False):
+            self.showMaximized()
         else:
             self.showNormal()
         self._update_fullscreen_button()
@@ -1273,15 +1280,16 @@ class DemoGUI(QWidget):
             self._refresh_start_bar()
             self._refresh_walk_hint()
         age = None if n.ps4_t is None else now - n.ps4_t
+        # Controller: Zustand (Modus, Hand, Tempo) zeigt die GUI selbst; hier
+        # nur der Knopf zur Belegung, solange ein Controller aktiv ist.
         res = status_line.ps4_text(n.ps4, age, sim=self.sim_mode, walk=n.ps4walk,
                                    device=n.ps4dev)
-        self.info_ps4.setVisible(res is not None)
+        self.btn_pad_help.setVisible(res is not None)
         if res is not None:
-            self.info_ps4.setText(res[0] + "   ⓘ")
-            self.info_ps4.setStyleSheet(self._info_css(res[1]))
             name = (n.ps4dev or {}).get("name")
-            self.info_ps4.setToolTip((f"{name}\n" if name else "")
-                                     + "Klicken: Belegung des Controllers")
+            label = status_line.controller_label(n.ps4dev)
+            self.btn_pad_help.setToolTip((f"{name}\n" if name else "")
+                                         + f"Belegung des {label}-Controllers")
 
     def _refresh_start_bar(self):
         n, now = self.node, time.monotonic()
@@ -1374,6 +1382,20 @@ class DemoGUI(QWidget):
         box.open()
 
     @staticmethod
+    def _small_button(text):
+        """Flacher Knopf fuer die Kopfzeile (Vollbild, Controller-Belegung)."""
+        b = QPushButton(text)
+        b.setFixedHeight(30)
+        b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        b.setStyleSheet("""
+            QPushButton { background:#263238; color:#ddd; font-size:14px; font-weight:700;
+                          border:1px solid #555; border-radius:8px; padding:2px 12px; }
+            QPushButton:hover { border:2px solid #aaa; }
+            QPushButton:pressed { background:#555; }
+        """)
+        return b
+
+    @staticmethod
     def _section_label(text):
         lbl = QLabel(text)
         lbl.setStyleSheet("color:#555; font-size:12px; font-weight:700; letter-spacing:2px;")
@@ -1398,6 +1420,7 @@ class DemoGUI(QWidget):
         self.btn_reset_robot.clicked.connect(self._reset_robot)
         self.btn_quit.clicked.connect(self._quit_clicked)
         self.btn_fullscreen.clicked.connect(self.toggle_fullscreen)
+        self.btn_pad_help.clicked.connect(self._ps4_help)
         self._sc_fullscreen = QShortcut(QKeySequence(Qt.Key.Key_F11), self)
         self._sc_fullscreen.activated.connect(self.toggle_fullscreen)
         self._sc_leave_fullscreen = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
@@ -1422,13 +1445,34 @@ class DemoGUI(QWidget):
     # ── Modus ───────────────────────────────────────────────────────────
     def _start_robot(self):
         """REAL: START (Standby). Danach sind die Modus-Kacheln freigegeben."""
+        if self.started:
+            return
         self.node.publish_bool(self.node.pub_start, True)
         self.started = True
-        self.btn_start.setVisible(False)
+        self._update_start_button()
         self._estop_unacked = False
         self._estop_shown = False
         self._status("Gestartet. Jetzt einen Modus wählen.", "#aaa")
         self._refresh()
+
+    def _update_start_button(self):
+        """Start-Knopf in der Startleiste: orange und frei, solange START fehlt
+        (nach dem Hochfahren oder nach NOT-HALT), sonst grau »Gestartet ✓«."""
+        need = not self.started
+        self.btn_start.setEnabled(need)
+        if not need:
+            self.btn_start.setText("Gestartet ✓")
+            self.btn_start.setToolTip("START ist erfolgt. Nach einem NOT-HALT "
+                                      "hier erneut quittieren.")
+        elif self._estop_shown:
+            self.btn_start.setText("NOT-HALT\nquittieren")
+            self.btn_start.setToolTip("Quittiert den NOT-HALT (Arme, Gehen, Controller) "
+                                      "und gibt die Modus-Kacheln wieder frei.")
+        else:
+            self.btn_start.setText("Start")
+            self.btn_start.setToolTip("Gibt die Modus-Kacheln frei (START an loco_client "
+                                      "und Arm-Regler). Liegt der G1 noch in Damp, stellt "
+                                      "der loco_client ihn dabei auf Preparation.")
 
     def _auto_start(self):
         if self.started and self.mode is None and self.pending is None:
@@ -1461,7 +1505,7 @@ class DemoGUI(QWidget):
         if self._estop_unacked:
             # Sim nach NOT-HALT: START quittiert den E-Stop-Latch im
             # arm_controller -- sonst ignoriert er jedes ENABLE und die Arme
-            # bleiben dauerhaft schlaff (Real: Knopf "Roboter starten").
+            # bleiben dauerhaft schlaff (Real: Knopf »Start« in der Startleiste).
             # Getrennte Topics -> keine Reihenfolge-Garantie: Modus (ENABLE)
             # erst kurz danach senden, sonst kaeme er evtl. vor dem START an.
             n.publish_bool(n.pub_start, True)
@@ -1543,7 +1587,7 @@ class DemoGUI(QWidget):
             return
         if not self.started:
             self._status(f"Controller hat {MODE_TITLE[mode]} gewählt — "
-                         "erst »Roboter starten« drücken.", "#ffb300")
+                         "erst »Start« in der Startleiste drücken.", "#ffb300")
             return
         self.autostart.cancel("Modus am Controller gewählt")
         self._cancel_sequence()
@@ -1920,7 +1964,7 @@ class DemoGUI(QWidget):
         """NOT-HALT von aussen (PS-Taste am PS4-Controller): GUI wechselt in
         denselben Zustand wie beim eigenen Knopf, ohne erneut zu publizieren --
         sonst bliebe sie im alten Modus haengen und koennte nicht quittieren
-        (Real: »Roboter starten« waere versteckt). Der eigene NOT-HALT kommt
+        (Real: »Start« bliebe gesperrt). Der eigene NOT-HALT kommt
         hier ebenfalls an und ist dann schon angezeigt."""
         if not self._estop_shown:
             self._enter_estop()
@@ -1943,7 +1987,7 @@ class DemoGUI(QWidget):
         self.mode = self.pending = None
         # REAL: nach NOT-HALT wieder bewusst ueber START gehen.
         self.started = self.sim_mode
-        self.btn_start.setVisible(not self.sim_mode)
+        self._update_start_button()
         self._refresh()
         self._status("NOT-HALT aktiv — Roboter ist weich geschaltet. "
                      "Zum Fortsetzen oben einen Modus wählen.", "#ef5350")
@@ -2093,12 +2137,18 @@ def main():
     node = DemoNode()
     app = QApplication(sys.argv)
     DarkStyle(app)
+    # Eigenes Dock-Icon, SIM blau / REAL rot (statt Zahnrad), vor dem ersten show().
+    if is_sim_mode():
+        set_app_identity(app, "g1-demo-sim", "g1_demo_sim")
+    else:
+        set_app_identity(app, "g1-demo-real", "g1_demo_real")
     gui = DemoGUI(node)
-    # G1_GUI_FULLSCREEN=1: direkt im Vollbild starten (Standard: Fenster).
+    # G1_GUI_FULLSCREEN=1: direkt im Vollbild starten. Standard: maximiert
+    # (bildschirmfuellend mit Titelleiste, falls der Fenstermanager eine hat).
     if os.environ.get("G1_GUI_FULLSCREEN", "").strip().lower() in ("1", "true", "yes", "on"):
         gui.showFullScreen()
     else:
-        gui.show()
+        gui.showMaximized()
 
     timer = QTimer()
     timer.timeout.connect(lambda: rclpy.spin_once(node, timeout_sec=0.01))

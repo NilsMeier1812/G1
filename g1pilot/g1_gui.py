@@ -64,6 +64,7 @@ except Exception as exc:  # pragma: no cover - nur wenn tkinter fehlt
 HERE = Path(__file__).resolve().parent                       # .../g1pilot
 REPO_ROOT = HERE.parent                                      # Repo-Wurzel
 START_SH = HERE / "start.sh"
+START_ICON = HERE / "resource" / "icons" / "g1_start.png"
 SCENE_DIR = REPO_ROOT / "unitree_mujoco" / "scene_editor"
 SCENES_DIR = SCENE_DIR / "scenes"
 LAUNCH_SH = SCENE_DIR / "launch.sh"
@@ -996,7 +997,7 @@ class RealFrame(tk.Frame):
                  font=("TkDefaultFont", 11, "bold")).pack(anchor="w", padx=12, pady=(8, 0))
         tk.Label(gate,
                  text=("Kein Auto-Start: der Roboter bewegt sich erst, wenn er in der\n"
-                       "Bedienoberfläche gestartet wird (Demo-GUI: »Roboter starten«,\n"
+                       "Bedienoberfläche gestartet wird (Demo-GUI: »Start« in der Startleiste,\n"
                        "Streamdeck: START). NOT-HALT = Damp = Roboter sackt zusammen (sichern!).\n"
                        "Checkliste vorher: g1pilot/docs/70_echtroboter_anleitung.md"),
                  bg="#3a2326", fg=FG, justify="left",
@@ -1291,8 +1292,10 @@ class MenuFrame(tk.Frame):
 # ════════════════════════════════════════════════════════════════════════
 class App(tk.Tk):
     def __init__(self):
-        super().__init__()
+        # className -> WM_CLASS "g1-start"/"G1-start": eigener Dock-Eintrag.
+        super().__init__(className="g1-start")
         self.title("G1 — Startmenü")
+        self._set_icon()
         self.configure(bg=BG)
         self.geometry("900x760")
         self.minsize(700, 600)
@@ -1315,6 +1318,14 @@ class App(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self._quit)
         self.show_menu()
         self.after(200, self.refresh_status)
+
+    def _set_icon(self) -> None:
+        """Eigenes Fenster-Icon statt Zahnrad (gilt auch fuer alle Dialoge)."""
+        try:
+            self._icon = tk.PhotoImage(file=str(START_ICON))
+            self.iconphoto(True, self._icon)
+        except Exception:
+            pass  # rein kosmetisch (z. B. Tk < 8.6 ohne PNG-Support)
 
     # ── Router ────────────────────────────────────────────────────────────
     def show(self, frame) -> None:

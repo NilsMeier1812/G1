@@ -128,21 +128,18 @@ was auf einer Seite gewählt wird, zeigt die andere sofort.
 - **Sicherheit unverändert:** Totmann (L2), NOT-HALT, Voll-Notaus und
   „Real-GEHEN nur, wenn der G1 schon im Walk steht“ bleiben, wie sie waren.
   Lehnt der Controller L2 ab (real, G1 nicht im Walk), erfährt die GUI auch
-  kein GEHEN. Vor »Roboter starten« (real) übernimmt die GUI keinen Modus vom
+  kein GEHEN. Vor »Start« (real) übernimmt die GUI keinen Modus vom
   Controller, sie zeigt nur einen Hinweis.
 - **Tempo-Grenzen bleiben je Seite:** Schnell in der GUI → der Controller
-  fährt real höchstens Normal (`ps4_max_speed`), die Info-Zeile zeigt dann
-  „Normal (max.)“. Geh-Tempo Schnell gibt es nur am Controller; die GUI zeigt
+  fährt real höchstens Normal (`ps4_max_speed`). Geh-Tempo Schnell gibt es nur am Controller; die GUI zeigt
   es an, geht selbst aber höchstens mit Normal (wie bisher gedeckelt).
 - **Startwerte:** beim Start gelten die Parameter der Controller-Nodes
   (real: Hand-Tempo Langsam, Geh-Tempo Langsam) auch in der GUI. Die GUI
   real startet damit bei »Hand bewegen« mit Langsam statt Normal. Ohne
   Controller (`G1_PS4_ARMS=0`) bleibt alles wie bisher.
-- **Info-Zeile** (rechts über dem Steuerbereich): welcher Controller (PS4 /
-  Xbox, Name im Tooltip), Hand · Verschieben/Drehen · Tempo,
-  „GEHT (L2 gehalten) · Geh-Tempo …“ während des Gehens, „L2 gehalten – G1
-  steht nicht im Walk-Modus“, Arm-Sperre im GEHEN, NOT-HALT / Voll-Notaus,
-  „nicht verbunden“. Klick = Belegung (bei Xbox mit Tasten-Zuordnung).
+- **Controller in der GUI:** keine eigene Info-Zeile mehr (Modus, Hand und
+  Tempo zeigt die GUI selbst). Solange ein Controller aktiv ist, steht oben
+  rechts *🎮 Belegung* (Name im Tooltip, bei Xbox mit Tasten-Zuordnung).
 - Zeitstempel je Feld, der neueste gewinnt. Ein alter Modus (vor dem Start
   des jeweiligen Programms gewählt) wird nicht übernommen.
 
@@ -174,11 +171,11 @@ was auf einer Seite gewählt wird, zeigt die andere sofort.
 
 PS löst den NOT-HALT aus — derselbe wie der Knopf in Demo-GUI und Streamdeck.
 Die GUIs zeigen ihn dann auch an (Demo-GUI: Modus aus, real erscheint wieder
-»Roboter starten«; Streamdeck: alle Knöpfe aus, EMERGENCY rot). Umgekehrt
+»Start«; Streamdeck: alle Knöpfe aus, EMERGENCY rot). Umgekehrt
 sperrt ein NOT-HALT aus der GUI auch den Controller (LED rot).
 
 Danach ignoriert der Controller alles außer PS, bis quittiert ist: Sim in
-der Demo-GUI einen Modus wählen, Real »Roboter starten« bzw. Streamdeck
+der Demo-GUI einen Modus wählen, Real »Start« bzw. Streamdeck
 START. Das Quittieren liegt absichtlich nicht auf dem Controller: in der Sim
 setzt START den Roboter auch zurück, real schaltet es den Roboter in Standby.
 
@@ -204,10 +201,10 @@ das Tempo; sobald PS dazukommt, wird dieser Tempo-Schritt zurückgenommen.
    - arm_controller: Arme schlaff wie beim NOT-HALT und **Taille passiv**
      (auch mit `estop_waist_hold=true`). arm_sdk behält Gewicht 1, damit der
      Onboard-Regler die Arme nicht posiert, falls der Damp-RPC ausfällt.
-   - Demo-GUI: „G1: Damp (FSM 1) · VOLL-NOTAUS – »Roboter starten« quittiert,
+   - Demo-GUI: „G1: Damp (FSM 1) · VOLL-NOTAUS – »Start« quittiert,
      dann Startleiste“.
 
-**Zurück:** »Roboter starten« (bzw. Streamdeck START) **quittiert nur** –
+**Zurück:** »Start« (bzw. Streamdeck START) **quittiert nur** –
 anders als nach einem normalen NOT-HALT schaltet der G1 danach **nicht** von
 selbst nach Preparation, er bleibt in Damp. Aufstehen ausdrücklich über die
 Startleiste der Demo-GUI: **Preparation** (am Kran), dann **Walk**; danach
@@ -347,14 +344,14 @@ Ablauf:
 
 1. Start wie gewohnt; Log zeigt `PS4-Arm-Steuerung bereit … (max. Normal,
    PS=NOT-HALT, Options = nur Arme)` und `PS4-Controller: Daten kommen an`.
-2. In der GUI **Roboter starten**, dann **GREIFEN** (Demo-GUI) bzw. START →
+2. In der GUI **Start** (Startleiste), dann **GREIFEN** (Demo-GUI) bzw. START →
    START BALANCING → ENABLE MANIPULATION (Streamdeck). Für die ersten Tests
    den Roboter hängend lassen und nur ENABLE MANIPULATION bzw. **Options**.
 3. Steuerkreuz → Hand wählen (LED-Farbe prüfen), Stick **wenig** auslenken.
    Erwartung: Hand fährt langsam, steht beim Loslassen.
 4. **Kreuz** testen (Hand steht sofort), dann Kreis/Viereck (Hände).
 5. **NOT-HALT-Test nur hängend:** PS. Erwartung wie beim GUI-Knopf (Arme
-   schlaff, kein Sprung). Danach Roboter starten → Options (bzw. ENABLE
+   schlaff, kein Sprung). Danach Start → Options (bzw. ENABLE
    MANIPULATION) übernimmt die Arme wieder ruckfrei.
 6. **Abriss-Test:** Stick halten und dabei USB-Kabel ziehen bzw. Bluetooth
    am PC trennen (`bluetoothctl disconnect …`). Nicht PS lange drücken —
@@ -403,10 +400,10 @@ Ablauf:
 | Xbox: NOT-HALT per Xbox-Taste tut nichts | Taste wird abgefangen (Steam/Desktop) → `G1_XBOX_PS_BUTTON=view`, siehe [Xbox-Controller](#xbox-controller). |
 | Xbox: Tasten/Sticks vertauscht | `ros2 topic echo /g1pilot/ps4/joy` prüfen; X/Y vertauscht → `xbox_swap_xy:=true`; sonst Controller-Firmware aktualisieren (Xbox-Zubehör-App) oder `xpadneo` nehmen. |
 | Log: „Kein PS4-Controller gefunden … Warte“ | Controller nicht gekoppelt oder Container ohne `/dev/input` (über start.sh starten bzw. `COMPOSE_FILE=…:docker-compose.ps4.yml`). |
-| LED/Kugel zeigt die Auswahl, aber die Hand bewegt sich nicht | Arme nicht übernommen → **Options** drücken (oder GUI: GREIFEN / ENABLE MANIPULATION). Im Gehen-Modus hängen die Arme in der Lauf-Pose. Real nach NOT-HALT: erst »Roboter starten«, dann Options. |
+| LED/Kugel zeigt die Auswahl, aber die Hand bewegt sich nicht | Arme nicht übernommen → **Options** drücken (oder GUI: GREIFEN / ENABLE MANIPULATION). Im Gehen-Modus hängen die Arme in der Lauf-Pose. Real nach NOT-HALT: erst »Start«, dann Options. |
 | Hand bleibt an einer Stelle hängen | Kollisions-Gate (Log: „Kollisions-Gate …“) oder Reichweite erreicht → in eine andere Richtung bewegen. |
 | Sim: Hand reagiert spürbar verzögert / fährt nach dem Loslassen weiter | PC ausgelastet → arm_controller regelt nur mit 10–15 Hz. RViz und Navigation abschalten (`USE_RVIZ=false G1_ENABLE_NAV=0`), Last mit `top` prüfen. Siehe [Reaktionszeit](#reaktionszeit). |
-| Nach PS reagiert nichts mehr | NOT-HALT aktiv → in der GUI quittieren (Sim: Modus wählen, Real: Roboter starten). |
+| Nach PS reagiert nichts mehr | NOT-HALT aktiv → in der GUI quittieren (Sim: Modus wählen, Real: Start). |
 | L2 + Stick: G1 geht nicht, lange Vibration | G1 steht nicht im Walk-Modus → Startleiste »Walk« (Real) bzw. GEHEN (Sim). Nach NOT-HALT erst quittieren. |
 | L2 + Stick: G1 geht nicht, keine Vibration | L2 war beim Start/Verbinden schon gedrückt → einmal loslassen. Oder `G1_PS4_WALK=0`. |
 
@@ -430,7 +427,7 @@ Ablauf:
 | `launch/bringup_real.launch.py` | setzt `ps4_arms` aus `G1_PS4_ARMS` mit Real-Werten (Langsam/max Normal, Options ohne `start_balancing`) |
 | `teleoperation/demo_gui.py`, `teleoperation/ui_interface.py` | zeigen einen NOT-HALT von außen (PS-Taste) an; Demo-GUI folgt dem gemeinsamen Zustand (Kacheln, Hand-Auswahl, Tempo) |
 | `g1pilot/teleoperation/shared_state.py` | gemeinsamer Bedienzustand GUI ↔ Controller (`/g1pilot/teleop_state`, latched JSON, Zeitstempel je Feld) |
-| `g1pilot/teleoperation/status_line.py` | Texte der Info-Zeile (Onboard-Modus, Controller inkl. Gehen und Typ) |
+| `g1pilot/teleoperation/status_line.py` | Texte der Startleiste (Onboard-Modus) und Controller-Zustand (Typ, Belegung) |
 | `docker-compose.ps4.yml` | `/dev/input` + `device_cgroup_rules: c 13:* rmw` für `g1pilot-sim` |
 | `test/test_ps4_arm_teleop.py`, `test/test_ps4_joystick.py` | Unit-Tests (Belegung, Logik, Jog, simuliertes evdev-Gerät inkl. hängender Funkverbindung; Xbox per USB/Bluetooth, Auswahl, Consumer-Control, HID-Lebendprüfung) |
 | `test/test_xbox_layout.py` | Xbox ohne ROS: Erkennung, drei Treiber-Varianten, Zuordnung nach Position, View-Ersatz, Gehen mit LT, NOT-HALT, Voll-Notaus RB + LB + Xbox |
