@@ -45,8 +45,8 @@ from PyQt6.QtWidgets import (
     QLabel, QStackedWidget, QFrame, QDialog, QMessageBox, QSizePolicy,
     QGraphicsOpacityEffect, QTableWidget, QTableWidgetItem,
 )
-from PyQt6.QtCore import QTimer, Qt, QRectF, QPointF
-from PyQt6.QtGui import QPainter, QColor, QPen, QBrush
+from PyQt6.QtCore import QTimer, Qt, QRectF, QPointF, QEvent
+from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QKeySequence, QShortcut
 
 import rclpy
 from rclpy.qos import QoSProfile, DurabilityPolicy
@@ -1131,6 +1131,18 @@ class DemoGUI(QWidget):
         info.addWidget(self.info_onboard)
         info.addStretch(1)
         info.addWidget(self.info_ps4)
+        # Vollbild immer aus der GUI erreichbar (am Roboter-Rechner fehlt oft die
+        # Titelleiste des Fenstermanagers). Tasten: F11 umschalten, Esc verlassen.
+        self.btn_fullscreen = QPushButton()
+        self.btn_fullscreen.setFixedHeight(34)
+        self.btn_fullscreen.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_fullscreen.setStyleSheet("""
+            QPushButton { background:#263238; color:#ddd; font-size:15px; font-weight:700;
+                          border:1px solid #555; border-radius:8px; padding:4px 12px; }
+            QPushButton:hover { border:2px solid #aaa; }
+            QPushButton:pressed { background:#555; }
+        """)
+        info.addWidget(self.btn_fullscreen)
         root.addLayout(info)
 
         # Bereich 2: Steuerung des aktiven Modus
@@ -1215,6 +1227,34 @@ class DemoGUI(QWidget):
         root.addWidget(self.status)
         root.addLayout(bottom)
         self._status("Startet …", "#aaa")
+
+    # ── Vollbild ────────────────────────────────────────────────────────
+    def set_fullscreen(self, on):
+        """Vollbild an/aus; aus kehrt zur vorigen Fenstergroesse zurueck."""
+        if on == self.isFullScreen():
+            return
+        if on:
+            self.showFullScreen()
+        else:
+            self.showNormal()
+        self._update_fullscreen_button()
+
+    def toggle_fullscreen(self):
+        self.set_fullscreen(not self.isFullScreen())
+
+    def _update_fullscreen_button(self):
+        if self.isFullScreen():
+            self.btn_fullscreen.setText("✕  Vollbild beenden")
+            self.btn_fullscreen.setToolTip("Vollbild verlassen (Esc oder F11)")
+        else:
+            self.btn_fullscreen.setText("⛶  Vollbild")
+            self.btn_fullscreen.setToolTip("Vollbild (F11), verlassen mit Esc")
+
+    def changeEvent(self, event):
+        # Auch wenn der Fenstermanager das Vollbild umschaltet, Text nachziehen.
+        if event.type() == QEvent.Type.WindowStateChange:
+            self._update_fullscreen_button()
+        super().changeEvent(event)
 
     @staticmethod
     def _info_css(color):
@@ -1357,6 +1397,12 @@ class DemoGUI(QWidget):
         self.btn_push.released.connect(self._push_release)
         self.btn_reset_robot.clicked.connect(self._reset_robot)
         self.btn_quit.clicked.connect(self._quit_clicked)
+        self.btn_fullscreen.clicked.connect(self.toggle_fullscreen)
+        self._sc_fullscreen = QShortcut(QKeySequence(Qt.Key.Key_F11), self)
+        self._sc_fullscreen.activated.connect(self.toggle_fullscreen)
+        self._sc_leave_fullscreen = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        self._sc_leave_fullscreen.activated.connect(lambda: self.set_fullscreen(False))
+        self._update_fullscreen_button()
         self.walk_panel.on_station = self.go_to_station
         n.on_stations = self.walk_panel.set_stations
         if n.stations:
@@ -2048,7 +2094,11 @@ def main():
     app = QApplication(sys.argv)
     DarkStyle(app)
     gui = DemoGUI(node)
-    gui.show()
+    # G1_GUI_FULLSCREEN=1: direkt im Vollbild starten (Standard: Fenster).
+    if os.environ.get("G1_GUI_FULLSCREEN", "").strip().lower() in ("1", "true", "yes", "on"):
+        gui.showFullScreen()
+    else:
+        gui.show()
 
     timer = QTimer()
     timer.timeout.connect(lambda: rclpy.spin_once(node, timeout_sec=0.01))

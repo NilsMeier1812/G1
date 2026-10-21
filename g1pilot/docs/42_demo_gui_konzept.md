@@ -202,6 +202,13 @@ Ablauf anlegen: GREIFEN → Erweitert → *Pose speichern …*, Kategorie
 `Ablauf <Name>`, Posen in Reihenfolge benennen (`AP1_01_…`, `AP1_02_…`).
 Der Ablauf erscheint danach als Knopf „<Name>“.
 
+**Vollbild:** Knopf *⛶ Vollbild* rechts in der Info-Zeile (unter den
+Modus-Kacheln), im Vollbild heißt er *Vollbild beenden*. Tasten: **F11**
+schaltet um, **Esc** verlässt das Vollbild. Funktioniert auch ohne Titelleiste
+des Fenstermanagers (Roboter-Rechner). `G1_GUI_FULLSCREEN=1` startet die
+Demo-GUI direkt im Vollbild (Default 0 = Fenster). Reine Fensterfunktion,
+sendet nichts an den Roboter.
+
 ## Technik
 
 | Datei | Änderung |
