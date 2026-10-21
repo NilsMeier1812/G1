@@ -156,3 +156,10 @@ def test_without_walk_deadman_l2_is_ignored():
     assert arm.twist(a)
     arm.update(*joy(l2=1.0, buttons=(L.DPAD_LEFT,)), 0.1)
     assert arm.selection == "left"
+
+
+def test_walk_set_speed_from_gui_capped():
+    w = WalkLogic(speed="Langsam", max_speed="Normal")
+    assert w.set_speed("Schnell") and w.speed == "Normal"
+    assert not w.set_speed("Normal") and not w.set_speed("quatsch")
+    assert w.set_speed("Langsam") and w.status()["speed"] == "Langsam"

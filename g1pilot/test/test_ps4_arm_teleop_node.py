@@ -57,7 +57,7 @@ def rig(request):
         node = rclpy.create_node("ps4_real_probe")
         got = {k: [] for k in ("goal_left", "goal_right", "enabled", "balance", "estop",
                                "hand_right", "hand_left", "feedback", "status", "walk",
-                               "markers", "full")}
+                               "markers", "full", "shared")}
         sub = lambda t, typ, key: node.create_subscription(   # noqa: E731
             typ, t, lambda m: got[key].append((time.monotonic(), m)), 50)
         sub("/g1pilot/hand_goal/left", PoseStamped, "goal_left")
@@ -81,6 +81,11 @@ def rig(request):
         qos_latched = rclpy.qos.QoSProfile(depth=1)
         qos_latched.durability = rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL
         pub_onboard = node.create_publisher(String, "/g1pilot/onboard_state", qos_latched)
+        # Gemeinsamer Zustand mit der Demo-GUI (shared_state.py)
+        node.create_subscription(String, "/g1pilot/teleop_state",
+                                 lambda m: got["shared"].append((time.monotonic(), m)),
+                                 qos_latched)
+        pub_shared = node.create_publisher(String, "/g1pilot/teleop_state", qos_latched)
 
         tfb = StaticTransformBroadcaster(node)
         tfs = []
@@ -126,6 +131,22 @@ def rig(request):
         rig.start = lambda: pub_start.publish(Bool(data=True))
         rig.gui_walk = lambda: pub_gui_walk.publish(Bool(data=True))
         rig.onboard = lambda fsm: pub_onboard.publish(String(data=json.dumps({"fsm": fsm})))
+
+        def gui_share(stamp=None, **fields):
+            """Wie die Demo-GUI: Felder mit Zeitstempel (Default: jetzt)."""
+            t = time.time() if stamp is None else stamp
+            msg = {"source": "demo_gui",
+                   "fields": {k: {"v": v, "t": t} for k, v in fields.items()}}
+            pub_shared.publish(String(data=json.dumps(msg)))
+
+        def shared():
+            """Letzter Stand, den der Node publiziert hat: {feld: (wert, stempel)}."""
+            for _, m in reversed(got["shared"]):
+                d = json.loads(m.data)
+                if d.get("source") == "ps4_arm_teleop":
+                    return {k: (e["v"], e["t"]) for k, e in d["fields"].items()}
+            return {}
+        rig.gui_share, rig.shared = gui_share, shared
         # Node bereit (latched Status da) und Joy kommt an
         assert wait_for(lambda: status().get("connected") is True, 15.0), "Node startet nicht"
         yield rig
@@ -343,3 +364,67 @@ def test_gui_walk_tile_locks_controller_arms(rig):
     rig.gui_walk()                                      # GEHEN aus der Demo-GUI
     assert wait_for(lambda: rig.status().get("arms_locked") is True, 2.0)
     assert "GEHEN" in rig.status().get("label", "")
+
+
+# ── Gemeinsamer Zustand mit der Demo-GUI (/g1pilot/teleop_state) ─────────
+@pytest.mark.parametrize("rig", [MODES], indirect=True)
+def test_shared_state_follows_gui_and_reports_controller(rig):
+    g = rig.got
+    # Start: Node meldet seine Start-Parameter (real: rechts, Langsam)
+    assert wait_for(lambda: rig.shared().get("arm_side", (None,))[0] == "right", 3.0)
+    assert rig.shared()["arm_speed"][0] == "Langsam"
+    assert "mode" not in rig.shared()
+
+    # GUI waehlt linke Hand + Schnell: Controller folgt, Schnell -> max. Normal
+    n_fb = len(g["feedback"])
+    rig.gui_share(arm_side="left", arm_speed="Schnell")
+    assert wait_for(lambda: rig.status().get("selection") == "left", 2.0)
+    st = rig.status()
+    assert st["speed"] == "Normal" and st["speed_req"] == "Schnell"
+    time.sleep(0.2)
+    fbs = [json.loads(m.data) for _, m in g["feedback"][n_fb:]]
+    assert fbs and all("rumble" not in f for f in fbs)     # nur LED, keine Vibration
+    assert fbs[-1]["rgb"] == [0, 90, 255]                    # blau = links
+
+    # Alter Stand (Stempel vor dem Node-Start) aendert nichts
+    rig.gui_share(stamp=5.0, arm_side="both")
+    time.sleep(0.3)
+    assert rig.status()["selection"] == "left"
+
+    # Steuerkreuz rechts am Controller -> GUI bekommt "right" mit neuerem Stempel
+    t_gui = time.time()
+    rig.press(L.DPAD_RIGHT)
+    assert wait_for(lambda: rig.shared()["arm_side"][0] == "right", 2.0)
+    assert rig.shared()["arm_side"][1] > t_gui
+    rig.press(L.L1)                                          # Tempo Normal -> Langsam
+    assert wait_for(lambda: rig.shared()["arm_speed"][0] == "Langsam", 2.0)
+
+    # GUI-Kachel GEHEN ueber den gemeinsamen Zustand: Arme gesperrt, aber der
+    # Controller sendet KEIN start_walking (das macht die GUI selbst)
+    rig.gui_share(mode="walk")
+    assert wait_for(lambda: rig.status().get("arms_locked") is True, 2.0)
+    time.sleep(0.2)
+    assert _walk_bools(g) == []
+    # R2 am Controller -> GREIFEN an die GUI
+    rig.press(L.R2)
+    assert wait_for(lambda: rig.shared().get("mode", (None,))[0] == "grasp", 2.0)
+    assert not rig.status().get("arms_locked")
+
+
+@pytest.mark.parametrize("rig", [MODES], indirect=True)
+def test_shared_mode_only_after_real_walk_switch(rig):
+    """Real, G1 nicht im Walk: L2 wird abgelehnt -> GUI erfaehrt KEIN GEHEN.
+    Im Walk: L2 -> mode walk im gemeinsamen Zustand (GUI-Kachel folgt)."""
+    rig.onboard(4)
+    time.sleep(0.3)
+    st = rig.state
+    st["axes"][L.L2_AXIS] = 1.0
+    time.sleep(0.4)
+    st["axes"][L.L2_AXIS] = 0.0
+    time.sleep(0.3)
+    assert "mode" not in rig.shared()
+    rig.onboard(501)
+    time.sleep(0.3)
+    st["axes"][L.L2_AXIS] = 1.0
+    assert wait_for(lambda: rig.shared().get("mode", (None,))[0] == "walk", 2.0)
+    st["axes"][L.L2_AXIS] = 0.0

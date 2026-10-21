@@ -20,6 +20,9 @@ KEIN Laufen: der Node publiziert nichts an loco_cmd_vel / joy_mux. Rueckmeldung:
   /g1pilot/ps4/feedback  String(JSON)  LED-Farbe + Vibration -> ps4_joystick
   /g1pilot/ps4/status    String(JSON)  Auswahl/Modus/Tempo (fuer GUIs/Logs)
   /g1pilot/ps4/markers   MarkerArray   farbige Kugel an der aktiven Hand
+  /g1pilot/teleop_state  String(JSON)  gemeinsamer Zustand mit der Demo-GUI
+                         (Hand-Auswahl, Tempo, Modus; shared_state.py) --
+                         publiziert eigene Wechsel, uebernimmt die der GUI
 
 Belegung (Details: g1pilot/docs/43_ps4_controller.md):
   Steuerkreuz  links/rechts/oben/unten = linke / rechte / beide / beide gespiegelt
@@ -52,6 +55,7 @@ import math
 import time
 
 from g1pilot.teleoperation import ps4_layout as L
+from g1pilot.teleoperation import shared_state
 from g1pilot.teleoperation.ps4_walk import deadman_held
 from g1pilot.teleoperation.hand_jog import (
     JOG_FRAME, JOG_TF, JOG_SPEEDS, JOG_SPEED_ORDER, JOG_CMD_TOPIC, CommandedPoses,
@@ -125,6 +129,9 @@ class ArmTeleopLogic:
                         else len(JOG_SPEED_ORDER) - 1)
         idx = JOG_SPEED_ORDER.index(speed) if speed in JOG_SPEED_ORDER else 1
         self.speed_idx = min(idx, self.max_idx)
+        # Gewuenschtes Tempo (gemeinsamer Zustand mit der GUI): kann ueber
+        # max_speed liegen, gefahren wird dann max_speed.
+        self.speed_req = self.speed
         # PS: True = NOT-HALT (wie die GUIs), False = nur Stopp wie Kreuz.
         self.ps_estop = bool(ps_estop)
         self.estop = False
@@ -171,6 +178,24 @@ class ArmTeleopLogic:
         """GEHEN-Modus: Arm-Funktionen am Controller gesperrt."""
         return self.trigger_modes and self.robot_mode == "walk"
 
+    def set_selection(self, sel):
+        """Hand-Auswahl von aussen (GUI). -> Befehle wie update() (Halten der
+        abgewaehlten Seiten, "changed") oder []."""
+        if sel not in SELECTIONS or sel == self.selection:
+            return []
+        dropped = tuple(s for s in self.sides if s not in SELECTIONS[sel])
+        self.selection = sel
+        return ([("hold", dropped)] if dropped else []) + [("changed",)]
+
+    def set_speed(self, name):
+        """Tempo von aussen (GUI), auf max_speed begrenzt. -> geaendert?"""
+        if name not in JOG_SPEED_ORDER:
+            return False
+        before = (self.speed_idx, self.speed_req)
+        self.speed_req = name
+        self.speed_idx = min(JOG_SPEED_ORDER.index(name), self.max_idx)
+        return before != (self.speed_idx, self.speed_req)
+
     def set_robot_mode(self, mode):
         """Modus von aussen (GUI-Kachel) oder vom Node zuruecknehmen. -> geaendert?"""
         if mode == self.robot_mode:
@@ -199,7 +224,8 @@ class ArmTeleopLogic:
 
     def status(self):
         return {"selection": self.selection, "sides": list(self.sides),
-                "mode": self.mode, "speed": self.speed, "estop": self.estop,
+                "mode": self.mode, "speed": self.speed, "speed_req": self.speed_req,
+                "max_speed": JOG_SPEED_ORDER[self.max_idx], "estop": self.estop,
                 "ps_estop": self.ps_estop, "full_estop": self.full_estop,
                 "full_arming": self.full_arming, "robot_mode": self.robot_mode,
                 "arms_locked": self.arms_locked, "label": self.label()}
@@ -272,6 +298,7 @@ class ArmTeleopLogic:
         if ("full_arm",) in out and self._speed_undo is not None:
             # L1/R1 vor PS gedrueckt: deren Tempo-Schritt gehoerte zum Notaus.
             self.speed_idx = self._speed_undo
+            self.speed_req = self.speed
             self._speed_undo = None
             out.append(("changed",))
         if self.full_arming or self._full_sent:
@@ -330,11 +357,13 @@ class ArmTeleopLogic:
             if self._speed_undo is None:
                 self._speed_undo = self.speed_idx
             self.speed_idx -= 1
+            self.speed_req = self.speed
             out.append(("changed",))
         if rise[L.R1] and self.speed_idx < self.max_idx:
             if self._speed_undo is None:
                 self._speed_undo = self.speed_idx
             self.speed_idx += 1
+            self.speed_req = self.speed
             out.append(("changed",))
 
         if rise[L.CIRCLE]:
@@ -496,6 +525,15 @@ def main(args=None):
             latched.durability = DurabilityPolicy.TRANSIENT_LOCAL
             self.pub_status = self.create_publisher(String, "/g1pilot/ps4/status", latched)
             self.pub_markers = self.create_publisher(MarkerArray, "/g1pilot/ps4/markers", 10)
+            # Gemeinsamer Zustand mit der Demo-GUI (shared_state.py). Start-
+            # Parameter (Real: Langsam) gelten ab Node-Start fuer beide Seiten.
+            self.t_start_wall = time.time()
+            self.shared = shared_state.SharedState("ps4_arm_teleop")
+            self.shared.set("arm_side", self.logic.selection)
+            self.shared.set("arm_speed", self.logic.speed)
+            self.pub_shared = self.create_publisher(String, shared_state.TOPIC, latched)
+            self.create_subscription(String, shared_state.TOPIC, self._on_shared, latched)
+            self.pub_shared.publish(String(data=self.shared.to_json()))
 
             self.create_subscription(Joy, gp("joy_topic"), self._on_joy, 10)
             for s in ("left", "right"):
@@ -533,8 +571,48 @@ def main(args=None):
                 self.get_logger().info("PS4-Controller: Daten kommen an.")
                 self._send_feedback()
             self.axes, self.t_joy = list(msg.axes), now
-            for cmd in self.logic.update(msg.axes, msg.buttons, now):
+            lg = self.logic
+            before = (lg.selection, lg.speed, lg.robot_mode)
+            for cmd in lg.update(msg.axes, msg.buttons, now):
                 self._run(cmd)
+            # Wechsel am Controller -> gemeinsamer Zustand (GUI zieht nach).
+            # Modus erst NACH _run: real ohne Walk nimmt "mode" ihn zurueck.
+            changed = False
+            if lg.selection != before[0]:
+                changed |= self.shared.set("arm_side", lg.selection)
+            if lg.speed != before[1]:
+                changed |= self.shared.set("arm_speed", lg.speed)
+            if lg.robot_mode != before[2] and lg.robot_mode in ("walk", "grasp"):
+                changed |= self.shared.set("mode", lg.robot_mode)
+            if changed:
+                self.pub_shared.publish(String(data=self.shared.to_json()))
+
+        def _on_shared(self, msg):
+            """Wechsel aus der GUI uebernehmen (ohne Vibration: die LED zeigt
+            es). Eigene Nachrichten aendern nichts (gleicher Zeitstempel)."""
+            ch = self.shared.merge(msg.data)
+            lg, quiet_change = self.logic, False
+            if "arm_side" in ch:
+                for cmd in lg.set_selection(ch["arm_side"]):
+                    if cmd[0] == "hold":
+                        self._hold(cmd[1])
+                    else:
+                        quiet_change = True
+            if "arm_speed" in ch and lg.set_speed(ch["arm_speed"]):
+                quiet_change = True
+            # Modus nur, wenn er NACH dem Node-Start gewechselt wurde (ein
+            # alter latched Stand beschreibt den Roboter nicht mehr).
+            if ("mode" in ch and lg.trigger_modes
+                    and self.shared.stamps.get("mode", 0.0) > self.t_start_wall
+                    and lg.set_robot_mode(ch["mode"])):
+                if lg.arms_locked:
+                    self._hold(("left", "right"))
+                quiet_change = True
+            if quiet_change:
+                self.get_logger().info(f"Von der GUI: {lg.label()}")
+                self._send_feedback()
+                self._publish_status()
+                self._publish_markers()
 
         def _on_cmd_pose(self, side, msg):
             if msg.header.frame_id and msg.header.frame_id != JOG_FRAME:

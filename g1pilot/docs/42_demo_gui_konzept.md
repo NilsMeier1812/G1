@@ -63,6 +63,12 @@ Auf dem echten Roboter sind die Kacheln gesperrt, bis „Roboter starten“
 (`/g1pilot/start`) gedrückt wurde. Nach einem NOT-HALT ist das wieder nötig.
 In der Sim startet die GUI wie der Streamdeck nach 3 s automatisch in GREIFEN.
 
+**Mit Controller (PS4/Xbox) gekoppelt:** Kacheln, Hand-Auswahl, Tempo »Hand
+bewegen« und Geh-Tempo teilen sich GUI und Controller
+(`/g1pilot/teleop_state`). L2 am Controller → Kachel GEHEN, R2 → GREIFEN;
+die GUI sendet dabei selbst nichts. Details:
+[43_ps4_controller.md › Controller und Demo-GUI gekoppelt](43_ps4_controller.md#controller-und-demo-gui-gekoppelt).
+
 ### 2 · Steuerung (Mitte)
 
 Hier steht **nur** der Inhalt des aktiven Modus. Der Rahmen hat dessen Farbe,

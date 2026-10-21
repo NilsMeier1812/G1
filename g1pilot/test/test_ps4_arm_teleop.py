@@ -755,3 +755,25 @@ def test_full_estop_still_works_in_walk_mode():
     trig(lg, 0.0, L2_AXIS=1.0)
     trig(lg, 0.1)
     assert ("full_estop",) in hold_combo(lg, 0.2, 2.4)
+
+
+# ── Gemeinsamer Zustand mit der Demo-GUI (set_selection / set_speed) ─────
+def test_set_selection_from_gui_holds_dropped_side():
+    lg = ArmTeleopLogic()
+    press(lg, L.DPAD_UP)                                # beide
+    out = lg.set_selection("left")
+    assert out == [("hold", ("right",)), ("changed",)] and lg.sides == ("left",)
+    assert lg.set_selection("left") == [] and lg.set_selection("oben") == []
+    assert lg.set_selection("mirror") == [("changed",)]
+
+
+def test_set_speed_from_gui_capped_and_requested_kept():
+    lg = ArmTeleopLogic(speed="Langsam", max_speed="Normal")
+    assert lg.set_speed("Schnell")
+    assert lg.speed == "Normal" and lg.speed_req == "Schnell"
+    assert lg.status()["speed_req"] == "Schnell" and lg.status()["max_speed"] == "Normal"
+    assert not lg.set_speed("Schnell") and not lg.set_speed("quatsch")
+    press(lg, L.L1)                                     # am Controller: Langsam
+    assert lg.speed == lg.speed_req == "Langsam"
+    press(lg, L.R1)
+    assert lg.speed == lg.speed_req == "Normal"

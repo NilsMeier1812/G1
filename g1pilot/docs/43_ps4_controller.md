@@ -107,6 +107,45 @@ GEHEN und GREIFEN der Demo-GUI:
   Lauf-Policy erst in die Lauf-Pose.
 - Abschalten: `G1_PS4_WALK=0` (dann weder L2 noch R2).
 
+## Controller und Demo-GUI gekoppelt
+
+Seit 2026-10-20. Controller und Demo-GUI haben **einen gemeinsamen
+Bedienzustand** (`/g1pilot/teleop_state`, `teleoperation/shared_state.py`):
+was auf einer Seite gewählt wird, zeigt die andere sofort.
+
+| Was | am Controller | in der Demo-GUI |
+|---|---|---|
+| Modus GEHEN / GREIFEN | L2 / R2 (im GEHEN auch Options) | Kacheln GEHEN / GREIFEN |
+| Hand-Auswahl | Steuerkreuz ◀ ▶ ▲ ▼ | GREIFEN → Hand bewegen: Links / Rechts / Beide / **Gespiegelt** |
+| Tempo »Hand bewegen« | L1 / R1 | Tempo Langsam / Normal / Schnell |
+| Geh-Tempo | L2 halten + ▲ / ▼ | GEHEN → Tempo Langsam / Normal (Schnell nur Anzeige) |
+
+- **Nur Anzeige und Einstellung, keine neuen Fahrbefehle.** Wer den Modus
+  wechselt, sendet wie bisher `start_walking` / `start_balancing` /
+  `arms/enabled`; die andere Seite zieht nur die Anzeige nach. Wechselt der
+  Controller auf GEHEN, zeigt die Kachel »wechselt …«, bis die Arme in der
+  Lauf-Pose sind (`arms/walk_ready`), wie beim Antippen der Kachel.
+- **Sicherheit unverändert:** Totmann (L2), NOT-HALT, Voll-Notaus und
+  „Real-GEHEN nur, wenn der G1 schon im Walk steht“ bleiben, wie sie waren.
+  Lehnt der Controller L2 ab (real, G1 nicht im Walk), erfährt die GUI auch
+  kein GEHEN. Vor »Roboter starten« (real) übernimmt die GUI keinen Modus vom
+  Controller, sie zeigt nur einen Hinweis.
+- **Tempo-Grenzen bleiben je Seite:** Schnell in der GUI → der Controller
+  fährt real höchstens Normal (`ps4_max_speed`), die Info-Zeile zeigt dann
+  „Normal (max.)“. Geh-Tempo Schnell gibt es nur am Controller; die GUI zeigt
+  es an, geht selbst aber höchstens mit Normal (wie bisher gedeckelt).
+- **Startwerte:** beim Start gelten die Parameter der Controller-Nodes
+  (real: Hand-Tempo Langsam, Geh-Tempo Langsam) auch in der GUI. Die GUI
+  real startet damit bei »Hand bewegen« mit Langsam statt Normal. Ohne
+  Controller (`G1_PS4_ARMS=0`) bleibt alles wie bisher.
+- **Info-Zeile** (rechts über dem Steuerbereich): welcher Controller (PS4 /
+  Xbox, Name im Tooltip), Hand · Verschieben/Drehen · Tempo,
+  „GEHT (L2 gehalten) · Geh-Tempo …“ während des Gehens, „L2 gehalten – G1
+  steht nicht im Walk-Modus“, Arm-Sperre im GEHEN, NOT-HALT / Voll-Notaus,
+  „nicht verbunden“. Klick = Belegung (bei Xbox mit Tasten-Zuordnung).
+- Zeitstempel je Feld, der neueste gewinnt. Ein alter Modus (vor dem Start
+  des jeweiligen Programms gewählt) wird nicht übernommen.
+
 ## Gehen mit L2
 
 | Mit **L2 gehalten** | Wirkung |
@@ -388,7 +427,9 @@ Ablauf:
 | `launch/teleoperation_launcher.launch.py` | Argument `ps4_arms` (Default `false`): startet `ps4_joystick` + `ps4_arm_teleop` statt `joystick`; `ps4_speed`, `ps4_max_speed`, `ps4_options_balancing`, `ps4_ps_estop`; `ps4_walk` (Default `true`) startet zusätzlich `ps4_walk`, `ps4_walk_speed`, `ps4_walk_max_speed` |
 | `launch/bringup_sim.launch.py` | setzt `ps4_arms` aus `G1_PS4_ARMS` (Sim-Defaults) |
 | `launch/bringup_real.launch.py` | setzt `ps4_arms` aus `G1_PS4_ARMS` mit Real-Werten (Langsam/max Normal, Options ohne `start_balancing`) |
-| `teleoperation/demo_gui.py`, `teleoperation/ui_interface.py` | zeigen einen NOT-HALT von außen (PS-Taste) an |
+| `teleoperation/demo_gui.py`, `teleoperation/ui_interface.py` | zeigen einen NOT-HALT von außen (PS-Taste) an; Demo-GUI folgt dem gemeinsamen Zustand (Kacheln, Hand-Auswahl, Tempo) |
+| `g1pilot/teleoperation/shared_state.py` | gemeinsamer Bedienzustand GUI ↔ Controller (`/g1pilot/teleop_state`, latched JSON, Zeitstempel je Feld) |
+| `g1pilot/teleoperation/status_line.py` | Texte der Info-Zeile (Onboard-Modus, Controller inkl. Gehen und Typ) |
 | `docker-compose.ps4.yml` | `/dev/input` + `device_cgroup_rules: c 13:* rmw` für `g1pilot-sim` |
 | `test/test_ps4_arm_teleop.py`, `test/test_ps4_joystick.py` | Unit-Tests (Belegung, Logik, Jog, simuliertes evdev-Gerät inkl. hängender Funkverbindung; Xbox per USB/Bluetooth, Auswahl, Consumer-Control, HID-Lebendprüfung) |
 | `test/test_xbox_layout.py` | Xbox ohne ROS: Erkennung, drei Treiber-Varianten, Zuordnung nach Position, View-Ersatz, Gehen mit LT, NOT-HALT, Voll-Notaus RB + LB + Xbox |
@@ -396,6 +437,7 @@ Ablauf:
 | `test/test_ps4_arm_teleop_node.py` | Node mit Real-Einstellungen gegen simuliertes Joy + TF (Options, Tempo, NOT-HALT von außen, kein Laufbefehl) |
 | `test/test_gui_external_estop.py` | Demo-GUI + Streamdeck folgen einem NOT-HALT von außen (Sim und Real, offscreen) |
 | `test/test_demo_gui_jog_hold.py` | Demo-GUI »Hand bewegen«: Halte-Ziel beim Loslassen (auf der Linie, 1 s wiederholt, Grundstellung löscht es) |
+| `test/test_shared_state.py`, `test/test_demo_gui_controller_sync.py` | gemeinsamer Zustand: neuester gewinnt, Echo/alte Stände ignoriert; Demo-GUI folgt Controller (Kacheln, Auswahl, Tempo) ohne etwas zu senden, Sim und Real offscreen |
 | `test_ps4_arm_sim.py` | Ende-zu-Ende-Test gegen die laufende Sim (simulierte Joy-Eingabe) |
 
 ### Datenfluss
@@ -411,6 +453,7 @@ DualShock 4 ──evdev──> ps4_joystick ──/g1pilot/ps4/joy (Joy, feste B
                                                                                      ├─> /g1pilot/pose_store/cancel (Kreuz)
                                                                                      ├─> /g1pilot/emergency_stop (PS)
                                                                                      ├─> /g1pilot/ps4/status (JSON, latched)
+                                                                                     ├─<>  /g1pilot/teleop_state (JSON, latched; mit Demo-GUI + ps4_walk)
                                                                                      └─> /g1pilot/ps4/markers (RViz)
                        /g1pilot/ps4/joy ──> ps4_walk (L2 gehalten) ──/g1pilot/ps4/walk_cmd──> loco_client (real, Move) / loco_sim (Sim)
 ```
@@ -422,7 +465,10 @@ Topic, das nur bei gehaltenem L2 gesendet wird. Der alte `joystick`-Node startet
 weil er denselben Controller lesen würde.
 
 Eingänge außer dem Joy: `/g1pilot/emergency_stop` (NOT-HALT aus der GUI →
-Controller sperren) und `/g1pilot/start` (Quittung → freigeben).
+Controller sperren), `/g1pilot/start` (Quittung → freigeben) und
+`/g1pilot/teleop_state` (Auswahl/Tempo/Modus aus der Demo-GUI).
+`ps4_joystick` meldet zusätzlich `/g1pilot/ps4/device` (latched,
+`{"kind": "ps4"|"xbox"|null, "name": …}`) für die Anzeige.
 
 ### Feste Belegung (`/g1pilot/ps4/joy`)
 
@@ -564,9 +610,14 @@ im NOT-HALT (`--no-estop` lässt das aus).
 - Real ist nur ohne Roboter getestet (Launch-Konfiguration, Node mit
   simuliertem Joy/TF, GUIs offscreen). Der erste Lauf am Roboter folgt dem
   Ablauf unter [Echter Roboter](#echter-roboter).
-- Options ↔ Demo-GUI: Options übernimmt die Arme, die Kachel in der Demo-GUI
-  weiß davon nichts (zeigt weiter ihren letzten Zustand). Der NOT-HALT ist
-  dagegen abgeglichen.
+- Options ↔ Demo-GUI: im GEHEN schaltet Options wie R2 auf GREIFEN, die
+  Kachel folgt. Ohne gewählten Modus (nach Start oder NOT-HALT) übernimmt
+  Options nur die Arme, die Kachel bleibt dann, wie sie ist.
+- Nach einem NOT-HALT hat die GUI keinen Modus mehr, der Controller behält
+  seinen letzten (z. B. GEHEN mit Arm-Sperre, wie bisher). Beim nächsten
+  Modus-Wechsel auf einer der beiden Seiten sind sie wieder gleich.
+- Der Streamdeck (`ui_interface`) nimmt am gemeinsamen Zustand nicht teil;
+  der Controller folgt seinen Modus-Knöpfen wie bisher über die Topics.
 - `g1pilot-real-full` (LiDAR-Profil) startet ein anderes Bringup ohne den
   Schalter.
 - LED im Sim-Container nicht setzbar (sysfs read-only), siehe oben.

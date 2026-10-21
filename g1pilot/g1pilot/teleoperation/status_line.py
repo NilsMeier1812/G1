@@ -8,9 +8,11 @@ Zwei Anzeigen, beide nur lesend:
     "G1: Walk (FSM 500)" usw. Damit sieht man nach einem Start per Handy-App
     oder Fernbedienung sofort, in welchem Modus der Roboter steht und ob
     GEHEN ueberhaupt freigegeben ist.
-  * PS4-Controller (ps4_arm_teleop -> /g1pilot/ps4/status): welche Hand
-    (links/rechts/beide/gespiegelt), Verschieben/Drehen, Tempo, Verbindung.
-    Klick auf die Anzeige zeigt die Belegung (PS4_HELP).
+  * PS4-/Xbox-Controller (ps4_arm_teleop -> /g1pilot/ps4/status, ps4_walk ->
+    /g1pilot/ps4/walk_status, ps4_joystick -> /g1pilot/ps4/device): welche
+    Hand (links/rechts/beide/gespiegelt), Verschieben/Drehen, Tempo, Gehen mit
+    L2 (Totmann) samt Geh-Tempo, Arm-Sperre im GEHEN, NOT-HALT, Verbindung und
+    welcher Controller. Klick auf die Anzeige zeigt die Belegung (PS4_HELP).
 """
 import json
 
@@ -74,30 +76,47 @@ def onboard_text(state, age_s, walk_requested=False):
     return text, RED if fsm in (0, 1) else AMBER
 
 
-def ps4_text(status, age_s, sim=False):
-    """-> (Text, Farbe) oder None (kein PS4-Arm-Modus aktiv)."""
+def controller_label(device):
+    """'PS4' oder 'Xbox' (device = dict von /g1pilot/ps4/device oder None)."""
+    return "Xbox" if (device or {}).get("kind") == "xbox" else "PS4"
+
+
+def ps4_text(status, age_s, sim=False, walk=None, device=None):
+    """-> (Text, Farbe) oder None (kein PS4-Arm-Modus aktiv).
+    walk = /g1pilot/ps4/walk_status (ps4_walk), device = /g1pilot/ps4/device."""
     if status is None:
         return None
+    c = controller_label(device)
     if age_s is None or age_s > STALE_S:
-        return "PS4: Steuerung antwortet nicht", GREY
+        return f"{c}: Steuerung antwortet nicht", GREY
     if status.get("full_arming"):
-        return "PS4: VOLL-NOTAUS wird ausgelöst – loslassen bricht ab", RED
+        return f"{c}: VOLL-NOTAUS wird ausgelöst – loslassen bricht ab", RED
     if status.get("full_estop"):
         how = "Modus wählen" if sim else "»Roboter starten«"
-        return f"PS4: VOLL-NOTAUS (ganzer G1 Damp) – gesperrt bis {how}", RED
+        return f"{c}: VOLL-NOTAUS (ganzer G1 Damp) – gesperrt bis {how}", RED
     if status.get("estop"):
         how = "Modus wählen" if sim else "»Roboter starten«"
-        return f"PS4: NOT-HALT – gesperrt bis {how}", RED
+        return f"{c}: NOT-HALT – gesperrt bis {how}", RED
     if not status.get("connected"):
-        return "PS4: nicht verbunden", GREY
+        return f"{c}: nicht verbunden", GREY
+    walk = walk or {}
+    if walk.get("active") and not walk.get("estop"):
+        if walk.get("walk_ready") is False:
+            return f"{c}: L2 gehalten – G1 steht nicht im Walk-Modus", AMBER
+        return f"{c}: GEHT (L2 gehalten) · Geh-Tempo {walk.get('speed', '')}", \
+            _hex(COLORS["walk"])
     if status.get("arms_locked"):
-        return "PS4: GEHEN – L2 halten = laufen, R2 = Greifen", _hex(COLORS["walk"])
+        speed = f" ({walk['speed']})" if walk.get("speed") else ""
+        return (f"{c}: GEHEN – L2 halten = laufen{speed}, R2 = Greifen",
+                _hex(COLORS["walk"]))
     sel = status.get("selection", "")
     label = SELECTION_LABEL.get(sel, sel.upper())
     mode = MODE_LABEL.get(status.get("mode"), status.get("mode", ""))
     speed = status.get("speed", "")
+    if status.get("speed_req") not in (None, speed):
+        speed += " (max.)"     # GUI wollte schneller, Controller-Grenze max_speed
     color = _hex(COLORS[sel]) if sel in COLORS else GREY
-    return f"PS4: Hand {label} · {mode} · {speed}", color
+    return f"{c}: Hand {label} · {mode} · {speed}", color
 
 
 # Startleiste (nur real): Damp -> Preparation -> Walk wie in der Handy-App.

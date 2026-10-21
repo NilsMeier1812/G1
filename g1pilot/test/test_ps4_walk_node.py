@@ -61,6 +61,10 @@ def rig():
         pub_estop = node.create_publisher(Bool, "/g1pilot/emergency_stop", 10)
         pub_start = node.create_publisher(Bool, "/g1pilot/start", 10)
         pub_onboard = node.create_publisher(String, "/g1pilot/onboard_state", latched)
+        got["shared"] = []
+        node.create_subscription(String, "/g1pilot/teleop_state",
+                                 lambda m: got["shared"].append(json.loads(m.data)), latched)
+        pub_shared = node.create_publisher(String, "/g1pilot/teleop_state", latched)
         state.update({"axes": [0.0] * L.NUM_AXES, "buttons": [0] * L.NUM_BUTTONS,
                       "run": True})
 
@@ -86,6 +90,8 @@ def rig():
         r.onboard = lambda bal: pub_onboard.publish(
             String(data=json.dumps({"fsm": 500 if bal else 4, "balanced": bal})))
         r.l2 = lambda v: state["axes"].__setitem__(L.L2_AXIS, v)
+        r.gui_walk_speed = lambda name: pub_shared.publish(String(data=json.dumps(
+            {"source": "demo_gui", "fields": {"walk_speed": {"v": name, "t": time.time()}}})))
         assert wait_for(lambda: got["status"], 15.0), "Node startet nicht"
         yield r
     finally:
@@ -191,3 +197,30 @@ def test_walk_node_end_to_end(rig):
                                 for f in g["feedback"][n:]))
     # Rueckmeldung setzt nie die LED-Farbe (gehoert ps4_arm_teleop)
     assert all("rgb" not in f for f in g["feedback"])
+
+
+def _own_walk_speed(g):
+    own = [d for d in g["shared"] if d.get("source") == "ps4_walk"]
+    return own[-1]["fields"]["walk_speed"]["v"] if own else None
+
+
+def test_walk_speed_shared_with_gui(rig):
+    """Geh-Tempo im gemeinsamen Zustand: GUI-Stufe gilt fuer L2, Stufe am
+    Controller geht an die GUI. Kein Gehen dadurch (nur Einstellung)."""
+    g = rig.got
+    rig.onboard(True)
+    assert wait_for(lambda: _own_walk_speed(g) == "Langsam", 3.0)   # Start-Parameter
+    rig.gui_walk_speed("Normal")
+    assert wait_for(lambda: g["status"][-1]["speed"] == "Normal", 2.0)
+    time.sleep(0.3)
+    assert g["cmd"] == []                                 # nur Einstellung, kein Befehl
+    t0 = time.monotonic()
+    rig.l2(1.0)
+    rig.state["axes"][L.LY] = 1.0
+    assert wait_for(lambda: any(m.linear.x == pytest.approx(0.65)
+                                for m in cmds_since(rig, t0)), 2.0)
+    rig.state["buttons"][L.DPAD_UP] = 1                   # L2 + ▲ -> Schnell
+    time.sleep(0.15)
+    rig.state["buttons"][L.DPAD_UP] = 0
+    assert wait_for(lambda: _own_walk_speed(g) == "Schnell", 2.0)
+    rig.l2(0.0)

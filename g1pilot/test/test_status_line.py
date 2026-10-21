@@ -109,3 +109,21 @@ def test_walk_501_shown_and_500_offers_switch():
 def test_ps4_text_walk_mode_locked():
     text, _ = sl.ps4_text({"connected": True, "arms_locked": True, "selection": "right"}, 0.1)
     assert "GEHEN" in text and "R2" in text
+
+
+def test_ps4_text_controller_walk_and_device():
+    st = {"connected": True, "selection": "right", "mode": "move", "speed": "Normal",
+          "speed_req": "Normal"}
+    assert sl.ps4_text(st, 0.1, device={"kind": "xbox"})[0].startswith("Xbox: Hand")
+    assert sl.ps4_text(st, 0.1, device={"kind": None})[0].startswith("PS4:")
+    t, _ = sl.ps4_text(dict(st, speed_req="Schnell"), 0.1)
+    assert t.endswith("Normal (max.)")
+    walk = {"active": True, "speed": "Normal", "walk_ready": True, "estop": False}
+    t, c = sl.ps4_text(st, 0.1, walk=walk)
+    assert "GEHT" in t and "Normal" in t and c == "#ff6e00"
+    t, c = sl.ps4_text(st, 0.1, walk=dict(walk, walk_ready=False))
+    assert "nicht im Walk" in t and c == sl.AMBER
+    t, _ = sl.ps4_text(dict(st, arms_locked=True), 0.1, walk=dict(walk, active=False))
+    assert "GEHEN" in t and "(Normal)" in t
+    # NOT-HALT hat Vorrang vor Gehen
+    assert "NOT-HALT" in sl.ps4_text(dict(st, estop=True), 0.1, walk=walk)[0]
