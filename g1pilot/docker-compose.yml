@@ -74,6 +74,12 @@ services:
       context: .
       dockerfile: docker/Dockerfile.sim
     image: g1pilot-sim:v1.1.0
+    # Handy-Zugang: Dockers AppArmor-Profil »docker-default« verbietet jeden System-D-Bus-Aufruf
+    # (journalctl: apparmor="DENIED" ... member="Hello"), BlueZ ist dann unerreichbar.
+    # Das Start-Fenster setzt G1_SIM_APPARMOR=unconfined nur mit Haken »Handy-Zugang«,
+    # sonst bleibt das Profil wie bisher. Der Real-Container ist privileged und betrifft das nicht.
+    security_opt:
+      - apparmor=${G1_SIM_APPARMOR:-docker-default}
     environment:
       - DISPLAY=${DISPLAY}
       - G1_SIM_MODE=true          # ← Aktiviert Simulation in Python-Code

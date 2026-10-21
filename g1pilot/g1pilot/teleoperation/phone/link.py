@@ -28,7 +28,6 @@ from PyQt6.QtWidgets import (
 
 from g1pilot.teleoperation import status_line
 from g1pilot.teleoperation.phone import gateway as G
-from g1pilot.teleoperation.phone.ble_server import BleServer
 
 TICK_MS = 50
 STATUS_MS = 200          # 5 Hz -> STATUS_MAX_LAG 5 ~ 1 s
@@ -60,6 +59,8 @@ class PhoneLink:
         self.gw = gateway or G.PhoneGateway(
             estop_for_view=_env_flag("G1_PHONE_VIEW_ESTOP", "1"), log=log)
         name = os.environ.get("G1_PHONE_BT_NAME") or ("G1 SIM" if gui.sim_mode else "G1 REAL")
+        # Erst hier laden: dbus_next beim Import der Demo-GUI liess in Tests alte GUI-Timer weiterlaufen.
+        from g1pilot.teleoperation.phone.ble_server import BleServer
         self.ble = BleServer(self.gw, adapter=os.environ.get("G1_PHONE_BT_ADAPTER", "hci0"),
                              name=name, encrypt=_env_flag("G1_PHONE_BT_ENCRYPT", "0"), log=log)
         self._phone_motion = False      # Bewegung vom Handy gestartet, laeuft evtl. noch
