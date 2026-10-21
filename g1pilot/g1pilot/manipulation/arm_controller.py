@@ -11,7 +11,7 @@ from rclpy.qos import QoSProfile, DurabilityPolicy
 from geometry_msgs.msg import PoseStamped, Point
 from visualization_msgs.msg import Marker, MarkerArray
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Bool, ColorRGBA, String, Float32MultiArray
+from std_msgs.msg import Bool, ColorRGBA, String, Float32, Float32MultiArray
 from tf2_ros import Buffer, TransformListener
 from tf2_geometry_msgs import do_transform_pose_stamped
 import pinocchio as pin
@@ -35,6 +35,9 @@ from g1pilot.manipulation.arm_planner_process import PlannerProcess
 from g1pilot.manipulation.ik_servo_process import IkServoProcess
 from g1pilot.manipulation.arm_planner import DEFAULTS as PLANNER_DEFAULTS
 from g1pilot.manipulation.waist_hold import WaistHold
+from g1pilot.manipulation.waist_yaw import (
+    WaistYaw, WAIST_RATE_TOPIC, WAIST_CENTER_TOPIC, WAIST_STATE_TOPIC, YAW_JOINT,
+)
 
 from unitree_sdk2py.core.channel import ChannelPublisher, ChannelSubscriber
 from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowCmd_ , LowState_
@@ -234,6 +237,20 @@ class ArmController(Node):
         self.declare_parameter("waist_max_vel", 0.3)
         self.declare_parameter("waist_engage_s", 1.5)
         self.declare_parameter("waist_gravity_comp", True)
+        # Hueftdrehung (Taillen-Yaw per Controller/GUI, waist_yaw.py; Nils
+        # 2026-10-21). Sollwert haelt real WaistHold (nur mit uebernommenen
+        # Armen, Gewicht 1), in der Sim loco_sim im Stand (/g1pilot/waist/state).
+        #   waist_yaw_limit_deg: Bereich um die Mitte (real per bringup_real 15).
+        #   waist_yaw_rate_deg / _center_rate_deg: Tempo Stick / zur Mitte [deg/s].
+        #   waist_yaw_center_tol_deg: "in der Mitte" (Sollwert und Messung).
+        #   waist_yaw_center_timeout_s: Mitte-Fahrt vor GEHEN/Grundstellung/
+        #   Rueckgabe dauert laenger -> trotzdem weiter (mit Warnung).
+        self.declare_parameter("waist_yaw_control", True)
+        self.declare_parameter("waist_yaw_limit_deg", 30.0)
+        self.declare_parameter("waist_yaw_rate_deg", 15.0)
+        self.declare_parameter("waist_yaw_center_rate_deg", 15.0)
+        self.declare_parameter("waist_yaw_center_tol_deg", 2.0)
+        self.declare_parameter("waist_yaw_center_timeout_s", 6.0)
         self.declare_parameter("rate_hz", 250.0)
         self.declare_parameter("ik_world_frame", "pelvis")
         self.declare_parameter("ik_alpha", 0.2)
@@ -657,6 +674,14 @@ class ArmController(Node):
             "left": self.create_publisher(Float32MultiArray, "/g1pilot/finger_goal/left", 10),
             "right": self.create_publisher(Float32MultiArray, "/g1pilot/finger_goal/right", 10),
         }
+
+        # Hueftdrehung: Eingaenge (Stick-Rate 30 Hz, Mitte-Impuls) und Zustand
+        # fuer Controller/GUI/loco_sim (Sim) und loco_client (Gehen gesperrt,
+        # solange die Huefte nicht in der Mitte steht).
+        self._init_waist_yaw()
+        self.create_subscription(Float32, WAIST_RATE_TOPIC, self._on_waist_rate, 10)
+        self.create_subscription(Bool, WAIST_CENTER_TOPIC, self._on_waist_center, 10)
+        self.pub_waist_state = self.create_publisher(String, WAIST_STATE_TOPIC, 10)
 
         self._init_robot_interface()
 
@@ -1190,6 +1215,11 @@ class ArmController(Node):
                 qw = self._measured_waist_q()
                 self._waist.set_target(qw)
                 self._waist.q_cmd = self._waist.target.copy()
+                k = self._waist_yaw_k()
+                if k is not None:
+                    # Mitte der Hueftdrehung = Yaw, den der Onboard-Regler hielt.
+                    self._wyaw.reset(float(self._waist.target[k]),
+                                     home=float(self._waist.target[k]))
                 if any(abs(v) > 0.3 for j, v in zip(self._waist.joints, qw) if j != 12):
                     self.get_logger().warn(f"Taille steht beim {why} schraeg ({np.round(qw, 2)}) "
                                            "-- wird so gehalten.")
@@ -1730,6 +1760,16 @@ class ArmController(Node):
         self.walk_mode = False
         self._abort_planned_motion()   # keine Ueberraschungsbewegung nach dem Quittieren
         self._cancel_marker_goals("E-Stop")
+        # Hueftdrehung: sofort stehen bleiben, KEIN automatisches Zurueckdrehen.
+        self._waist_cancel_pending("NOT-HALT")
+        self._legs_walk = False
+        k = self._waist_yaw_k()
+        if k is not None and not is_sim_mode() and self._waist.q_cmd is not None:
+            self._wyaw.reset(float(self._waist.q_cmd[k]))
+            self._apply_waist_yaw_target()
+        elif self._wyaw.target is not None:
+            meas = self._measured_yaw()
+            self._wyaw.reset(meas if meas is not None else self._wyaw.target)
         self._weight_state = "off"
         self._arm_sdk_weight = 1.0     # Autoritaet behalten (kein Onboard-Snap)
         if getattr(self, "_waist", None) is not None:
@@ -1781,8 +1821,239 @@ class ArmController(Node):
         try:
             self._waist.engage(self._measured_waist_q())
             self.get_logger().info(f"Taille wird wieder gehalten ({why}, weiche kp-Rampe).")
+            # Nach dem Voll-Notaus (Taille war schlaff): Hueft-Yaw dort halten,
+            # wo sie jetzt steht -- nicht von allein auf den alten Winkel drehen.
+            meas = self._measured_yaw()
+            if meas is not None and self._wyaw.target is not None:
+                self._wyaw.reset(meas)
+                self._apply_waist_yaw_target()
         except Exception as e:
             self.get_logger().error(f"Taille wieder halten fehlgeschlagen: {e}")
+
+    # --------------------------------------------------------
+    # Hueftdrehung (Taillen-Yaw, waist_yaw.py)
+    # --------------------------------------------------------
+
+    def _init_waist_yaw(self) -> None:
+        gp = lambda n: self.get_parameter(n).value   # noqa: E731
+        self._wyaw_enabled = bool(gp("waist_yaw_control"))
+        self._wyaw = WaistYaw(limit=math.radians(float(gp("waist_yaw_limit_deg"))),
+                              max_rate=math.radians(float(gp("waist_yaw_rate_deg"))),
+                              center_rate=math.radians(float(gp("waist_yaw_center_rate_deg"))),
+                              center_tol=math.radians(float(gp("waist_yaw_center_tol_deg"))))
+        self._wyaw_meas_tol = math.radians(float(gp("waist_yaw_center_tol_deg")) + 1.0)
+        self._wyaw_t_last = None
+        self._wyaw_moving_last = False
+        self._wyaw_state_t = 0.0
+        self._wyaw_reason_logged = None
+        # Aufgeschobene Aktion bis die Huefte in der Mitte ist:
+        # (art, fn, t0) mit art "walk" | "home" | "release".
+        self._wyaw_pending = None
+        # Beine im Gehen (start_walking .. start_balancing) -- auch, wenn die
+        # Arme dabei nicht geparkt werden (walk_mode bleibt dann False).
+        self._legs_walk = False
+
+    def _measured_yaw(self):
+        """Gemessener Taillen-Yaw [rad] oder None (noch kein LowState)."""
+        if not self.use_robot:
+            return None
+        try:
+            return float(self.get_current_motor_q()[YAW_JOINT])
+        except Exception:
+            return None
+
+    def _waist_yaw_k(self):
+        """Index von Gelenk 12 in WaistHold.joints oder None (real ohne Halten)."""
+        waist = getattr(self, "_waist", None)
+        if waist is None or YAW_JOINT not in waist.joints:
+            return None
+        return waist.joints.index(YAW_JOINT)
+
+    def _waist_yaw_owner(self) -> bool:
+        """Kommandieren wir den Taillen-Yaw? Real: WaistHold aktiv (Gelenk 12),
+        Sim: immer (loco_sim setzt den Sollwert im Stand)."""
+        if not self._wyaw_enabled:
+            return False
+        if is_sim_mode():
+            return True
+        return self._waist_yaw_k() is not None
+
+    def _waist_yaw_block_reason(self):
+        """-> Grund, warum der Stick die Huefte gerade NICHT drehen darf, oder None."""
+        if not self._waist_yaw_owner():
+            return "Hueftdrehung aus (waist_yaw_control/waist_hold)"
+        if self.estop_active:
+            return "NOT-HALT aktiv"
+        if not self.arms_enabled or self._arm_slack:
+            return "Arme nicht uebernommen"
+        if not is_sim_mode() and (self._weight_state != "on" or self._waist.passive):
+            return "Arme werden noch uebernommen"
+        if self._releasing:
+            return "Rueckgabe an den Onboard-Regler laeuft"
+        if self.walk_mode or self._walk_transition or self._legs_walk:
+            return "GEHEN aktiv"
+        if self.homing_active:
+            return "Grundstellung laeuft"
+        if self._wyaw_pending is not None:
+            return "Huefte faehrt zur Mitte"
+        return None
+
+    def _waist_yaw_can_center(self) -> bool:
+        """Darf eine Mitte-Fahrt laufen? (Kein NOT-HALT, Taille unter Kontrolle.)"""
+        if not self._waist_yaw_owner() or self.estop_active:
+            return False
+        if is_sim_mode():
+            return True
+        # Real: nur solange WIR die Taille halten (Gewicht > 0 bzw. Slack-Senden).
+        return (not self._waist.passive
+                and (self._arm_sdk_weight > 0.0 or self._arm_slack))
+
+    def _waist_yaw_centered(self) -> bool:
+        """Sollwert UND Messung in der Mitte."""
+        if not self._waist_yaw_owner() or self._wyaw.target is None:
+            return True
+        if self._wyaw.centering or not self._wyaw.at_home:
+            return False
+        meas = self._measured_yaw()
+        return meas is None or abs(meas - self._wyaw.home) <= self._wyaw_meas_tol
+
+    def _on_waist_rate(self, msg: Float32):
+        now = time.monotonic()
+        rate = float(msg.data)
+        why = self._waist_yaw_block_reason() if abs(rate) > 1e-6 else None
+        if why is not None:
+            if self._wyaw_reason_logged != why:
+                self._wyaw_reason_logged = why
+                self.get_logger().warn(f"Hueftdrehung ignoriert: {why}.")
+            self._wyaw.set_rate(0.0, now)
+            return
+        self._wyaw_reason_logged = None
+        if self._wyaw.target is None:
+            return
+        self._wyaw.set_rate(rate, now)
+
+    def _on_waist_center(self, msg: Bool):
+        if not msg.data:
+            return
+        if not self._waist_yaw_can_center():
+            self.get_logger().warn("Huefte zur Mitte ignoriert: Taille nicht unter Kontrolle "
+                                   "(NOT-HALT, Arme nicht uebernommen oder aus).")
+            return
+        if self._wyaw.target is not None and not self._wyaw.at_home:
+            self._wyaw.center()
+            self.get_logger().info("Huefte faehrt zur Mitte.")
+
+    def _waist_defer(self, kind: str, fn) -> bool:
+        """Aktion erst nach der Mitte-Fahrt ausfuehren (GEHEN, Grundstellung,
+        Rueckgabe). -> True, wenn aufgeschoben (Aufrufer macht dann nichts)."""
+        if self._waist_yaw_centered() or not self._waist_yaw_can_center():
+            return False
+        if self._wyaw_pending is not None and self._wyaw_pending[0] == kind:
+            self._wyaw_pending = (kind, fn, self._wyaw_pending[2])
+            return True
+        self._wyaw.center()
+        self._wyaw_pending = (kind, fn, time.monotonic())
+        self.get_logger().info(
+            f"Huefte steht {math.degrees(self._wyaw.offset):+.0f} deg aus der Mitte -- "
+            f"faehrt erst zurueck, dann {dict(walk='GEHEN', home='Grundstellung', release='Rueckgabe')[kind]}.")
+        return True
+
+    def _waist_cancel_pending(self, why: str) -> None:
+        if self._wyaw_pending is not None:
+            self.get_logger().info(f"Aufgeschobene Aktion ({self._wyaw_pending[0]}) verworfen: {why}.")
+        self._wyaw_pending = None
+
+    def _apply_waist_yaw_target(self) -> None:
+        """Real: Sollwert in das Halteziel der Taille schreiben (WaistHold rampt)."""
+        k = self._waist_yaw_k()
+        if k is None or is_sim_mode() or self._wyaw.target is None:
+            return
+        if self._waist.target is not None and not self._waist.passive:
+            self._waist.target[k] = self._wyaw.target
+
+    def _waist_motion_start(self) -> None:
+        """Huefte beginnt zu drehen: Arme halten ihre Gelenkstellung (drehen mit
+        dem Oberkoerper mit). Eine geplante Fahrt / ein Marker-Ziel endet hier --
+        deren Kollisionspruefung galt fuer die alte Taillenstellung."""
+        if self._wyaw_pending is None:
+            self._abort_planned_motion("Huefte dreht")
+            self.homing_active = False
+        self._cancel_marker_goals("Huefte dreht")
+        if self.arms_enabled and not self.walk_mode:
+            self._align_ik_to_config(self._last_q_target[0:7], self._last_q_target[7:14])
+
+    def _waist_yaw_tick(self) -> None:
+        """Jeden main_loop-Takt: Sollwert weiterfahren, aufgeschobene Aktion
+        ausloesen, Zustand melden."""
+        if not self._waist_yaw_owner():
+            self._publish_waist_state(force=False)
+            return
+        now = time.monotonic()
+        dt = 0.0 if self._wyaw_t_last is None else min(0.1, now - self._wyaw_t_last)
+        self._wyaw_t_last = now
+        wy = self._wyaw
+        if wy.target is None:
+            meas = self._measured_yaw()
+            if meas is None:
+                return
+            k = self._waist_yaw_k()
+            home = (float(self._waist.target[k]) if k is not None and not is_sim_mode()
+                    and self._waist.target is not None else 0.0)
+            wy.reset(meas, home=home)
+        if wy.centering and not self._waist_yaw_can_center():
+            wy.stop()
+        elif not wy.centering and self._waist_yaw_block_reason() is not None:
+            wy.set_rate(0.0, now)
+        wy.step(dt, now)
+        moving = wy.moving(now)
+        if moving and not self._wyaw_moving_last:
+            self._waist_motion_start()
+        self._wyaw_moving_last = moving
+        self._apply_waist_yaw_target()
+        pend = self._wyaw_pending
+        if pend is not None:
+            timeout = float(self.get_parameter("waist_yaw_center_timeout_s").value)
+            if self._waist_yaw_centered() or now - pend[2] > timeout or not self._waist_yaw_can_center():
+                if not self._waist_yaw_centered():
+                    self.get_logger().warn(
+                        f"Huefte nicht ganz in der Mitte ({math.degrees(wy.offset):+.1f} deg) -- "
+                        f"{pend[0]} trotzdem.")
+                    wy.stop()
+                self._wyaw_pending = None
+                pend[1]()
+        self._publish_waist_state()
+
+    def _publish_waist_state(self, force: bool = False) -> None:
+        """/g1pilot/waist/state (10 Hz): fuer Controller (Jog-Bezug), GUI-Anzeige,
+        loco_sim (Sim: target_rad) und loco_client (walk_ok)."""
+        now = time.monotonic()
+        if now - self._wyaw_state_t < 0.1 and not force:
+            return
+        self._wyaw_state_t = now
+        wy = self._wyaw
+        owner = self._waist_yaw_owner()
+        meas = self._measured_yaw()
+        st = {
+            "available": owner and self._waist_yaw_block_reason() is None,
+            "reason": self._waist_yaw_block_reason() or "",
+            "owner": owner,
+            "sim": bool(is_sim_mode()),
+            "home_rad": wy.home,
+            "target_rad": wy.target if owner else None,
+            "yaw_rad": meas,
+            "offset_deg": math.degrees(wy.offset) if owner else 0.0,
+            "meas_offset_deg": (math.degrees(meas - wy.home) if meas is not None else None),
+            "limit_deg": math.degrees(wy.limit),
+            "moving": bool(owner and wy.moving(now)),
+            "centering": bool(wy.centering),
+            "pending": self._wyaw_pending[0] if self._wyaw_pending else "",
+            # Darf gegangen werden? (loco_client sperrt Move() sonst.) Nur der
+            # SOLLWERT zaehlt: beim Laufen schwankt die gemessene Taille, und
+            # ohne uebernommene Arme fuehrt sie der Onboard-Regler (501).
+            "walk_ok": (not owner or not self._waist_yaw_can_center()
+                        or (not wy.centering and wy.at_home and self._wyaw_pending is None)),
+        }
+        self.pub_waist_state.publish(String(data=json.dumps(st)))
 
     def _arms_controlled_callback(self, msg: Bool):
         """
@@ -1806,10 +2077,17 @@ class ArmController(Node):
         if not msg.data:
             if self._releasing:
                 return                   # Rueckgabe laeuft bereits
+            # Real: Huefte gedreht -> erst zur Mitte, sonst risse der Onboard-
+            # Regler sie beim Abrampen selbst zurueck.
+            if self._release_possible() and self._waist_defer(
+                    "release", lambda: self._arms_controlled_callback(Bool(data=False))):
+                return
             # Real: erst zurueck in die Onboard-Pose fahren, dann Rampe.
             if self._start_release():
                 return
-        elif self._releasing:
+        if msg.data and self._wyaw_pending is not None and self._wyaw_pending[0] == "release":
+            self._waist_cancel_pending("ENABLE")
+        if msg.data and self._releasing:
             # ENABLE waehrend der Rueckfahrt: abbrechen, Arme HALTEN (unten).
             self._releasing = False
             self._release_direct = False
@@ -1899,6 +2177,10 @@ class ArmController(Node):
                 # den geplanten Weg in die Lauf-Pose abwuergen.
                 self.get_logger().warn("HOMING ignoriert: WALK aktiv (Arme in Lauf-Pose).")
                 return
+            # Huefte gedreht: erst zur Mitte (Grundstellung = gerader Oberkoerper;
+            # die Arme kaemen den Oberschenkeln sonst anders nahe als geplant).
+            if self._waist_defer("home", lambda: self._homming_callback(Bool(data=True))):
+                return
             self._abort_planned_motion("HOMING gestartet")
             # Home-Pose GEPLANT anfahren (wie POSE ANFAHREN): um Tisch/Hindernisse
             # und den eigenen Koerper herum. Die fruehere direkte Gelenkfahrt lief
@@ -1960,7 +2242,13 @@ class ArmController(Node):
     def _on_walk_mode(self, msg: Bool):
         """WALK: Arme sanft in die Lauf-Pose fahren und dort halten (Marker
         werden waehrend WALK ignoriert), damit die Lauf-Policy stabil bleibt."""
+        if msg.data:
+            self._legs_walk = True
         if not msg.data or self.walk_mode:
+            return
+        # Huefte gedreht: erst sanft zur Mitte, dann wie gewohnt (walk_ready
+        # kommt dadurch erst danach; loco_client sperrt Move() bis dahin).
+        if self._waist_defer("walk", lambda: self._on_walk_mode(Bool(data=True))):
             return
         if self._releasing:
             # Die Arme gehen ohnehin gerade an den Onboard-Regler, der sie beim
@@ -2041,6 +2329,9 @@ class ArmController(Node):
         Stellung, bis der Nutzer einen Marker zieht."""
         if not msg.data:
             return
+        self._legs_walk = False
+        if self._wyaw_pending is not None and self._wyaw_pending[0] == "walk":
+            self._waist_cancel_pending("BALANCING")
         if not self.walk_mode:
             # Arme waren beim Laufen frei (walk_park_arms=false): nur walk_ready
             # zuruecknehmen, damit das naechste START WALKING wieder neu meldet.
@@ -2263,6 +2554,8 @@ class ArmController(Node):
             return "Homing laeuft."
         if self.walk_mode:
             return "WALK aktiv -- Arme haengen in der Lauf-Pose."
+        if self._wyaw_moving_last or self._wyaw_pending is not None:
+            return "Huefte dreht gerade."
         if self._planning_thread is not None and self._planning_thread.is_alive():
             return "Es laeuft bereits eine Planung."
         return None
@@ -2703,6 +2996,12 @@ class ArmController(Node):
                                              reason="Homing laeuft")
             return
 
+        if self._wyaw_moving_last or self._wyaw_pending is not None:
+            # Huefte dreht: Arme halten ihre Gelenkstellung (drehen mit).
+            self._publish_marker_goal_status('right', msg.header.stamp, "ignored",
+                                             reason="Huefte dreht")
+            return
+
         if not self.arms_enabled:
             self._publish_marker_goal_status('right', msg.header.stamp, "ignored",
                                              reason="Manipulation nicht aktiv")
@@ -2776,6 +3075,12 @@ class ArmController(Node):
         if self.homing_active:
             self._publish_marker_goal_status('left', msg.header.stamp, "ignored",
                                              reason="Homing laeuft")
+            return
+
+        if self._wyaw_moving_last or self._wyaw_pending is not None:
+            # Huefte dreht: Arme halten ihre Gelenkstellung (drehen mit).
+            self._publish_marker_goal_status('left', msg.header.stamp, "ignored",
+                                             reason="Huefte dreht")
             return
 
         if not self.arms_enabled:
@@ -3110,6 +3415,10 @@ class ArmController(Node):
 
         # Hintergrund-Planung (Positionsspeicher) fertig? Billig (Lock+Read).
         self._poll_plan_result()
+
+        # Hueftdrehung: Sollwert, aufgeschobene Aktion (GEHEN/Grundstellung/
+        # Rueckgabe nach der Mitte-Fahrt), Zustand -- auch im E-Stop/disabled.
+        self._waist_yaw_tick()
 
         if self._releasing and (time.monotonic() - self._release_t0
                                 > float(self.get_parameter("release_timeout_s").value)):

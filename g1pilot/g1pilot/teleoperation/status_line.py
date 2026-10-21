@@ -140,6 +140,8 @@ def ps4_text(status, age_s, sim=False, walk=None, device=None):
         speed = f" ({walk['speed']})" if walk.get("speed") else ""
         return (f"{c}: GEHEN – L2 halten = laufen{speed}, R2 = Greifen",
                 _hex(COLORS["walk"]))
+    if status.get("waist_mode"):
+        return f"{c}: HÜFTE – rechter Stick ◀/▶ dreht, R3 = Mitte", _hex(COLORS["waist"])
     sel = status.get("selection", "")
     label = SELECTION_LABEL.get(sel, sel.upper())
     mode = MODE_LABEL.get(status.get("mode"), status.get("mode", ""))
@@ -222,10 +224,12 @@ PS4_HELP = (
     ("Kreuz", "STOPP: Hand hält sofort an, Bewegung abbrechen"),
     ("Options", "Arme übernehmen"),
     ("Share (1 s halten)", "Grundstellung"),
-    ("L2 drücken", "Modus GEHEN (Arm-Tasten gesperrt, LED orange)"),
+    ("L2 drücken", "Modus GEHEN (Arm-Tasten gesperrt, LED blau)"),
     ("L2 halten", "GEHEN: linker Stick vor/seitlich, rechter Stick drehen, "
                   "▲/▼ Geh-Tempo (nur im Walk-Modus)"),
     ("R2 drücken", "Modus GREIFEN (Arme übernehmen)"),
+    ("R2 halten + rechter Stick ◀/▶", "HÜFTE drehen (Oberkörper links/rechts, Arme drehen mit)"),
+    ("R2 halten + R3", "Hüfte zurück zur Mitte"),
     ("PS", "NOT-HALT"),
     ("R1 + L1 + PS (2 s halten)", "VOLL-NOTAUS: ganzer G1 in Damp (vibriert, loslassen = Abbruch)"),
 )
@@ -238,3 +242,28 @@ def ps4_help(status=None):
         i = [k for k, _ in rows].index("PS")
         rows[i] = ("PS", "STOPP wie Kreuz (kein NOT-HALT)")
     return rows
+
+
+def waist_text(state, age_s):
+    """Hueftdrehung (arm_controller -> /g1pilot/waist/state) -> (Text, Farbe)
+    oder None (keine Daten, Hueftdrehung aus)."""
+    if state is None or age_s is None or age_s > STALE_S or not state.get("owner"):
+        return None
+    try:
+        off = float(state.get("meas_offset_deg")
+                    if state.get("meas_offset_deg") is not None else state.get("offset_deg", 0.0))
+    except (TypeError, ValueError):
+        off = 0.0
+    if abs(off) < 1.0:
+        where = "Mitte"
+    else:
+        where = f"{abs(off):.0f}° {'links' if off > 0 else 'rechts'}"
+    pend = {"walk": "vor GEHEN", "home": "vor Grundstellung",
+            "release": "vor Rückgabe"}.get(state.get("pending") or "")
+    if state.get("centering"):
+        return f"Hüfte {where} – fährt zur Mitte{' ' + pend if pend else ''}", AMBER
+    if state.get("moving"):
+        return f"Hüfte {where} – dreht", GREEN
+    lim = state.get("limit_deg")
+    lim_txt = f" (max. ±{float(lim):.0f}°)" if isinstance(lim, (int, float)) else ""
+    return f"Hüfte {where}{lim_txt}", GREEN if where == "Mitte" else AMBER

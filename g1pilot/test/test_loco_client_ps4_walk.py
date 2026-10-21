@@ -110,3 +110,43 @@ def test_ps4_walk_has_priority_over_streamdeck(lc_module):
         assert robot.vel[0] == pytest.approx(0.4)
     finally:
         _close(node)
+
+
+# ── Hueftdrehung: Gehen erst, wenn die Huefte in der Mitte steht ────────
+def _waist(node, walk_ok, offset=12.0):
+    import json
+    from std_msgs.msg import String
+    node._on_waist_state(String(data=json.dumps(
+        {"walk_ok": walk_ok, "meas_offset_deg": offset, "owner": True})))
+
+
+def test_waist_off_center_blocks_move(lc_module):
+    """arm_controller meldet walk_ok=false (Huefte gedreht bzw. faehrt noch
+    zurueck): Move() nur mit 0 -- erst in der Mitte wird gegangen."""
+    node, robot = _make(lc_module)
+    try:
+        _walk_mode(node, robot)
+        _waist(node, False)
+        node.ps4_walk_callback(_cmd(vx=0.35))
+        node._cmd_vel_tick()
+        assert robot.vel == pytest.approx((0.0, 0.0, 0.0))
+        _waist(node, True, 0.0)
+        node.ps4_walk_callback(_cmd(vx=0.35))
+        node._cmd_vel_tick()
+        assert robot.vel == pytest.approx((0.14, 0.0, 0.0))
+    finally:
+        _close(node)
+
+
+def test_waist_state_stale_does_not_block(lc_module):
+    """Kein frischer Zustand (arm_controller laeuft nicht): wie bisher gehen."""
+    node, robot = _make(lc_module)
+    try:
+        _walk_mode(node, robot)
+        _waist(node, False)
+        node._waist_state_t -= 5.0
+        node.ps4_walk_callback(_cmd(vx=0.35))
+        node._cmd_vel_tick()
+        assert robot.vel == pytest.approx((0.14, 0.0, 0.0))
+    finally:
+        _close(node)

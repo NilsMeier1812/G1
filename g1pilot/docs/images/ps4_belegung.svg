@@ -40,7 +40,7 @@
   <!-- Beschriftungen links -->
   <g fill="#263238">
     <text x="20" y="40" font-weight="bold" font-size="16">PS4-Controller → Arme + Hände · GEHEN mit L2 · GREIFEN mit R2</text>
-    <text x="20" y="96" font-weight="bold" fill="#e65100">L2 drücken</text><text x="110" y="96" fill="#e65100">Modus GEHEN</text><text x="20" y="112" font-weight="bold" fill="#e65100">L2 halten</text><text x="110" y="112" fill="#e65100">laufen</text><text x="700" y="104" font-weight="bold" fill="#2e7d32">R2</text><text x="728" y="104" fill="#2e7d32">Modus GREIFEN</text>
+    <text x="20" y="96" font-weight="bold" fill="#e65100">L2 drücken</text><text x="110" y="96" fill="#e65100">Modus GEHEN</text><text x="20" y="112" font-weight="bold" fill="#e65100">L2 halten</text><text x="110" y="112" fill="#e65100">laufen</text><text x="700" y="96" font-weight="bold" fill="#2e7d32">R2 drücken</text><text x="792" y="96" fill="#2e7d32">GREIFEN</text><text x="700" y="112" font-weight="bold" fill="#2e7d32">R2 halten</text><text x="792" y="112" font-size="13" fill="#2e7d32">Hüfte (R-Stick)</text>
     <text x="20" y="128" font-weight="bold">L1</text><text x="50" y="128">Tempo langsamer</text>
     <text x="20" y="175" font-weight="bold">Steuerkreuz</text>
     <text x="20" y="193">◀ links · ▶ rechts</text>
@@ -59,6 +59,7 @@
     <text x="700" y="253"><tspan font-weight="bold">✕</tspan> Stopp</text>
     <text x="520" y="440" font-weight="bold">Rechter Stick</text>
     <text x="520" y="458">Verschieben: hoch/runter · Drehen: rollen</text>
+    <text x="520" y="475" font-size="13" fill="#2e7d32"><tspan font-weight="bold">R2 halten:</tspan> ◀ ▶ Hüfte drehen · <tspan font-weight="bold">+ R3</tspan> Mitte</text>
     <text x="395" y="330" font-weight="bold" fill="#c62828">PS: NOT-HALT</text>
     <text x="450" y="350" text-anchor="middle" font-size="12" fill="#c62828">R1 + L1 + PS 2 s halten (vibriert): VOLL-NOTAUS</text>
   </g>

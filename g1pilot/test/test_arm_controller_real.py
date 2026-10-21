@@ -16,6 +16,7 @@ der Rueckgabe, Schleppfehler-Begrenzung, Real-Grenzen fuer Gains/Rampen und
 die "ersetzt"-Meldung an den RViz-Marker. Braucht rclpy + pinocchio.
 """
 import json
+import math
 import os
 import sys
 import threading
@@ -914,3 +915,252 @@ def test_full_estop_makes_waist_passive_too(ac_module):
             assert not node.estop_active
         finally:
             _close(node)
+
+
+# ── Hueftdrehung (Taillen-Yaw per Controller, Nils 2026-10-21) ──────────
+# Sollwert ueber WaistHold (Gelenk 12), nur mit uebernommenen Armen. Mitte =
+# Yaw, den der Onboard-Regler beim ENABLE hielt (ONBOARD_WAIST[0]).
+HOME_YAW = float(ONBOARD_WAIST[0])
+
+
+def _rate(node, r):
+    from std_msgs.msg import Float32
+    node._on_waist_rate(Float32(data=float(r)))
+
+
+def _turn(node, rate, seconds):
+    """Stick halten: Rate-Strom mit ~30 Hz wie ps4_arm_teleop."""
+    t_end = time.monotonic() + seconds
+    t_next = 0.0
+    while time.monotonic() < t_end:
+        if time.monotonic() >= t_next:
+            _rate(node, rate)
+            t_next = time.monotonic() + 1.0 / 30.0
+        node.main_loop()
+        time.sleep(DT)
+
+
+def _state(node):
+    sent = []
+    orig = node.pub_waist_state.publish
+    node.pub_waist_state.publish = lambda m: (sent.append(json.loads(m.data)), orig(m))
+    return sent
+
+
+def test_waist_yaw_turns_with_limit_arms_hold_joints(ac_module):
+    _reset_robot()
+    node = _make_node(ac_module, waist_yaw_limit_deg=15.0)
+    st = _state(node)
+    try:
+        node._arms_controlled_callback(_bool(True))
+        _rate(node, 1.0)                                       # noch keine Uebernahme
+        _run(node, 0.3)
+        assert node._wyaw.target == pytest.approx(HOME_YAW, abs=1e-6)
+        _run(node, 2.4)
+        assert node._weight_state == "on"
+        q_arm = node._last_q_target.copy()
+        ROBOT.writes.clear()
+        _turn(node, 1.0, 0.6)                                 # ~15 deg/s
+        assert math.degrees(node._wyaw.target - HOME_YAW) == pytest.approx(9.0, abs=3.0)
+        _turn(node, 1.0, 1.5)
+        assert math.degrees(node._wyaw.target - HOME_YAW) == pytest.approx(15.0, abs=1e-6)
+        _run(node, 1.5)
+        assert ROBOT.waist()[0] == pytest.approx(HOME_YAW + math.radians(15), abs=0.01)
+        # Roll/Pitch unveraendert, Arme exakt gehalten
+        assert np.allclose(ROBOT.waist()[1:], ONBOARD_WAIST[1:], atol=0.01)
+        for _, q, _ in ROBOT.writes:
+            assert float(np.max(np.abs(q - q_arm))) < 1e-6
+        # Totmann: ohne Strom bleibt sie stehen
+        yaw = node._wyaw.target
+        _run(node, 0.5)
+        assert node._wyaw.target == yaw
+        assert st[-1]["owner"] and st[-1]["available"] and not st[-1]["walk_ok"]
+        assert st[-1]["limit_deg"] == pytest.approx(15.0)
+    finally:
+        _close(node)
+
+
+def test_waist_yaw_ignored_without_arms_or_in_walk(ac_module):
+    _reset_robot()
+    node = _make_node(ac_module)
+    try:
+        _rate(node, 1.0)
+        _run(node, 0.5)                                       # Arme nicht uebernommen
+        assert node._wyaw.target is None or node._wyaw.target == pytest.approx(HOME_YAW, abs=1e-6)
+        node._arms_controlled_callback(_bool(True))
+        _run(node, 2.4)
+        node._on_walk_mode(_bool(True))                       # GEHEN (Arme bleiben)
+        _turn(node, 1.0, 0.5)
+        assert node._wyaw.target == pytest.approx(HOME_YAW, abs=1e-6)
+        node._on_balance_mode(_bool(True))
+        _turn(node, 1.0, 0.5)
+        assert node._wyaw.target > HOME_YAW + math.radians(3)
+    finally:
+        _close(node)
+
+
+def test_waist_yaw_walk_waits_for_center(ac_module):
+    """Huefte gedreht -> GEHEN: erst zurueck zur Mitte, walk_ready erst danach;
+    walk_ok im Zustand erst in der Mitte (loco_client sperrt Move() bis dahin)."""
+    _reset_robot()
+    node = _make_node(ac_module, walk_park_arms=False)
+    sent = []
+    orig_pub = node.walk_ready_publisher.publish
+    node.walk_ready_publisher.publish = lambda m: (sent.append(m.data), orig_pub(m))
+    st = _state(node)
+    try:
+        node._arms_controlled_callback(_bool(True))
+        _run(node, 2.4)
+        _turn(node, -1.0, 1.0)                                # nach rechts
+        assert node._wyaw.offset < -math.radians(10)
+        _run(node, 0.5)
+        node._on_walk_mode(_bool(True))
+        assert sent == [] and node._wyaw.centering
+        assert _run(node, 0.3) and st[-1]["walk_ok"] is False and st[-1]["pending"] == "walk"
+        _rate(node, 1.0)                                      # Stick waehrend der Mitte-Fahrt: ignoriert
+        assert _run(node, 6.0, until=lambda: sent == [True])
+        assert abs(ROBOT.waist()[0] - HOME_YAW) < math.radians(3.1)
+        assert node._wyaw.target == pytest.approx(HOME_YAW)
+        _run(node, 0.2)
+        assert st[-1]["walk_ok"] is True
+    finally:
+        _close(node)
+
+
+def test_waist_yaw_disable_centers_before_handover(ac_module):
+    _reset_robot()
+    node = _make_node(ac_module)
+    try:
+        node._arms_controlled_callback(_bool(True))
+        _run(node, 2.4)
+        _turn(node, 1.0, 1.0)
+        _run(node, 0.5)
+        ROBOT.waist_writes.clear()
+        node._arms_controlled_callback(_bool(False))
+        assert node.arms_enabled and not node._releasing      # erst Mitte-Fahrt
+        assert _run(node, 30.0, until=lambda: node._weight_state == "off")
+        ww = ROBOT.waist_writes
+        for w, q, _, _ in ww:
+            if w < 1.0:                                       # Abrampen erst in der Mitte
+                assert abs(q[0] - HOME_YAW) < math.radians(2.1)
+        assert abs(ROBOT.waist()[0] - HOME_YAW) < 0.01
+    finally:
+        _close(node)
+
+
+def test_waist_yaw_estop_freezes_no_auto_return(ac_module):
+    _reset_robot()
+    node = _make_node(ac_module)
+    try:
+        node._arms_controlled_callback(_bool(True))
+        _run(node, 2.4)
+        _rate(node, 1.0)
+        _run(node, 0.4)
+        node._on_emergency_stop(_bool(True))
+        yaw = node._wyaw.target
+        _run(node, 1.0)
+        assert node._wyaw.target == yaw and not node._wyaw.moving(time.monotonic())
+        assert ROBOT.waist_writes[-1][1][0] == pytest.approx(yaw, abs=1e-6)
+        node._on_waist_center(_bool(True))                    # im NOT-HALT: nichts
+        assert not node._wyaw.centering
+        node._on_start(_bool(True))
+        _run(node, 1.0)
+        assert node._wyaw.target == yaw, "nach START kein automatisches Zurueckdrehen"
+        node._on_waist_center(_bool(True))                    # Mitte auf Wunsch
+        assert _run(node, 4.0, until=lambda: node._wyaw.at_home)
+    finally:
+        _close(node)
+
+
+def test_waist_yaw_full_estop_then_start_keeps_measured(ac_module):
+    _reset_robot()
+    node = _make_node(ac_module)
+    try:
+        node._arms_controlled_callback(_bool(True))
+        _run(node, 2.4)
+        _turn(node, 1.0, 1.0)
+        node._on_full_emergency_stop(_bool(True))
+        ROBOT.state.motor_state[12].q = HOME_YAW + 0.05       # schlaff weggedreht
+        _run(node, 0.3)
+        node._on_start(_bool(True))
+        _run(node, 0.5)
+        assert node._wyaw.target == pytest.approx(HOME_YAW + 0.05, abs=0.01)
+        assert node._waist.target[0] == pytest.approx(node._wyaw.target)
+    finally:
+        _close(node)
+
+
+def test_waist_yaw_turn_aborts_motion_and_blocks_goals(ac_module):
+    from std_msgs.msg import String
+    from geometry_msgs.msg import PoseStamped
+    _reset_robot()
+    node = _make_node(ac_module)
+    st = []
+    orig = node.pub_marker_goal_status.publish
+    node.pub_marker_goal_status.publish = lambda m: (st.append(json.loads(m.data)), orig(m))
+    try:
+        _wait_planner(node)
+        node._arms_controlled_callback(_bool(True))
+        _run(node, 2.4)
+        node._on_arm_command(String(data=json.dumps({"id": "vor", "type": "joints", **RAISED})))
+        _run(node, 0.3, until=lambda: node._planned_motion_active)
+        _rate(node, 1.0)
+        node.main_loop()
+        assert not node._planned_motion_active, "Hueftdrehung bricht die geplante Fahrt ab"
+        q_arm = node._last_q_target.copy()
+        g = PoseStamped()
+        g.header.frame_id = "pelvis"
+        g.pose.position.x, g.pose.position.z = 0.3, 0.1
+        g.pose.orientation.w = 1.0
+        node._right_goal_callback(g)
+        assert st and st[-1].get("state") == "ignored"
+        _turn(node, 1.0, 0.5)
+        assert float(np.max(np.abs(node._last_q_target - q_arm))) < 1e-6
+        _rate(node, 1.0)
+        node.main_loop()
+        assert "Huefte" in (node._arms_not_ready_reason() or "")
+    finally:
+        _close(node)
+
+
+def test_waist_yaw_home_waits_for_center(ac_module):
+    _reset_robot()
+    node = _make_node(ac_module)
+    try:
+        _wait_planner(node)
+        node._arms_controlled_callback(_bool(True))
+        _run(node, 2.4)
+        _turn(node, 1.0, 1.0)
+        _run(node, 0.3)
+        node._homming_callback(_bool(True))
+        assert not node._planned_motion_active and node._wyaw_pending[0] == "home"
+        assert _run(node, 6.0, until=lambda: node._wyaw_pending is None)
+        assert node._wyaw.at_home
+        assert _run(node, 2.0, until=lambda: node._planned_motion_active
+                    or node._planning_thread is not None)
+    finally:
+        _close(node)
+
+
+def test_waist_yaw_sim_publishes_target_for_loco_sim(ac_module):
+    _reset_robot()
+    node = _make_node(ac_module)
+    st = _state(node)
+    try:
+        os.environ["G1_SIM_MODE"] = "true"
+        node._waist = None                                    # Sim: kein WaistHold
+        node._wyaw.target = None
+        node._arms_controlled_callback(_bool(True))
+        _run(node, 0.2)
+        assert node._wyaw.home == 0.0
+        _turn(node, 1.0, 0.5)
+        assert st[-1]["sim"] and st[-1]["target_rad"] > HOME_YAW + math.radians(3)
+        assert st[-1]["available"]
+    finally:
+        os.environ["G1_SIM_MODE"] = "false"
+        _close(node)
+
+
+def test_bringup_real_limits_waist_yaw():
+    src = open(os.path.join(PKG, "launch", "bringup_real.launch.py")).read()
+    assert "'waist_yaw_limit_deg': os.environ.get('G1_WAIST_YAW_LIMIT_DEG', '15.0')" in src

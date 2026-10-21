@@ -78,6 +78,7 @@ from unitree_sdk2py.idl.default import unitree_hg_msg_dds__LowCmd_
 from unitree_sdk2py.utils.crc import CRC
 
 from g1pilot.utils.common import init_dds
+from g1pilot.manipulation.waist_yaw import WAIST_STATE_TOPIC, STATE_STALE_S, parse_state
 from g1pilot.utils import push_charge
 from g1pilot.navigation.walk_policy import get_gravity_orientation, load_walk_policy
 from g1pilot.navigation.stand_balancer import (
@@ -255,6 +256,15 @@ class LocoSim(Node):
         self._ps4_walk_t = -1e9
         self.create_subscription(Twist, "/g1pilot/ps4/walk_cmd", self._on_ps4_walk, 10)
         self.create_subscription(Bool, "/g1pilot/arms/walk_ready", self._on_arms_walk_ready, 10)
+        # Hueftdrehung (arm_controller, waist_yaw.py): Taillen-Yaw-Sollwert im
+        # Stand (HOLD/STAND). Die Lauf-Policy fuehrt die Taille selbst; vor
+        # WALK dreht der arm_controller sie zur Mitte und meldet erst danach
+        # walk_ready. Ohne frischen Zustand -> langsam zurueck auf 0.
+        self._waist_yaw_des = 0.0
+        self._waist_yaw_t = -1e9
+        self._waist_yaw_cmd = None
+        self._waist_walk_ok = True
+        self.create_subscription(String, WAIST_STATE_TOPIC, self._on_waist_state, 10)
         self.arms_enabled_pub = self.create_publisher(Bool, "/g1pilot/arms/enabled", 1)
 
         self._push_port = int(os.environ.get("SIM_PUSH_PORT", "47900"))
@@ -439,8 +449,11 @@ class LocoSim(Node):
         # start_walking-Nachricht hin in die Lauf-Pose). Solange im stationaeren
         # PD-STAND bleiben. Sobald /g1pilot/arms/walk_ready True ist (oder der
         # Timeout greift), geht es nach WALK. Die AGILE-Policy laeuft sofort los.
+        # Huefte gedreht (Hueftdrehung im Stand): auch die AGILE-Policy wartet,
+        # bis der arm_controller die Taille zur Mitte gedreht hat (walk_ready).
+        waist_wait = self._waist_yaw_fresh() and not self._waist_walk_ok
         if not (self.walk_policy.needs_arm_pose
-                and bool(self.get_parameter("walk_arm_wait").value)):
+                and bool(self.get_parameter("walk_arm_wait").value)) and not waist_wait:
             self._enter_walk("START WALKING")
             return
         # Stationaer stehen bleiben (Fuesse geplant), waehrend die Arme aufraeumen.
@@ -451,6 +464,36 @@ class LocoSim(Node):
         self._walk_pending = True
         self._walk_pending_t0 = time.perf_counter()
         self.get_logger().info("START WALKING -> warte, bis die Arme aufgeraeumt sind ...")
+
+    WAIST_YAW_SLEW = 0.5   # rad/s, Sicherheitsrampe (der Sollwert rampt schon)
+
+    def _on_waist_state(self, msg: String):
+        st = parse_state(msg.data)
+        if not st or not st.get("sim") or st.get("target_rad") is None:
+            return
+        try:
+            self._waist_yaw_des = float(st["target_rad"])
+        except (TypeError, ValueError):
+            return
+        self._waist_walk_ok = bool(st.get("walk_ok", True))
+        self._waist_yaw_t = time.monotonic()
+
+    def _waist_yaw_fresh(self):
+        return time.monotonic() - self._waist_yaw_t <= STATE_STALE_S
+
+    def _waist_targets(self, base, q_now):
+        """Taillen-Sollwerte (yaw, roll, pitch) mit dem Hueft-Yaw: base = Ziel
+        des Stands (Balancer/WAIST_TARGET), q_now = gemessener Yaw (Start)."""
+        des = self._waist_yaw_des if self._waist_yaw_fresh() else 0.0
+        cmd = self._waist_yaw_cmd
+        if cmd is None:
+            cmd = float(q_now)
+        step = self.WAIST_YAW_SLEW * self.control_dt
+        cmd += max(-step, min(step, des - cmd))
+        self._waist_yaw_cmd = cmd
+        out = np.array(base, dtype=np.float32).copy()
+        out[0] = cmd
+        return out
 
     def _on_arms_walk_ready(self, msg: Bool):
         if msg.data and self._walk_pending:
@@ -634,7 +677,8 @@ class LocoSim(Node):
         # die zufaellige Auslenkung -> der Balance-Eintritt startet aus der Ruhe.
         kd_scale = float(self.get_parameter("hold_kd_scale").value)
         self._set_motors(LEG_IDX, LEG_STAND_POSE, LEG_KP, LEG_KD * kd_scale)
-        self._set_motors(WAIST_IDX, WAIST_TARGET, WAIST_KP, WAIST_KD)
+        yaw_now = self.low_state.motor_state[int(WAIST_IDX[0])].q if self.low_state else 0.0
+        self._set_motors(WAIST_IDX, self._waist_targets(WAIST_TARGET, yaw_now), WAIST_KP, WAIST_KD)
         self._write()
 
     def _send_damp(self):
@@ -708,7 +752,8 @@ class LocoSim(Node):
         c = self.balancer.step(q[LEG_IDX], dq_legs, g, gyro, now,
                                self._balancer_params(), com_x)
         self._set_motors(LEG_IDX, c.leg_q, c.leg_kp, c.leg_kd, tau=c.leg_tau)
-        self._set_motors(WAIST_IDX, c.waist_q, c.waist_kp, c.waist_kd)
+        self._set_motors(WAIST_IDX, self._waist_targets(c.waist_q, q[int(WAIST_IDX[0])]),
+                         c.waist_kp, c.waist_kd)
         self._write()
 
     def _send_policy(self):
@@ -767,6 +812,9 @@ class LocoSim(Node):
         # START BALANCING. Die Policy aktuiert nur Beine + Taille (0..14); die
         # Arme (15..28) bleiben dem arm_controller (rt/arm_sdk).
         policy = self.rescue_policy if self._rescue else self.walk_policy
+        # Taille fuehrt hier die Policy; zurueck im Stand startet die
+        # Hueft-Rampe an der dann gemessenen Stellung.
+        self._waist_yaw_cmd = None
         t = policy.step(q, dq, gyro, gravity, cmd)
         self._set_motors(t.idx, t.q, t.kp, t.kd)
         self._write()
