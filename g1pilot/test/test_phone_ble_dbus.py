@@ -197,3 +197,18 @@ def test_without_dbus_next_reports_error(monkeypatch, tmp_path):
     monkeypatch.setattr(B, "HAVE_DBUS", False)
     srv = B.BleServer(G.PhoneGateway(store_path=str(tmp_path / "d.json")))
     assert srv.start() is False and "dbus-next" in srv.state
+
+
+def test_error_names_step_and_type(tmp_path):
+    # Fehler ohne Text (z. B. Socket fehlt) duerfen nicht als leeres »Fehler:« enden.
+    srv = B.BleServer(G.PhoneGateway(store_path=str(tmp_path / "d.json")),
+                      bus_address=f"unix:path={tmp_path}/kein_bus")
+    srv.start()
+    for _ in range(50):
+        if srv.state.startswith("Fehler"):
+            break
+        time.sleep(0.05)
+    state = srv.state
+    srv.stop()
+    assert "Verbindung zum System-D-Bus" in state
+    assert "FileNotFoundError" in state
