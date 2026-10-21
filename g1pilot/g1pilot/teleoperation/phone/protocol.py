@@ -159,6 +159,34 @@ def join_pages(pages):
     return n0, out
 
 
+class TxPages:
+    """Aktuelle TX-Seiten + Lese-Momentaufnahme je Geraet. Das Handy liest TX0..TXk
+    nacheinander; ueber echtes BLE dauert das laenger als ein Statustakt (200 ms).
+    Ohne Momentaufnahme passen die Seiten dann nie zusammen (»Daten alt«-Flackern).
+    Ein Read von TX0 mit offset 0 friert den Stand fuer dieses Geraet ein, alle
+    weiteren Reads (auch mit offset) kommen aus diesem Stand."""
+
+    def __init__(self):
+        self.n = 0
+        self.pages = [b"0:0:1:"]
+        self._frozen = {}
+
+    def set(self, data):
+        self.n += 1
+        self.pages = tx_pages(self.n, data)
+        return self.n
+
+    def read(self, device, idx, offset=0):
+        if (idx == 0 and offset == 0) or device not in self._frozen:
+            self._frozen[device] = self.pages
+        pages = self._frozen[device]
+        value = pages[idx] if idx < len(pages) else b""
+        return value[offset:]
+
+    def drop(self, device):
+        self._frozen.pop(device, None)
+
+
 class LineBuffer:
     """Setzt BLE-Writes zu Zeilen zusammen. Ein langer Write kann bei BlueZ in
     Stuecken mit offset ankommen (Prepare/Execute Write): Stueck an offset

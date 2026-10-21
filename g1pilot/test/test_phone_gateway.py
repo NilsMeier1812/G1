@@ -308,3 +308,44 @@ def test_line_buffer_offsets():
     assert lb.feed("a", b'"y"}\n', offset=5) == ['{"t":"y"}']
     assert lb.feed("a", b"zz", offset=99) == []          # Luecke -> verwerfen
     assert lb.feed("a", b"\xff\xfe\n") == []              # kein UTF-8
+
+
+def test_tx_pages_consistent_with_slow_reader():
+    # Echtes BLE: Lesen von TX0..TX2 dauert laenger als ein Statustakt. Jeder
+    # Lesedurchgang muss trotzdem einen vollstaendigen Stand liefern.
+    import threading
+    import time
+    txp = P.TxPages()
+    stop = threading.Event()
+
+    def publisher():
+        k = 0
+        while not stop.is_set():
+            k += 1
+            txp.set(json.dumps({"k": k, "pad": "x" * 1100}).encode())
+            time.sleep(0.02)
+
+    txp.set(json.dumps({"k": 0, "pad": "x" * 1100}).encode())
+    t = threading.Thread(target=publisher, daemon=True)
+    t.start()
+    ok = 0
+    try:
+        for _ in range(10):
+            pages = [txp.read("phone", 0)]
+            k = int(pages[0].split(b":")[2])
+            assert k == 3
+            for i in range(1, k):
+                time.sleep(0.03)                       # > Takt des Publishers
+                pages.append(txp.read("phone", i, 0))
+                pages[-1] = pages[-1][:5] + txp.read("phone", i, 5)   # langer Read in zwei Teilen
+            joined = P.join_pages(pages)
+            assert joined is not None
+            json.loads(joined[1])
+            ok += 1
+    finally:
+        stop.set()
+        t.join()
+    assert ok == 10
+    # Anderes Geraet hat seinen eigenen Stand, drop() vergisst ihn.
+    txp.drop("phone")
+    assert txp.read("other", 1) == txp.pages[1]
