@@ -384,7 +384,7 @@ def test_shared_state_follows_gui_and_reports_controller(rig):
     time.sleep(0.2)
     fbs = [json.loads(m.data) for _, m in g["feedback"][n_fb:]]
     assert fbs and all("rumble" not in f for f in fbs)     # nur LED, keine Vibration
-    assert fbs[-1]["rgb"] == [0, 90, 255]                    # blau = links
+    assert fbs[-1]["rgb"] == [255, 200, 0]                   # gelb = links
 
     # Alter Stand (Stempel vor dem Node-Start) aendert nichts
     rig.gui_share(stamp=5.0, arm_side="both")
@@ -428,3 +428,20 @@ def test_shared_mode_only_after_real_walk_switch(rig):
     st["axes"][L.L2_AXIS] = 1.0
     assert wait_for(lambda: rig.shared().get("mode", (None,))[0] == "walk", 2.0)
     st["axes"][L.L2_AXIS] = 0.0
+
+
+def test_triangle_rumbles_only_when_switching_to_move(rig):
+    """Nils 2026-10-21: Dreieck -> VERSCHIEBEN kurz vibrieren, -> DREHEN nicht
+    (Modus ohne GUI unterscheidbar)."""
+    g = rig.got
+    assert wait_for(lambda: rig.status().get("mode") == "move", 5.0)
+    rumbles = lambda n: [json.loads(m.data).get("rumble") for _, m in g["feedback"][n:]]  # noqa: E731
+    n = len(g["feedback"])
+    rig.press(L.TRIANGLE)
+    assert wait_for(lambda: rig.status().get("mode") == "turn", 2.0)
+    time.sleep(0.2)
+    assert len(g["feedback"]) > n and all(r is None for r in rumbles(n))   # nur LED
+    n = len(g["feedback"])
+    rig.press(L.TRIANGLE)
+    assert wait_for(lambda: rig.status().get("mode") == "move", 2.0)
+    assert wait_for(lambda: any(r and r["ms"] > 0 for r in rumbles(n)), 1.0)

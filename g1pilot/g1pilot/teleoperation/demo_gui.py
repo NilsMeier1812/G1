@@ -734,9 +734,9 @@ class WalkPanel(QWidget):
             if gui:
                 b.clicked.connect(lambda _, n=name: self.set_speed(n))
             else:
-                # Nur Anzeige: am Controller gewaehlt (L2 + ▲), in der GUI gesperrt.
+                # Nur Anzeige: am Controller gewaehlt (R1 bzw. L2 + ▲), in der GUI gesperrt.
                 b.setEnabled(False)
-                b.setToolTip("Nur am Controller wählbar (L2 halten + ▲). "
+                b.setToolTip("Nur am Controller wählbar (im GEHEN R1, oder L2 halten + ▲). "
                              f"Die GUI selbst geht dann mit »{WALK_GUI_MAX}«.")
                 b.setStyleSheet(b.styleSheet() + """
                     QPushButton:checked:disabled { background:#1b3a1c; color:#ccc;

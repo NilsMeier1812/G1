@@ -38,14 +38,14 @@ Am echten Roboter erst in der GUI starten, siehe unten.
 
 | Taste | Wirkung |
 |---|---|
-| Steuerkreuz ← | **linke** Hand wählen (LED blau) |
+| Steuerkreuz ← | **linke** Hand wählen (LED gelb; blau ist GEHEN) |
 | Steuerkreuz → | **rechte** Hand wählen (LED grün, Standard) |
 | Steuerkreuz ↑ | **beide** Hände, parallel (LED violett) — z. B. eine Kiste tragen |
 | Steuerkreuz ↓ | **beide gespiegelt** (LED türkis): links/rechts und Drehungen spiegelbildlich, Bezug ist die rechte Hand — z. B. Hände auseinander/zueinander |
-| Dreieck | Umschalten **VERSCHIEBEN ↔ DREHEN** (beim Drehen leuchtet die LED gedimmt) |
+| Dreieck | Umschalten **VERSCHIEBEN ↔ DREHEN**. Beim Wechsel zu VERSCHIEBEN vibriert der Controller kurz, beim Wechsel zu DREHEN nicht — so ohne GUI unterscheidbar. Beim Drehen leuchtet die LED zusätzlich gedimmt |
 | Linker Stick | VERSCHIEBEN: vor/zurück + links/rechts · DREHEN: kippen (Finger hoch/runter) + schwenken. Rastet auf die Achse ein (bis 20° daneben zählt nur die Hauptrichtung), erst echt schräg fahren beide Achsen |
 | Rechter Stick | VERSCHIEBEN: hoch/runter (vertikal) · DREHEN: rollen (horizontal) |
-| L1 / R1 | Tempo langsamer / schneller: Langsam 5 cm/s · Normal 15 cm/s · Schnell 30 cm/s (Drehen 20 / 45 / 90 °/s). Start: Sim **Normal**, Real **Langsam** (höchstens Normal) |
+| L1 / R1 | Tempo langsamer / schneller: Langsam 5 cm/s · Normal 15 cm/s · Schnell 30 cm/s (Drehen 20 / 45 / 90 °/s). Start: Sim **Normal**, Real **Langsam** (höchstens Normal). Im Modus GEHEN bzw. mit gehaltenem L2: **Geh-Tempo** (siehe [Gehen mit L2](#gehen-mit-l2)) |
 | Kreis | gewählte Hand(e) **öffnen** |
 | Viereck | gewählte Hand(e) **schließen** |
 | Kreuz | **Stopp**: Hand hält sofort an, eine laufende geplante Bewegung (Grundstellung, Ablauf) wird abgebrochen |
@@ -53,8 +53,8 @@ Am echten Roboter erst in der GUI starten, siehe unten.
 | Share **1 s halten** | Grundstellung (Arme neben den Körper, geplant um Hindernisse herum) |
 | PS | **NOT-HALT** (wie in den GUIs: Arme schlaff, Roboter gedämpft — real sackt er zusammen) |
 | **R1 + L1 + PS 2 s halten** | **VOLL-NOTAUS**: ganzer G1 in Damp, auch die Beine. Controller vibriert während des Haltens, vorzeitig loslassen bricht ab. Siehe [Voll-Notaus](#voll-notaus-r1--l1--ps) |
-| **L2 drücken** | Modus **GEHEN** (LED orange): Arm-Tasten und Sticks gesperrt, bis R2/Options |
-| **L2 halten** | **Gehen** (Totmann): Sticks und Steuerkreuz ▲/▼ gehören dem Gehen, siehe [Gehen mit L2](#gehen-mit-l2) |
+| **L2 drücken** | Modus **GEHEN** (LED blau wie die GUI-Kachel GEHEN): Arm-Tasten und Sticks gesperrt, bis R2/Options; L1/R1 = Geh-Tempo |
+| **L2 halten** | **Gehen** (Totmann): Sticks, L1/R1 und Steuerkreuz ▲/▼ gehören dem Gehen, siehe [Gehen mit L2](#gehen-mit-l2) |
 | **R2 drücken** | Modus **GREIFEN**: Arme übernehmen (wie Options), Arm-Steuerung wieder frei |
 | L3, R3, Touchpad | frei (Reserve) |
 
@@ -87,9 +87,9 @@ GEHEN und GREIFEN der Demo-GUI:
   Wechsel). L2 **gedrückt halten** = laufen (Totmann, siehe unten).
   **L2 loslassen** = sofort Stopp, der Modus **bleibt GEHEN**: Sticks,
   Steuerkreuz, Dreieck, L1/R1, Kreis/Viereck und Share wirken dann **nicht**
-  auf die Arme (LED orange, Demo-GUI „PS4: GEHEN – L2 halten = laufen“).
-  Es wirken nur Kreuz (Stopp), PS (NOT-HALT), der Voll-Notaus, L2 (laufen)
-  und R2/Options (zurück zu GREIFEN).
+  auf die Arme (LED blau, Demo-GUI „PS4: GEHEN – L2 halten = laufen“).
+  Es wirken nur Kreuz (Stopp), PS (NOT-HALT), der Voll-Notaus, L2 (laufen),
+  L1/R1 (Geh-Tempo) und R2/Options (zurück zu GREIFEN).
 - **R2 drücken** → Modus **GREIFEN**: Arme übernehmen (wie Options) und
   `/g1pilot/start_balancing` (Gehen aus, Roboter steht). Die Arm-Steuerung
   ist wieder frei.
@@ -118,7 +118,7 @@ was auf einer Seite gewählt wird, zeigt die andere sofort.
 | Modus GEHEN / GREIFEN | L2 / R2 (im GEHEN auch Options) | Kacheln GEHEN / GREIFEN |
 | Hand-Auswahl | Steuerkreuz ◀ ▶ ▲ ▼ | GREIFEN → Hand bewegen: Links / Rechts / Beide / **Gespiegelt** |
 | Tempo »Hand bewegen« | L1 / R1 | Tempo Langsam / Normal / Schnell |
-| Geh-Tempo | L2 halten + ▲ / ▼ | GEHEN → Tempo Langsam / Normal (Schnell nur Anzeige) |
+| Geh-Tempo | im GEHEN L1 / R1 (auch L2 halten + ▲ / ▼) | GEHEN → Tempo Langsam / Normal (Schnell nur Anzeige) |
 
 - **Nur Anzeige und Einstellung, keine neuen Fahrbefehle.** Wer den Modus
   wechselt, sendet wie bisher `start_walking` / `start_balancing` /
@@ -149,7 +149,7 @@ was auf einer Seite gewählt wird, zeigt die andere sofort.
 |---|---|
 | Linker Stick | **vor/zurück** + **seitlich** gehen |
 | Rechter Stick (horizontal) | **drehen** (links/rechts) |
-| Steuerkreuz ▲ / ▼ | Geh-Tempo schneller / langsamer: Langsam 35 % · Normal 65 % · Schnell 100 % der Geh-Limits (`G1_MAX_VX` 0,4 m/s, `G1_MAX_VY` 0,3 m/s, `G1_MAX_VYAW` 0,4 rad/s). Start **Langsam** (kurze Vibration je Stufe) |
+| R1 / L1 oder Steuerkreuz ▲ / ▼ | Geh-Tempo schneller / langsamer (R1/L1 auch ohne L2, solange Modus GEHEN): Langsam 35 % · Normal 65 % · Schnell 100 % der Geh-Limits (`G1_MAX_VX` 0,4 m/s, `G1_MAX_VY` 0,3 m/s, `G1_MAX_VYAW` 0,4 rad/s). Start **Langsam** (kurze Vibration je Stufe) |
 | L2 loslassen | **sofort Stopp** |
 
 - L2 schaltet zugleich in den Modus GEHEN (siehe oben): die Arme halten
@@ -374,7 +374,7 @@ Ablauf:
 | `G1_JOG_REFERENCE` | `command` | Bezug der Controller-/GUI-Jogs, `tf` = alter Stand (siehe [Präzise Achsen](#präzise-achsen-2026-10-21)) |
 | `G1_PS4_WALK` | `1` | `0` = kein Gehen per Controller (L2 ohne Wirkung) |
 | `G1_PS4_WALK_SPEED` | `Langsam` | Start-Geh-Tempo |
-| `G1_PS4_WALK_MAX_SPEED` | `Schnell` | höchstes Geh-Tempo per L2 + ▲ (Schnell = volle `G1_MAX_VX/VY/VYAW`) |
+| `G1_PS4_WALK_MAX_SPEED` | `Schnell` | höchstes Geh-Tempo per R1 bzw. L2 + ▲ (Schnell = volle `G1_MAX_VX/VY/VYAW`) |
 
 ## Verbindung, Container, LED
 
