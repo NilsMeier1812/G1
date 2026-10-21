@@ -52,6 +52,7 @@ Am echten Roboter erst in der GUI starten, siehe unten.
 | Options | **Arme übernehmen**. Sim zusätzlich Greifen-Modus (stehen), wie die Kachel GREIFEN; Real nur die Arme |
 | Share **1 s halten** | Grundstellung (Arme neben den Körper, geplant um Hindernisse herum) |
 | PS | **NOT-HALT** (wie in den GUIs: Arme schlaff, Roboter gedämpft — real sackt er zusammen) |
+| **Steuerkreuz ← / → + Kreuz 2 s halten** | **ARM SPIEGELN**: der Arm der gedrückten Seite fährt geplant (Planer + Kollisionsschutz) in die exakt gespiegelte Pose des anderen Arms — z. B. rechten Arm hinstellen, dann ← + Kreuz halten: der linke Arm spiegelt ihn. Controller vibriert während des Haltens, vorzeitig loslassen bricht ab. Siehe [Arm spiegeln](#arm-spiegeln-steuerkreuz--kreuz) |
 | **R1 + L1 + PS 2 s halten** | **VOLL-NOTAUS**: ganzer G1 in Damp, auch die Beine. Controller vibriert während des Haltens, vorzeitig loslassen bricht ab. Siehe [Voll-Notaus](#voll-notaus-r1--l1--ps) |
 | **L2 drücken** | Modus **GEHEN** (LED blau wie die GUI-Kachel GEHEN): Arm-Tasten und Sticks gesperrt, bis R2/Options; L1/R1 = Geh-Tempo |
 | **L2 halten** | **Gehen** (Totmann): Sticks, L1/R1 und Steuerkreuz ▲/▼ gehören dem Gehen, siehe [Gehen mit L2](#gehen-mit-l2) |
@@ -214,6 +215,58 @@ Abschalten: Parameter `full_estop_hold_s:=0` am `ps4_arm_teleop`.
 In der Sim wirkt der Voll-Notaus wie der NOT-HALT (loco_sim dämpft dort ohnehin
 den ganzen Roboter).
 
+## Arm spiegeln (Steuerkreuz + Kreuz)
+
+Seit 2026-10-21. **Steuerkreuz ← + Kreuz 2 s halten**: der **linke** Arm
+fährt in die Spiegelpose des rechten. **Steuerkreuz → + Kreuz**: der
+**rechte** Arm spiegelt den linken. Die Reihenfolge der beiden Tasten ist
+egal (Xbox: Steuerkreuz + **A**).
+
+1. Beim Drücken wirken die beiden Tasten zuerst wie gewohnt: das Steuerkreuz
+   wählt die Seite (LED), Kreuz hält die Hände an. Dazu beginnt der
+   Controller durchgehend zu vibrieren (wie beim Voll-Notaus), die Demo-GUI
+   bzw. `/g1pilot/ps4/status` zeigt `mirror_arming`.
+2. **Vorzeitig losgelassen** (eine der beiden Tasten, vor Ablauf der 2 s),
+   Seite gewechselt oder Funkabriss: Vibration stoppt, es fährt nichts.
+   Danach zählen die 2 s von vorn.
+3. **2 s gehalten**: kurze Bestätigungs-Vibration, der Controller schickt
+   `{"type": "mirror", "side": …}` an `/g1pilot/arm_command`. Der
+   arm_controller plant die Fahrt wie *Pose anfahren* (Planer-Prozess,
+   Selbst- und Umgebungskollision, Gelenklimits, sanfte Bahn ohne Ruckeln)
+   und fährt sie ab. Weiter gehalten passiert nichts mehr.
+4. **Stoppen** während der Fahrt: **Kreuz** (erneut drücken), **PS**
+   (NOT-HALT) oder ein Stick-Ausschlag (Hand-Ziel = manueller Vorrang).
+   Loslassen der Tasten nach dem Auslösen stoppt die Fahrt **nicht** — sie
+   läuft wie eine Pose aus dem Positionsspeicher bis zum Ziel.
+5. **Abgelehnt** (Arme nicht übernommen, NOT-HALT, WALK, Homing, Ziel
+   kollidiert/Planung scheitert): lange, starke Vibration (0,6 s), Grund im
+   Log und auf `/g1pilot/arm_command/status`. Am Ziel: kurze schwache
+   Vibration.
+
+**Was gespiegelt wird:** die **kommandierte** Stellung des anderen Arms (wie
+der Jog-Bezug `command`, nicht die Messung — Durchhang/Schleppfehler
+spiegeln nicht mit), an der Sagittalebene (Mitte des Oberkörpers, vorn/oben
+bleibt, links/rechts tauscht). Gerechnet wird in Gelenkwinkeln: Pitch-Gelenke
+und Ellbogen gleich, Roll- und Yaw-Gelenke mit umgekehrtem Vorzeichen. Das
+ist **am URDF belegt gleichwertig** zur Spiegelung der Hand-Pose
+(Position *x, −y, z*, Orientierung gespiegelt): Vorwärtskinematik über
+1 600 Zufallsposen, Rest ≤ 0,01 mm (Rundung im URDF), Drehung exakt — und
+zwar für die ganze Kette (Schulter, Ellbogen, Handgelenk, Greifpunkt), der
+Ellbogen steht also auch spiegelbildlich (`test/test_arm_mirror.py`). Die
+Gelenkgrenzen beider Arme sind ebenfalls gespiegelt, eine gültige Pose
+bleibt gültig. Bei verdrehter Taille gilt die Spiegelung zum Oberkörper
+(die Arme hängen am Torso); im Greifen-Modus hält die Taillen-Haltung die
+Taille gerade. Die Finger (Inspire-Hände) werden nicht mitgespiegelt.
+
+**Sicherheit:** gefahren wird nur, wenn der arm_controller die Arme schon
+führt (Options/ENABLE) — das Spiegeln aktiviert sie nie selbst, auch nicht in
+der Sim. Gesperrt im NOT-HALT, im Modus GEHEN und mit gehaltenem L2
+(Steuerkreuz gehört dann dem Gehen). Der Voll-Notaus (R1 + L1 + PS) hat
+Vorrang und bricht ein laufendes Halten ab.
+
+Abschalten: Parameter `mirror_hold_s:=0` am `ps4_arm_teleop` (Steuerkreuz
+und Kreuz wirken dann nur einzeln wie bisher).
+
 ## Xbox-Controller
 
 Seit 2026-10-19. Ein Xbox-Wireless-Controller (Xbox One, Xbox Series X|S,
@@ -239,6 +292,7 @@ vorgesehen.
 | Options | **Menu** (rechte kleine Taste) | Arme übernehmen |
 | PS | **Xbox-Taste** | **NOT-HALT** (Oberkörper) |
 | R1 + L1 + PS 2 s | **RB + LB + Xbox-Taste 2 s** | **VOLL-NOTAUS**, Controller vibriert beim Halten |
+| Steuerkreuz ←/→ + Kreuz 2 s | **Steuerkreuz ←/→ + A 2 s** | **Arm spiegeln** (nicht Xbox-X: das ist Viereck = Hand schließen) |
 | Sticks, Steuerkreuz | gleich | gleich |
 | L3, R3, Touchpad | L3, R3 (Stick drücken) | frei; die Share-Taste der Series-Controller (Mitte) ist frei |
 
@@ -405,6 +459,7 @@ Ablauf:
 | Sim: Hand reagiert spürbar verzögert / fährt nach dem Loslassen weiter | PC ausgelastet → arm_controller regelt nur mit 10–15 Hz. RViz und Navigation abschalten (`USE_RVIZ=false G1_ENABLE_NAV=0`), Last mit `top` prüfen. Siehe [Reaktionszeit](#reaktionszeit). |
 | Nach PS reagiert nichts mehr | NOT-HALT aktiv → in der GUI quittieren (Sim: Modus wählen, Real: Start). |
 | L2 + Stick: G1 geht nicht, lange Vibration | G1 steht nicht im Walk-Modus → Startleiste »Walk« (Real) bzw. GEHEN (Sim). Nach NOT-HALT erst quittieren. |
+| Steuerkreuz + Kreuz 2 s: lange starke Vibration, Arm fährt nicht | arm_controller hat das Spiegeln abgelehnt (Grund im Log / `/g1pilot/arm_command/status`): meist Arme nicht übernommen (**Options**), NOT-HALT oder die Spiegelpose kollidiert (z. B. Hände würden sich vor dem Bauch treffen). |
 | L2 + Stick: G1 geht nicht, keine Vibration | L2 war beim Start/Verbinden schon gedrückt → einmal loslassen. Oder `G1_PS4_WALK=0`. |
 
 ---
@@ -449,6 +504,7 @@ DualShock 4 ──evdev──> ps4_joystick ──/g1pilot/ps4/joy (Joy, feste B
                                                                                      ├─> /g1pilot/arms/enabled (+ /g1pilot/start_balancing nur Sim) (Options)
                                                                                      ├─> /g1pilot/arms/home (Share, Impuls)
                                                                                      ├─> /g1pilot/pose_store/cancel (Kreuz)
+                                                                                     ├─<> /g1pilot/arm_command (+ /status) (Steuerkreuz + Kreuz 2 s: Arm spiegeln)
                                                                                      ├─> /g1pilot/emergency_stop (PS)
                                                                                      ├─> /g1pilot/ps4/status (JSON, latched)
                                                                                      ├─<>  /g1pilot/teleop_state (JSON, latched; mit Demo-GUI + ps4_walk)
@@ -643,6 +699,7 @@ vorn/oben fahren, dann fein positionieren. Das gilt für den Marker genauso.
 | `ps_estop` | `true` | PS = NOT-HALT; `false` = PS wirkt wie Kreuz |
 | `home_hold_s` | 1.0 | Share-Haltezeit für Grundstellung |
 | `full_estop_hold_s` | 2.0 | Haltezeit R1 + L1 + PS für den Voll-Notaus; `0` = aus |
+| `mirror_hold_s` | 2.0 | Haltezeit Steuerkreuz ←/→ + Kreuz für Arm spiegeln; `0` = aus |
 | `walk_deadman` | `false` (Launch: `ps4_walk`) | gehaltenes L2 pausiert die Arm-Steuerung |
 | `trigger_modes` | `false` (Launch: `ps4_walk`) | L2 drücken = Modus GEHEN (Arme gesperrt), R2 = GREIFEN |
 | `modes_need_onboard_walk` | Sim `false`, Real `true` | start_walking/start_balancing nur, wenn der G1 laut `/g1pilot/onboard_state` im Walk steht |
@@ -657,7 +714,7 @@ vorn/oben fahren, dann fein positionieren. Das gilt für den Marker genauso.
 # Unit-Tests (ohne Controller/Roboter; die ROS-/GUI-Tests brauchen rclpy/PyQt6 -> im Container)
 python3 -m pytest -q test/test_ps4_arm_teleop.py test/test_ps4_joystick.py test/test_xbox_layout.py \
     test/test_ps4_arm_teleop_node.py test/test_gui_external_estop.py \
-    test/test_demo_gui_jog_hold.py
+    test/test_demo_gui_jog_hold.py test/test_arm_mirror.py
 
 # Ende-zu-Ende gegen die laufende Sim (G1_PS4_ARMS=1, Controller nicht nötig)
 docker exec -it g1pilot-g1pilot-sim-1 bash -c \
