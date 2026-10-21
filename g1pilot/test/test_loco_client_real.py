@@ -123,7 +123,18 @@ def _make(lc, **params):
     args = ["--ros-args"] + sum((["-p", f"{k}:={v}"] for k, v in params.items()), [])
     rclpy.init(args=args)
     node = lc.G1LocoClient()
+    # Bodenkontakt (Knie-Last aus rt/lowstate): Testuhr, Standard = G1 steht
+    # (Real-Test 2026-10-21: ~14 Nm je Knie). _knees() setzt andere Werte.
+    node._test_t = [0.0]
+    node._ground._clock = lambda: node._test_t[0]
+    _knees(node, 14.0, 14.0)
     return node, FakeLoco.last
+
+
+def _knees(node, left, right):
+    """Neue Knie-Last (alte Werte veraltet -> sofort uebernommen)."""
+    node._test_t[0] += 1.0
+    node._ground.feed(left, right)
 
 
 def _close(node):
@@ -666,7 +677,8 @@ def test_onboard_state_published_for_gui(lc_module):
         node._publish_state()
         assert got[-1] == {"fsm": 500, "name": "Walk", "balanced": True, "walk": True,
                            "estop": False, "full_estop": False, "robot": True, "note": "",
-                           "rpc_err": None, "walk_fsm": 501, "fsm_mode": None}
+                           "rpc_err": None, "walk_fsm": 501, "fsm_mode": None,
+                           "ground": None, "ground_why": ""}
         node.emergency_callback(_bool(True))
         node._publish_state()
         assert got[-1]["estop"] and not got[-1]["walk"]
@@ -702,7 +714,10 @@ def test_ground_contact_precheck_published_in_preparation(lc_module, mode):
         robot.calls.clear()
         node._sync_onboard_state(force=True)
         st = _state(node)
-        assert st["fsm"] == 4 and st["fsm_mode"] == mode
+        # FSM-Mode wird nicht mehr zyklisch gelesen (am G1 stets 0, Real-Test
+        # 2026-10-21); der Bodenkontakt kommt aus der Knie-Last.
+        assert st["fsm"] == 4 and st["fsm_mode"] is None
+        assert st["ground"] is True and "14.0/14.0" in st["ground_why"]
         # Nur gelesen: kein Umschalten, kein BalanceStand/Start/Move.
         assert robot.calls == [] and not node.balanced
     finally:
@@ -710,8 +725,8 @@ def test_ground_contact_precheck_published_in_preparation(lc_module, mode):
 
 
 def test_ground_contact_precheck_follows_crane(lc_module):
-    """Kran gelockert -> Mode 0 -> beim naechsten Abgleich gemeldet (und zurueck)."""
-    node, robot = _make(lc_module)
+    """ground_check:=fsm_mode (alt): Mode wird je Takt gelesen und gemeldet."""
+    node, robot = _make(lc_module, ground_check="fsm_mode")
     try:
         robot.fsm, robot.mode = 4, 2
         node._sync_onboard_state(force=True)
@@ -730,7 +745,7 @@ def test_ground_contact_precheck_follows_crane(lc_module):
 def test_ground_contact_not_read_outside_preparation(lc_module, fsm):
     """Ausserhalb von FSM 4 ist der Mode fuer »Walk« bedeutungslos: kein
     zusaetzlicher RPC, fsm_mode None (auch nach vorherigem Wert aus FSM 4)."""
-    node, robot = _make(lc_module)
+    node, robot = _make(lc_module, ground_check="fsm_mode")
     try:
         robot.fsm, robot.mode = 4, 0
         node._sync_onboard_state(force=True)
@@ -745,7 +760,7 @@ def test_ground_contact_not_read_outside_preparation(lc_module, fsm):
 
 def test_ground_contact_unreadable_is_unknown_not_rpc_error(lc_module):
     """Mode nicht lesbar: fsm_mode None (GUI: unbekannt), FSM bleibt gueltig."""
-    node, robot = _make(lc_module)
+    node, robot = _make(lc_module, ground_check="fsm_mode")
     try:
         robot.fsm = 4
         orig = robot._Call
@@ -768,7 +783,7 @@ def test_walk_still_checks_ground_itself_after_ok_precheck(lc_module):
     try:
         robot.fsm, robot.mode = 4, 0
         node._sync_onboard_state(force=True)
-        assert _state(node)["fsm_mode"] == 0
+        assert _state(node)["ground"] is True
         robot.mode = 2
         robot.calls.clear()
         _req(node, "walk")
@@ -789,6 +804,247 @@ def test_ground_contact_precheck_does_not_wait_for_busy_rpc(lc_module):
         with node._rpc_lock:
             assert node._sync_onboard_state() is None
         assert apis == []
+    finally:
+        _close(node)
+
+
+# ── Bodenkontakt aus der Knie-Last (Real-Test Nils 2026-10-21) ────────────
+# Am Kran ~10 cm ueber dem Boden meldete GetFsmMode trotzdem 0 -> GUI zeigte
+# »Bodenkontakt ✓«, und auch der Walk-Klick haette nicht abgelehnt.
+
+def test_hanging_with_fsm_mode_0_is_no_ground_contact(lc_module):
+    """Genau der Real-Fall: FSM 4, Mode 0, Knie ohne Last."""
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm, robot.mode = 4, 0
+        _knees(node, 0.3, 0.2)
+        node._sync_onboard_state(force=True)
+        st = _state(node)
+        assert st["ground"] is False
+        assert "0.3/0.2" in st["ground_why"] and "ohne Last" in st["ground_why"]
+        robot.calls.clear()
+        _req(node, "walk")
+        assert "Start" not in robot.names() and "BalanceStand" not in robot.names()
+        assert robot.fsm == 4 and not node.balanced
+        assert "kein Bodenkontakt" in node._note and "Kran" in node._note
+    finally:
+        _close(node)
+
+
+def test_ground_contact_follows_crane_no_latch(lc_module):
+    """Aufsetzen, anheben, aufsetzen: die Anzeige folgt jedes Mal."""
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm, robot.mode = 4, 0
+        seen = []
+        for load in (0.1, 14.5, 0.4, 13.0, 1.0):
+            _knees(node, load, load)
+            node._sync_onboard_state(force=True)
+            seen.append(_state(node)["ground"])
+        assert seen == [False, True, False, True, False]
+    finally:
+        _close(node)
+
+
+def test_one_foot_touching_is_not_enough(lc_module):
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm, robot.mode = 4, 0
+        _knees(node, 14.0, 0.5)
+        _req(node, "walk")
+        assert "Start" not in robot.names() and not node.balanced
+    finally:
+        _close(node)
+
+
+def test_no_lowstate_means_walk_refused(lc_module):
+    """Keine (frischen) Knie-Momente: nicht messbar -> gesperrt, nicht frei."""
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm, robot.mode = 4, 0
+        node._test_t[0] += 5.0                       # letzte Werte veraltet
+        node._sync_onboard_state(force=True)
+        st = _state(node)
+        assert st["ground"] is False and "nicht messbar" in st["ground_why"]
+        _req(node, "walk")
+        assert "Start" not in robot.names() and not node.balanced
+    finally:
+        _close(node)
+
+
+def test_standing_walk_still_works(lc_module):
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm, robot.mode = 4, 0
+        _knees(node, 12.0, 11.0)
+        _req(node, "walk")
+        assert robot.fsm == 501 and node.balanced
+    finally:
+        _close(node)
+
+
+@pytest.mark.parametrize("entry", ["laufen", "greifen", "ramp"])
+def test_all_walk_entries_check_knee_load(lc_module, entry):
+    """LAUFEN, GREIFEN (start_balancing) und die alte Hoehenrampe pruefen auch."""
+    node, robot = _make(lc_module, walk_height_ramp=(entry == "ramp"))
+    try:
+        robot.fsm, robot.mode = 4, 0
+        _knees(node, 0.2, 0.2)
+        if entry == "laufen":
+            node.start_walking_callback(_bool(True))
+        elif entry == "greifen":
+            node.start_balancing_callback(_bool(True))
+        else:
+            _req(node, "walk")
+        assert "Start" not in robot.names() and "BalanceStand" not in robot.names()
+        assert not node.balanced and not node.walk_enabled
+    finally:
+        _close(node)
+
+
+def test_knee_load_threshold_parameter(lc_module):
+    node, robot = _make(lc_module, knee_load_min_nm=20.0)
+    try:
+        robot.fsm, robot.mode = 4, 0
+        _knees(node, 14.0, 14.0)
+        _req(node, "walk")
+        assert not node.balanced and "< 20.0 Nm" in node._note
+    finally:
+        _close(node)
+
+
+def test_ground_check_off_and_old_fsm_mode(lc_module):
+    """ground_check:=none (ohne Pruefung) bzw. fsm_mode (altes Verhalten)."""
+    for how, mode, started in (("none", 0, True), ("fsm_mode", 0, True), ("fsm_mode", 2, False)):
+        node, robot = _make(lc_module, ground_check=how)
+        try:
+            robot.fsm, robot.mode = 4, mode
+            _knees(node, 0.0, 0.0)
+            _req(node, "walk")
+            assert node.balanced is started, (how, mode)
+        finally:
+            _close(node)
+
+
+def test_lowstate_import_failure_is_logged_not_fatal(lc_module, monkeypatch):
+    """rt/lowstate nicht abonnierbar: Node laeuft, Bodenkontakt gilt dann als
+    nicht messbar -> »Walk« gesperrt."""
+    monkeypatch.setitem(sys.modules, "unitree_sdk2py.core.channel", None)
+    node, robot = _make(lc_module)
+    try:
+        assert node._lowstate_sub is None
+        node._test_t[0] += 5.0
+        robot.fsm, robot.mode = 4, 0
+        _req(node, "walk")
+        assert not node.balanced and "nicht messbar" in node._note
+    finally:
+        _close(node)
+
+
+# ── Kommunikation (Real-Test 2026-10-21) ───────────────────────────────────
+# Mit dem lowstate-Listener kam staendig 3104 (Zeitueberschreitung) vom Loco:
+# 500 Pakete/s Python im selben DDS-Teilnehmer wie die RPC-Antworten.
+
+def test_sync_in_preparation_needs_only_one_rpc(lc_module):
+    node, robot = _make(lc_module)
+    try:
+        robot.fsm = 4
+        apis = _spy_calls(robot)
+        for _ in range(3):
+            node._sync_onboard_state(force=True)
+        assert apis == ["GET_FSM_ID"] * 3
+    finally:
+        _close(node)
+
+
+class _FakeLowSub:
+    """ChannelSubscriber-Attrappe: merkt sich Init-Argumente und Read-Aufrufe."""
+    inst = None
+
+    def __init__(self, name, typ):
+        _FakeLowSub.inst = self
+        self.name, self.init_args, self.reads = name, None, 0
+        self.sample = None
+
+    def Init(self, *args, **kw):
+        self.init_args = (args, kw)
+
+    def Read(self, timeout=None):
+        self.reads += 1
+        return self.sample
+
+
+def _lowstate_msg(left, right):
+    from types import SimpleNamespace as NS
+    ms = [NS(tau_est=0.0) for _ in range(35)]
+    ms[3].tau_est, ms[9].tau_est = left, right
+    return NS(motor_state=ms)
+
+
+@pytest.fixture
+def fake_lowstate(monkeypatch):
+    chan = types.ModuleType("unitree_sdk2py.core.channel")
+    chan.ChannelSubscriber = _FakeLowSub
+    idl = types.ModuleType("unitree_sdk2py.idl.unitree_hg.msg.dds_")
+    idl.LowState_ = object
+    for name in ("unitree_sdk2py.core", "unitree_sdk2py.idl", "unitree_sdk2py.idl.unitree_hg",
+                 "unitree_sdk2py.idl.unitree_hg.msg"):
+        monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+    monkeypatch.setitem(sys.modules, "unitree_sdk2py.core.channel", chan)
+    monkeypatch.setitem(sys.modules, "unitree_sdk2py.idl.unitree_hg.msg.dds_", idl)
+    return _FakeLowSub
+
+
+def test_lowstate_read_without_listener(lc_module, fake_lowstate):
+    """Leser OHNE Handler (kein Python im DDS-Empfang), Timer in eigener Gruppe."""
+    node, robot = _make(lc_module)
+    try:
+        sub = fake_lowstate.inst
+        assert sub is node._lowstate_sub and sub.name == "rt/lowstate"
+        assert sub.init_args == ((), {})
+        timers = [t for t in node.timers if t.callback == node._poll_lowstate]
+        assert timers and timers[0].callback_group is node._lowstate_group
+        assert abs(timers[0].timer_period_ns - 1e8) < 1e3         # 10 Hz
+    finally:
+        _close(node)
+
+
+def test_lowstate_polled_only_in_preparation(lc_module, fake_lowstate):
+    node, robot = _make(lc_module)
+    try:
+        sub = fake_lowstate.inst
+        sub.sample = _lowstate_msg(-0.3, -0.2)                    # haengt
+        robot.fsm = 501
+        node._sync_onboard_state(force=True)
+        node._poll_lowstate()
+        assert sub.reads == 0                                    # im Walk: nichts
+        robot.fsm = 4
+        node._sync_onboard_state(force=True)
+        node._test_t[0] += 1.0
+        node._poll_lowstate()
+        assert sub.reads == 1
+        node._sync_onboard_state(force=True)
+        st = _state(node)
+        assert st["ground"] is False and "0.3/0.2" in st["ground_why"]
+        sub.sample = _lowstate_msg(-14.0, -13.0)                  # aufgesetzt
+        node._test_t[0] += 1.0
+        node._poll_lowstate()
+        node._sync_onboard_state(force=True)
+        assert _state(node)["ground"] is True
+    finally:
+        _close(node)
+
+
+def test_lowstate_missing_backs_off(lc_module, fake_lowstate):
+    """Kein Paket: nur noch jeder 10. Takt fragt (SDK druckt je Fehlversuch)."""
+    node, robot = _make(lc_module)
+    try:
+        sub = fake_lowstate.inst
+        robot.fsm = 4
+        node._sync_onboard_state(force=True)
+        for _ in range(20):
+            node._poll_lowstate()
+        assert sub.reads == 2
     finally:
         _close(node)
 

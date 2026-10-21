@@ -146,3 +146,23 @@ def test_sim_has_no_ground_hint(monkeypatch):
         node.tf_node.destroy_node()
         node.destroy_node()
         rclpy.shutdown()
+
+
+def test_real_crane_case_knee_load(gui):
+    """Real-Test 2026-10-21: am Kran haengend FSM-Mode 0, aber Knie ohne Last
+    -> GUI sperrt »Walk« und nennt die Knie-Last; aufgesetzt -> frei."""
+    dg, node, g, requests = gui
+    _onboard(node, fsm=4, fsm_mode=0, ground=False,
+             ground_why="Knie-Last 0.3/0.2 Nm < 3.0 Nm (Füße ohne Last)")
+    g._refresh_info()
+    b = g.start_btns["walk"]
+    assert not b.isEnabled() and b.text() == "Walk\nkein Bodenkontakt"
+    assert "Knie-Last 0.3/0.2" in g.info_onboard.text()
+    g._start_step("walk")
+    assert requests == []
+    _onboard(node, fsm=4, fsm_mode=0, ground=True, ground_why="Knie-Last 6.6/6.5 Nm")
+    g._refresh_info()
+    assert b.isEnabled() and b.text() == "Walk\nBodenkontakt ✓"
+    _onboard(node, fsm=4, fsm_mode=0, ground=False, ground_why="Knie-Last 0.1/0.1 Nm")
+    g._refresh_info()
+    assert not b.isEnabled()                      # kein Latch nach einmal »ok«

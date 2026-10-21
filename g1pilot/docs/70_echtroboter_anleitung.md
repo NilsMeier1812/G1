@@ -318,6 +318,21 @@ Seit 2026-10-16 (Review des Real-Ablaufs):
   (FSM-Mode …) – »Walk« gesperrt" und die Kachel GEHEN den Grund. Nur
   Anzeige: beim Klick prüft `loco_client` den Mode wie bisher noch einmal.
   Mode unbekannt (nicht lesbar, älterer `loco_client`) → »Walk« wie bisher frei.
+  **Korrektur 2026-10-21 (Real-Test):** Der FSM-Mode bleibt in Preparation
+  auch frei am Kran hängend 0 — er ist **kein** Bodenkontakt-Signal (damit
+  war auch die alte Prüfung beim Klick wirkungslos). Bodenkontakt kommt jetzt
+  aus der **Knie-Last**: `loco_client` abonniert `rt/lowstate` und glättet
+  `tau_est` beider Knie (Gelenk 3/9, 0,2 s). Beide Knie ≥
+  `knee_load_min_nm` (Env `G1_KNEE_LOAD_MIN_NM`, Default 10 Nm; Real-Test
+  2026-10-21: frei stehend ≈ 14 Nm je Knie) → Bodenkontakt. `rt/lowstate` wird
+  ohne Listener nur in Preparation mit 10 Hz gelesen (ein Listener mit 500 Hz
+  brachte die Loco-RPCs ständig in Zeitüberschreitung).
+  MuJoCo-Abschätzung (ungeprüft am G1): stehend ≈ 6,6 Nm je Knie, Kran trägt
+  30 % → 3,7, 50 % → 2,0, hängend ≈ 0. Ohne frische `rt/lowstate` gilt
+  „nicht messbar“ → »Walk« gesperrt. Die Info-Zeile zeigt die gemessenen
+  Werte („Knie-Last 6.4/6.1 Nm“) — damit die Schwelle am G1 einstellen.
+  Geprüft wird bei Startleiste »Walk«, LAUFEN, GREIFEN und der alten Rampe.
+  `G1_GROUND_CHECK=fsm_mode` = alter Test, `none` = ohne Prüfung.
 - **GEHEN/GREIFEN schalten den Onboard-Modus nicht mehr selbst um.** GEHEN ist
   gesperrt, bis die Info-Zeile Walk zeigt; GREIFEN in Preparation (am Kran)
   übernimmt nur die Arme. Die Handy-App funktioniert weiter wie bisher.
