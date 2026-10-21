@@ -4,7 +4,7 @@
 
 Die GUIs muessen einen fremden /g1pilot/emergency_stop genauso anzeigen wie
 den eigenen Knopf -- sonst bleibt z.B. die Demo-GUI auf REAL im alten Modus
-stehen und »Roboter starten« (Quittung) ist versteckt. Offscreen, ohne Roboter.
+stehen und »Start« (Quittung) gesperrt. Offscreen, ohne Roboter.
 """
 import os
 
@@ -54,6 +54,9 @@ def test_demo_gui_follows_external_estop(mode):
         assert gui._estop_shown and gui.mode is None
         assert gui.started == sim                       # real: erst wieder START
         assert gui.btn_start.isVisibleTo(gui) == (not sim)
+        assert gui.btn_start.isEnabled() == (not sim)    # real: Quittung frei
+        if not sim:
+            assert "quittieren" in gui.btn_start.text()
         assert gui._estop_unacked == sim                # sim: naechster Modus quittiert
         assert ("/g1pilot/emergency_stop", True) not in log   # nicht erneut gesendet
         node._emergency_stop(Bool(data=False))          # False aendert nichts

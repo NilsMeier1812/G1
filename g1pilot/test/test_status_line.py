@@ -28,7 +28,7 @@ def test_ps4_texts():
     t, _ = sl.ps4_text(dict(st, selection="mirror", mode="turn"), 0.2)
     assert "BEIDE gespiegelt · Drehen" in t
     assert "nicht verbunden" in sl.ps4_text(dict(st, connected=False), 0.2)[0]
-    assert "Roboter starten" in sl.ps4_text(dict(st, estop=True), 0.2)[0]
+    assert "»Start«" in sl.ps4_text(dict(st, estop=True), 0.2)[0]
     assert "Modus wählen" in sl.ps4_text(dict(st, estop=True), 0.2, sim=True)[0]
     assert "antwortet nicht" in sl.ps4_text(st, 9.0)[0]
 
@@ -48,7 +48,7 @@ def test_full_estop_texts():
     t, c = sl.ps4_text(dict(st, full_arming=True), 0.2)
     assert "loslassen bricht ab" in t and c == sl.RED
     t, c = sl.ps4_text(dict(st, estop=True, full_estop=True), 0.2)
-    assert "VOLL-NOTAUS" in t and "Roboter starten" in t
+    assert "VOLL-NOTAUS" in t and "»Start«" in t
     # Startleiste nach Voll-Notaus (Damp): erst quittieren, dann Preparation.
     b = sl.start_buttons({"fsm": 1, "estop": True, "full_estop": True}, 0.1)
     assert not b["preparation"][0] and not b["walk"][0]
