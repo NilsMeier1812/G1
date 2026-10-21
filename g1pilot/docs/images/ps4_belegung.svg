@@ -61,6 +61,7 @@
     <text x="520" y="458">Verschieben: hoch/runter · Drehen: rollen</text>
     <text x="395" y="330" font-weight="bold" fill="#c62828">PS: NOT-HALT</text>
     <text x="450" y="350" text-anchor="middle" font-size="12" fill="#c62828">R1 + L1 + PS 2 s halten (vibriert): VOLL-NOTAUS</text>
+    <text x="450" y="370" text-anchor="middle" font-size="12" font-weight="bold" fill="#00838f">◀ / ▶ + ✕ 2 s (vibriert): Arm spiegeln</text>
   </g>
   <!-- Gehen (L2 gehalten) -->
   <rect x="15" y="482" width="870" height="66" rx="8" fill="#fff3e0" stroke="#e65100"/>
