@@ -21,6 +21,7 @@ Sicherheit haengt aber NICHT davon ab (signierte Nachrichten, gateway.py).
 
 import asyncio
 import threading
+import traceback
 
 from g1pilot.teleoperation.phone import protocol as P
 
@@ -254,6 +255,7 @@ class BleServer:
             self._log("Handy: " + self.state)
             return False
         self.state = "startet"
+        self._step = "Start"
         self._thread = threading.Thread(target=self._run, name="phone-ble", daemon=True)
         self._thread.start()
         return True
@@ -265,8 +267,12 @@ class BleServer:
             self._loop.run_until_complete(self._setup())
             self._loop.run_forever()
         except Exception as e:  # noqa: BLE001
-            self.state = f"Fehler: {e}"
-            self._log(f"Handy-Bluetooth: {e}")
+            # Viele D-Bus-/asyncio-Fehler haben leeren Text -> Schritt + Typ mit ausgeben.
+            name = getattr(e, "type", None) or type(e).__name__
+            text = str(e) or repr(e)
+            self.state = f"Fehler bei {self._step}: {name}: {text}"
+            self._log(f"Handy-Bluetooth: {self.state}")
+            traceback.print_exc()
         finally:
             try:
                 self._loop.run_until_complete(self._teardown())
@@ -276,6 +282,7 @@ class BleServer:
             self._loop = None
 
     async def _setup(self):
+        self._step = "Verbindung zum System-D-Bus (/run/dbus/system_bus_socket)"
         if self._bus_address:
             self._bus = await MessageBus(bus_address=self._bus_address).connect()
         else:
@@ -288,6 +295,7 @@ class BleServer:
             bus.export(ch.path, ch)
         bus.export(f"{APP_PATH}/adv0", self.adv)
         path = f"/org/bluez/{self.adapter}"
+        self._step = f"BlueZ-Adapter {path} (laeuft bluetoothd?)"
         intro = await bus.introspect(BLUEZ, path)
         obj = bus.get_proxy_object(BLUEZ, path, intro)
         try:
@@ -298,8 +306,11 @@ class BleServer:
             pass
         self._gatt = obj.get_interface(GATT_MANAGER)
         self._advm = obj.get_interface(ADV_MANAGER)
+        self._step = "GATT-Dienst anmelden"
         await self._gatt.call_register_application(APP_PATH, {})
+        self._step = "Werbung anmelden"
         await self._advm.call_register_advertisement(f"{APP_PATH}/adv0", {})
+        self._step = "Signale abonnieren"
         bus.add_message_handler(self._on_message)
         await bus.call(Message(
             destination="org.freedesktop.DBus", path="/org/freedesktop/DBus",
