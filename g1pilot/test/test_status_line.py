@@ -127,3 +127,59 @@ def test_ps4_text_controller_walk_and_device():
     assert "GEHEN" in t and "(Normal)" in t
     # NOT-HALT hat Vorrang vor Gehen
     assert "NOT-HALT" in sl.ps4_text(dict(st, estop=True), 0.1, walk=walk)[0]
+
+
+def test_ground_contact_precheck():
+    """Nils 2026-10-20: ob »Walk« (501) geht, schon VOR dem Klick zeigen."""
+    assert sl.ground_contact({"fsm": 4, "fsm_mode": 0}) is True
+    assert sl.ground_contact({"fsm": 4, "fsm_mode": 2}) is False
+    assert sl.ground_contact({"fsm": 4, "fsm_mode": None}) is None
+    assert sl.ground_contact({"fsm": 4}) is None                 # alter loco_client
+    assert sl.ground_contact({"fsm": 501, "fsm_mode": 0}) is None
+    assert sl.ground_contact(None) is None
+
+
+def test_start_walk_button_follows_ground_contact():
+    ok = {"fsm": 4, "name": "Preparation", "fsm_mode": 0}
+    no = {"fsm": 4, "name": "Preparation", "fsm_mode": 2}
+    unk = {"fsm": 4, "name": "Preparation"}
+    assert sl.start_buttons(ok, 0.1)["walk"] == (True, True)      # Rueckfrage bleibt
+    assert sl.start_buttons(no, 0.1)["walk"] == (False, True)
+    assert sl.start_buttons(unk, 0.1)["walk"] == (True, True)     # wie bisher
+    assert not sl.start_buttons(dict(ok, estop=True), 0.1)["walk"][0]
+    # Damp/Preparation unberuehrt
+    assert sl.start_buttons(no, 0.1)["damp"] == (True, True)
+    # Umschalten 500 -> 501 steht schon: kein Bodenkontakt-Kriterium
+    st = {"fsm": 500, "walk_fsm": 501, "fsm_mode": None}
+    assert sl.start_buttons(st, 0.1)["walk"] == (True, True)
+    assert sl.walk_button_label(st, 0.1) == "Walk"
+    assert sl.walk_button_label(ok, 0.1) == "Walk\nBodenkontakt ✓"
+    assert sl.walk_button_label(no, 0.1) == "Walk\nkein Bodenkontakt"
+    assert sl.walk_button_label(unk, 0.1) == "Walk"
+    assert sl.walk_button_label(no, 10.0) == "Walk"               # veraltet
+    assert sl.walk_button_label(None, None) == "Walk"
+
+
+def test_onboard_text_shows_ground_contact():
+    t, c = sl.onboard_text({"fsm": 4, "name": "Preparation", "fsm_mode": 0}, 0.1)
+    assert t == "G1: Preparation (FSM 4) · Bodenkontakt ✓ – »Walk« möglich" and c == sl.GREEN
+    t, c = sl.onboard_text({"fsm": 4, "name": "Preparation", "fsm_mode": 2}, 0.1)
+    assert "kein Bodenkontakt (FSM-Mode 2)" in t and "gesperrt" in t and c == sl.RED
+    t, c = sl.onboard_text({"fsm": 4, "name": "Preparation"}, 0.1)
+    assert t.endswith("Kran lockern, dann »Walk«") and c == sl.AMBER
+    # NOT-HALT hat Vorrang vor dem Bodenkontakt
+    t, c = sl.onboard_text({"fsm": 4, "name": "Preparation", "fsm_mode": 0,
+                            "estop": True}, 0.1)
+    assert "NOT-HALT" in t and "Bodenkontakt" not in t and c == sl.RED
+
+
+def test_walk_tile_hint():
+    assert sl.walk_tile_hint(None, None) == "gesperrt · keine Daten vom G1"
+    assert sl.walk_tile_hint({"fsm": 501}, 10.0) == "gesperrt · keine Daten vom G1"
+    assert sl.walk_tile_hint({"fsm": 501}, 0.1) is None          # GEHEN geht
+    assert sl.walk_tile_hint({"fsm": 500}, 0.1) is None
+    assert sl.walk_tile_hint({"fsm": 4, "fsm_mode": 0}, 0.1) == "erst »Walk« · Bodenkontakt ✓"
+    assert sl.walk_tile_hint({"fsm": 4, "fsm_mode": 2}, 0.1) == "gesperrt · kein Bodenkontakt"
+    assert sl.walk_tile_hint({"fsm": 4}, 0.1) == "erst »Walk« (Startleiste)"
+    assert sl.walk_tile_hint({"fsm": 1}, 0.1) == "gesperrt · G1 nicht im Walk"
+    assert sl.walk_tile_hint({"fsm": 501, "estop": True}, 0.1) == "gesperrt · NOT-HALT"

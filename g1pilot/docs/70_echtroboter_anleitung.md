@@ -310,6 +310,14 @@ Seit 2026-10-16 (Review des Real-Ablaufs):
   nur wenn der FSM-Mode 0 meldet (Füße belastet). Hängt der G1 noch straff,
   kommt „Walk: abgelehnt — Füße ohne Last … Kran lockern" in der Statuszeile.
   Die alte Rampe gibt es weiter mit `walk_height_ramp:=true`.
+  **Vorab-Anzeige (2026-10-20):** In Preparation liest `loco_client` beim
+  Abgleich (2 Hz) den FSM-Mode mit und meldet ihn als `fsm_mode` im
+  `onboard_state`. Schon vor dem Klick zeigt der Knopf »Walk
+  Bodenkontakt ✓« bzw. »Walk kein Bodenkontakt« (dann gesperrt), die
+  Info-Zeile „Bodenkontakt ✓ – »Walk« möglich" bzw. „kein Bodenkontakt
+  (FSM-Mode …) – »Walk« gesperrt" und die Kachel GEHEN den Grund. Nur
+  Anzeige: beim Klick prüft `loco_client` den Mode wie bisher noch einmal.
+  Mode unbekannt (nicht lesbar, älterer `loco_client`) → »Walk« wie bisher frei.
 - **GEHEN/GREIFEN schalten den Onboard-Modus nicht mehr selbst um.** GEHEN ist
   gesperrt, bis die Info-Zeile Walk zeigt; GREIFEN in Preparation (am Kran)
   übernimmt nur die Arme. Die Handy-App funktioniert weiter wie bisher.
