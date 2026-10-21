@@ -21,6 +21,7 @@ from unitree_sdk2py.g1.loco.g1_loco_api import (
 )
 
 from g1pilot.utils.common import init_dds
+from g1pilot.navigation.ground_contact import CHECK_MODES, GroundContact
 
 
 # Onboard-FSM-IDs (Unitree G1): 4 = Ready/"Preparation" (Standby), 500/501 = Walk
@@ -93,11 +94,14 @@ class G1LocoClient(Node):
         # Abgleich mit dem ONBOARD-Zustand (Handy-App/Fernbedienung schalten den
         # G1 ausserhalb dieses Nodes um): letzte gelesene FSM-ID, Entprellung.
         self._onboard_fsm = None
-        # Bodenkontakt-Vorabpruefung fuer die GUI: FSM-Mode, gelesen nur in
-        # Preparation (FSM 4) -- 0 = Fuesse belastet, Walk-Start moeglich.
-        # None = unbekannt bzw. nicht in Preparation. Nur Anzeige: der
-        # Walk-Start selbst liest den Mode erneut (_enter_walk_direct).
+        # FSM-Mode, gelesen nur in Preparation (FSM 4); None sonst. Real-Test
+        # 2026-10-21: am Kran haengend trotzdem 0 -> kein Bodenkontakt-Signal,
+        # nur noch Anzeige/Log. Bodenkontakt: Knie-Last (_ground, rt/lowstate).
         self._onboard_fsm_mode = None
+        # Bodenkontakt in Preparation fuer GUI-Vorabanzeige: True/False, None
+        # ausserhalb von FSM 4. Der Walk-Start prueft selbst noch einmal.
+        self._ground_ok = None
+        self._ground_why = ""
         self._rpc_err = None             # letzter Lesefehler (Code) oder None
         self._state_group = MutuallyExclusiveCallbackGroup()
         self._balanced_at = 0.0
@@ -176,6 +180,16 @@ class G1LocoClient(Node):
         # (unitree_sdk2_python 82d7dde, 2026-04-20): 500 (Walk, Taille fest).
         # Default 501 = Walk with waist (Nils 2026-10-19). Explizit statt Start().
         self.declare_parameter('start_fsm_id', DEFAULT_START_FSM_ID)
+        # Bodenkontakt vor dem Walk-Start (Preparation -> Walk):
+        #   knee_load (Default): beide Knie-Momente (rt/lowstate tau_est)
+        #             >= knee_load_min_nm. Ohne lowstate: gesperrt.
+        #   fsm_mode: nur der alte FSM-Mode-0-Test (am G1 wirkungslos, s.o.).
+        #   none:     keine Bodenkontakt-Pruefung (nur fuer Tests am Kran!).
+        # Der FSM-Mode-Test laeuft in jedem Fall weiter mit.
+        self.declare_parameter('ground_check', 'knee_load')
+        self.declare_parameter('knee_load_min_nm', 3.0)
+        self._ground = GroundContact(float(self.get_parameter('knee_load_min_nm').value))
+        self._lowstate_sub = None
 
         ik_use_waist = self.get_parameter('ik_use_waist').get_parameter_value().bool_value
         ik_alpha = float(self.get_parameter('ik_alpha').value)
@@ -195,6 +209,7 @@ class G1LocoClient(Node):
                 f"installiertes SDK haette '{sdk_service}'.")
             self.robot.SetTimeout(10.0)
             self.robot.Init()
+            self._init_lowstate()
             if bool(self.get_parameter('damp_on_init').value):
                 self.robot.SetFsmId(4)
                 self.robot.Damp()
@@ -250,6 +265,31 @@ class G1LocoClient(Node):
         self.right_gripper_pub = self.create_publisher(String, '/g1pilot/hand_action/right', 1)
         self.left_gripper_pub = self.create_publisher(String, '/g1pilot/hand_action/left', 1)
         self.publisher_homming_arms = self.create_publisher(Bool, '/g1pilot/arms/home', 1)
+
+    def _init_lowstate(self):
+        """rt/lowstate abonnieren (Knie-Momente fuer den Bodenkontakt)."""
+        try:
+            from unitree_sdk2py.core.channel import ChannelSubscriber
+            from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_
+            self._lowstate_sub = ChannelSubscriber("rt/lowstate", LowState_)
+            self._lowstate_sub.Init(self._ground.feed_lowstate, 10)
+        except Exception as e:
+            self.get_logger().error(
+                f"rt/lowstate nicht abonniert ({e}) -- Bodenkontakt nicht messbar, "
+                "»Walk« aus Preparation bleibt gesperrt.")
+
+    def _ground_check(self, fsm_mode=None):
+        """Bodenkontakt fuer den Walk-Start -> (ok, Grund)."""
+        how = str(self.get_parameter('ground_check').value).strip().lower()
+        if how in ("off", "false", "0"):
+            how = "none"
+        if how not in CHECK_MODES:
+            how = "knee_load"
+        if how == "none":
+            return True, "Bodenkontakt-Prüfung aus (ground_check:=none)"
+        if how == "fsm_mode":
+            return fsm_mode == 0, f"FSM-Mode {fsm_mode}"
+        return self._ground.check()
 
     def _log_once(self, level, msg, key):
         if getattr(self, key, False):
@@ -358,6 +398,10 @@ class G1LocoClient(Node):
         finally:
             self._rpc_lock.release()
         self._onboard_fsm_mode = mode if fsm is not None else None
+        if fsm == FSM_READY:
+            self._ground_ok, self._ground_why = self._ground_check(mode)
+        elif fsm is not None:
+            self._ground_ok, self._ground_why = None, ""
         if fsm is None:
             if code != self._rpc_err:
                 self.get_logger().warn(
@@ -400,7 +444,8 @@ class G1LocoClient(Node):
               "full_estop": bool(self._full_estop),
               "note": self._note, "rpc_err": self._rpc_err,
               "walk_fsm": self._start_fsm_id(),
-              "fsm_mode": self._onboard_fsm_mode}
+              "fsm_mode": self._onboard_fsm_mode,
+              "ground": self._ground_ok, "ground_why": self._ground_why}
         self.state_pub.publish(String(data=json.dumps(st, sort_keys=True)))
 
     def get_fsm_id(self):
@@ -908,6 +953,14 @@ class G1LocoClient(Node):
             self._set_note(f"Walk: abgelehnt -- Fuesse ohne Last (FSM-Mode {mode}). "
                            "Kran lockern, dann erneut.", "error")
             return
+        # FSM-Mode bleibt am Kran 0 (Real-Test 2026-10-21) -> eigentliche
+        # Pruefung ueber die Knie-Last.
+        ok, why = self._ground_check(mode)
+        self._ground_ok, self._ground_why = ok, why
+        if not ok:
+            self._set_note(f"Walk: abgelehnt -- kein Bodenkontakt ({why}). "
+                           "Kran lockern, dann erneut.", "error")
+            return
         if self.robot_stopped:
             return
         self._robot_rpc("BalanceStand", int(self.get_parameter('balance_mode').value))
@@ -943,6 +996,12 @@ class G1LocoClient(Node):
                 f"Balancing abgebrochen: FSM-Mode {problem} bei Hoehe {height:.2f} "
                 "(Fuesse nicht belastet oder keine Antwort) -- KEIN Start(), G1 bleibt "
                 "in Preparation. Aufstellen per Fernbedienung/Handy oder Gantry pruefen.")
+            return
+        ok, why = self._ground_check(0)
+        self._ground_ok, self._ground_why = ok, why
+        if not ok:
+            self._set_note(f"Walk: abgelehnt -- kein Bodenkontakt ({why}) -- KEIN Start(), "
+                           "G1 bleibt in Preparation.", "error")
             return
         self._robot_rpc("BalanceStand", int(self.get_parameter('balance_mode').value))
         self._robot_rpc("SetStandHeight", height)

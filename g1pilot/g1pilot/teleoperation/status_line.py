@@ -49,14 +49,19 @@ def walk_switch(state):
 def ground_contact(state):
     """Bodenkontakt-Vorabpruefung fuer »Walk« aus Preparation (FSM 4).
 
-    True  = Fuesse belastet (FSM-Mode 0) -> der Walk-Start (501) geht.
-    False = Fuesse ohne Last (Mode != 0, z. B. straff am Kran) -> der
+    True  = Fuesse belastet -> der Walk-Start (501) geht.
+    False = Fuesse ohne Last (z. B. am Kran) oder nicht messbar -> der
             loco_client wuerde »Walk« ablehnen.
-    None  = unbekannt: nicht in Preparation, Mode nicht lesbar oder ein
-            loco_client ohne das Feld fsm_mode. Dann prueft wie bisher erst
-            der loco_client beim Umschalten."""
+    None  = unbekannt: nicht in Preparation oder ein aelterer loco_client.
+
+    Quelle: Feld "ground" des loco_client (Knie-Last aus rt/lowstate, Grund
+    in "ground_why"). Fehlt es (loco_client vor 2026-10-21), wie damals der
+    FSM-Mode -- der meldet am Kran haengend aber trotzdem 0."""
     if not state or state.get("fsm") != 4:
         return None
+    if "ground" in state:
+        g = state.get("ground")
+        return None if g is None else bool(g)
     mode = state.get("fsm_mode")
     if mode is None:
         return None
@@ -88,10 +93,13 @@ def onboard_text(state, age_s, walk_requested=False):
         return text, GREEN
     if fsm == 4:
         ground = ground_contact(state)
+        why = state.get("ground_why") or (
+            f"FSM-Mode {state.get('fsm_mode')}" if "ground" not in state else "")
+        why = f" ({why})" if why else ""
         if ground:
-            return text + " · Bodenkontakt ✓ – »Walk« möglich", GREEN
+            return text + f" · Bodenkontakt ✓{why} – »Walk« möglich", GREEN
         if ground is False:
-            return (text + f" · kein Bodenkontakt (FSM-Mode {state.get('fsm_mode')})"
+            return (text + f" · kein Bodenkontakt{why}"
                     " – »Walk« gesperrt, Kran lockern"), RED
         return text + " · Kran lockern, dann »Walk«", AMBER
     if walk_requested:

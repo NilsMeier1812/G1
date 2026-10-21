@@ -162,7 +162,7 @@ def test_start_walk_button_follows_ground_contact():
 
 def test_onboard_text_shows_ground_contact():
     t, c = sl.onboard_text({"fsm": 4, "name": "Preparation", "fsm_mode": 0}, 0.1)
-    assert t == "G1: Preparation (FSM 4) · Bodenkontakt ✓ – »Walk« möglich" and c == sl.GREEN
+    assert t == "G1: Preparation (FSM 4) · Bodenkontakt ✓ (FSM-Mode 0) – »Walk« möglich" and c == sl.GREEN
     t, c = sl.onboard_text({"fsm": 4, "name": "Preparation", "fsm_mode": 2}, 0.1)
     assert "kein Bodenkontakt (FSM-Mode 2)" in t and "gesperrt" in t and c == sl.RED
     t, c = sl.onboard_text({"fsm": 4, "name": "Preparation"}, 0.1)
@@ -183,3 +183,23 @@ def test_walk_tile_hint():
     assert sl.walk_tile_hint({"fsm": 4}, 0.1) == "erst »Walk« (Startleiste)"
     assert sl.walk_tile_hint({"fsm": 1}, 0.1) == "gesperrt · G1 nicht im Walk"
     assert sl.walk_tile_hint({"fsm": 501, "estop": True}, 0.1) == "gesperrt · NOT-HALT"
+
+
+def test_ground_from_knee_load_field():
+    """Real-Test 2026-10-21: FSM-Mode 0 am Kran -> Feld "ground" (Knie-Last) zaehlt."""
+    hang = {"fsm": 4, "name": "Preparation", "fsm_mode": 0, "ground": False,
+            "ground_why": "Knie-Last 0.3/0.2 Nm < 3.0 Nm (Füße ohne Last)"}
+    stand = dict(hang, ground=True, ground_why="Knie-Last 6.6/6.5 Nm")
+    assert sl.ground_contact(hang) is False and sl.ground_contact(stand) is True
+    assert sl.start_buttons(hang, 0.1)["walk"] == (False, True)
+    assert sl.start_buttons(stand, 0.1)["walk"] == (True, True)
+    t, c = sl.onboard_text(hang, 0.1)
+    assert "kein Bodenkontakt (Knie-Last 0.3/0.2 Nm" in t and c == sl.RED
+    t, c = sl.onboard_text(stand, 0.1)
+    assert "Bodenkontakt ✓ (Knie-Last 6.6/6.5 Nm) – »Walk« möglich" in t and c == sl.GREEN
+    assert sl.walk_button_label(hang, 0.1) == "Walk\nkein Bodenkontakt"
+    assert sl.walk_tile_hint(hang, 0.1) == "gesperrt · kein Bodenkontakt"
+    # nicht messbar -> ebenfalls gesperrt
+    nm = dict(hang, ground_why="Knie-Last nicht messbar (keine rt/lowstate)")
+    assert not sl.start_buttons(nm, 0.1)["walk"][0]
+    assert "nicht messbar" in sl.onboard_text(nm, 0.1)[0]

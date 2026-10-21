@@ -180,6 +180,10 @@ def generate_launch_description():
                 'start_fsm_id':    int(os.environ.get('G1_WALK_FSM_ID', '501')),
                 # E-Stop: Beine nur StopMove (kein Damp). G1_ESTOP_DAMP_LEGS=1 = alt.
                 'estop_damp_legs': _env_bool('G1_ESTOP_DAMP_LEGS'),
+                # Bodenkontakt vor Walk: knee_load (Knie-Last aus rt/lowstate),
+                # fsm_mode (alt, am Kran wirkungslos) oder none. Schwelle je Knie.
+                'ground_check':     os.environ.get('G1_GROUND_CHECK', 'knee_load'),
+                'knee_load_min_nm': float(os.environ.get('G1_KNEE_LOAD_MIN_NM', '3.0')),
             }]
         ),
     ]
