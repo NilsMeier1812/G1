@@ -52,6 +52,11 @@ Belegung (Details: g1pilot/docs/43_ps4_controller.md):
                PS oder ein Stick-Ausschlag. Nur mit uebernommenen Armen.
   L2 halten    Gehen (ps4_walk, nur mit walk_deadman): Sticks + Steuerkreuz
                gehoeren dann dem Gehen, die Arme halten ihre Lage
+  R2 halten    HUEFTE (waist_yaw, nur im GREIFEN): rechter Stick links/rechts
+               dreht den Oberkoerper (Taillen-Yaw), R2 + R3 = zurueck zur Mitte.
+               Loslassen = Huefte steht. Sticks/Steuerkreuz bewegen dabei die Arme
+               nicht; die Arme halten ihre Gelenkstellung und drehen mit.
+               Jog-Richtungen gelten danach im Oberkoerper-Bezug.
   L2 druecken  Modus GEHEN, R2 druecken = Modus GREIFEN (trigger_modes), wie die
                Kacheln der Demo-GUI. Im GEHEN laeuft der G1 nur, solange L2
                gehalten wird; losgelassen bleibt GEHEN, die Arm-Tasten und
@@ -72,6 +77,10 @@ from g1pilot.teleoperation.hand_jog import (
     HoldStreamer, JogReference, hold_pose, jog_reference_mode, lead_limits, jog_step,
 )
 from g1pilot.utils.common import is_sim_mode
+from g1pilot.manipulation.waist_yaw import (
+    WAIST_RATE_TOPIC, WAIST_CENTER_TOPIC, WAIST_STATE_TOPIC, STATE_STALE_S,
+    parse_state, rotate_twist_yaw,
+)
 
 # Auswahl -> betroffene Seiten
 SELECTIONS = {
@@ -96,6 +105,7 @@ COLORS = {
     # blau wie die Kachel GEHEN der Demo-GUI (MODE_COLOR): Modus GEHEN, Arme
     # am Controller gesperrt. (Bis 2026-10 orange -- das ist dort GREIFEN.)
     "walk":   (30, 136, 229),
+    "waist":  (255, 255, 255),  # weiss: R2 gehalten = Huefte drehen
 }
 TURN_DIM = 0.35   # DREHEN: LED gedimmt (gleiche Farbe), Verschieben = voll
 
@@ -148,7 +158,7 @@ class ArmTeleopLogic:
                  selection="right", max_speed="Schnell", ps_estop=True,
                  full_estop_hold_s=2.0, full_estop_gap_s=0.3,
                  walk_deadman=False, trigger_modes=False, axis_snap_deg=20.0,
-                 mirror_hold_s=2.0, mirror_gap_s=0.3):
+                 mirror_hold_s=2.0, mirror_gap_s=0.3, waist_yaw=False):
         self.deadzone = float(deadzone)
         self.expo = float(expo)
         # Linker Stick: Achsen-Einrasten (snap_stick), damit "vor" nur vor
@@ -201,6 +211,11 @@ class ArmTeleopLogic:
         # bisher), "walk" (GEHEN: Arme am Controller gesperrt) oder "grasp".
         # Der Node gleicht ihn mit start_walking/start_balancing (GUIs) ab.
         self.robot_mode = None
+        # R2 gehalten (im GREIFEN) = Huefte drehen: rechter Stick X -> Taillen-
+        # Yaw, R3 = Mitte. Braucht trigger_modes (R2 ist sonst ohne Bedeutung).
+        self.waist_yaw = bool(waist_yaw)
+        self._waist_was = False
+        self._waist_stop = False     # Kreuz: bis der Stick zurueck ist, kein Drehen
         self._prev = [0] * L.NUM_BUTTONS
         self._share_since = None
         self._home_sent = False
@@ -218,6 +233,25 @@ class ArmTeleopLogic:
     def arms_locked(self):
         """GEHEN-Modus: Arm-Funktionen am Controller gesperrt."""
         return self.trigger_modes and self.robot_mode == "walk"
+
+    @property
+    def waist_mode(self):
+        """R2 gehalten im GREIFEN: der rechte Stick dreht die Huefte."""
+        return (self.waist_yaw and self.trigger_modes and self.robot_mode == "grasp"
+                and self._trig_held[L.R2] and not self.estop and not self.walking)
+
+    def waist_rate(self, axes):
+        """-> Hueft-Drehrate -1..1 (+ = links, Stick links), solange R2
+        gehalten wird, sonst None."""
+        if not self.waist_mode:
+            return None
+        a = list(axes) + [0.0] * max(0, L.NUM_AXES - len(axes))
+        r = shape_axis(a[L.RX], self.deadzone, self.expo)
+        if self._waist_stop:
+            if r != 0.0:
+                return 0.0
+            self._waist_stop = False
+        return r
 
     def set_selection(self, sel):
         """Hand-Auswahl von aussen (GUI). -> Befehle wie update() (Halten der
@@ -249,6 +283,8 @@ class ArmTeleopLogic:
             return COLORS["estop"]
         if self.arms_locked:
             return COLORS["walk"]
+        if self.waist_mode:
+            return COLORS["waist"]
         c = COLORS[self.selection]
         if self.mode == "turn":
             c = tuple(int(round(v * TURN_DIM)) for v in c)
@@ -261,6 +297,8 @@ class ArmTeleopLogic:
             return "PS4 · NOT-HALT (in GUI quittieren)"
         if self.arms_locked:
             return "PS4 · GEHEN (L2 halten = laufen, R2 = Greifen)"
+        if self.waist_mode:
+            return "PS4 · HÜFTE (rechter Stick ←/→, R3 = Mitte)"
         return f"PS4 · {SELECTION_LABEL[self.selection]} · {MODE_LABEL[self.mode]} · {self.speed}"
 
     def status(self):
@@ -271,7 +309,8 @@ class ArmTeleopLogic:
                 "full_arming": self.full_arming,
                 "mirror_arming": self._mir_side if self.mirror_arming else None,
                 "robot_mode": self.robot_mode,
-                "arms_locked": self.arms_locked, "label": self.label()}
+                "arms_locked": self.arms_locked, "waist_mode": self.waist_mode,
+                "label": self.label()}
 
     def clear_estop(self):
         """NOT-HALT quittiert (START aus GUI/Streamdeck gesehen)."""
@@ -434,6 +473,34 @@ class ArmTeleopLogic:
         if self.arms_locked or self.walking:
             # GEHEN / L2 gehalten: Steuerkreuz gehoert dem Gehen, kein Spiegeln.
             out += self._abort_mirror_cmds()
+        waist = self.waist_mode
+        if waist != self._waist_was:
+            self._waist_was = waist
+            self._waist_stop = False
+            if waist:
+                # Hueft-Modus: laufende Hand-Jogs anhalten, Arme halten.
+                out += [("hold", ("left", "right")), ("waist", "start")]
+            else:
+                out.append(("waist", "end"))
+        if waist:
+            out += self._abort_mirror_cmds()     # Steuerkreuz gehoert nicht den Armen
+            # R2 gehalten: Sticks/Steuerkreuz/Dreieck/Tempo gehoeren nicht den
+            # Armen (Share/Grundstellung auch nicht). R3 = Mitte, Kreuz =
+            # Stopp (auch die Huefte); Haende und Options wirken weiter.
+            if rise[L.R3]:
+                out.append(("waist_center",))
+            if rise[L.CROSS]:
+                self._waist_stop = True
+                out += [("hold", ("left", "right")), ("cancel",), ("waist_stop",)]
+            if rise[L.CIRCLE]:
+                out.extend(("hand", s, "open") for s in self.sides)
+            if rise[L.SQUARE]:
+                out.extend(("hand", s, "close") for s in self.sides)
+            if rise[L.OPTIONS]:
+                out.append(("enable",))
+            self._share_since = None
+            self._home_sent = False
+            return out
         if self.arms_locked:
             # GEHEN: nur Kreuz (Stopp) und Options (Arme uebernehmen -> GREIFEN).
             self._share_since = None
@@ -513,7 +580,7 @@ class ArmTeleopLogic:
 
     def twist(self, axes):
         """-> {side: ((vx, vy, vz) m/s, (wx, wy, wz) rad/s)} im JOG_FRAME."""
-        if self.estop or self.arms_locked or (
+        if self.estop or self.arms_locked or self.waist_mode or (
                 self.walk_deadman and (self.walking or deadman_held(axes, ()))):
             return {}
         a = list(axes) + [0.0] * max(0, L.NUM_AXES - len(axes))
@@ -548,7 +615,7 @@ def main(args=None):
     from rclpy.node import Node
     from rclpy.qos import QoSProfile, DurabilityPolicy
     from sensor_msgs.msg import Joy
-    from std_msgs.msg import Bool, String
+    from std_msgs.msg import Bool, Float32, String
     from geometry_msgs.msg import PoseStamped
     from visualization_msgs.msg import Marker, MarkerArray
     from tf2_ros import Buffer, TransformListener
@@ -600,6 +667,12 @@ def main(args=None):
             # Linker Stick rastet auf die Achse ein, wenn er hoechstens so viele
             # Grad daneben liegt (nur eine Richtung statt leicht schraeg). 0 = aus.
             self.declare_parameter("axis_snap_deg", 20.0)
+            # R2 halten (GREIFEN) = Huefte drehen (rechter Stick X), R2 + R3 =
+            # Mitte; nur mit trigger_modes. false = R2 halten ohne Wirkung.
+            self.declare_parameter("waist_yaw", True)
+            # Jog-Richtungen im Oberkoerper-Bezug (um den gemessenen Taillen-Yaw
+            # gedreht): "vor" = Richtung Brust. false = Becken wie bisher.
+            self.declare_parameter("jog_torso_frame", True)
             gp = lambda n: self.get_parameter(n).value   # noqa: E731
 
             self.logic = ArmTeleopLogic(gp("deadzone"), gp("expo"), gp("speed"),
@@ -609,7 +682,8 @@ def main(args=None):
                                         walk_deadman=gp("walk_deadman"),
                                         trigger_modes=gp("trigger_modes"),
                                         axis_snap_deg=gp("axis_snap_deg"),
-                                        mirror_hold_s=gp("mirror_hold_s"))
+                                        mirror_hold_s=gp("mirror_hold_s"),
+                                        waist_yaw=gp("waist_yaw"))
             self.need_onboard_walk = bool(gp("modes_need_onboard_walk"))
             self.onboard = self.onboard_t = None
             self.joy_timeout = float(gp("joy_timeout_s"))
@@ -625,6 +699,10 @@ def main(args=None):
             self.t_tick = time.monotonic()
             self._tf_warned = False
             self._home_off_at = None
+            self.jog_torso = bool(gp("jog_torso_frame"))
+            self.waist = None            # letzter /g1pilot/waist/state
+            self.waist_t = None
+            self._waist_sending = False  # Rate-Strom laeuft (0 beim Ende senden)
             self._mirror_n = 0
             self._mirror_id = None       # ID des laufenden Spiegel-Kommandos
 
@@ -642,6 +720,9 @@ def main(args=None):
             self.pub_cancel = self.create_publisher(Bool, "/g1pilot/pose_store/cancel", 10)
             self.pub_estop = self.create_publisher(Bool, "/g1pilot/emergency_stop", 10)
             self.pub_full_estop = self.create_publisher(Bool, "/g1pilot/full_emergency_stop", 10)
+            self.pub_waist_rate = self.create_publisher(Float32, WAIST_RATE_TOPIC, 10)
+            self.pub_waist_center = self.create_publisher(Bool, WAIST_CENTER_TOPIC, 10)
+            self.create_subscription(String, WAIST_STATE_TOPIC, self._on_waist_state, 10)
             self.pub_arm_cmd = self.create_publisher(String, "/g1pilot/arm_command", 10)
             self.pub_feedback = self.create_publisher(String, "/g1pilot/ps4/feedback", 10)
             latched = QoSProfile(depth=1)
@@ -751,6 +832,24 @@ def main(args=None):
         def _on_mode_topic(self, mode, msg):
             if msg.data and self.logic.trigger_modes and self.logic.set_robot_mode(mode):
                 self._changed()
+
+        def _on_waist_state(self, msg):
+            st = parse_state(msg.data)
+            if st is not None:
+                self.waist, self.waist_t = st, time.monotonic()
+
+        def _torso_yaw(self):
+            """Gemessener Taillen-Yaw [rad] fuer den Jog-Bezug (0 = Becken)."""
+            if (not self.jog_torso or self.waist is None or self.waist_t is None
+                    or time.monotonic() - self.waist_t > STATE_STALE_S):
+                return 0.0
+            try:
+                return float(self.waist.get("yaw_rad") or 0.0)
+            except (TypeError, ValueError):
+                return 0.0
+
+        def _send_waist_rate(self, rate):
+            self.pub_waist_rate.publish(Float32(data=float(rate)))
 
         def _on_onboard(self, msg):
             try:
@@ -910,6 +1009,23 @@ def main(args=None):
                 self._publish_status()
             elif kind == "changed":
                 self._changed()
+            elif kind == "waist":
+                if cmd[1] == "start":
+                    # Kein Halte-Strom: Halte-Ziele (Becken-Bezug) wuerden die
+                    # Arme nach dem Drehen zurueck an die alte Stelle ziehen.
+                    self.holds.clear()
+                    self.get_logger().info("R2 gehalten: HUEFTE (rechter Stick links/rechts, "
+                                           "R3 = Mitte).")
+                elif self._waist_sending:
+                    self._waist_sending = False
+                    self._send_waist_rate(0.0)
+                self._changed(rumble_ms=0)
+            elif kind == "waist_center":
+                self.pub_waist_center.publish(Bool(data=True))
+                self.get_logger().info("R2 + R3: Huefte zur Mitte.")
+                self._send_feedback(rumble_ms=120, strong=0.0, weak=0.5)
+            elif kind == "waist_stop":
+                self._send_waist_rate(0.0)
             elif kind == "jog_mode":
                 # Dreieck: nur VERSCHIEBEN vibriert kurz, DREHEN nicht -- so
                 # ist der Modus auch ohne GUI/LED eindeutig.
@@ -1058,8 +1174,22 @@ def main(args=None):
                     self._publish_status()
                 self._hold(tuple(self.targets))
                 self._stream_holds(now)
+                if self._waist_sending:
+                    self._waist_sending = False
+                    self._send_waist_rate(0.0)
                 return
+            rate = self.logic.waist_rate(self.axes) if self.connected else None
+            if rate is not None:
+                # Totmann: Strom mit ~30 Hz, der arm_controller haelt ohne ihn an.
+                self._send_waist_rate(rate)
+                self._waist_sending = True
+            elif self._waist_sending:
+                self._waist_sending = False
+                self._send_waist_rate(0.0)
             tw = self.logic.twist(self.axes) if self.connected else {}
+            yaw = self._torso_yaw()
+            if yaw:
+                tw = {side: rotate_twist_yaw(lin, ang, yaw) for side, (lin, ang) in tw.items()}
             # Seiten, die nicht mehr bewegt werden (Stick losgelassen): anhalten
             self._hold(tuple(s for s in self.targets if s not in tw))
             for side in tw:

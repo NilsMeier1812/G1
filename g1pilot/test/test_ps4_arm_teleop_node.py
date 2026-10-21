@@ -13,6 +13,7 @@ an arm_controller / loco_client / Inspire-Bridge schickt:
   - nichts an Laufen (loco_cmd_vel, /g1pilot/joy, start_walking).
 """
 import json
+import math
 import os
 import subprocess
 import sys
@@ -448,6 +449,68 @@ def test_triangle_rumbles_only_when_switching_to_move(rig):
     rig.press(L.TRIANGLE)
     assert wait_for(lambda: rig.status().get("mode") == "move", 2.0)
     assert wait_for(lambda: any(r and r["ms"] > 0 for r in rumbles(n)), 1.0)
+
+
+@pytest.mark.parametrize("rig", [MODES], indirect=True)
+def test_r2_hold_streams_waist_rate_and_r3_centers(rig):
+    """R2 halten + rechter Stick: Rate-Strom auf /g1pilot/waist/yaw_rate, Hand-
+    Ziele bleiben aus; R2 + R3: Mitte; R2 los: einmal 0. Danach joggt die Hand
+    im Oberkoerper-Bezug (gemeldeter Taillen-Yaw 90 deg -> "vor" = +y)."""
+    from std_msgs.msg import Float32
+    from g1pilot.manipulation.waist_yaw import (
+        WAIST_RATE_TOPIC, WAIST_CENTER_TOPIC, WAIST_STATE_TOPIC)
+    g, st = rig.got, rig.state
+    node = rclpy.create_node("ps4_waist_probe")
+    rates, centers = [], []
+    node.create_subscription(Float32, WAIST_RATE_TOPIC, lambda m: rates.append(m.data), 50)
+    node.create_subscription(Bool, WAIST_CENTER_TOPIC, lambda m: centers.append(m.data), 10)
+    pub_state = node.create_publisher(String, WAIST_STATE_TOPIC, 10)
+    ex = rclpy.executors.SingleThreadedExecutor()
+    ex.add_node(node)
+    th = threading.Thread(target=ex.spin, daemon=True)
+    th.start()
+    try:
+        rig.onboard(501)
+        time.sleep(0.3)
+        rig.press(L.R2)                                     # GREIFEN
+        assert wait_for(lambda: rig.status().get("robot_mode") == "grasp", 2.0)
+        st["axes"][L.R2_AXIS] = 1.0                         # R2 halten
+        assert wait_for(lambda: rig.status().get("waist_mode") is True, 2.0)
+        n_goal = len(g["goal_right"])
+        st["axes"][L.RX] = 1.0
+        st["axes"][L.LY] = 1.0                              # Arm-Stick: gesperrt
+        assert wait_for(lambda: len([r for r in rates if r > 0.9]) >= 5, 2.0)
+        assert len(g["goal_right"]) == n_goal
+        st["axes"][L.RX] = 0.0
+        st["axes"][L.LY] = 0.0
+        rig.press(L.R3)
+        assert wait_for(lambda: centers == [True], 2.0)
+        n_rates = len(rates)
+        st["axes"][L.R2_AXIS] = 0.0                         # loslassen
+        assert wait_for(lambda: rig.status().get("waist_mode") is False, 2.0)
+        time.sleep(0.3)
+        assert rates[-1] == 0.0 and len(rates) - n_rates <= 12   # Strom endet
+        # Oberkoerper-Bezug: Zustand wie der arm_controller mit 10 Hz
+        alive = {"on": True}
+
+        def state_loop():
+            while alive["on"]:
+                pub_state.publish(String(data=json.dumps({"owner": True, "yaw_rad": math.pi / 2})))
+                time.sleep(0.1)
+        threading.Thread(target=state_loop, daemon=True).start()
+        time.sleep(0.5)
+        t0 = time.monotonic()
+        st["axes"][L.LY] = 1.0                              # "vor"
+        assert wait_for(lambda: len(goals_since(rig, "right", t0)) >= 15, 3.0)
+        st["axes"][L.LY] = 0.0
+        alive["on"] = False
+        p = goals_since(rig, "right", t0)[-1].pose.position
+        dx, dy = p.x - HAND["right"][0], p.y - HAND["right"][1]
+        assert dy > 0.005 and abs(dx) < dy / 3, (dx, dy)   # "vor" = +y im Becken
+    finally:
+        ex.shutdown()
+        th.join(timeout=2.0)
+        node.destroy_node()
 
 
 def test_mirror_hold_rumble_abort_and_command(rig):

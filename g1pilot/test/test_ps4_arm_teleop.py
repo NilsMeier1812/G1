@@ -938,6 +938,98 @@ def test_set_speed_from_gui_capped_and_requested_kept():
     assert lg.speed == lg.speed_req == "Normal"
 
 
+# ── Hueftdrehung: R2 halten + rechter Stick (Nils 2026-10-21) ────────────
+def _grasp(**kw):
+    lg = ArmTeleopLogic(trigger_modes=True, waist_yaw=True, walk_deadman=True, **kw)
+    lg.set_robot_mode("grasp")
+    return lg
+
+
+def test_waist_r2_hold_turns_waist_and_locks_arm_sticks():
+    lg = _grasp()
+    out = trig(lg, 0.0, R2_AXIS=1.0)
+    assert ("waist", "start") in out and ("hold", ("left", "right")) in out
+    assert ("mode", "grasp") not in out                      # schon GREIFEN
+    assert lg.waist_mode and lg.color() == COLORS["waist"] and "HÜFTE" in lg.label()
+    a, _ = joy(R2_AXIS=1.0, RX=1.0, LY=1.0, RY=1.0)
+    assert lg.twist(a) == {}, "Arme bewegen sich nicht"
+    assert lg.waist_rate(a) == pytest.approx(1.0)            # Stick links = +links
+    a, _ = joy(R2_AXIS=1.0, RX=-0.05)
+    assert lg.waist_rate(a) == 0.0                            # Totzone
+    a, _ = joy(R2_AXIS=1.0, RX=-1.0)
+    assert lg.waist_rate(a) == pytest.approx(-1.0)
+    # Steuerkreuz/Dreieck/Tempo wirken nicht, Haende schon
+    for btn in (L.DPAD_LEFT, L.TRIANGLE, L.L1, L.R1):
+        trig(lg, 1.0, [btn], R2_AXIS=1.0)
+        trig(lg, 1.05, R2_AXIS=1.0)
+    assert lg.selection == "right" and lg.mode == "move" and lg.speed == "Normal"
+    assert ("hand", "right", "open") in trig(lg, 1.1, [L.CIRCLE], R2_AXIS=1.0)
+    out = trig(lg, 2.0)                                       # R2 los
+    assert ("waist", "end") in out and not lg.waist_mode
+    assert lg.waist_rate(joy(RX=1.0)[0]) is None
+    assert lg.twist(joy(LY=1.0)[0]), "Arme wieder frei"
+
+
+def test_waist_r3_centers_and_cross_stops_until_stick_released():
+    lg = _grasp()
+    trig(lg, 0.0, R2_AXIS=1.0)
+    assert ("waist_center",) in trig(lg, 0.1, [L.R3], R2_AXIS=1.0)
+    assert ("waist_center",) not in trig(lg, 0.2, [L.R3], R2_AXIS=1.0)   # gehalten
+    out = trig(lg, 0.3, [L.CROSS], R2_AXIS=1.0, RX=1.0)
+    assert ("waist_stop",) in out and ("cancel",) in out
+    assert lg.waist_rate(joy(R2_AXIS=1.0, RX=1.0)[0]) == 0.0              # Stopp haelt
+    assert lg.waist_rate(joy(R2_AXIS=1.0)[0]) == 0.0                      # Stick zurueck
+    assert lg.waist_rate(joy(R2_AXIS=1.0, RX=1.0)[0]) == pytest.approx(1.0)
+    # R3 ohne R2: nichts
+    trig(lg, 1.0)
+    assert ("waist_center",) not in trig(lg, 1.1, [L.R3])
+
+
+def test_waist_not_in_walk_mode_estop_or_when_off():
+    lg = _grasp()
+    trig(lg, 0.0, L2_AXIS=1.0)                                # GEHEN
+    trig(lg, 0.1)
+    out = trig(lg, 0.2, R2_AXIS=1.0)                          # R2: zurueck nach GREIFEN ...
+    assert ("mode", "grasp") in out and lg.waist_mode          # ... gehalten = Huefte
+    trig(lg, 0.3)
+    a, b = joy([L.PS], R2_AXIS=1.0)
+    lg.update(a, b, 0.4)                                      # NOT-HALT
+    assert not lg.waist_mode and lg.waist_rate(joy(R2_AXIS=1.0, RX=1.0)[0]) is None
+    # Abgeschaltet bzw. ohne trigger_modes: R2 halten ohne Wirkung
+    for lg in (ArmTeleopLogic(trigger_modes=True, waist_yaw=False),
+               ArmTeleopLogic(trigger_modes=False, waist_yaw=True)):
+        lg.set_robot_mode("grasp")
+        trig(lg, 0.0, R2_AXIS=1.0)
+        assert not lg.waist_mode
+        assert lg.waist_rate(joy(R2_AXIS=1.0, RX=1.0)[0]) is None
+
+
+def test_waist_l2_walking_wins_over_r2():
+    lg = _grasp()
+    trig(lg, 0.0, R2_AXIS=1.0)
+    assert lg.waist_mode
+    trig(lg, 0.1, R2_AXIS=1.0, L2_AXIS=1.0)                   # L2 = GEHEN, Arme gesperrt
+    assert not lg.waist_mode
+
+
+def test_rotate_twist_yaw_torso_frame():
+    from g1pilot.manipulation.waist_yaw import rotate_twist_yaw
+    lin, ang = rotate_twist_yaw((1.0, 0.0, 0.2), (0.0, 0.5, 0.1), math.radians(90))
+    assert lin == pytest.approx((0.0, 1.0, 0.2), abs=1e-9)    # "vor" zeigt nach links
+    assert ang == pytest.approx((-0.5, 0.0, 0.1), abs=1e-9)
+    assert rotate_twist_yaw((1, 2, 3), (4, 5, 6), 0.0) == ((1, 2, 3), (4, 5, 6))
+    # Spiegeln im Oberkoerper-Bezug: Hand links/rechts symmetrisch zur Brust
+    yaw = math.radians(20)
+    lin_r, ang_r = (0.0, 0.1, 0.0), (0.0, 0.0, 0.3)
+    lin_l, ang_l = mirror_twist(lin_r, ang_r)
+    r = rotate_twist_yaw(lin_r, ang_r, yaw)
+    l_ = rotate_twist_yaw(lin_l, ang_l, yaw)
+    # zurueck in den Oberkoerper gedreht = exakt gespiegelt
+    back_r = rotate_twist_yaw(*r, -yaw)
+    back_l = rotate_twist_yaw(*l_, -yaw)
+    assert mirror_twist(*back_r)[0] == pytest.approx(back_l[0])
+
+
 # ── Arm spiegeln: Steuerkreuz links/rechts + Kreuz halten ─────────────────
 def test_mirror_after_two_seconds_hold_left():
     """Links + Kreuz: Auswahl LINKS und Stopp sofort (wie bisher), dazu startet
@@ -1062,3 +1154,18 @@ def test_mirror_combo_xbox_a_is_cross():
     assert ArmTeleopLogic.mirror_combo(joy([L.DPAD_LEFT, L.CROSS])[1]) == "left"
     assert ArmTeleopLogic.mirror_combo(joy([L.DPAD_RIGHT, L.CROSS])[1]) == "right"
     assert ArmTeleopLogic.mirror_combo(joy([L.DPAD_LEFT, L.SQUARE])[1]) is None   # Xbox-X
+
+
+def test_waist_r2_hold_aborts_mirror_and_never_mirrors():
+    """Spiegeln + Hueftdrehung: R2 halten bricht ein laufendes Spiegel-Halten
+    ab; Steuerkreuz + Kreuz unter R2 spiegelt nicht (Kreuz = Stopp)."""
+    lg = _grasp()
+    out = hold_combo(lg, 0.0, 1.0, buttons=(L.DPAD_LEFT, L.CROSS))
+    assert ("mirror_arm", "left") in out and lg.mirror_arming
+    out = trig(lg, 1.02, (L.DPAD_LEFT, L.CROSS), R2_AXIS=1.0)
+    assert ("mirror_abort",) in out and ("waist", "start") in out
+    assert not lg.mirror_arming
+    trig(lg, 1.04, R2_AXIS=1.0)
+    out = hold_combo(lg, 1.06, 4.0, buttons=(L.DPAD_LEFT, L.CROSS), R2_AXIS=1.0)
+    assert not any(c[0] in ("mirror", "mirror_arm") for c in out)
+    assert ("waist_stop",) in out and lg.waist_mode

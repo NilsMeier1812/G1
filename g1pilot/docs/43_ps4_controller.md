@@ -57,7 +57,9 @@ Am echten Roboter erst in der GUI starten, siehe unten.
 | **L2 drücken** | Modus **GEHEN** (LED blau wie die GUI-Kachel GEHEN): Arm-Tasten und Sticks gesperrt, bis R2/Options; L1/R1 = Geh-Tempo |
 | **L2 halten** | **Gehen** (Totmann): Sticks, L1/R1 und Steuerkreuz ▲/▼ gehören dem Gehen, siehe [Gehen mit L2](#gehen-mit-l2) |
 | **R2 drücken** | Modus **GREIFEN**: Arme übernehmen (wie Options), Arm-Steuerung wieder frei |
-| L3, R3, Touchpad | frei (Reserve) |
+| **R2 halten + rechter Stick ←/→** | **HÜFTE drehen** (Oberkörper links/rechts, LED weiß), Arme drehen mit. Siehe [Hüfte drehen](#hüfte-drehen-r2-halten) |
+| **R2 halten + R3** | Hüfte sanft zurück zur Mitte |
+| L3, Touchpad | frei (Reserve) |
 
 Richtungen gelten **aus Sicht des Roboters** (vor = in Blickrichtung des
 Roboters, links = Roboter-links). Steht man dem Roboter gegenüber, sind
@@ -143,6 +145,56 @@ was auf einer Seite gewählt wird, zeigt die andere sofort.
   rechts *🎮 Belegung* (Name im Tooltip, bei Xbox mit Tasten-Zuordnung).
 - Zeitstempel je Feld, der neueste gewinnt. Ein alter Modus (vor dem Start
   des jeweiligen Programms gewählt) wird nicht übernommen.
+
+## Hüfte drehen (R2 halten)
+
+Seit 2026-10-21. Steht der G1 schräg vor dem Tisch, dreht man den
+Oberkörper ein Stück nach links oder rechts (nur die Taille, Gelenk
+`waist_yaw`), statt neu anzulaufen.
+
+- **R2 gedrückt halten** (im Modus GREIFEN) **+ rechter Stick links/rechts**:
+  Hüfte dreht, proportional zum Ausschlag, höchstens **15 °/s**. Stick
+  links = nach links drehen (aus Sicht des Roboters). LED weiß, Demo-GUI
+  „HÜFTE – rechter Stick ◀/▶ dreht, R3 = Mitte“.
+- **R2 loslassen** = Hüfte steht sofort (Totmann wie L2 beim Gehen; bleibt
+  der Strom aus, z. B. Funkabriss, hält der arm_controller nach 0,3 s an).
+- **R2 halten + R3** (rechten Stick drücken): Hüfte fährt sanft zur Mitte.
+  Die Demo-GUI hat dafür den Knopf **Hüfte Mitte** und zeigt den Stand
+  („Hüfte 12° links“).
+- Solange R2 gehalten wird, bewegen Sticks, Steuerkreuz, Dreieck und L1/R1
+  **nicht** die Arme (auch kein Spiegeln). Kreis/Viereck (Hände), Kreuz (Stopp, hält auch die
+  Hüfte bis der Stick zurück ist), Options und PS wirken weiter.
+- **Bereich:** Sim **±30°**, echter G1 **±15°** um die Mitte
+  (`G1_WAIST_YAW_LIMIT_DEG`). Mitte = Stellung, die der Onboard-Regler beim
+  Übernehmen der Arme hielt (Sim: 0).
+- **Die Arme drehen mit:** sie halten ihre Gelenkstellung, die Hände bleiben
+  also vor der Brust. Eine laufende geplante Fahrt (Grundstellung, Pose,
+  Spiegeln) endet beim Drehen; Hand-Ziele und neue Fahrten werden
+  abgelehnt, solange die Hüfte dreht.
+- **Danach joggt man im Oberkörper-Bezug:** „vor“ = Richtung Brust, also zum
+  Tisch hin (Controller und Demo-GUI). Bei Hüfte in der Mitte ändert sich
+  nichts. (`jog_torso_frame=false` = Becken wie früher.)
+- Aus GEHEN heraus wechselt R2 zuerst nach GREIFEN; die Hüfte dreht erst,
+  wenn die Arme übernommen sind (real nach der Gewichtsrampe).
+
+**Automatisch zurück zur Mitte** (sanft, 15 °/s), bevor:
+
+| Aktion | Verhalten |
+|---|---|
+| **GEHEN** (L2, Kachel, Streamdeck) | erst Mitte, dann `walk_ready`; Sim: `loco_sim` wartet darauf (auch mit AGILE), real: `loco_client` sendet `Move()` nur mit 0, bis die Hüfte in der Mitte ist |
+| **Grundstellung** (Share 1 s) | erst Mitte, dann die geplante Fahrt |
+| **Arme abgeben** (DISABLE, real) | erst Mitte, dann Rückfahrt + Gewicht 1→0 — sonst risse der Onboard-Regler die Taille selbst zurück |
+
+Dauert das länger als 6 s (`waist_yaw_center_timeout_s`), geht es mit
+Warnung trotzdem weiter.
+
+**NOT-HALT:** die Hüfte bleibt stehen, wo sie ist (wie bisher gehalten),
+nichts dreht von allein zurück — auch nicht nach START. Zur Mitte dann mit
+R2 + R3 oder dem GUI-Knopf. **Voll-Notaus:** Taille schlaff (wie bisher);
+nach START wird sie an der dann gemessenen Stellung gehalten.
+
+Abschalten: `G1_WAIST_YAW=0` (real) bzw. Parameter `waist_yaw_control:=false`
+(arm_controller) / `waist_yaw:=false` (ps4_arm_teleop).
 
 ## Gehen mit L2
 
@@ -288,13 +340,15 @@ vorgesehen.
 | L1 / R1 | **LB / RB** | Tempo langsamer / schneller |
 | **L2 drücken / halten** | **LT drücken / halten** | Modus **GEHEN** / **Gehen** (Totmann) |
 | **R2 drücken** | **RT drücken** | Modus **GREIFEN** |
+| **R2 halten + rechter Stick ←/→** | **RT halten + rechter Stick ←/→** | **Hüfte drehen** |
+| **R2 halten + R3** | **RT halten + R3** (rechten Stick drücken) | Hüfte zur Mitte |
 | Share 1 s | **View** 1 s (linke kleine Taste) | Grundstellung |
 | Options | **Menu** (rechte kleine Taste) | Arme übernehmen |
 | PS | **Xbox-Taste** | **NOT-HALT** (Oberkörper) |
 | R1 + L1 + PS 2 s | **RB + LB + Xbox-Taste 2 s** | **VOLL-NOTAUS**, Controller vibriert beim Halten |
 | Steuerkreuz ←/→ + Kreuz 2 s | **Steuerkreuz ←/→ + A 2 s** | **Arm spiegeln** (nicht Xbox-X: das ist Viereck = Hand schließen) |
 | Sticks, Steuerkreuz | gleich | gleich |
-| L3, R3, Touchpad | L3, R3 (Stick drücken) | frei; die Share-Taste der Series-Controller (Mitte) ist frei |
+| L3, Touchpad | L3 (linken Stick drücken) | frei; die Share-Taste der Series-Controller (Mitte) ist frei |
 
 **Was gleich ist:** Totmann (LT), GEHEN/GREIFEN mit LT/RT, NOT-HALT, Voll-Notaus mit 2 s Halten und
 Vibration, Tempo-Stufen, Abriss-Erkennung über den Joy-Timeout, Vorrang
@@ -379,6 +433,11 @@ Mit dem Schalter gilt am echten Roboter:
   Einzige Ausnahme ist PS (NOT-HALT).
 - **Langsamer:** Start-Tempo Langsam (5 cm/s), mit R1 höchstens Normal
   (15 cm/s). Der arm_controller begrenzt real zusätzlich auf 0,25 m/s.
+- **Hüfte drehen (R2 halten):** nur mit übernommenen Armen, real höchstens
+  **±15°** (`G1_WAIST_YAW_LIMIT_DEG`). Die Taillen-Gains (kp 150 / kd 4) sind
+  am G1 noch nicht geprüft — erster Test am Kran, kleine Winkel. Beim
+  Drehen streichen die Hände durch den Raum (Hand 40 cm vor dem Körper →
+  bei 15° rund 10 cm seitlich), dafür gibt es keine Kollisionsprüfung.
 - **PS = NOT-HALT = Damp:** der Roboter sackt zusammen. Nur drücken, wenn
   das vertretbar ist (Gantry/hängend). Zum sanften Anhalten **Kreuz**
   (Hand steht, Roboter bleibt stehen). Übergeordnet bleibt die
@@ -707,6 +766,36 @@ vorn/oben fahren, dann fein positionieren. Das gilt für den Marker genauso.
 | `options_starts_balancing` | `true` (Real `false`) | Options sendet zusätzlich `start_balancing` |
 | `jog_reference` | `command` (Env `G1_JOG_REFERENCE`) | Bezug der Jog-Ziele: `command` = Start, Vorlauf und Anhalten an der kommandierten Hand (`/g1pilot/hand_cmd_pose`, wie der RViz-Marker), `start` = nur der Start dort (Stand 2026-10-14), `tf` = alles an der gemessenen Hand (alter Real-Stand) |
 | `axis_snap_deg` | 20 | Achsen-Einrasten des linken Sticks; 0 = aus |
+| `waist_yaw` | `true` | R2 halten + rechter Stick = Hüfte drehen, R2 + R3 = Mitte (nur mit `trigger_modes`) |
+| `jog_torso_frame` | `true` | Jog-Richtungen um den gemessenen Taillen-Yaw drehen (Oberkörper-Bezug) |
+
+### Hüftdrehung (Technik)
+
+`ps4_arm_teleop` → `/g1pilot/waist/yaw_rate` (`Float32`, −1..1, + = links,
+~30 Hz solange R2 gehalten; beim Loslassen einmal 0) und
+`/g1pilot/waist/center` (`Bool`). Der **arm_controller** führt den Sollwert
+(`manipulation/waist_yaw.py`: Rate × 15 °/s, Bereich, 0,3 s Totmann,
+Mitte-Fahrt) und publiziert `/g1pilot/waist/state` (JSON, 10 Hz:
+`available`, `reason`, `yaw_rad`, `target_rad`, `offset_deg`,
+`meas_offset_deg`, `limit_deg`, `moving`, `centering`, `pending`, `walk_ok`).
+
+- **Real:** Sollwert → `WaistHold.target[yaw]` (rt/arm_sdk, Rampe max.
+  0,3 rad/s wie bisher). Nur mit Gewicht 1 und gehaltener Taille.
+- **Sim:** `loco_sim` setzt `target_rad` im Stand (HOLD/STAND, Rampe
+  0,5 rad/s); die Lauf-Policy führt die Taille selbst. Ohne frischen
+  Zustand fährt es langsam auf 0.
+- `loco_client` sperrt `Move()` (sendet 0), solange `walk_ok` false ist
+  (Zustand jünger als 1 s; ohne arm_controller wie bisher).
+- GEHEN / Grundstellung / DISABLE werden aufgeschoben, bis Sollwert und
+  Messung in der Mitte sind (±2° / ±3°).
+
+| Parameter `arm_controller` | Default | Bedeutung |
+|---|---|---|
+| `waist_yaw_control` | `true` | Hüftdrehung an/aus |
+| `waist_yaw_limit_deg` | 30 (Real 15) | Bereich um die Mitte |
+| `waist_yaw_rate_deg` / `waist_yaw_center_rate_deg` | 15 / 15 | Tempo Stick / zur Mitte [°/s] |
+| `waist_yaw_center_tol_deg` | 2 | „in der Mitte“ |
+| `waist_yaw_center_timeout_s` | 6 | danach aufgeschobene Aktion trotzdem |
 
 ### Tests
 

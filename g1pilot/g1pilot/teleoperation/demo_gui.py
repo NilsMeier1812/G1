@@ -71,6 +71,9 @@ from g1pilot.teleoperation import status_line
 from g1pilot.teleoperation import shared_state
 from g1pilot.teleoperation.phone import link as phone_link
 from g1pilot.teleoperation.ps4_arm_teleop import mirror_twist
+from g1pilot.manipulation.waist_yaw import (
+    WAIST_CENTER_TOPIC, WAIST_STATE_TOPIC, STATE_STALE_S, rotate_twist_yaw,
+)
 from g1pilot.teleoperation.ps4_joystick import DEVICE_TOPIC
 from g1pilot.teleoperation.hand_jog import (
     JOG_FRAME, JOG_TF, JOG_SPEEDS, JOG_CMD_TOPIC, CommandedPoses, HoldStreamer, hold_pose,
@@ -193,6 +196,11 @@ class DemoNode(StreamDeck):
                                  lambda m: self._latched_json("ps4walk", m), qos_latched)
         self.create_subscription(String, DEVICE_TOPIC,
                                  lambda m: self._latched_json("ps4dev", m), qos_latched)
+        # Hueftdrehung (arm_controller, 10 Hz): Anzeige, Jog-Bezug, Knopf »Mitte«.
+        self.waist = self.waist_t = None
+        self.create_subscription(String, WAIST_STATE_TOPIC,
+                                 lambda m: self._latched_json("waist", m), 10)
+        self.pub_waist_center = self.create_publisher(Bool, WAIST_CENTER_TOPIC, 10)
         # Gemeinsamer Bedienzustand mit dem Controller (shared_state.py).
         # on_shared(Aenderungen) wird fuer Wechsel von aussen gerufen.
         self.t_start_wall = time.time()
@@ -259,6 +267,16 @@ class DemoNode(StreamDeck):
             return None
         tr, r = t.transform.translation, t.transform.rotation
         return [tr.x, tr.y, tr.z], (r.x, r.y, r.z, r.w)
+
+    def torso_yaw(self):
+        """Gemessener Taillen-Yaw [rad] (Jog im Oberkoerper-Bezug), 0 ohne Daten."""
+        if self.waist is None or self.waist_t is None or \
+                time.monotonic() - self.waist_t > STATE_STALE_S:
+            return 0.0
+        try:
+            return float(self.waist.get("yaw_rad") or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
 
     def publish_hand_goal(self, side, pos, rot):
         msg = PoseStamped()
@@ -952,6 +970,16 @@ class ManipPanel(QWidget):
             row.addWidget(b)
         lay.addLayout(row)
 
+        # Hueftdrehung (Controller: R2 halten + rechter Stick): Stand + Mitte.
+        waist_row = QHBoxLayout()
+        self.waist_label = QLabel("Hüfte: –")
+        self.waist_label.setStyleSheet("color:#888; font-size:15px; font-weight:700;")
+        self.btn_waist_center = big_button("Hüfte Mitte", font=15, height=40)
+        self.btn_waist_center.setFixedWidth(200)
+        waist_row.addWidget(self.waist_label, 1)
+        waist_row.addWidget(self.btn_waist_center)
+        lay.addLayout(waist_row)
+
         # Hand bewegen (Joystick + Hoch/Runter) -- statt Marker in RViz.
         lay.addSpacing(4)
         lay.addWidget(WalkPanel._caption("Hand bewegen  —  gedrückt halten, loslassen = stehen"))
@@ -1286,6 +1314,12 @@ class DemoGUI(QWidget):
             self.info_onboard.setStyleSheet(self._info_css(color))
             self._refresh_start_bar()
             self._refresh_walk_hint()
+        wt = status_line.waist_text(n.waist, None if n.waist_t is None else now - n.waist_t)
+        mp = self.manip_panel
+        mp.waist_label.setText(wt[0] if wt else "Hüfte: keine Daten")
+        mp.waist_label.setStyleSheet(f"color:{wt[1] if wt else '#888'}; font-size:15px; "
+                                     "font-weight:700;")
+        mp.btn_waist_center.setEnabled(bool(wt) and not wt[0].startswith("Hüfte Mitte"))
         age = None if n.ps4_t is None else now - n.ps4_t
         # Controller: Zustand (Modus, Hand, Tempo) zeigt die GUI selbst; hier
         # nur der Knopf zur Belegung, solange ein Controller aktiv ist.
@@ -1443,6 +1477,8 @@ class DemoGUI(QWidget):
         n.on_hand_status = mp.hand_panel.on_status
         mp.btn_home.clicked.connect(self._home)
         mp.btn_cancel.clicked.connect(self._cancel)
+        mp.btn_waist_center.clicked.connect(
+            lambda: n.publish_bool(n.pub_waist_center, True))
         mp.btn_goto.clicked.connect(self._pose_goto_dialog)
         mp.btn_save.clicked.connect(self._pose_save_dialog)
         mp.btn_marker.toggled.connect(lambda on: n.publish_bool(n.pub_marker_follow, on))
@@ -1858,6 +1894,8 @@ class DemoGUI(QWidget):
                 missing.append(side)
                 continue
             lin_s, ang_s = jog.side_twist(side, lin, ang)
+            # Oberkoerper-Bezug: "vor" = Richtung Brust, auch bei gedrehter Huefte.
+            lin_s, ang_s = rotate_twist_yaw(lin_s, ang_s, self.node.torso_yaw())
             p, q = jog_step(self._jog_targets.get(side), hand, lin_s, ang_s, dt,
                             lead_m, lead_rad, start=start)
             self._jog_targets[side] = [p, q]

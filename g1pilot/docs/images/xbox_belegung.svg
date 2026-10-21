@@ -41,7 +41,7 @@
   <!-- Beschriftungen links -->
   <g fill="#263238">
     <text x="20" y="40" font-weight="bold" font-size="16">Xbox-Controller → gleiche Funktionen wie PS4 (Zuordnung nach Position)</text>
-    <text x="20" y="96" font-weight="bold" fill="#e65100">LT drücken</text><text x="110" y="96" fill="#e65100">Modus GEHEN</text><text x="20" y="112" font-weight="bold" fill="#e65100">LT halten</text><text x="110" y="112" fill="#e65100">laufen</text><text x="700" y="104" font-weight="bold" fill="#2e7d32">RT</text><text x="728" y="104" fill="#2e7d32">Modus GREIFEN</text>
+    <text x="20" y="96" font-weight="bold" fill="#e65100">LT drücken</text><text x="110" y="96" fill="#e65100">Modus GEHEN</text><text x="20" y="112" font-weight="bold" fill="#e65100">LT halten</text><text x="110" y="112" fill="#e65100">laufen</text><text x="700" y="96" font-weight="bold" fill="#2e7d32">RT drücken</text><text x="792" y="96" fill="#2e7d32">GREIFEN</text><text x="700" y="112" font-weight="bold" fill="#2e7d32">RT halten</text><text x="792" y="112" font-size="13" fill="#2e7d32">Hüfte (R-Stick)</text>
     <text x="20" y="128" font-weight="bold">LB</text><text x="50" y="128">Tempo langsamer</text>
     <text x="20" y="428" font-weight="bold">Linker Stick</text>
     <text x="20" y="446">Verschieben: vor/zurück + links/rechts</text>
@@ -62,6 +62,7 @@
     <text x="580" y="428" font-weight="bold">Rechter Stick</text>
     <text x="580" y="446">Verschieben: hoch/runter</text>
     <text x="580" y="464">Drehen: rollen</text>
+    <text x="580" y="479" font-size="12" fill="#2e7d32"><tspan font-weight="bold">RT halten:</tspan> ◀ ▶ Hüfte · <tspan font-weight="bold">+ R3</tspan> Mitte</text>
     <text x="450" y="352" text-anchor="middle" font-weight="bold" fill="#c62828">Xbox-Taste: NOT-HALT (Oberkörper)</text>
     <text x="450" y="370" text-anchor="middle" font-size="12" fill="#c62828">RB + LB + Xbox 2 s halten (vibriert): VOLL-NOTAUS</text>
     <text x="476" y="390" text-anchor="middle" font-size="12" font-weight="bold" fill="#00838f">◀ / ▶ + A 2 s (vibriert): Arm spiegeln</text>

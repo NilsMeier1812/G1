@@ -22,6 +22,7 @@ from unitree_sdk2py.g1.loco.g1_loco_api import (
 
 from g1pilot.utils.common import init_dds
 from g1pilot.navigation.ground_contact import CHECK_MODES, GroundContact
+from g1pilot.manipulation.waist_yaw import WAIST_STATE_TOPIC, STATE_STALE_S, parse_state
 
 
 # Onboard-FSM-IDs (Unitree G1): 4 = Ready/"Preparation" (Standby), 500/501 = Walk
@@ -250,6 +251,13 @@ class G1LocoClient(Node):
         # Startleiste der Demo-GUI: Onboard-Modus ausdruecklich anfordern
         # ("damp" | "preparation" | "walk") -- damit der Start ohne Handy-App geht.
         self.create_subscription(String, LOCO_REQUEST_TOPIC, self.mode_request_callback, 10)
+        # Hueftdrehung (arm_controller): solange die Taille nicht in der Mitte
+        # steht (walk_ok false, z. B. waehrend sie vor dem Gehen zurueckdreht),
+        # kein Move() -- Stehen bleiben ist immer erlaubt.
+        self._waist_walk_ok = True
+        self._waist_state_t = None
+        self._waist_offset_deg = 0.0
+        self.create_subscription(String, WAIST_STATE_TOPIC, self._on_waist_state, 10)
         self._note = ""                  # letzte Rueckmeldung fuer die GUI
         rate_hz = max(1.0, float(self.get_parameter('cmd_vel_rate_hz').value))
         self.create_timer(1.0 / rate_hz, self._cmd_vel_tick)
@@ -397,9 +405,34 @@ class G1LocoClient(Node):
             ids = set(DEFAULT_WALK_FSM_IDS)
         return ids | {self._start_fsm_id()}
 
+    def _on_waist_state(self, msg: String):
+        st = parse_state(msg.data)
+        if not st:
+            return
+        self._waist_walk_ok = bool(st.get("walk_ok", True))
+        try:
+            self._waist_offset_deg = float(st.get("meas_offset_deg") or st.get("offset_deg") or 0.0)
+        except (TypeError, ValueError):
+            self._waist_offset_deg = 0.0
+        self._waist_state_t = time.monotonic()
+
+    def _waist_blocks_walk(self):
+        """True, solange die Huefte gedreht ist (Zustand frisch). Ohne Zustand
+        (arm_controller laeuft nicht) sperrt nichts -- Verhalten wie bisher."""
+        if self._waist_state_t is None or time.monotonic() - self._waist_state_t > STATE_STALE_S:
+            return False
+        return not self._waist_walk_ok
+
     def _move_robot(self, vx, vy, vyaw):
         """Move() mit begrenzter Dauer (move_duration_s), vom 20-Hz-Takt erneuert."""
         dur = max(0.2, float(self.get_parameter('move_duration_s').value))
+        if self._waist_blocks_walk():
+            # Huefte noch nicht in der Mitte: stehen (Geschwindigkeit 0).
+            self._log_once("warn", f"Gehen wartet: Huefte steht noch "
+                           f"{self._waist_offset_deg:+.0f} deg aus der Mitte.", "waist_walk")
+            self._robot_rpc("SetVelocity", 0.0, 0.0, 0.0, dur)
+            return
+        self._clear_once("waist_walk")
         self._robot_rpc("SetVelocity", vx, vy, vyaw, dur)
 
     def _halt_legs(self, why):
