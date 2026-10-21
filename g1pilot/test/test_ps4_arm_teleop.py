@@ -1028,3 +1028,144 @@ def test_rotate_twist_yaw_torso_frame():
     back_r = rotate_twist_yaw(*r, -yaw)
     back_l = rotate_twist_yaw(*l_, -yaw)
     assert mirror_twist(*back_r)[0] == pytest.approx(back_l[0])
+
+
+# ── Arm spiegeln: Steuerkreuz links/rechts + Kreuz halten ─────────────────
+def test_mirror_after_two_seconds_hold_left():
+    """Links + Kreuz: Auswahl LINKS und Stopp sofort (wie bisher), dazu startet
+    das Halten; nach 2 s genau einmal ("mirror", "left") -- vorher beide Arme
+    angehalten (Jog-Ziele weg)."""
+    lg = ArmTeleopLogic(selection="right")
+    out = hold_combo(lg, 0.0, 1.9, buttons=(L.DPAD_LEFT, L.CROSS))
+    assert lg.selection == "left"
+    assert out[:4] == [("hold", ("right",)), ("changed",), ("hold", ("left", "right")),
+                       ("cancel",)]
+    assert out[4] == ("mirror_arm", "left") and out.count(("mirror_arm", "left")) == 1
+    assert not any(c[0] == "mirror" for c in out) and lg.mirror_arming
+    assert lg.status()["mirror_arming"] == "left"
+    out = hold_combo(lg, 1.92, 2.1, buttons=(L.DPAD_LEFT, L.CROSS))
+    assert out == [("hold", ("left", "right")), ("mirror", "left")]
+    assert not lg.mirror_arming and lg.status()["mirror_arming"] is None
+    assert hold_combo(lg, 2.12, 4.0, buttons=(L.DPAD_LEFT, L.CROSS)) == []   # nur einmal
+    a, b = joy()
+    assert lg.update(a, b, 4.1) == []                       # Loslassen danach: kein Abbruch-Signal
+    # Erneutes Kreuz stoppt die laufende Fahrt wie immer.
+    assert press(lg, L.CROSS, 4.2) == [("hold", ("left", "right")), ("cancel",)]
+
+
+def test_mirror_right_any_press_order():
+    lg = ArmTeleopLogic(selection="left")
+    a, b = joy([L.CROSS])
+    lg.update(a, b, 0.0)                                    # erst Kreuz ...
+    out = hold_combo(lg, 0.02, 2.1, buttons=(L.CROSS, L.DPAD_RIGHT))   # ... dann rechts
+    assert ("mirror_arm", "right") in out and ("mirror", "right") in out
+    assert lg.selection == "right"
+
+
+def test_mirror_aborts_on_early_release_and_restarts():
+    lg = ArmTeleopLogic()
+    hold_combo(lg, 0.0, 1.5, buttons=(L.DPAD_LEFT, L.CROSS))
+    a, b = joy([L.DPAD_LEFT])                               # Kreuz los
+    assert lg.update(a, b, 1.52) == [("mirror_abort",)]
+    assert not lg.mirror_arming
+    out = hold_combo(lg, 1.6, 3.4, buttons=(L.DPAD_LEFT, L.CROSS))
+    assert ("mirror_arm", "left") in out and not any(c[0] == "mirror" for c in out)
+    assert ("mirror", "left") in hold_combo(lg, 3.42, 3.7, buttons=(L.DPAD_LEFT, L.CROSS))
+
+
+@pytest.mark.parametrize("buttons", [
+    (L.DPAD_LEFT,), (L.CROSS,), (L.DPAD_LEFT, L.DPAD_RIGHT, L.CROSS),
+    (L.DPAD_UP, L.CROSS), (L.DPAD_DOWN, L.CROSS), (L.DPAD_LEFT, L.CIRCLE),
+])
+def test_mirror_needs_cross_and_exactly_one_side(buttons):
+    lg = ArmTeleopLogic()
+    out = hold_combo(lg, 0.0, 3.0, buttons=buttons)
+    assert not any(c[0].startswith("mirror") for c in out)
+
+
+def test_mirror_switching_side_restarts_hold():
+    lg = ArmTeleopLogic()
+    hold_combo(lg, 0.0, 1.5, buttons=(L.DPAD_LEFT, L.CROSS))
+    out = hold_combo(lg, 1.52, 1.6, buttons=(L.DPAD_RIGHT, L.CROSS))
+    assert out[-1] == ("mirror_arm", "right") and ("mirror_abort",) in out
+    out = hold_combo(lg, 1.62, 3.4, buttons=(L.DPAD_RIGHT, L.CROSS))
+    assert not any(c[0] == "mirror" for c in out)           # zaehlt ab 1.52 s neu
+    assert ("mirror", "right") in hold_combo(lg, 3.42, 3.7, buttons=(L.DPAD_RIGHT, L.CROSS))
+
+
+def test_mirror_gap_in_stream_restarts_hold():
+    lg = ArmTeleopLogic()
+    hold_combo(lg, 0.0, 1.0, buttons=(L.DPAD_LEFT, L.CROSS))
+    out = hold_combo(lg, 2.5, 2.6, buttons=(L.DPAD_LEFT, L.CROSS))   # Luecke 1.5 s
+    assert ("mirror_arm", "left") in out and not any(c[0] == "mirror" for c in out)
+    assert not any(c[0] == "mirror" for c in hold_combo(lg, 2.62, 4.4, buttons=(L.DPAD_LEFT, L.CROSS)))
+    assert ("mirror", "left") in hold_combo(lg, 4.42, 4.6, buttons=(L.DPAD_LEFT, L.CROSS))
+
+
+def test_mirror_blocked_by_estop_and_ps_aborts_hold():
+    lg = ArmTeleopLogic()
+    lg.latch_estop()
+    out = hold_combo(lg, 0.0, 3.0, buttons=(L.DPAD_LEFT, L.CROSS))
+    assert not any(c[0].startswith("mirror") for c in out)
+    lg.clear_estop()
+    hold_combo(lg, 3.1, 4.0, buttons=(L.DPAD_LEFT, L.CROSS))
+    a, b = joy([L.DPAD_LEFT, L.CROSS, L.PS])                # PS = NOT-HALT mitten im Halten
+    out = lg.update(a, b, 4.02)
+    assert ("mirror_abort",) in out and ("estop",) in out and not lg.mirror_arming
+    out = hold_combo(lg, 4.04, 7.0, buttons=(L.DPAD_LEFT, L.CROSS))
+    assert not any(c[0] == "mirror" for c in out)
+
+
+def test_mirror_blocked_in_walk_mode_and_with_l2_held():
+    lg = ArmTeleopLogic(trigger_modes=True, walk_deadman=True)
+    lg.set_robot_mode("walk")                               # GEHEN: Arme gesperrt
+    out = hold_combo(lg, 0.0, 3.0, buttons=(L.DPAD_LEFT, L.CROSS))
+    assert not any(c[0].startswith("mirror") for c in out)
+    lg = ArmTeleopLogic(walk_deadman=True)
+    out = hold_combo(lg, 0.0, 3.0, buttons=(L.DPAD_LEFT, L.CROSS, L.L2), L2_AXIS=1.0)
+    assert not any(c[0].startswith("mirror") for c in out)
+    # L2 erst mitten im Halten: Abbruch.
+    lg = ArmTeleopLogic(walk_deadman=True)
+    hold_combo(lg, 0.0, 1.0, buttons=(L.DPAD_LEFT, L.CROSS))
+    out = hold_combo(lg, 1.02, 3.0, buttons=(L.DPAD_LEFT, L.CROSS, L.L2), L2_AXIS=1.0)
+    assert ("mirror_abort",) in out and not any(c[0] == "mirror" for c in out)
+
+
+def test_mirror_full_estop_combo_has_priority():
+    lg = ArmTeleopLogic(ps_estop=False)
+    hold_combo(lg, 0.0, 1.0, buttons=(L.DPAD_LEFT, L.CROSS))
+    out = hold_combo(lg, 1.02, 3.2, buttons=(L.DPAD_LEFT, L.CROSS) + COMBO)
+    assert ("mirror_abort",) in out and ("full_estop",) in out
+    assert not any(c[0] == "mirror" for c in out)
+
+
+def test_mirror_disabled_with_zero_hold_and_timeout_helper():
+    lg = ArmTeleopLogic(mirror_hold_s=0.0)
+    out = hold_combo(lg, 0.0, 3.0, buttons=(L.DPAD_LEFT, L.CROSS))
+    assert not any(c[0].startswith("mirror") for c in out)
+    assert ("cancel",) in out and lg.selection == "left"    # Einzelfunktionen bleiben
+    lg = ArmTeleopLogic()
+    hold_combo(lg, 0.0, 0.5, buttons=(L.DPAD_RIGHT, L.CROSS))
+    assert lg.abort_mirror() and not lg.mirror_arming and not lg.abort_mirror()
+
+
+def test_mirror_combo_xbox_a_is_cross():
+    """Xbox: A liegt auf Kreuz (ps4_layout) -> Steuerkreuz + A spiegelt."""
+    assert ArmTeleopLogic.mirror_combo(joy([L.DPAD_LEFT, L.CROSS])[1]) == "left"
+    assert ArmTeleopLogic.mirror_combo(joy([L.DPAD_RIGHT, L.CROSS])[1]) == "right"
+    assert ArmTeleopLogic.mirror_combo(joy([L.DPAD_LEFT, L.SQUARE])[1]) is None   # Xbox-X
+
+
+def test_waist_r2_hold_aborts_mirror_and_never_mirrors():
+    """Spiegeln + Hueftdrehung: R2 halten bricht ein laufendes Spiegel-Halten
+    ab; Steuerkreuz + Kreuz unter R2 spiegelt nicht (Kreuz = Stopp)."""
+    lg = _grasp()
+    out = hold_combo(lg, 0.0, 1.0, buttons=(L.DPAD_LEFT, L.CROSS))
+    assert ("mirror_arm", "left") in out and lg.mirror_arming
+    out = trig(lg, 1.02, (L.DPAD_LEFT, L.CROSS), R2_AXIS=1.0)
+    assert ("mirror_abort",) in out and ("waist", "start") in out
+    assert not lg.mirror_arming
+    trig(lg, 1.04, R2_AXIS=1.0)
+    out = hold_combo(lg, 1.06, 4.0, buttons=(L.DPAD_LEFT, L.CROSS), R2_AXIS=1.0)
+    assert not any(c[0] in ("mirror", "mirror_arm") for c in out)
+    assert ("waist_stop",) in out and lg.waist_mode

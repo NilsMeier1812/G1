@@ -65,6 +65,7 @@
     <text x="580" y="479" font-size="12" fill="#2e7d32"><tspan font-weight="bold">RT halten:</tspan> ◀ ▶ Hüfte · <tspan font-weight="bold">+ R3</tspan> Mitte</text>
     <text x="450" y="352" text-anchor="middle" font-weight="bold" fill="#c62828">Xbox-Taste: NOT-HALT (Oberkörper)</text>
     <text x="450" y="370" text-anchor="middle" font-size="12" fill="#c62828">RB + LB + Xbox 2 s halten (vibriert): VOLL-NOTAUS</text>
+    <text x="476" y="390" text-anchor="middle" font-size="12" font-weight="bold" fill="#00838f">◀ / ▶ + A 2 s (vibriert): Arm spiegeln</text>
   </g>
   <!-- Gehen (LT gehalten) -->
   <rect x="15" y="484" width="870" height="66" rx="8" fill="#fff3e0" stroke="#e65100"/>

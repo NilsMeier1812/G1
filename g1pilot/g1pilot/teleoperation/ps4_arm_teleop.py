@@ -15,6 +15,8 @@ arm_controller bzw. in der Inspire-Bridge:
   /g1pilot/pose_store/cancel    Bool         laufende geplante Bewegung abbrechen
   /g1pilot/emergency_stop       Bool         NOT-HALT (wie in den GUIs)
   /g1pilot/full_emergency_stop  Bool         VOLL-NOTAUS: ganzer G1 Damp (R1+L1+PS)
+  /g1pilot/arm_command          String(JSON) Arm spiegeln ({"type": "mirror"}),
+                                             Antwort auf /g1pilot/arm_command/status
 
 KEIN Laufen: der Node publiziert nichts an loco_cmd_vel / joy_mux. Rueckmeldung:
   /g1pilot/ps4/feedback  String(JSON)  LED-Farbe + Vibration -> ps4_joystick
@@ -43,6 +45,11 @@ Belegung (Details: g1pilot/docs/43_ps4_controller.md):
                Vorzeitig loslassen bricht ab. Zurueck: START quittiert,
                der G1 bleibt in Damp; Aufstehen nur ueber die Startleiste
                (Preparation -> Walk).
+  Steuerkreuz links/rechts + Kreuz (2 s halten, Controller vibriert)
+               ARM SPIEGELN: der Arm dieser Seite faehrt geplant (Planer,
+               Kollisionsschutz) in die gespiegelte Pose des anderen Arms.
+               Vorzeitig loslassen bricht ab; die Fahrt selbst stoppt Kreuz,
+               PS oder ein Stick-Ausschlag. Nur mit uebernommenen Armen.
   L2 halten    Gehen (ps4_walk, nur mit walk_deadman): Sticks + Steuerkreuz
                gehoeren dann dem Gehen, die Arme halten ihre Lage
   R2 halten    HUEFTE (waist_yaw, nur im GREIFEN): rechter Stick links/rechts
@@ -143,6 +150,7 @@ class ArmTeleopLogic:
       ("hand", side, "open"|"close"), ("enable",), ("home",), ("cancel",),
       ("estop",), ("hold", sides), ("changed",),
       ("full_arm",), ("full_abort",), ("full_estop",)   -- Voll-Notaus
+      ("mirror_arm", side), ("mirror_abort",), ("mirror", side)  -- Spiegeln
     twist(axes) -> {side: (lin, ang)} fuer die gerade aktiven Seiten (oder {}).
     """
 
@@ -150,7 +158,7 @@ class ArmTeleopLogic:
                  selection="right", max_speed="Schnell", ps_estop=True,
                  full_estop_hold_s=2.0, full_estop_gap_s=0.3,
                  walk_deadman=False, trigger_modes=False, axis_snap_deg=20.0,
-                 waist_yaw=False):
+                 mirror_hold_s=2.0, mirror_gap_s=0.3, waist_yaw=False):
         self.deadzone = float(deadzone)
         self.expo = float(expo)
         # Linker Stick: Achsen-Einrasten (snap_stick), damit "vor" nur vor
@@ -183,6 +191,14 @@ class ArmTeleopLogic:
         # Tempo vor dem ersten L1/R1-Schritt, solange L1 oder R1 gehalten:
         # wird daraus der Voll-Notaus (R1 + L1 + PS), zuruecknehmen.
         self._speed_undo = None
+        # Arm spiegeln (Steuerkreuz links/rechts + Kreuz halten): <= 0 = aus.
+        # Gleiche Halte-Logik wie der Voll-Notaus (Luecke im Strom -> neu).
+        self.mirror_hold_s = float(mirror_hold_s)
+        self.mirror_gap_s = float(mirror_gap_s)
+        self._mir_side = None        # Seite, die gerade gehalten wird
+        self._mir_since = None
+        self._mir_last = None
+        self._mir_sent = False
         # L2 = Deadman fuers Gehen (ps4_walk): solange gehalten, pausiert die
         # Arm-Steuerung (Sticks/Steuerkreuz). False = L2 frei (alter Stand).
         self.walk_deadman = bool(walk_deadman)
@@ -290,7 +306,9 @@ class ArmTeleopLogic:
                 "mode": self.mode, "speed": self.speed, "speed_req": self.speed_req,
                 "max_speed": JOG_SPEED_ORDER[self.max_idx], "estop": self.estop,
                 "ps_estop": self.ps_estop, "full_estop": self.full_estop,
-                "full_arming": self.full_arming, "robot_mode": self.robot_mode,
+                "full_arming": self.full_arming,
+                "mirror_arming": self._mir_side if self.mirror_arming else None,
+                "robot_mode": self.robot_mode,
                 "arms_locked": self.arms_locked, "waist_mode": self.waist_mode,
                 "label": self.label()}
 
@@ -348,6 +366,59 @@ class ArmTeleopLogic:
             return [("hold", ("left", "right")), ("full_estop",), ("changed",)]
         return []
 
+    # ── Arm spiegeln ────────────────────────────────────────────────────
+    @property
+    def mirror_arming(self):
+        """True, solange Steuerkreuz links/rechts + Kreuz gehalten werden
+        (noch nicht ausgeloest)."""
+        return self._mir_since is not None and not self._mir_sent
+
+    @staticmethod
+    def mirror_combo(buttons):
+        """-> "left"/"right" (Seite, die spiegeln soll), wenn Kreuz und GENAU
+        eine der Steuerkreuz-Tasten links/rechts gedrueckt sind, sonst None.
+        Xbox: A + Steuerkreuz (A liegt auf Kreuz, siehe ps4_layout)."""
+        b = list(buttons) + [0] * max(0, L.NUM_BUTTONS - len(buttons))
+        if not b[L.CROSS] or bool(b[L.DPAD_LEFT]) == bool(b[L.DPAD_RIGHT]):
+            return None
+        return "left" if b[L.DPAD_LEFT] else "right"
+
+    def abort_mirror(self):
+        """Halten abbrechen (Loslassen, Sperre, Joy-Timeout). True, wenn es lief."""
+        was = self.mirror_arming
+        self._mir_side = self._mir_since = self._mir_last = None
+        self._mir_sent = False
+        return was
+
+    def _abort_mirror_cmds(self):
+        return [("mirror_abort",)] if self.abort_mirror() else []
+
+    def _update_mirror(self, b, now):
+        """Steuerkreuz links/rechts + Kreuz ununterbrochen mirror_hold_s lang
+        halten -> ("mirror", side). Seitenwechsel waehrend des Haltens zaehlt
+        von vorn (die neue Seite vibriert neu)."""
+        if self.mirror_hold_s <= 0.0:
+            return []
+        side = self.mirror_combo(b)
+        if side is None:
+            return self._abort_mirror_cmds()
+        out = []
+        if side != self._mir_side or (self._mir_last is not None
+                                      and now - self._mir_last > self.mirror_gap_s):
+            if self._mir_side is not None and side != self._mir_side:
+                out += self._abort_mirror_cmds()
+            self._mir_since = None
+            self._mir_sent = False
+        self._mir_side = side
+        self._mir_last = now
+        if self._mir_since is None:
+            self._mir_since = now
+            return out + [("mirror_arm", side)]
+        if not self._mir_sent and now - self._mir_since >= self.mirror_hold_s:
+            self._mir_sent = True
+            return out + [("hold", ("left", "right")), ("mirror", side)]
+        return out
+
     # ── Eingabe ─────────────────────────────────────────────────────────
     def update(self, axes, buttons, now):
         b = list(buttons) + [0] * max(0, L.NUM_BUTTONS - len(buttons))
@@ -368,6 +439,7 @@ class ArmTeleopLogic:
         if self.full_arming or self._full_sent:
             # Waehrend R1 + L1 + PS gehalten werden: nur PS-NOT-HALT (unten),
             # keine anderen Tasten (L1/R1 waeren sonst "langsamer/schneller").
+            out[:0] = self._abort_mirror_cmds()
             if rise[L.PS] and self.ps_estop:
                 out[:0] = [("hold", ("left", "right")), ("estop",)]
                 if not self.estop:
@@ -379,6 +451,7 @@ class ArmTeleopLogic:
 
         # NOT-HALT zuerst und unabhaengig von allem anderen.
         if rise[L.PS] and self.ps_estop:
+            out += self._abort_mirror_cmds()
             out.append(("hold", ("left", "right")))
             out.append(("estop",))
             if not self.estop:
@@ -386,7 +459,8 @@ class ArmTeleopLogic:
                 out.append(("changed",))
             return out
         if self.estop:
-            return out   # bis zur Quittung in der GUI: nichts bewegen
+            # bis zur Quittung in der GUI: nichts bewegen
+            return out + self._abort_mirror_cmds()
 
         if self.trigger_modes:
             if trig_rise[L.L2] and self.robot_mode != "walk":
@@ -396,6 +470,9 @@ class ArmTeleopLogic:
                 self.robot_mode = "grasp"
                 out += [("mode", "grasp"), ("changed",)]
         self.walking = self.walk_deadman and deadman_held(axes, b)
+        if self.arms_locked or self.walking:
+            # GEHEN / L2 gehalten: Steuerkreuz gehoert dem Gehen, kein Spiegeln.
+            out += self._abort_mirror_cmds()
         waist = self.waist_mode
         if waist != self._waist_was:
             self._waist_was = waist
@@ -406,6 +483,7 @@ class ArmTeleopLogic:
             else:
                 out.append(("waist", "end"))
         if waist:
+            out += self._abort_mirror_cmds()     # Steuerkreuz gehoert nicht den Armen
             # R2 gehalten: Sticks/Steuerkreuz/Dreieck/Tempo gehoeren nicht den
             # Armen (Share/Grundstellung auch nicht). R3 = Mitte, Kreuz =
             # Stopp (auch die Huefte); Haende und Options wirken weiter.
@@ -480,6 +558,10 @@ class ArmTeleopLogic:
         else:
             self._share_since = None
             self._home_sent = False
+        # Spiegeln zuletzt: Auswahl (Steuerkreuz) und Stopp (Kreuz) desselben
+        # Drueckens sind dann schon raus, die Halte-Vibration kommt danach.
+        if not self.walking:
+            out += self._update_mirror(b, now)
         return out
 
     TRIGGER_ON, TRIGGER_OFF = 0.5, 0.3
@@ -556,6 +638,9 @@ def main(args=None):
             # Voll-Notaus: R1 + L1 + PS so lange halten (s), Controller vibriert
             # waehrenddessen. 0 = Voll-Notaus am Controller abgeschaltet.
             self.declare_parameter("full_estop_hold_s", 2.0)
+            # Arm spiegeln: Steuerkreuz links/rechts + Kreuz so lange halten (s),
+            # Controller vibriert waehrenddessen. 0 = Spiegeln abgeschaltet.
+            self.declare_parameter("mirror_hold_s", 2.0)
             # L2 = Deadman fuers Gehen (Node ps4_walk laeuft mit): solange
             # gehalten, pausiert die Arm-Steuerung. false = L2 ohne Wirkung.
             self.declare_parameter("walk_deadman", False)
@@ -597,6 +682,7 @@ def main(args=None):
                                         walk_deadman=gp("walk_deadman"),
                                         trigger_modes=gp("trigger_modes"),
                                         axis_snap_deg=gp("axis_snap_deg"),
+                                        mirror_hold_s=gp("mirror_hold_s"),
                                         waist_yaw=gp("waist_yaw"))
             self.need_onboard_walk = bool(gp("modes_need_onboard_walk"))
             self.onboard = self.onboard_t = None
@@ -617,6 +703,8 @@ def main(args=None):
             self.waist = None            # letzter /g1pilot/waist/state
             self.waist_t = None
             self._waist_sending = False  # Rate-Strom laeuft (0 beim Ende senden)
+            self._mirror_n = 0
+            self._mirror_id = None       # ID des laufenden Spiegel-Kommandos
 
             self.tf_buffer = Buffer()
             self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -635,6 +723,7 @@ def main(args=None):
             self.pub_waist_rate = self.create_publisher(Float32, WAIST_RATE_TOPIC, 10)
             self.pub_waist_center = self.create_publisher(Bool, WAIST_CENTER_TOPIC, 10)
             self.create_subscription(String, WAIST_STATE_TOPIC, self._on_waist_state, 10)
+            self.pub_arm_cmd = self.create_publisher(String, "/g1pilot/arm_command", 10)
             self.pub_feedback = self.create_publisher(String, "/g1pilot/ps4/feedback", 10)
             latched = QoSProfile(depth=1)
             latched.durability = DurabilityPolicy.TRANSIENT_LOCAL
@@ -665,6 +754,8 @@ def main(args=None):
             self.create_subscription(Bool, "/g1pilot/start_balancing",
                                      lambda m: self._on_mode_topic("grasp", m), 10)
             self.create_subscription(String, "/g1pilot/onboard_state", self._on_onboard, latched)
+            self.create_subscription(String, "/g1pilot/arm_command/status",
+                                     self._on_cmd_status, 10)
 
             self.create_timer(1.0 / float(gp("rate_hz")), self._tick)
             self.create_timer(0.2, self._publish_markers)
@@ -675,6 +766,8 @@ def main(args=None):
                 f"(max. {JOG_SPEED_ORDER[self.logic.max_idx]}, PS="
                 f"{'NOT-HALT' if self.logic.ps_estop else 'Stopp'}, R1+L1+PS "
                 f"{f'{self.logic.full_hold_s:.1f} s = VOLL-NOTAUS' if self.logic.full_hold_s > 0 else 'aus'}"
+                f", Steuerkreuz+Kreuz "
+                f"{f'{self.logic.mirror_hold_s:.1f} s = Spiegeln' if self.logic.mirror_hold_s > 0 else 'aus'}"
                 f", Options"
                 f"{' + start_balancing' if self.options_balancing else ' = nur Arme'})")
 
@@ -773,6 +866,29 @@ def main(args=None):
                 return False
             return self.onboard.get("fsm") in status_line.WALK_FSM
 
+        def _on_cmd_status(self, msg):
+            """Antwort des arm_controllers auf das eigene Spiegel-Kommando:
+            abgelehnt/fehlgeschlagen -> lange Vibration (sonst fuehlte sich
+            ein verweigertes Spiegeln wie ein ausgefuehrtes an)."""
+            try:
+                st = json.loads(msg.data)
+            except ValueError:
+                return
+            if not self._mirror_id or st.get("id") != self._mirror_id:
+                return
+            state, why = st.get("state"), st.get("reason", "")
+            if state in ("rejected", "failed"):
+                self._mirror_id = None
+                self.get_logger().warn(f"Spiegeln nicht ausgefuehrt ({state}): {why}")
+                self._send_feedback(rumble_ms=600, strong=1.0, weak=0.0)
+            elif state == "reached":
+                self._mirror_id = None
+                self.get_logger().info("Spiegeln: Spiegelpose erreicht.")
+                self._send_feedback(rumble_ms=120, strong=0.0, weak=0.5)
+            elif state == "cancelled":
+                self._mirror_id = None
+                self.get_logger().info(f"Spiegeln abgebrochen: {why}")
+
         def _on_start(self, msg):
             if msg.data and self.logic.clear_estop():
                 self.get_logger().info("NOT-HALT quittiert (START) -- PS4 wieder aktiv.")
@@ -864,6 +980,33 @@ def main(args=None):
                     "VOLL-NOTAUS (R1 + L1 + PS): ganzer G1 in Damp. Quittieren mit "
                     "START, Aufstehen danach nur ueber die Startleiste.")
                 self._send_feedback(rumble_ms=1500, strong=1.0, weak=1.0, force=True)
+            elif kind == "mirror_arm":
+                # Vibration ueber die ganze Haltezeit (wie beim Voll-Notaus).
+                self._send_feedback(rumble_ms=self.logic.mirror_hold_s * 1000.0 + 300.0,
+                                    strong=1.0, weak=1.0, force=True)
+                src = "rechten" if cmd[1] == "left" else "linken"
+                self.get_logger().info(
+                    f"Spiegeln gehalten: {'linker' if cmd[1] == 'left' else 'rechter'} Arm "
+                    f"faehrt in {self.logic.mirror_hold_s:.1f} s in die Spiegelpose des "
+                    f"{src} Arms (loslassen = Abbruch).")
+                self._publish_status()
+            elif kind == "mirror_abort":
+                self._send_feedback(stop_rumble=True)
+                self.get_logger().info("Spiegeln abgebrochen (vor Ablauf losgelassen).")
+                self._publish_status()
+            elif kind == "mirror":
+                # Kein Halte-Strom: jedes Hand-Ziel braeche die geplante Fahrt
+                # ab ("manueller Vorrang" im arm_controller), wie bei "home".
+                self.holds.clear()
+                self._mirror_n += 1
+                self._mirror_id = f"ps4_mirror_{self._mirror_n}"
+                self.pub_arm_cmd.publish(String(data=json.dumps(
+                    {"id": self._mirror_id, "type": "mirror", "side": cmd[1]})))
+                self.get_logger().info(
+                    f"Spiegeln: {cmd[1]} -> Spiegelpose angefordert ({self._mirror_id}; "
+                    "Stopp mit Kreuz/PS oder Stick).")
+                self._send_feedback(rumble_ms=250, strong=0.0, weak=1.0, force=True)
+                self._publish_status()
             elif kind == "changed":
                 self._changed()
             elif kind == "waist":
@@ -900,9 +1043,11 @@ def main(args=None):
             fb = {"rgb": list(self.logic.color())}
             if stop_rumble:
                 fb["rumble"] = {"ms": 0}
-            elif rumble_ms > 0 and (force or not self.logic.full_arming):
-                # Waehrend R1 + L1 + PS gehalten werden, darf keine kurze
-                # Quittungs-Vibration die Halte-Vibration ueberschreiben.
+            elif rumble_ms > 0 and (force or not (self.logic.full_arming
+                                                  or self.logic.mirror_arming)):
+                # Waehrend R1 + L1 + PS (Voll-Notaus) oder Steuerkreuz + Kreuz
+                # (Spiegeln) gehalten werden, darf keine kurze Quittungs-
+                # Vibration die Halte-Vibration ueberschreiben.
                 fb["rumble"] = {"ms": int(rumble_ms), "strong": strong, "weak": weak}
             self.pub_feedback.publish(String(data=json.dumps(fb)))
 
@@ -1017,6 +1162,10 @@ def main(args=None):
             if self.t_joy is not None and now - self.t_joy > self.joy_timeout:
                 if self.logic.abort_full():
                     self.get_logger().warn("Voll-Notaus-Halten abgebrochen: keine "
+                                           "Controller-Daten mehr.")
+                    self._send_feedback(stop_rumble=True)
+                if self.logic.abort_mirror():
+                    self.get_logger().warn("Spiegeln-Halten abgebrochen: keine "
                                            "Controller-Daten mehr.")
                     self._send_feedback(stop_rumble=True)
                 if self.connected:

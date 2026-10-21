@@ -2605,8 +2605,9 @@ class ArmController(Node):
 
     def _on_arm_command(self, msg: String):
         """Live eingespielte Zielpose DIREKT ausfuehren (nichts speichern) --
-        siehe g1pilot/docs/21_arm_api_technik.md. Zwei Varianten: Gelenkwinkel ('joints') oder
-        kartesische Hand-Pose ('pose', wird per IK aufgeloest).
+        siehe g1pilot/docs/21_arm_api_technik.md. Varianten: Gelenkwinkel ('joints'),
+        kartesische Hand-Pose ('pose', wird per IK aufgeloest) oder Spiegelpose
+        des anderen Arms ('mirror', Controller: Steuerkreuz + Kreuz halten).
 
         Bewusst dieselben Schranken wie POSE ANFAHREN: E-Stop, ENABLE
         MANIPULATION, kein Homing/WALK, Gelenklimits, Kollisionscheck in der
@@ -2628,7 +2629,9 @@ class ArmController(Node):
                                      req_id=req_id, source="arm_command")
             self.get_logger().warn(f"arm_command '{req_id}' abgelehnt: {why}")
 
-        if not self.walk_mode:
+        # Spiegeln (Controller) aktiviert die Arme nie selbst, auch nicht in
+        # der Sim: gespiegelt wird nur ein Arm, den der Bediener schon fuehrt.
+        if not self.walk_mode and cmd["type"] != ac.TYPE_MIRROR:
             self._sim_auto_enable_arms(f"arm_command '{req_id}'")
         not_ready = self._arms_not_ready_reason()
         if not_ready:
@@ -2636,6 +2639,22 @@ class ArmController(Node):
             return
 
         goals, ik_targets = {}, None
+        if cmd["type"] == ac.TYPE_MIRROR:
+            # Quelle = KOMMANDIERTER Stand des anderen Arms (wie der Jog-Bezug
+            # "command"): Durchhang/Schleppfehler der Messung spiegeln nicht mit.
+            side = sides[0]
+            src = cmd["targets"][side]["mirror_of"]
+            q_src = self._last_q_target[0:7] if src == "left" else self._last_q_target[7:14]
+            q7 = np.asarray(ac.mirror_arm_joints(q_src), dtype=float)
+            bad = self._joint_limit_violation(side, q7)
+            if bad:
+                reject(bad)
+                return
+            goals[side] = q7
+            label = f"Spiegelpose des {'linken' if src == 'left' else 'rechten'} Arms"
+            self._start_planned_motion(label, sides, goals, {}, req_id=req_id,
+                                       source="arm_command")
+            return
         if cmd["type"] == ac.TYPE_JOINTS:
             for side in sides:
                 q7 = np.asarray(cmd["targets"][side], dtype=float)

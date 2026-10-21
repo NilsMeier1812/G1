@@ -36,6 +36,8 @@ setup(
         # Inspire-FTP-Hand HTML-GUIs (Controller/Viewer) – im Browser zu oeffnen.
         (f'share/{package_name}/manipulation/inspire_ftp/web',
             expand(['g1pilot/manipulation/inspire_ftp/web/*.html'])),
+        (f'share/{package_name}/teleoperation/phone/web',
+            expand(['g1pilot/teleoperation/phone/web/*'])),
 
         # URDF / XML
         (f'share/{package_name}/description_files/urdf',

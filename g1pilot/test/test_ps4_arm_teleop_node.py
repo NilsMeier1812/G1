@@ -58,7 +58,7 @@ def rig(request):
         node = rclpy.create_node("ps4_real_probe")
         got = {k: [] for k in ("goal_left", "goal_right", "enabled", "balance", "estop",
                                "hand_right", "hand_left", "feedback", "status", "walk",
-                               "markers", "full", "shared")}
+                               "markers", "full", "shared", "arm_cmd")}
         sub = lambda t, typ, key: node.create_subscription(   # noqa: E731
             typ, t, lambda m: got[key].append((time.monotonic(), m)), 50)
         sub("/g1pilot/hand_goal/left", PoseStamped, "goal_left")
@@ -75,6 +75,8 @@ def rig(request):
         sub("/g1pilot/joy", Joy, "walk")
         sub("/g1pilot/start_walking", Bool, "walk")
         sub("/g1pilot/ps4/markers", MarkerArray, "markers")
+        sub("/g1pilot/arm_command", String, "arm_cmd")
+        pub_cmd_status = node.create_publisher(String, "/g1pilot/arm_command/status", 10)
         pub_joy = node.create_publisher(Joy, "/g1pilot/ps4/joy", 10)
         pub_estop = node.create_publisher(Bool, "/g1pilot/emergency_stop", 10)
         pub_start = node.create_publisher(Bool, "/g1pilot/start", 10)
@@ -129,6 +131,7 @@ def rig(request):
         rig = type("Rig", (), {})()
         rig.got, rig.state, rig.press, rig.status = got, state, press, status
         rig.estop = lambda: pub_estop.publish(Bool(data=True))
+        rig.cmd_status = lambda **st: pub_cmd_status.publish(String(data=json.dumps(st)))
         rig.start = lambda: pub_start.publish(Bool(data=True))
         rig.gui_walk = lambda: pub_gui_walk.publish(Bool(data=True))
         rig.onboard = lambda fsm: pub_onboard.publish(String(data=json.dumps({"fsm": fsm})))
@@ -508,3 +511,52 @@ def test_r2_hold_streams_waist_rate_and_r3_centers(rig):
         ex.shutdown()
         th.join(timeout=2.0)
         node.destroy_node()
+
+
+def test_mirror_hold_rumble_abort_and_command(rig):
+    """Steuerkreuz links + Kreuz: Vibration ueber die Haltezeit, vorzeitiges
+    Loslassen stoppt sie und sendet nichts; 2 s gehalten -> genau ein
+    arm_command {"type": "mirror", "side": "left"}; Ablehnung des
+    arm_controllers (Arme nicht aktiv) -> lange Vibration. Nichts ans Laufen."""
+    g, st = rig.got, rig.state
+    rumbles = lambda: [json.loads(m.data).get("rumble") for _, m in g["feedback"]  # noqa: E731
+                       if "rumble" in json.loads(m.data)]
+    # 1) 1 s halten, dann loslassen -> Abbruch
+    n_fb = len(rumbles())
+    st["buttons"][L.DPAD_LEFT] = st["buttons"][L.CROSS] = 1
+    assert wait_for(lambda: rig.status().get("mirror_arming") == "left", 2.0)
+    time.sleep(0.9)
+    st["buttons"][L.DPAD_LEFT] = st["buttons"][L.CROSS] = 0
+    assert wait_for(lambda: {"ms": 0} in rumbles()[n_fb:], 2.0)
+    hold = [r for r in rumbles()[n_fb:] if r.get("ms", 0) >= 2000]
+    assert len(hold) == 1 and hold[0]["strong"] == 1.0
+    time.sleep(0.4)
+    assert g["arm_cmd"] == [] and rig.status().get("selection") == "left"
+    # 2) 2 s halten -> Kommando
+    t_press = time.monotonic()
+    st["buttons"][L.DPAD_LEFT] = st["buttons"][L.CROSS] = 1
+    assert wait_for(lambda: len(g["arm_cmd"]) == 1, 4.0)
+    t_cmd, m = g["arm_cmd"][0]
+    assert 1.9 <= t_cmd - t_press <= 2.6
+    cmd = json.loads(m.data)
+    assert cmd["type"] == "mirror" and cmd["side"] == "left" and cmd["id"]
+    time.sleep(0.8)
+    assert len(g["arm_cmd"]) == 1, "weiter gehalten: nur einmal"
+    st["buttons"][L.DPAD_LEFT] = st["buttons"][L.CROSS] = 0
+    # 3) arm_controller lehnt ab -> lange starke Vibration
+    n_fb = len(rumbles())
+    rig.cmd_status(id="fremd", state="rejected", reason="x")       # fremde ID: nichts
+    rig.cmd_status(id=cmd["id"], state="rejected",
+                   reason="Arme nicht aktiviert (ENABLE MANIPULATION).")
+    assert wait_for(lambda: any(r.get("ms") == 600 for r in rumbles()[n_fb:]), 2.0)
+    assert len([r for r in rumbles()[n_fb:] if r.get("ms") == 600]) == 1
+    assert g["walk"] == []
+
+
+@pytest.mark.parametrize("rig", [{"mirror_hold_s": 0.0}], indirect=True)
+def test_mirror_disabled_by_param(rig):
+    st = rig.state
+    st["buttons"][L.DPAD_LEFT] = st["buttons"][L.CROSS] = 1
+    time.sleep(2.6)
+    st["buttons"][L.DPAD_LEFT] = st["buttons"][L.CROSS] = 0
+    assert rig.got["arm_cmd"] == [] and rig.status().get("selection") == "left"

@@ -1,0 +1,35 @@
+# Handy-Seite (g1pilot/teleoperation/phone/web) auf GitHub Pages veroeffentlichen.
+# Adresse: https://nilsmeier1812.github.io/G1/
+# Einmalig in GitHub: Settings -> Pages -> Source "GitHub Actions".
+# Das Handy aktualisiert NICHT automatisch (siehe web/sw.js), neue Versionen erst per »Aktualisieren«.
+name: Handy-Seite (Pages)
+
+on:
+  push:
+    branches: [main]
+    paths: ["g1pilot/g1pilot/teleoperation/phone/web/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: g1pilot/g1pilot/teleoperation/phone/web
+      - id: deployment
+        uses: actions/deploy-pages@v4

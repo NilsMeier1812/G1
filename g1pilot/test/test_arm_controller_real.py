@@ -1164,3 +1164,61 @@ def test_waist_yaw_sim_publishes_target_for_loco_sim(ac_module):
 def test_bringup_real_limits_waist_yaw():
     src = open(os.path.join(PKG, "launch", "bringup_real.launch.py")).read()
     assert "'waist_yaw_limit_deg': os.environ.get('G1_WAIST_YAW_LIMIT_DEG', '15.0')" in src
+
+
+def test_mirror_command_real(ac_module):
+    """Arm spiegeln (Controller Steuerkreuz + Kreuz -> arm_command type=mirror):
+    ohne ENABLE abgelehnt (real UND ohne Sim-Auto-Enable), danach geplant in
+    die Spiegelpose des KOMMANDIERTEN anderen Arms (Roll/Yaw gespiegelt),
+    Status accepted -> executing -> reached; der Quell-Arm bleibt stehen.
+    Im E-Stop abgelehnt."""
+    from std_msgs.msg import String
+    from g1pilot.manipulation import arm_command as acmd
+    _reset_robot()
+    node = _make_node(ac_module)
+    states = []
+    orig = node._publish_cmd_status
+
+    def rec(state, **kw):
+        states.append((kw.get("req_id") if kw.get("req_id") is not None
+                       else node._cmd_req_id, state, kw.get("reason", "")))
+        orig(state, **kw)
+    node._publish_cmd_status = rec
+    mirror = lambda rid, side: node._on_arm_command(String(data=json.dumps(  # noqa: E731
+        {"id": rid, "type": "mirror", "side": side})))
+    try:
+        mirror("m0", "left")
+        assert states[-1][:2] == ("m0", "rejected") and "ENABLE" in states[-1][2]
+        assert not node.arms_enabled and not node._planned_motion_active
+
+        node._arms_controlled_callback(_bool(True))
+        _run(node, 2.4)
+        _wait_planner(node)
+        right = [-0.60, -0.35, 0.30, 0.80, 0.25, -0.20, 0.30]
+        node._on_arm_command(String(data=json.dumps(
+            {"id": "r", "type": "joints", "right": right})))
+        assert _run(node, 25.0, until=lambda: (
+            not node._planned_motion_active
+            and float(np.max(np.abs(node._last_q_target[7:14] - right))) < 0.03))
+        q_right = node._last_q_target[7:14].copy()
+
+        mirror("m1", "left")
+        goal = np.array(acmd.mirror_arm_joints(q_right))
+        assert np.allclose(goal[[1, 2, 4, 6]], -q_right[[1, 2, 4, 6]])
+        assert _run(node, 25.0, until=lambda: ("m1", "reached") in [s[:2] for s in states])
+        # Ende jeder geplanten Fahrt (auch Pose anfahren): das Kommando bleibt
+        # um die Restglaettung (ik_alpha) vor dem Ziel stehen, hier ~1 mrad
+        # (0.06 Grad, < 1 mm an der Hand) -- das Ziel selbst ist exakt gespiegelt.
+        _run(node, 1.0)
+        assert float(np.max(np.abs(node._last_q_target[0:7] - goal))) < 2e-3
+        assert float(np.max(np.abs(node._last_q_target[7:14] - q_right))) < 1e-6
+        seq = [s[1] for s in states if s[0] == "m1"]
+        assert seq[0] == "accepted" and "executing" in seq and seq[-1] == "reached"
+        # Messung folgt (Fake-G1) ohne Sprung.
+        assert float(np.max(np.abs(ROBOT.measured()[0:7] - goal))) < 0.05
+
+        node._on_emergency_stop(_bool(True))
+        mirror("m2", "right")
+        assert states[-1][:2] == ("m2", "rejected") and "E-Stop" in states[-1][2]
+    finally:
+        _close(node)

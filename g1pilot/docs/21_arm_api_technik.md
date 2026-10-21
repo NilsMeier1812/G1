@@ -32,10 +32,22 @@ ROS-Topics und sammelt die Statusantworten pro Vorgang.
 `parse_command(raw)` normalisiert ein rohes JSON-Objekt zu:
 
 ```python
-{"id": str, "type": "joints"|"pose", "sides": [...],
- "targets": {side: [7 rad] | {"position","quat_xyzw","frame"}},
+{"id": str, "type": "joints"|"pose"|"mirror", "sides": [...],
+ "targets": {side: [7 rad] | {"position","quat_xyzw","frame"}
+                   | {"mirror_of": andere Seite}},
  "hands": {side: [6]}, "apply_ee_offset": bool}
 ```
+
+`type="mirror"` (`{"type": "mirror", "side": "left"}`, ohne Ziele) fährt den
+Arm `side` geplant in die Spiegelpose des **anderen** Arms — genutzt vom
+PS4/Xbox-Controller (Steuerkreuz links/rechts + Kreuz/A 2 s halten, siehe
+[43_ps4_controller.md](43_ps4_controller.md)). Quelle ist der kommandierte
+Gelenkstand des anderen Arms im `arm_controller`; gespiegelt wird in
+Gelenkwinkeln (`mirror_arm_joints`: Pitch/Ellbogen gleich, Roll/Yaw mit
+umgekehrtem Vorzeichen). Das ist am URDF per Vorwärtskinematik als exakt
+gleichwertig zur Spiegelung der Hand-Pose an der Sagittalebene belegt
+(`test/test_arm_mirror.py`). Anders als `joints`/`pose` aktiviert `mirror`
+die Arme auch in der Sim nie selbst.
 
 Geprüft wird **nur das Format** (Struktur, Anzahl, endliche Zahlen) —
 Gelenklimits, Kollision, Reichweite und ob die Arme überhaupt bereit sind,

@@ -16,6 +16,10 @@ gespeichert -- dafuer ist pose_store.py da). Zwei Varianten:
   type="pose"    Kartesische Hand-Pose (Position + Orientierung). Der Sinn der
                  Schnittstelle: der Aufrufer hat NUR die Wunsch-Pose, die
                  Gelenkwinkel rechnet g1pilot per IK aus.
+  type="mirror"  Arm `side` in die Spiegelpose des ANDEREN Arms fahren (PS4/
+                 Xbox: Steuerkreuz links/rechts + Kreuz 2 s halten). Die Quelle
+                 ist der KOMMANDIERTE Stand des anderen Arms im arm_controller
+                 (nicht die Messung) -- siehe mirror_arm_joints().
 
 Validiert wird HART und mit sprechendem Grund (der Aufrufer sieht ihn im
 Status/HTTP-Fehler wieder) -- ein halb verstandenes Kommando darf niemals in
@@ -36,7 +40,22 @@ HAND_DOF = 6
 # Bewegungsarten, die ein Kommando anfordern kann.
 TYPE_JOINTS = "joints"
 TYPE_POSE = "pose"
-COMMAND_TYPES = (TYPE_JOINTS, TYPE_POSE)
+TYPE_MIRROR = "mirror"
+COMMAND_TYPES = (TYPE_JOINTS, TYPE_POSE, TYPE_MIRROR)
+
+# Spiegelung links <-> rechts an der Sagittalebene (x-z) des Oberkoerpers in
+# Gelenkwinkeln: shoulder_pitch, shoulder_roll, shoulder_yaw, elbow,
+# wrist_roll, wrist_pitch, wrist_yaw. Pitch-Gelenke (Achse y, senkrecht zur
+# Ebene) behalten den Winkel, Roll/Yaw-Gelenke (Achse x bzw. z, in der Ebene)
+# wechseln das Vorzeichen. Am URDF (g1_29dof_inspire_ftp.urdf und 29dof.urdf)
+# per Vorwaertskinematik belegt (test_arm_mirror.py): die Hand der Spiegel-
+# Gelenkwinkel liegt GENAU auf der gespiegelten Hand-Pose -- Position
+# (x, -y, z), Orientierung S*R*S mit S = diag(1, -1, 1) -- Rest <= 0.01 mm
+# (Rundung der URDF-Zahlen), Drehung exakt. Ebenso Ellbogen und Handgelenk:
+# die ganze Armkette ist gespiegelt, nicht nur die Hand. Auch die
+# Gelenklimits sind gespiegelt (Roll links [-1.59, 2.25], rechts [-2.25, 1.59]),
+# eine gueltige Pose bleibt gespiegelt gueltig.
+MIRROR_SIGNS = (1.0, -1.0, -1.0, 1.0, -1.0, 1.0, -1.0)
 
 # Status-Zustaende auf /g1pilot/arm_command/status (g1pilot/docs/21_arm_api_technik.md dokumentiert sie).
 ST_ACCEPTED = "accepted"     # angenommen, Planung laeuft
@@ -107,6 +126,17 @@ def _quat_from_rpy_deg(rpy_deg):
     ]
 
 
+def other_side(side: str) -> str:
+    return "right" if side == "left" else "left"
+
+
+def mirror_arm_joints(q7):
+    """Gelenkwinkel eines Arms -> Gelenkwinkel des ANDEREN Arms in der an der
+    Sagittalebene gespiegelten Pose (siehe MIRROR_SIGNS). Selbstinvers."""
+    q = _finite_floats(q7, ARM_DOF, "Spiegel-Quelle (Gelenkwinkel)")
+    return [s * v for s, v in zip(MIRROR_SIGNS, q)]
+
+
 def _parse_pose_target(side, spec):
     """-> {"position": [3], "quat_xyzw": [4], "frame": str}"""
     if not isinstance(spec, dict):
@@ -139,8 +169,9 @@ def _parse_pose_target(side, spec):
 def parse_command(raw) -> dict:
     """Rohes Kommando (JSON-Text oder dict) -> normalisiertes Kommando-dict:
 
-        {"id": str, "type": "joints"|"pose", "sides": [...],
-         "targets": {side: [7 rad] | {"position","quat_xyzw","frame"}},
+        {"id": str, "type": "joints"|"pose"|"mirror", "sides": [...],
+         "targets": {side: [7 rad] | {"position","quat_xyzw","frame"}
+                           | {"mirror_of": andere Seite}},
          "hands": {side: [6]}, "apply_ee_offset": bool}
 
     Wirft CommandError mit einer Begruendung, die dem Aufrufer gezeigt wird.
@@ -168,6 +199,19 @@ def parse_command(raw) -> dict:
     req_id = raw.get("id") or new_request_id()
     if not isinstance(req_id, str) or len(req_id) > 64:
         raise CommandError("'id': erwarte Text mit maximal 64 Zeichen.")
+
+    if cmd_type == TYPE_MIRROR:
+        side = raw.get("side")
+        if side not in SIDES:
+            raise CommandError(
+                "'side': welcher Arm soll spiegeln? Erwarte 'left' oder 'right'.")
+        if raw.get("left") is not None or raw.get("right") is not None:
+            raise CommandError(
+                "type=mirror: keine Ziele angeben -- das Ziel ist die Spiegelpose "
+                "des anderen Arms.")
+        return {"id": req_id, "type": cmd_type, "sides": [side],
+                "targets": {side: {"mirror_of": other_side(side)}},
+                "hands": {}, "apply_ee_offset": True}
 
     targets = {}
     for side in SIDES:
