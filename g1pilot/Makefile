@@ -7,6 +7,7 @@
 #   make real            → Echter Roboter starten (schlank)
 #   make real-full       → Echter Roboter mit Livox/MOLA/Navigation starten
 #   make stop            → Alles stoppen
+#   make phone-web       → Handy-Seite per USB aufs Handy (adb reverse, docs/44)
 #
 #   Duenner Wrapper um `docker compose --profile <sim|real|real-full>` auf
 #   der EINEN docker-compose.yml (siehe deren Kopfkommentar) -- es gibt
@@ -32,7 +33,7 @@ export G1_NV_PRIME_OFFLOAD
 .PHONY: sim sim-bg real real-full stop \
         build-sim build-real build-real-full \
         build-mujoco build-g1pilot-sim build-g1pilot-real build-g1pilot-real-full \
-        logs status clean shell-sim shell-mujoco shell-real gpu-check
+        logs status clean shell-sim shell-mujoco shell-real gpu-check phone-web
 
 # ─── SIMULATION ─────────────────────────────────────────────
 sim: build-g1pilot-sim build-mujoco
@@ -93,6 +94,17 @@ stop:
 	docker compose --profile real-full down --remove-orphans 2>/dev/null || true
 
 # ─── HILFS-COMMANDS ─────────────────────────────────────────
+# Handy-Seite einmalig per USB-Kabel aufs Android-Handy bringen: Webserver NUR
+# auf 127.0.0.1, adb reverse leitet localhost:8790 des Handys hierher. Chrome
+# erlaubt Web Bluetooth auf localhost; danach laeuft die Seite offline aus dem
+# Cache (auch ohne Kabel). Siehe docs/44_handy_bedienung.md.
+PHONE_WEB_PORT ?= 8790
+phone-web:
+	@command -v adb >/dev/null || { echo "adb fehlt: sudo apt install adb"; exit 1; }
+	adb reverse tcp:$(PHONE_WEB_PORT) tcp:$(PHONE_WEB_PORT)
+	@echo "Am Handy in Chrome oeffnen: http://localhost:$(PHONE_WEB_PORT)/index.html  (Strg+C beendet)"
+	cd g1pilot/teleoperation/phone/web && python3 -m http.server $(PHONE_WEB_PORT) --bind 127.0.0.1
+
 # GPU-Zugriff der Sim-Container pruefen (warnt z.B. bei NVIDIA ohne Toolkit).
 gpu-check:
 	@bash docker/check_gpu.sh

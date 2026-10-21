@@ -30,6 +30,7 @@ Alle Dokumente sind auch über das grafische Startmenü erreichbar
 | Teleoperation (Streamdeck/Joystick) | [40_teleoperation_anleitung.md](40_teleoperation_anleitung.md) | [41_teleoperation_technik.md](41_teleoperation_technik.md) |
 | Demo-Oberfläche (Konzept) | [42_demo_gui_konzept.md](42_demo_gui_konzept.md) | [42_demo_gui_konzept.md](42_demo_gui_konzept.md) |
 | PS4-Controller (Arme + Hände, Sim + Real) | [43_ps4_controller.md](43_ps4_controller.md) | [43_ps4_controller.md#technik](43_ps4_controller.md#technik) |
+| Handy-Bedienung (Bluetooth, Android) | [44_handy_bedienung.md](44_handy_bedienung.md) | [44_handy_bedienung.md#technik](44_handy_bedienung.md#technik) |
 | Navigation (autonomes Fahren) | [50_navigation_anleitung.md](50_navigation_anleitung.md) | [51_navigation_technik.md](51_navigation_technik.md) |
 | Inspire-FTP-Hände | [60_inspire_haende_anleitung.md](60_inspire_haende_anleitung.md) | [61_inspire_haende_technik.md](61_inspire_haende_technik.md) |
 | Echter Roboter (Sicherheit & Ablauf) | [70_echtroboter_anleitung.md](70_echtroboter_anleitung.md) | — (siehe die jeweiligen Technik-Dokumente oben) |

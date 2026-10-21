@@ -787,6 +787,7 @@ class SimFrame(tk.Frame):
         self.v_hands = tk.BooleanVar(value=st.get("hands", True))
         self.v_nav = tk.BooleanVar(value=st.get("nav", False))
         self.v_ps4 = tk.BooleanVar(value=st.get("ps4", False))
+        self.v_phone = tk.BooleanVar(value=st.get("phone", False))
         self.v_rviz = tk.BooleanVar(value=st.get("rviz", False))
         self._rviz_own = None   # eigene RViz-Wahl, solange Navigation RViz erzwingt
         self.v_open_guis = tk.BooleanVar(value=st.get("open_guis", False))
@@ -820,6 +821,8 @@ class SimFrame(tk.Frame):
                    "Planer + Stationen / AUTO NAV in der Demo-GUI")
         toggle_row(s, "PS4-Controller", self.v_ps4,
                    "PS4 oder Xbox: Arme + Hände, Gehen mit L2/LT; Belegung: docs/43_ps4_controller.md")
+        toggle_row(s, "Handy-Zugang (Bluetooth)", self.v_phone,
+                   "nur Demo-GUI; Kopplung über 📱 in der GUI, docs/44_handy_bedienung.md")
         self._rviz_row = toggle_row(s, "RViz", self.v_rviz,
                                     "Zusatzfenster mit TF/Markern; MuJoCo-Fenster kommt immer")
         for v in (self.v_hands, self.v_gui, self.v_nav):
@@ -867,6 +870,7 @@ class SimFrame(tk.Frame):
             "hands": hands, "nav": self.v_nav.get(),
             "rviz": self.v_rviz.get() if self._rviz_own is None else self._rviz_own,
             "open_guis": self.v_open_guis.get(), "rt": rt, "ps4": self.v_ps4.get(),
+            "phone": self.v_phone.get(),
         })
 
         env = os.environ.copy()
@@ -879,6 +883,7 @@ class SimFrame(tk.Frame):
                                       and self.v_open_guis.get()) else "false"
         env["G1_ENABLE_NAV"] = "1" if self.v_nav.get() else "0"
         env["G1_PS4_ARMS"] = "1" if self.v_ps4.get() else "0"
+        env["G1_PHONE"] = "1" if self.v_phone.get() and gui == "demo" else "0"
         env["USE_RVIZ"] = "true" if self.v_rviz.get() else "false"
         env["SIM_REALTIME_FACTOR"] = rt
 
@@ -926,6 +931,7 @@ class RealFrame(tk.Frame):
         self.v_port = tk.StringVar(value=st.get("port", "6000"))
         self.v_joy = tk.StringVar(value=st.get("joy", "Wireless Controller"))
         self.v_ps4 = tk.BooleanVar(value=st.get("ps4", False))
+        self.v_phone = tk.BooleanVar(value=st.get("phone", False))
         self.v_lidar = tk.BooleanVar(value=False)
         self.v_rebuild = tk.BooleanVar(value=False)
         self.v_confirm = tk.BooleanVar(value=False)
@@ -967,6 +973,8 @@ class RealFrame(tk.Frame):
         toggle_row(s, "RViz", self.v_rviz, "empfohlen: Arm-Marker + Zustand sichtbar")
         toggle_row(s, "PS4-Controller für Arme + Hände", self.v_ps4,
                    "PS4 oder Xbox; aus = Gehen mit Deadman (bisher, nur PS4)")
+        toggle_row(s, "Handy-Zugang (Bluetooth)", self.v_phone,
+                   "nur Demo-GUI; Ansicht, NOT-HALT, Quittieren, Startleiste (docs/44_handy_bedienung.md)")
         for v in (self.v_hands, self.v_gui):
             v.trace_add("write", lambda *_: self._sync())
 
@@ -1052,7 +1060,7 @@ class RealFrame(tk.Frame):
             "vy": self.v_vy.get().strip() or "0.3",
             "vyaw": self.v_vyaw.get().strip() or "0.4",
             "joy": self.v_joy.get().strip() or "Wireless Controller",
-            "ps4": self.v_ps4.get(),
+            "ps4": self.v_ps4.get(), "phone": self.v_phone.get(),
         }
         save_settings("real", vals)
 
@@ -1071,6 +1079,7 @@ class RealFrame(tk.Frame):
         env["G1_ENABLE_LIDAR"] = "1" if self.v_lidar.get() else "0"
         env["JOYSTICK_NAME"] = vals["joy"]
         env["G1_PS4_ARMS"] = "1" if vals["ps4"] else "0"
+        env["G1_PHONE"] = "1" if vals["phone"] and gui == "demo" else "0"
         env["G1_MAX_VX"] = vals["vx"]
         env["G1_MAX_VY"] = vals["vy"]
         env["G1_MAX_VYAW"] = vals["vyaw"]
