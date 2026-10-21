@@ -43,7 +43,7 @@ Am echten Roboter erst in der GUI starten, siehe unten.
 | Steuerkreuz ↑ | **beide** Hände, parallel (LED violett) — z. B. eine Kiste tragen |
 | Steuerkreuz ↓ | **beide gespiegelt** (LED türkis): links/rechts und Drehungen spiegelbildlich, Bezug ist die rechte Hand — z. B. Hände auseinander/zueinander |
 | Dreieck | Umschalten **VERSCHIEBEN ↔ DREHEN** (beim Drehen leuchtet die LED gedimmt) |
-| Linker Stick | VERSCHIEBEN: vor/zurück + links/rechts · DREHEN: kippen (Finger hoch/runter) + schwenken |
+| Linker Stick | VERSCHIEBEN: vor/zurück + links/rechts · DREHEN: kippen (Finger hoch/runter) + schwenken. Rastet auf die Achse ein (bis 20° daneben zählt nur die Hauptrichtung), erst echt schräg fahren beide Achsen |
 | Rechter Stick | VERSCHIEBEN: hoch/runter (vertikal) · DREHEN: rollen (horizontal) |
 | L1 / R1 | Tempo langsamer / schneller: Langsam 5 cm/s · Normal 15 cm/s · Schnell 30 cm/s (Drehen 20 / 45 / 90 °/s). Start: Sim **Normal**, Real **Langsam** (höchstens Normal) |
 | Kreis | gewählte Hand(e) **öffnen** |
@@ -374,6 +374,7 @@ Ablauf:
 | `G1_PS4_SPEED` | `Langsam` | Start-Tempo |
 | `G1_PS4_MAX_SPEED` | `Normal` | höchstes Tempo per R1 |
 | `G1_PS4_PS_ESTOP` | `1` | `0` = PS nur Stopp (wie Kreuz) statt NOT-HALT |
+| `G1_JOG_REFERENCE` | `command` | Bezug der Controller-/GUI-Jogs, `tf` = alter Stand (siehe [Präzise Achsen](#präzise-achsen-2026-10-21)) |
 | `G1_PS4_WALK` | `1` | `0` = kein Gehen per Controller (L2 ohne Wirkung) |
 | `G1_PS4_WALK_SPEED` | `Langsam` | Start-Geh-Tempo |
 | `G1_PS4_WALK_MAX_SPEED` | `Schnell` | höchstes Geh-Tempo per L2 + ▲ (Schnell = volle `G1_MAX_VX/VY/VYAW`) |
@@ -580,7 +581,8 @@ kippt die Hand in beiden Varianten während der Fahrt kurz bis ~10°
 | `modes_need_onboard_walk` | Sim `false`, Real `true` | start_walking/start_balancing nur, wenn der G1 laut `/g1pilot/onboard_state` im Walk steht |
 | `joy_timeout_s` | 0.5 | Abriss-Erkennung |
 | `options_starts_balancing` | `true` (Real `false`) | Options sendet zusätzlich `start_balancing` |
-| `jog_reference` | `command` (Real `tf`) | Startpose neuer Jog-Ziele: kommandierte Hand (`/g1pilot/hand_cmd_pose`) oder gemessene (TF) |
+| `jog_reference` | `command` (Env `G1_JOG_REFERENCE`) | Bezug der Jog-Ziele: `command` = Start, Vorlauf und Anhalten an der kommandierten Hand (`/g1pilot/hand_cmd_pose`, wie der RViz-Marker), `start` = nur der Start dort (Stand 2026-10-14), `tf` = alles an der gemessenen Hand (alter Real-Stand) |
+| `axis_snap_deg` | 20 | Achsen-Einrasten des linken Sticks; 0 = aus |
 
 ### Tests
 

@@ -7,6 +7,8 @@
   * ArmTeleopLogic: Handauswahl, Umschalten, Tempo, Haende auf/zu, Stopp,
     Grundstellung (nur gehalten), NOT-HALT-Latch, Totzone/Expo, Spiegeln
   * hand_jog: identisch zur bisherigen Jog-Rechnung der Demo-GUI
+  * Achsen-Einrasten und Jog-Bezug (kommandierte Hand): Regelkreis-Modell mit
+    Durchhang, Reibung und links/rechts verschiedenem Schleppfehler
 Laeuft mit pytest (stdlib only).
 """
 import math
@@ -16,7 +18,7 @@ import pytest
 
 from g1pilot.teleoperation import ps4_layout as L
 from g1pilot.teleoperation.ps4_arm_teleop import (
-    ArmTeleopLogic, shape_axis, mirror_twist, COLORS,
+    ArmTeleopLogic, shape_axis, snap_stick, mirror_twist, COLORS,
 )
 from g1pilot.teleoperation import hand_jog as hj
 
@@ -671,6 +673,153 @@ def test_jog_step_start_pose_only_for_new_target():
     assert p2 == pytest.approx(p) and q2 == pytest.approx(q)
 
 
+
+# ── Achsen-Einrasten am linken Stick ──────────────────────────────────────
+def test_snap_stick_sectors():
+    c, s20 = math.cos(math.radians(12)), math.sin(math.radians(12))
+    assert snap_stick(s20, c, 20.0) == (0.0, c)            # 12 Grad neben "vor"
+    assert snap_stick(-c, s20, 20.0) == (-c, 0.0)          # 12 Grad neben "rechts"
+    d = math.sqrt(0.5)
+    assert snap_stick(d, d, 20.0) == (d, d)                # Diagonale bleibt
+    assert snap_stick(s20, c, 0.0) == (s20, c)             # aus
+    assert snap_stick(0.0, 0.0, 20.0) == (0.0, 0.0)
+
+
+def test_twist_slightly_diagonal_stick_moves_one_axis_only():
+    """Daumen 10-15 Grad schraeg: frueher fuhr die Hand ein Stueck seitlich mit."""
+    a, _ = joy(LY=0.95, LX=0.25)                           # ~14.7 Grad
+    old = ArmTeleopLogic(axis_snap_deg=0.0).twist(a)["right"][0]
+    assert abs(old[1]) > 0.003                             # > 3 mm/s seitlich
+    lin, ang = ArmTeleopLogic().twist(a)["right"]
+    assert lin[0] > 0.1 and lin[1] == 0.0 and lin[2] == 0.0 and ang == (0.0, 0.0, 0.0)
+    lg = ArmTeleopLogic()
+    press(lg, L.TRIANGLE)                                  # DREHEN: kippen ohne schwenken
+    _, ang = lg.twist(a)["right"]
+    assert ang[1] < 0 and ang[0] == 0.0 and ang[2] == 0.0
+    a, _ = joy(LY=0.7, LX=0.7)                             # gewollte Diagonale
+    lin, _ = ArmTeleopLogic().twist(a)["right"]
+    assert lin[0] > 0 and lin[1] > 0
+
+
+# ── Jog-Bezug (hand_jog.JogReference) ───────────────────────────────────
+CMD = ([0.30, -0.15, 0.20], (0.0, 0.0, 0.0, 1.0))
+TF = ([0.30, -0.15, 0.19], hj.qfrom_rotvec(0.0, 0.05, 0.0))
+
+
+def test_jog_reference_modes():
+    r = hj.JogReference("tf")
+    assert r.pose("right", CMD, TF, True) == (None, TF)
+    r = hj.JogReference("start")
+    assert r.pose("right", CMD, TF, True) == (CMD, TF)
+    assert r.pose("right", CMD, TF, False) == (None, TF)
+    r = hj.JogReference("command")
+    assert r.pose("right", CMD, TF, True) == (None, CMD)
+    assert r.pose("right", CMD, TF, False) == (None, CMD)
+    assert hj.JogReference("quatsch").mode == hj.JOG_REFERENCE_DEFAULT == "command"
+
+
+def test_jog_reference_source_fixed_per_motion():
+    r = hj.JogReference("command")
+    # Fahrt beginnt ohne kommandierte Pose (vor der Auto-Kalibrierung): TF ...
+    assert r.pose("right", None, TF, True) == (None, TF)
+    # ... und bleibt TF, auch wenn das Topic mitten in der Fahrt kommt.
+    assert r.pose("right", CMD, TF, False) == (None, TF)
+    r.end("right")
+    assert r.pose("right", CMD, TF, True) == (None, CMD)   # naechste Fahrt
+    # Faellt die kommandierte Pose aus: weiter an TF (nicht zurueck).
+    assert r.pose("right", None, TF, False) == (None, TF)
+    assert r.pose("right", CMD, TF, False) == (None, TF)
+    assert r.pose("left", CMD, None, True) == (None, CMD)  # ohne TF: Bezug cmd
+
+
+def test_jog_reference_mode_from_env(monkeypatch):
+    monkeypatch.setenv("G1_JOG_REFERENCE", "TF")
+    assert hj.jog_reference_mode() == "tf"
+    monkeypatch.delenv("G1_JOG_REFERENCE")
+    assert hj.jog_reference_mode() == "command"
+    assert hj.jog_reference_mode("start") == "start"
+
+
+# Regelkreis-Modell: der arm_controller bringt die KOMMANDIERTE Hand auf das
+# Ziel (wie der RViz-Marker -- seine IK-Kette ist in Position und Orientierung
+# offline sauber). Die GEMESSENE Hand weicht davon ab: Durchhang (Hand nickt
+# um ``sag_deg`` nach unten und sitzt tiefer), Haftreibung und Schleppfehler
+# (bleibt entgegen der letzten Bewegungsrichtung um ``drag`` zurueck), je Arm
+# verschieden -- so wie am echten G1.
+def _plant(ref_mode, moves, side="right", sag_deg=3.0, drag=0.012, sag_z=0.006,
+           start=None, mirror=False, steps=6, dt=1 / 30):
+    """moves: Liste von lin (m/s) je Fahrt (Stick 'steps' Takte, dann los).
+    -> (Startpose gemessen, Endpose gemessen, Endpose kommandiert)."""
+    sag = hj.qfrom_rotvec(0.0, math.radians(sag_deg), 0.0)
+    cmd = start or ([0.30, -0.15, 0.20], hj.qfrom_rotvec(0.0, 0.3, 0.0))
+    last_u = [0.0, 0.0, 0.0]
+
+    def meas(c):
+        p = [c[0][i] - drag * last_u[i] for i in range(3)]
+        p[2] -= sag_z
+        return p, hj.qmul(sag, c[1])
+
+    m0 = meas(cmd)
+    ref = hj.JogReference(ref_mode)
+    v, w = hj.JOG_SPEEDS["Normal"]
+    lead_m, lead_rad = hj.lead_limits(v, w)
+    for lin in moves:
+        if mirror:
+            lin = (lin[0], -lin[1], lin[2])
+        target = None
+        for _ in range(steps):
+            st, hand = ref.pose(side, cmd, meas(cmd), target is None)
+            target = hj.jog_step(target, hand, lin, (0, 0, 0), dt, lead_m, lead_rad, start=st)
+            cmd = (list(target[0]), tuple(target[1]))      # kommandiert folgt dem Ziel
+            sp = math.sqrt(sum(c * c for c in lin))
+            last_u = [c / sp for c in lin]
+        _, hand = ref.pose(side, cmd, meas(cmd), False)
+        ref.end(side)
+        p, q = hj.hold_pose(target, hand, lin, (0, 0, 0))
+        cmd = (list(p), tuple(q))
+    return m0, meas(cmd), cmd
+
+
+UP, DOWN, IN, OUT = (0, 0, 0.15), (0, 0, -0.15), (0, 0.15, 0), (0, -0.15, 0)
+
+
+@pytest.mark.parametrize("moves", [[UP, DOWN] * 4, [IN, OUT] * 4,
+                                   [(0.15, 0, 0), (-0.15, 0, 0)] * 4])
+def test_taps_back_and_forth_return_without_tilt(moves):
+    """8x Tippen hin und zurueck: kommandiert bezogen kommt die Hand an den
+    Start zurueck, ohne zu kippen; an der gemessenen Hand bezogen ratscht
+    der Durchhang je Fahrt weiter (alter Real-Stand) und die Reibung
+    verschiebt den Rueckweg."""
+    m0, m1, _ = _plant("command", moves)
+    assert math.degrees(hj.qangle(m0[1], m1[1])) < 0.01
+    assert math.dist(m0[0], m1[0]) < 0.013                  # nur Reibung der letzten Richtung
+    t0, t1, _ = _plant("tf", moves)
+    assert math.degrees(hj.qangle(t0[1], t1[1])) > 20.0     # 8 x 3 Grad
+    assert math.dist(t0[0], t1[0]) > 0.04
+
+
+def test_move_up_keeps_orientation_and_side_axes():
+    m0, m1, c1 = _plant("command", [UP])
+    d = [m1[0][i] - m0[0][i] for i in range(3)]
+    assert d[2] > 0.015 and abs(d[0]) < 1e-9 and abs(d[1]) < 1e-9
+    assert c1[0][2] - 0.20 == pytest.approx(6 * 0.15 / 30)   # Sollweg exakt
+    assert math.degrees(hj.qangle(m0[1], m1[1])) < 0.01
+
+
+def test_mirror_moves_end_symmetric_despite_different_arms():
+    """Gespiegelt aus symmetrischer Startlage, linker Arm mit mehr Reibung/
+    Durchhang als der rechte: die kommandierten Haende enden exakt
+    spiegelbildlich (wie zwei gespiegelte Marker-Ziele)."""
+    q_r = hj.qfrom_rotvec(0.0, 0.3, 0.0)
+    start_r = ([0.30, -0.15, 0.20], q_r)
+    start_l = ([0.30, 0.15, 0.20], q_r)
+    moves = [IN, UP, (0.15, 0, 0), OUT, DOWN]
+    for mode, ok in (("command", True), ("tf", False)):
+        _, _, cr = _plant(mode, moves, "right", start=start_r)
+        _, _, cl = _plant(mode, moves, "left", start=start_l, mirror=True,
+                          sag_deg=5.0, drag=0.02, sag_z=0.01)
+        err = math.dist(cr[0], (cl[0][0], -cl[0][1], cl[0][2]))
+        assert (err < 1e-9) == ok, (mode, err)
 
 # ── L2 = Modus GEHEN (Totmann), R2 = Modus GREIFEN ─────────────────────────
 def trig(lg, t, buttons=(), **axes):

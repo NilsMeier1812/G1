@@ -59,7 +59,7 @@ from g1pilot.teleoperation import shared_state
 from g1pilot.teleoperation.ps4_walk import deadman_held
 from g1pilot.teleoperation.hand_jog import (
     JOG_FRAME, JOG_TF, JOG_SPEEDS, JOG_SPEED_ORDER, JOG_CMD_TOPIC, CommandedPoses,
-    HoldStreamer, hold_pose, lead_limits, jog_step,
+    HoldStreamer, JogReference, hold_pose, jog_reference_mode, lead_limits, jog_step,
 )
 from g1pilot.utils.common import is_sim_mode
 
@@ -99,6 +99,22 @@ def shape_axis(x, deadzone, expo):
     return math.copysign(a, x)
 
 
+def snap_stick(x, y, snap_deg):
+    """Achsen-Einrasten eines Sticks: liegt die Auslenkung hoechstens
+    `snap_deg` neben einer Achse, zaehlt nur diese Achse (die andere -> 0).
+    Ein Daumen drueckt nie exakt gerade -- ohne Einrasten fuhr "vor" immer
+    ein wenig seitlich mit (bei 10 Grad schraeg ~3-5 % des Tempos, trotz
+    Totzone). Dazwischen (echte Diagonale) bleiben beide Achsen. <= 0 = aus."""
+    if snap_deg <= 0.0 or (x == 0.0 and y == 0.0):
+        return x, y
+    ang = math.degrees(math.atan2(abs(y), abs(x)))     # 0 = reine x-Achse
+    if ang <= snap_deg:
+        return x, 0.0
+    if ang >= 90.0 - snap_deg:
+        return 0.0, y
+    return x, y
+
+
 def mirror_twist(lin, ang):
     """Spiegelung an der Sagittalebene (x-z) des Roboters: Verschiebung
     (vx, -vy, vz), Drehvektor (-wx, wy, -wz) -- Drehungen sind axial."""
@@ -118,9 +134,12 @@ class ArmTeleopLogic:
     def __init__(self, deadzone=0.12, expo=0.4, speed="Normal", home_hold_s=1.0,
                  selection="right", max_speed="Schnell", ps_estop=True,
                  full_estop_hold_s=2.0, full_estop_gap_s=0.3,
-                 walk_deadman=False, trigger_modes=False):
+                 walk_deadman=False, trigger_modes=False, axis_snap_deg=20.0):
         self.deadzone = float(deadzone)
         self.expo = float(expo)
+        # Linker Stick: Achsen-Einrasten (snap_stick), damit "vor" nur vor
+        # faehrt bzw. "kippen" nur kippt. 0 = aus (alter Stand).
+        self.axis_snap_deg = float(axis_snap_deg)
         self.home_hold_s = float(home_hold_s)
         self.selection = selection
         self.mode = "move"
@@ -409,6 +428,7 @@ class ArmTeleopLogic:
                 self.walk_deadman and (self.walking or deadman_held(axes, ()))):
             return {}
         a = list(axes) + [0.0] * max(0, L.NUM_AXES - len(axes))
+        a[L.LX], a[L.LY] = snap_stick(a[L.LX], a[L.LY], self.axis_snap_deg)
         s = lambda i: shape_axis(a[i], self.deadzone, self.expo)   # noqa: E731
         v, w = JOG_SPEEDS[self.speed]
         if self.mode == "move":
@@ -479,10 +499,15 @@ def main(args=None):
             # Real: false -- der Controller aendert den Zustand der Beine nie
             # (Aufstehen/Balancing bleibt eine Aktion in GUI/Streamdeck).
             self.declare_parameter("options_starts_balancing", True)
-            # Start eines Jog-Ziels: "command" = kommandierte Hand vom arm_controller
-            # (/g1pilot/hand_cmd_pose, Fallback TF), "tf" = gemessene Hand wie
-            # frueher. Default: Sim "command", Real "tf" (real noch ungetestet).
-            self.declare_parameter("jog_reference", "command" if is_sim_mode() else "tf")
+            # Bezug der Jog-Ziele (hand_jog.JOG_REFERENCES): "command" = Start,
+            # Vorlauf und Anhalten an der kommandierten Hand (/g1pilot/hand_cmd_pose,
+            # wie der RViz-Marker; Fallback TF), "start" = nur der Start dort,
+            # "tf" = alles an der gemessenen Hand (alter Real-Stand).
+            # Default sim + real "command" (Env G1_JOG_REFERENCE).
+            self.declare_parameter("jog_reference", jog_reference_mode())
+            # Linker Stick rastet auf die Achse ein, wenn er hoechstens so viele
+            # Grad daneben liegt (nur eine Richtung statt leicht schraeg). 0 = aus.
+            self.declare_parameter("axis_snap_deg", 20.0)
             gp = lambda n: self.get_parameter(n).value   # noqa: E731
 
             self.logic = ArmTeleopLogic(gp("deadzone"), gp("expo"), gp("speed"),
@@ -490,7 +515,8 @@ def main(args=None):
                                         ps_estop=gp("ps_estop"),
                                         full_estop_hold_s=gp("full_estop_hold_s"),
                                         walk_deadman=gp("walk_deadman"),
-                                        trigger_modes=gp("trigger_modes"))
+                                        trigger_modes=gp("trigger_modes"),
+                                        axis_snap_deg=gp("axis_snap_deg"))
             self.need_onboard_walk = bool(gp("modes_need_onboard_walk"))
             self.onboard = self.onboard_t = None
             self.joy_timeout = float(gp("joy_timeout_s"))
@@ -500,7 +526,8 @@ def main(args=None):
             self.connected = False
             self.targets = {}            # side -> [pos, quat] laufendes Jog-Ziel
             self.last_twist = {}         # side -> (lin, ang) letzte Sollbewegung
-            self.last_hand = {}          # side -> (pos, quat) letzte bekannte Hand (TF)
+            self.last_hand = {}          # side -> (pos, quat) letzter Bezug (Hand)
+            self.jog_ref = JogReference(gp("jog_reference"))
             self.holds = HoldStreamer()  # Halte-Ziele nach dem Loslassen
             self.t_tick = time.monotonic()
             self._tf_warned = False
@@ -799,13 +826,17 @@ def main(args=None):
             p, q = tr.transform.translation, tr.transform.rotation
             return [p.x, p.y, p.z], (q.x, q.y, q.z, q.w)
 
-        def _jog_start(self, side):
-            """Startpose eines neuen Jog-Ziels: kommandierte Hand (falls aktuell)
-            oder None (-> an der gemessenen Hand). Siehe hand_jog.JOG_CMD_TOPIC.
-            Live umschaltbar: ros2 param set /ps4_arm_teleop jog_reference tf|command."""
-            if str(self.get_parameter("jog_reference").value).lower() == "command":
-                return self.cmd_poses.get(side, time.monotonic())
-            return None
+        def _jog_pose(self, side, new):
+            """-> (start, ref) fuer einen Jog-Schritt (hand_jog.JogReference):
+            Startpose eines neuen Ziels und Bezugshand fuer Vorlauf/Anhalten.
+            Live umschaltbar: ros2 param set /ps4_arm_teleop jog_reference
+            command|start|tf (gilt ab der naechsten Fahrt)."""
+            mode = jog_reference_mode(self.get_parameter("jog_reference").value)
+            if mode != self.jog_ref.mode:
+                self.jog_ref = JogReference(mode)
+            cmd = (self.cmd_poses.get(side, time.monotonic())
+                   if mode != "tf" else None)
+            return self.jog_ref.pose(side, cmd, self._hand_pose(side), new)
 
         def _publish_goal(self, side, pos, rot):
             msg = PoseStamped()
@@ -817,9 +848,9 @@ def main(args=None):
             self.pub_goal[side].publish(msg)
 
         def _hold(self, sides):
-            """Ziel auf die echte Hand setzen -> Arm bleibt sofort stehen statt
-            den Vorlauf noch abzufahren (hold_pose: entlang der Bewegung an der
-            Hand, quer auf der Ziel-Linie). Das Halte-Ziel wird JOG_HOLD_S lang
+            """Ziel auf die Hand (Bezug: kommandiert, siehe jog_reference) setzen
+            -> Arm bleibt sofort stehen statt den Vorlauf noch abzufahren
+            (hold_pose: entlang der Bewegung an der Hand, quer auf der Ziel-Linie). Das Halte-Ziel wird JOG_HOLD_S lang
             wiederholt (HoldStreamer), sonst faehrt der arm_controller wegen
             seiner Ziel-Glaettung noch einen Grossteil des Vorlaufs ab."""
             now = time.monotonic()
@@ -829,7 +860,8 @@ def main(args=None):
                 cached = self.last_hand.pop(side, None)
                 if target is None:
                     continue
-                hand = self._hand_pose(side)
+                _, hand = self._jog_pose(side, new=False)
+                self.jog_ref.end(side)
                 if hand is None:
                     # TF-Luecke genau beim Loslassen: NICHT gar nichts senden --
                     # sonst faehrt der arm_controller das alte Ziel (ganzer
@@ -878,7 +910,8 @@ def main(args=None):
             v, w = JOG_SPEEDS[self.logic.speed]
             lead_m, lead_rad = lead_limits(v, w)
             for side, (lin, ang) in tw.items():
-                hand = self._hand_pose(side)
+                new = side not in self.targets
+                start, hand = self._jog_pose(side, new)
                 if hand is None:
                     if not self._tf_warned:
                         self._tf_warned = True
@@ -888,7 +921,6 @@ def main(args=None):
                     continue
                 self._tf_warned = False
                 self.last_hand[side] = hand
-                start = self._jog_start(side) if side not in self.targets else None
                 p, q = jog_step(self.targets.get(side), hand, lin, ang, dt, lead_m, lead_rad,
                                 start=start)
                 self.targets[side] = [p, q]

@@ -10,6 +10,10 @@ pelvis -> <side>_hand_point_contact (50 Hz):
   ori      Drehung der Hand gegenueber dem Start [deg] (max / Ende)
   ziel_ori Drehung des gesendeten Jog-Ziels (hand_goal) gegenueber dem Start [deg]
 Ausserdem "Tippen": 4x 0.4 s vor + 4x 0.4 s zurueck (Ratschen-Effekt).
+--mirror: beide Haende aus spiegelbildlicher Startlage, Auswahl "BEIDE
+gespiegelt", dieselben Fahrten; gemessen wird, wie weit die Fahrwege beider
+Haende vom Spiegelbild abweichen (spiegel [cm]) und wie stark sie sich drehen.
+--reference command|start|tf setzt vorher jog_reference am ps4_arm_teleop.
 
 Voraussetzung: Sim-Stack mit G1_PS4_ARMS=1. Im Container:
   python3 /ros2_ws/src/g1pilot/jog_axis_probe_sim.py [--json out.json] [--quick]
@@ -80,6 +84,7 @@ class Probe(Node):
         self.axes = [0.0] * L.NUM_AXES
         self.buttons = [0] * L.NUM_BUTTONS
         self.rec = None
+        self.rec2 = None
         self.create_timer(1.0 / RATE, self._tick)
 
     def _goal(self, m):
@@ -87,8 +92,8 @@ class Probe(Node):
         if self.rec is not None:
             self.goals.append((time.time(), (p.x, p.y, p.z), (o.x, o.y, o.z, o.w)))
 
-    def hand(self):
-        t = self.tf.lookup_transform(JOG_FRAME, JOG_TF[self.side], rclpy.time.Time())
+    def hand(self, side=None):
+        t = self.tf.lookup_transform(JOG_FRAME, JOG_TF[side or self.side], rclpy.time.Time())
         p, r = t.transform.translation, t.transform.rotation
         return (p.x, p.y, p.z), (r.x, r.y, r.z, r.w)
 
@@ -101,6 +106,12 @@ class Probe(Node):
         if self.rec is not None:
             try:
                 self.rec.append((time.time(),) + self.hand())
+            except Exception:   # noqa: BLE001
+                pass
+        if self.rec2 is not None:
+            try:
+                other = "left" if self.side == "right" else "right"
+                self.rec2.append((time.time(),) + self.hand(other))
             except Exception:   # noqa: BLE001
                 pass
 
@@ -186,6 +197,55 @@ def analyse(rec, goals, u):
     return out
 
 
+def mirror_pose(q):
+    """Gelenkwinkel des einen Arms -> spiegelbildliche des anderen (roll/yaw-Achsen)."""
+    return [c * s for c, s in zip(q, (1, -1, -1, 1, -1, 1, -1))]
+
+
+def set_reference(mode):
+    import subprocess
+    r = subprocess.run(["ros2", "param", "set", "/ps4_arm_teleop", "jog_reference", mode],
+                       capture_output=True, text=True, timeout=30)
+    print("jog_reference:", mode, (r.stdout or r.stderr).strip(), flush=True)
+
+
+def run_mirror(p, r, poses, args):
+    """Gespiegelt: Fahrweg rechts vs. gespiegelter Fahrweg links."""
+    r.tap(L.DPAD_DOWN)
+    time.sleep(1.0)
+    seqs = {"einzeln": [[d] for d in ("+y", "-y", "+z", "-z", "+x", "-x")],
+            "folge": [["+y", "+z", "+x", "-y", "-z"]]}
+    results = []
+    other = "left" if p.side == "right" else "right"
+    for pn, q in poses.items():
+        for sn, seq_list in seqs.items():
+            for seq in seq_list:
+                r.goto(q, mirror_pose(q))
+                p.rec, p.rec2 = [], []
+                time.sleep(0.3)
+                for dn in seq:
+                    r.stick(args.dur, DIRS[dn][1])
+                    r.settle(timeout=6.0)
+                time.sleep(0.3)
+                a, b = p.rec, p.rec2
+                p.rec = p.rec2 = None
+                da = np.array(a[-1][1]) - np.array(a[0][1])
+                db = np.array(b[-1][1]) - np.array(b[0][1])
+                mir = float(np.linalg.norm(da - db * np.array([1.0, -1.0, 1.0]))) * 100
+                ori = max(math.degrees(qangle(a[0][2], a[-1][2])),
+                          math.degrees(qangle(b[0][2], b[-1][2])))
+                m = dict(pose=pn, seq="".join(seq), mirror_cm=mir, ori_end=ori,
+                         way_cm=float(np.linalg.norm(da)) * 100)
+                results.append(m)
+                print(f"{pn:8s} {m['seq']:12s}: Weg {m['way_cm']:5.1f} cm | spiegel "
+                      f"{mir:4.2f} cm | ori end {ori:4.1f} deg ({p.side}/{other})", flush=True)
+    v = sorted(x["mirror_cm"] for x in results)
+    o = sorted(x["ori_end"] for x in results)
+    print(f"ZUSAMMENFASSUNG spiegel median {v[len(v) // 2]:.2f} max {v[-1]:.2f} cm | "
+          f"ori_end median {o[len(o) // 2]:.1f} max {o[-1]:.1f} deg")
+    return results
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--side", default="right")
@@ -198,7 +258,11 @@ def main():
     ap.add_argument("--no-tip", action="store_true")
     ap.add_argument("--dist", type=float, default=0.0,
                     help="> 0: Stick halten, bis die Hand so weit [m] gefahren ist (max. --dur)")
+    ap.add_argument("--mirror", action="store_true", help="beide Haende gespiegelt")
+    ap.add_argument("--reference", default="", help="jog_reference vorher setzen")
     args = ap.parse_args()
+    if args.reference:
+        set_reference(args.reference)
     rclpy.init()
     p = Probe(args.side)
     ex = SingleThreadedExecutor()
@@ -242,6 +306,13 @@ def main():
         dirs = {k: DIRS[k] for k in ("+x", "-z", "+y")}
     if args.dirs:
         dirs = {k: DIRS[k] for k in args.dirs.split(",")}
+    if args.mirror:
+        results = run_mirror(p, r, poses, args)
+        if args.json:
+            with open(args.json, "w") as f:
+                json.dump(results, f, indent=1)
+        rclpy.shutdown()
+        return 0
     results = []
     for pn, q in poses.items():
         for dn, (u, axes) in [d for d in dirs.items() for _ in range(args.repeat)]:
