@@ -164,9 +164,7 @@ class BleServer:
         self._thread = None
         self._bus = None
         self._lines = P.LineBuffer()
-        self._tx_n = 0
-        self._pages = [b"0:0:1:"]
-        self._snap = {}          # (device, index) -> Seite beim Lesen mit offset 0
+        self._tx = P.TxPages()   # Seiten + Momentaufnahme je Geraet
         self._chars = []
         gateway.on_tx = self._on_tx
 
@@ -199,11 +197,7 @@ class BleServer:
         if ch is self.notify:
             value = ch.value
         elif ch in self.tx:
-            idx = self.tx.index(ch)
-            key = (device, idx)
-            if offset == 0 or key not in self._snap:
-                self._snap[key] = self._pages[idx] if idx < len(self._pages) else b""
-            value = self._snap[key]
+            return bytes(self._tx.read(device, self.tx.index(ch), offset))
         else:
             value = b""
         return bytes(value[offset:])
@@ -227,11 +221,10 @@ class BleServer:
             loop.call_soon_threadsafe(self._apply_tx, data)
 
     def _apply_tx(self, data):
-        self._tx_n += 1
-        self._pages = P.tx_pages(self._tx_n, data)
+        n = self._tx.set(data)
         if not HAVE_DBUS or not getattr(self, "notify", None):
             return
-        self.notify.value = str(self._tx_n).encode("ascii")
+        self.notify.value = str(n).encode("ascii")
         if self.notify.notifying:
             self.notify.emit_properties_changed({"Value": self.notify.value})
 
@@ -244,8 +237,7 @@ class BleServer:
         conn = changed.get("Connected")
         if conn is not None and not conn.value:
             self._lines.drop(msg.path)
-            for key in [k for k in self._snap if k[0] == msg.path]:
-                self._snap.pop(key, None)
+            self._tx.drop(msg.path)
             self.gw.link_lost(msg.path)
 
     # ── Start/Stop ──────────────────────────────────────────────────────

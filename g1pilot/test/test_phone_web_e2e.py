@@ -51,14 +51,12 @@ class Bridge:
     def __init__(self, gw):
         self.gw = gw
         self.lines = P.LineBuffer()
-        self.pages = [b"0:0:1:"]
-        self.n = 0
+        self.txp = P.TxPages()        # dieselbe Seitenlogik wie der BLE-Server
         gw.on_tx = self._tx
         self.writes = []
 
     def _tx(self, data):
-        self.n += 1
-        self.pages = P.tx_pages(self.n, data)
+        self.txp.set(data)
 
     def write(self, arr):
         for line in self.lines.feed("web", bytes(arr)):
@@ -67,9 +65,8 @@ class Bridge:
 
     def read(self, uuid):
         if uuid == P.NOTIFY_UUID:
-            return list(str(self.n).encode())
-        i = P.TX_UUIDS.index(uuid)
-        return list(self.pages[i]) if i < len(self.pages) else []
+            return list(str(self.txp.n).encode())
+        return list(self.txp.read("web", P.TX_UUIDS.index(uuid)))
 
 
 @pytest.fixture

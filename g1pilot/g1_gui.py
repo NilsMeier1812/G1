@@ -884,6 +884,8 @@ class SimFrame(tk.Frame):
         env["G1_ENABLE_NAV"] = "1" if self.v_nav.get() else "0"
         env["G1_PS4_ARMS"] = "1" if self.v_ps4.get() else "0"
         env["G1_PHONE"] = "1" if self.v_phone.get() and gui == "demo" else "0"
+        # BlueZ ueber den System-D-Bus geht nur ohne Dockers AppArmor-Profil (docker-compose.yml).
+        env["G1_SIM_APPARMOR"] = "unconfined" if env["G1_PHONE"] == "1" else "docker-default"
         env["USE_RVIZ"] = "true" if self.v_rviz.get() else "false"
         env["SIM_REALTIME_FACTOR"] = rt
 
