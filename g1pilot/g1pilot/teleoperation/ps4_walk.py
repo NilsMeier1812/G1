@@ -9,7 +9,9 @@ Belegung ps4_layout.py). Gehen nur, solange L2 gehalten wird (Deadman):
                      (die Arm-Steuerung pausiert, Arme halten ihre Lage)
   Linker Stick       vor/zurueck + seitlich
   Rechter Stick      drehen (horizontal)
-  L2 + Steuerkreuz ▲/▼  Geh-Tempo schneller / langsamer
+  R1 / L1           Geh-Tempo schneller / langsamer (wie das Arm-Tempo),
+                     solange L2 gehalten wird oder Modus GEHEN gewaehlt ist
+  L2 + Steuerkreuz ▲/▼  ebenso Geh-Tempo schneller / langsamer
   L2 loslassen       sofort Stopp
 
 Ausgang: /g1pilot/ps4/walk_cmd (Twist, normiert [-1, 1] wie loco_cmd_vel).
@@ -78,6 +80,13 @@ class WalkLogic:
         self.ps_estop = bool(ps_estop)
         self.estop = False
         self.active = False
+        # Modus GEHEN gewaehlt (gemeinsamer Zustand, Kachel bzw. L2-Druck):
+        # dann gehoeren R1/L1 dem Geh-Tempo, auch ohne gehaltenes L2 (die
+        # Arm-Tasten sind im GEHEN gesperrt).
+        self.walk_mode = False
+        # Tempo vor dem ersten R1/L1-Schritt, solange R1 oder L1 gehalten:
+        # wird daraus der Voll-Notaus (R1 + L1 + PS), zuruecknehmen.
+        self._speed_undo = None
         # Erst nach einem gesehenen "L2 los" scharf: nach Node-Start, Funkabriss
         # oder NOT-HALT laeuft der G1 nicht los, nur weil L2 noch gedrueckt ist.
         self._armed = False
@@ -129,6 +138,15 @@ class WalkLogic:
         rise = [1 if (b[i] and not self._prev[i]) else 0 for i in range(L.NUM_BUTTONS)]
         self._prev = b[:L.NUM_BUTTONS]
         out = []
+        if not b[L.L1] and not b[L.R1]:
+            self._speed_undo = None
+        if rise[L.PS] and b[L.L1] and b[L.R1] and self._speed_undo is not None:
+            # R1 + L1 vor PS gedrueckt: deren Tempo-Schritt gehoerte zum
+            # Voll-Notaus -- ohne Vibration (die Halte-Vibration laeuft).
+            if self._speed_undo != self.speed_idx:
+                self.speed_idx = self._speed_undo
+                out.append(("speed", "quiet"))
+            self._speed_undo = None
         if rise[L.PS] and self.ps_estop:
             out += self.latch_estop()
             out.append(("estop",))
@@ -140,13 +158,23 @@ class WalkLogic:
         elif self._armed and not self.active and not self.estop:
             self.active = True
             out.append(("start",))
+        if self.estop:
+            return out
+        faster = slower = False
+        if self.active or self.walk_mode:
+            faster, slower = rise[L.R1], rise[L.L1]
         if self.active:
-            if rise[L.DPAD_UP] and self.speed_idx < self.max_idx:
-                self.speed_idx += 1
-                out.append(("speed",))
-            if rise[L.DPAD_DOWN] and self.speed_idx > 0:
-                self.speed_idx -= 1
-                out.append(("speed",))
+            faster, slower = faster or rise[L.DPAD_UP], slower or rise[L.DPAD_DOWN]
+        step = 0
+        if faster and not slower and self.speed_idx < self.max_idx:
+            step = +1
+        elif slower and not faster and self.speed_idx > 0:
+            step = -1
+        if step:
+            if self._speed_undo is None and (b[L.L1] or b[L.R1]):
+                self._speed_undo = self.speed_idx
+            self.speed_idx += step
+            out.append(("speed",))
         return out
 
     def command(self, axes):
@@ -208,6 +236,7 @@ def main(args=None):
             self.create_timer(1.0 / float(gp("rate_hz")), self._tick)
             # Gemeinsamer Zustand mit der Demo-GUI: Start-Tempo gilt ab Node-Start.
             self.shared = shared_state.SharedState("ps4_walk")
+            self.t_start_wall = time.time()
             self.shared.set("walk_speed", self.logic.speed)
             self.pub_shared = self.create_publisher(String, shared_state.TOPIC, latched)
             self.create_subscription(String, shared_state.TOPIC, self._on_shared, latched)
@@ -240,6 +269,11 @@ def main(args=None):
             if "walk_speed" in ch and self.logic.set_speed(ch["walk_speed"]):
                 self.get_logger().info(f"Geh-Tempo von der GUI: {self.logic.speed}")
                 self._publish_status()
+            # Modus GEHEN (Kachel oder L2-Druck am Controller) -> R1/L1 = Geh-Tempo.
+            # Nur Wechsel nach dem Node-Start: ein alter latched Stand beschreibt
+            # den Roboter nicht mehr (wie ps4_arm_teleop).
+            if "mode" in ch and self.shared.stamps.get("mode", 0.0) > self.t_start_wall:
+                self.logic.walk_mode = ch["mode"] == "walk"
 
         def _on_onboard(self, msg):
             try:
@@ -268,7 +302,8 @@ def main(args=None):
                 self.get_logger().info(f"Geh-Tempo: {self.logic.speed}")
                 if self.shared.set("walk_speed", self.logic.speed):
                     self.pub_shared.publish(String(data=self.shared.to_json()))
-                self._rumble(60 + 80 * self.logic.speed_idx, strong=0.0, weak=0.6)
+                if ev[1:] != ("quiet",):
+                    self._rumble(60 + 80 * self.logic.speed_idx, strong=0.0, weak=0.6)
             elif kind == "estop":
                 self._send(0.0, 0.0, 0.0)
             self._publish_status()

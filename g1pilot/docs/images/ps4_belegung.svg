@@ -66,8 +66,8 @@
   <rect x="15" y="482" width="870" height="66" rx="8" fill="#fff3e0" stroke="#e65100"/>
   <g fill="#263238">
     <text x="28" y="504" font-weight="bold" fill="#e65100">L2 drücken = Modus GEHEN · L2 gehalten = laufen (Totmann, nur im Walk-Modus) · R2 drücken = GREIFEN</text>
-    <text x="28" y="524"><tspan font-weight="bold">Linker Stick</tspan> vor/zurück + seitlich · <tspan font-weight="bold">Rechter Stick</tspan> drehen · <tspan font-weight="bold">▲ / ▼</tspan> Geh-Tempo schneller / langsamer</text>
-    <text x="28" y="542"><tspan font-weight="bold">L2 loslassen = sofort Stopp</tspan>, GEHEN bleibt: Arme am Controller gesperrt (LED orange) bis R2</text>
+    <text x="28" y="524"><tspan font-weight="bold">Linker Stick</tspan> vor/zurück + seitlich · <tspan font-weight="bold">Rechter Stick</tspan> drehen · <tspan font-weight="bold">R1/L1 bzw. ▲ / ▼</tspan> Geh-Tempo</text>
+    <text x="28" y="542"><tspan font-weight="bold">L2 loslassen = sofort Stopp</tspan>, GEHEN bleibt: Arme am Controller gesperrt (LED blau) bis R2</text>
   </g>
   <line x1="450" y1="274" x2="450" y2="316" stroke="#c62828"/>
   <line x1="350" y1="305" x2="200" y2="425" stroke="#90a4ae"/>

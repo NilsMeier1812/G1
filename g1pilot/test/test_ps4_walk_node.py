@@ -92,6 +92,8 @@ def rig():
         r.l2 = lambda v: state["axes"].__setitem__(L.L2_AXIS, v)
         r.gui_walk_speed = lambda name: pub_shared.publish(String(data=json.dumps(
             {"source": "demo_gui", "fields": {"walk_speed": {"v": name, "t": time.time()}}})))
+        r.gui_mode = lambda mode: pub_shared.publish(String(data=json.dumps(
+            {"source": "demo_gui", "fields": {"mode": {"v": mode, "t": time.time()}}})))
         assert wait_for(lambda: got["status"], 15.0), "Node startet nicht"
         yield r
     finally:
@@ -224,3 +226,35 @@ def test_walk_speed_shared_with_gui(rig):
     rig.state["buttons"][L.DPAD_UP] = 0
     assert wait_for(lambda: _own_walk_speed(g) == "Schnell", 2.0)
     rig.l2(0.0)
+
+
+def _tap(rig, btn):
+    rig.state["buttons"][btn] = 1
+    time.sleep(0.15)
+    rig.state["buttons"][btn] = 0
+    time.sleep(0.15)
+
+
+def test_r1_l1_walk_speed_in_walk_mode_reaches_gui(rig):
+    """Nils 2026-10-21: Geh-Tempo auch per R1/L1 (wie das Arm-Tempo), im
+    Modus GEHEN auch ohne gehaltenes L2 -- und die GUI sieht die Stufe."""
+    g = rig.got
+    assert wait_for(lambda: _own_walk_speed(g) == "Langsam", 3.0)
+    _tap(rig, L.R1)                                       # GREIFEN: R1 gehoert den Armen
+    time.sleep(0.2)
+    assert _own_walk_speed(g) == "Langsam"
+    rig.gui_mode("walk")                                  # Kachel/L2: Modus GEHEN
+    time.sleep(0.3)
+    n_fb = len(g["feedback"])
+    _tap(rig, L.R1)
+    assert wait_for(lambda: _own_walk_speed(g) == "Normal", 2.0)
+    assert wait_for(lambda: g["status"][-1]["speed"] == "Normal", 2.0)
+    assert any("rumble" in f for f in g["feedback"][n_fb:])   # Quittung je Stufe
+    _tap(rig, L.L1)
+    assert wait_for(lambda: _own_walk_speed(g) == "Langsam", 2.0)
+    assert g["cmd"] == []                                 # nur Einstellung, kein Befehl
+    rig.gui_mode("grasp")                                 # zurueck: R1 wieder Arm-Tempo
+    time.sleep(0.3)
+    _tap(rig, L.R1)
+    time.sleep(0.2)
+    assert _own_walk_speed(g) == "Langsam"

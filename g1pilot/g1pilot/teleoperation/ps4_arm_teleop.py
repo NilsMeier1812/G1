@@ -26,10 +26,12 @@ KEIN Laufen: der Node publiziert nichts an loco_cmd_vel / joy_mux. Rueckmeldung:
 
 Belegung (Details: g1pilot/docs/43_ps4_controller.md):
   Steuerkreuz  links/rechts/oben/unten = linke / rechte / beide / beide gespiegelt
-  Dreieck      Umschalten VERSCHIEBEN <-> DREHEN
+  Dreieck      Umschalten VERSCHIEBEN <-> DREHEN (kurze Vibration nur beim
+               Wechsel zu VERSCHIEBEN -- so ohne GUI unterscheidbar)
   Linker Stick VERSCHIEBEN: vor/zurueck + links/rechts | DREHEN: kippen + schwenken
   Rechter Stick VERSCHIEBEN: hoch/runter (vertikal)    | DREHEN: rollen (horizontal)
-  L1 / R1      Tempo langsamer / schneller (Langsam, Normal, Schnell)
+  L1 / R1      Tempo langsamer / schneller (Langsam, Normal, Schnell);
+               im GEHEN bzw. mit gehaltenem L2: Geh-Tempo (ps4_walk)
   Kreis / Viereck  Hand oeffnen / schliessen (ausgewaehlte Hand/Haende)
   Kreuz        Stopp: Hand haelt sofort an, geplante Bewegung abbrechen
   Options      Arme uebernehmen (Sim: + Greifen-Modus/stehen, siehe
@@ -46,7 +48,8 @@ Belegung (Details: g1pilot/docs/43_ps4_controller.md):
   L2 druecken  Modus GEHEN, R2 druecken = Modus GREIFEN (trigger_modes), wie die
                Kacheln der Demo-GUI. Im GEHEN laeuft der G1 nur, solange L2
                gehalten wird; losgelassen bleibt GEHEN, die Arm-Tasten und
-               Sticks sind dann gesperrt (LED orange) bis R2/Options.
+               Sticks sind dann gesperrt (LED blau wie die Kachel GEHEN)
+               bis R2/Options.
                Real nur, wenn der G1 schon im Walk-Modus steht -- der
                Controller stellt die Beine nie selbst auf.
 """
@@ -78,12 +81,14 @@ MODE_LABEL = {"move": "Verschieben", "turn": "Drehen"}
 
 # Farben (RGB 0..255) -- Controller-LED und RViz-Marker gleich.
 COLORS = {
-    "left":   (0, 90, 255),     # blau
+    "left":   (255, 200, 0),    # gelb (blau ist GEHEN)
     "right":  (0, 200, 60),     # gruen
     "both":   (170, 0, 255),    # violett
     "mirror": (0, 200, 200),    # tuerkis
     "estop":  (255, 0, 0),      # rot
-    "walk":   (255, 110, 0),    # orange: Modus GEHEN, Arme am Controller gesperrt
+    # blau wie die Kachel GEHEN der Demo-GUI (MODE_COLOR): Modus GEHEN, Arme
+    # am Controller gesperrt. (Bis 2026-10 orange -- das ist dort GREIFEN.)
+    "walk":   (30, 136, 229),
 }
 TURN_DIM = 0.35   # DREHEN: LED gedimmt (gleiche Farbe), Verschieben = voll
 
@@ -371,14 +376,16 @@ class ArmTeleopLogic:
 
         if rise[L.TRIANGLE]:
             self.mode = "turn" if self.mode == "move" else "move"
-            out.append(("changed",))
-        if rise[L.L1] and self.speed_idx > 0:
+            out.append(("jog_mode", self.mode))
+        if self.walking:
+            pass   # L1/R1 = Geh-Tempo (ps4_walk), solange L2 gehalten
+        elif rise[L.L1] and self.speed_idx > 0:
             if self._speed_undo is None:
                 self._speed_undo = self.speed_idx
             self.speed_idx -= 1
             self.speed_req = self.speed
             out.append(("changed",))
-        if rise[L.R1] and self.speed_idx < self.max_idx:
+        if not self.walking and rise[L.R1] and self.speed_idx < self.max_idx:
             if self._speed_undo is None:
                 self._speed_undo = self.speed_idx
             self.speed_idx += 1
@@ -760,10 +767,14 @@ def main(args=None):
                 self._send_feedback(rumble_ms=1500, strong=1.0, weak=1.0, force=True)
             elif kind == "changed":
                 self._changed()
+            elif kind == "jog_mode":
+                # Dreieck: nur VERSCHIEBEN vibriert kurz, DREHEN nicht -- so
+                # ist der Modus auch ohne GUI/LED eindeutig.
+                self._changed(rumble_ms=100 if cmd[1] == "move" else 0)
 
-        def _changed(self):
+        def _changed(self, rumble_ms=100):
             self.get_logger().info(self.logic.label())
-            self._send_feedback(rumble_ms=100)
+            self._send_feedback(rumble_ms=rumble_ms)
             self._publish_status()
             self._publish_markers()
 

@@ -138,11 +138,21 @@ def test_held_button_fires_once():
 
 def test_triangle_toggles_mode_and_dims_led():
     lg = ArmTeleopLogic()
-    press(lg, L.TRIANGLE)
+    assert press(lg, L.TRIANGLE) == [("jog_mode", "turn")]
     assert lg.mode == "turn"
     assert all(c <= v for c, v in zip(lg.color(), COLORS["right"]))
-    press(lg, L.TRIANGLE)
+    assert press(lg, L.TRIANGLE) == [("jog_mode", "move")]
     assert lg.mode == "move"
+
+
+def test_led_walk_blue_like_gui_tile_and_distinct_from_hands():
+    """Nils 2026-10-21: GEHEN/GREIFEN-Farben waren vertauscht (GEHEN orange,
+    in der GUI ist orange GREIFEN). GEHEN jetzt blau wie die Kachel."""
+    gui_walk = (0x1e, 0x88, 0xe5)          # demo_gui.MODE_COLOR[WALK] (#1e88e5)
+    assert COLORS["walk"] == gui_walk
+    for side in ("left", "right", "both", "mirror"):
+        dist = sum(abs(a - b) for a, b in zip(COLORS[side], COLORS["walk"]))
+        assert dist > 100, side             # am Lichtbalken unterscheidbar (tuerkis ~120)
 
 
 def test_speed_steps_clamped():

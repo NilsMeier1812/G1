@@ -163,3 +163,70 @@ def test_walk_set_speed_from_gui_capped():
     assert w.set_speed("Schnell") and w.speed == "Normal"
     assert not w.set_speed("Normal") and not w.set_speed("quatsch")
     assert w.set_speed("Langsam") and w.status()["speed"] == "Langsam"
+
+
+# ── Geh-Tempo per R1/L1 (Nils 2026-10-21) ──────────────────────────────
+
+def test_r1_l1_walk_speed_while_l2_held_or_walk_mode():
+    w = WalkLogic(speed="Langsam", max_speed="Schnell")
+    w.update(*joy(buttons=(L.R1,)))
+    assert w.speed == "Langsam", "GREIFEN ohne L2: R1 gehoert den Armen"
+    w.update(*joy())
+    armed(w)
+    assert w.update(*joy(l2=1.0, buttons=(L.R1,))) == [("speed",)]
+    assert w.speed == "Normal"
+    w.update(*joy(l2=1.0))
+    assert w.update(*joy(l2=1.0, buttons=(L.L1,))) == [("speed",)]
+    assert w.speed == "Langsam"
+    w.update(*joy())                                       # L2 los
+    w.walk_mode = True                                     # Modus GEHEN
+    assert w.update(*joy(buttons=(L.R1,))) == [("speed",)]
+    w.update(*joy())
+    assert w.update(*joy(buttons=(L.R1,))) == [("speed",)]
+    w.update(*joy())
+    assert w.update(*joy(buttons=(L.R1,))) == [] and w.speed == "Schnell"
+    assert w.command(joy(LY=1.0)[0]) is None, "Tempo allein laesst nicht laufen"
+    w.update(*joy(buttons=(L.DPAD_DOWN,)))
+    assert w.speed == "Schnell", "Steuerkreuz nur mit gehaltenem L2"
+
+
+def test_walk_speed_keys_locked_in_estop():
+    w = WalkLogic(speed="Langsam")
+    w.walk_mode = True
+    w.latch_estop()
+    assert w.update(*joy(buttons=(L.R1,))) == [] and w.speed == "Langsam"
+
+
+def test_full_estop_combo_restores_walk_speed():
+    """R1 + L1 + PS (Voll-Notaus): der R1/L1-Schritt davor wird zurueckgenommen
+    -- leise, damit die Halte-Vibration nicht ueberschrieben wird."""
+    w = WalkLogic(speed="Normal")
+    w.walk_mode = True
+    w.update(*joy())
+    assert w.update(*joy(buttons=(L.R1,))) == [("speed",)] and w.speed == "Schnell"
+    w.update(*joy(buttons=(L.R1, L.L1)))                   # L1 dazu (Schnell -> Normal)
+    out = w.update(*joy(buttons=(L.R1, L.L1, L.PS)))
+    assert w.speed == "Normal" and ("estop",) in out
+    assert ("speed",) not in out
+
+
+def test_full_estop_combo_restore_is_quiet():
+    w = WalkLogic(speed="Schnell")
+    w.walk_mode = True
+    w.update(*joy())
+    assert w.update(*joy(buttons=(L.R1,))) == []           # schon Schnell
+    assert w.update(*joy(buttons=(L.R1, L.L1))) == [("speed",)]   # -> Normal
+    out = w.update(*joy(buttons=(L.R1, L.L1, L.PS)))
+    assert ("speed", "quiet") in out and w.speed == "Schnell"
+
+
+def test_arm_speed_untouched_while_l2_held():
+    arm = ArmTeleopLogic(walk_deadman=True, speed="Normal")
+    arm.update(*joy(l2=1.0), 0.0)
+    arm.update(*joy(l2=1.0, buttons=(L.R1,)), 0.1)
+    arm.update(*joy(l2=1.0), 0.2)
+    arm.update(*joy(l2=1.0, buttons=(L.L1,)), 0.3)
+    assert arm.speed == "Normal", "mit L2 sind R1/L1 Geh-Tempo"
+    arm.update(*joy(), 0.4)
+    arm.update(*joy(buttons=(L.R1,)), 0.5)
+    assert arm.speed == "Schnell"

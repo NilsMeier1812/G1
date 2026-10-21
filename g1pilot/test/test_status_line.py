@@ -24,7 +24,7 @@ def test_ps4_texts():
     assert sl.ps4_text(None, None) is None
     st = {"selection": "left", "mode": "move", "speed": "Langsam", "connected": True}
     t, c = sl.ps4_text(st, 0.2)
-    assert t == "PS4: Hand LINKS · Verschieben · Langsam" and c == "#005aff"
+    assert t == "PS4: Hand LINKS · Verschieben · Langsam" and c == "#ffc800"
     t, _ = sl.ps4_text(dict(st, selection="mirror", mode="turn"), 0.2)
     assert "BEIDE gespiegelt · Drehen" in t
     assert "nicht verbunden" in sl.ps4_text(dict(st, connected=False), 0.2)[0]
@@ -120,7 +120,7 @@ def test_ps4_text_controller_walk_and_device():
     assert t.endswith("Normal (max.)")
     walk = {"active": True, "speed": "Normal", "walk_ready": True, "estop": False}
     t, c = sl.ps4_text(st, 0.1, walk=walk)
-    assert "GEHT" in t and "Normal" in t and c == "#ff6e00"
+    assert "GEHT" in t and "Normal" in t and c == "#1e88e5"
     t, c = sl.ps4_text(st, 0.1, walk=dict(walk, walk_ready=False))
     assert "nicht im Walk" in t and c == sl.AMBER
     t, _ = sl.ps4_text(dict(st, arms_locked=True), 0.1, walk=dict(walk, active=False))
