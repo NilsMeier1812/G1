@@ -53,6 +53,10 @@ setup(
         (f'share/{package_name}/config',
             expand(['config/*.yaml', 'config/*.rviz'])),
 
+        # Fenster-Icons (Dock/Taskleiste), siehe g1pilot/utils/window_style.py
+        (f'share/{package_name}/resource/icons',
+            expand(['resource/icons/*.png', 'resource/icons/*.svg'])),
+
         # MOLA LiDAR-odometry pipeline (used by mola_launcher.launch.py)
         (f'share/{package_name}/pipelines',
             expand(['pipelines/*.yaml'])),

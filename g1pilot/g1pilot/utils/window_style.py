@@ -1,5 +1,8 @@
+import os
+from pathlib import Path
+
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtGui import QColor, QPalette
+from PyQt6.QtGui import QColor, QIcon, QPalette
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QStyleFactory
 
@@ -56,3 +59,46 @@ def LightStyle(app: QApplication):
     app.setStyleSheet(
         "QToolTip { color: #000000; background-color: #ffffff; border: 1px solid #000000; }"
     )   
+
+# ── Fenster-Icons ─────────────────────────────────────────────────────────
+# Ohne eigenes Icon zeigt das Dock/die Taskleiste fuer jedes G1-Fenster nur ein
+# Zahnrad. Die Icons liegen in g1pilot/resource/icons (Quelle: SVG, PNG daraus
+# erzeugt) und werden zusaetzlich nach share/g1pilot/resource/icons installiert.
+ICON_SUBDIR = Path("resource") / "icons"
+
+
+def find_icon(name: str):
+    """Pfad zu resource/icons/<name>.png oder None (dann bleibt das Standard-Icon)."""
+    candidates = []
+    env_dir = os.environ.get("G1_ICON_DIR", "").strip()
+    if env_dir:
+        candidates.append(Path(env_dir))
+    # resolve(): bei colcon --symlink-install zeigt __file__ in build/, der
+    # Symlink fuehrt zurueck in den Quellbaum (.../g1pilot/g1pilot/utils/).
+    candidates.append(Path(__file__).resolve().parents[2] / ICON_SUBDIR)
+    try:
+        from ament_index_python.packages import get_package_share_directory
+        candidates.append(Path(get_package_share_directory("g1pilot")) / ICON_SUBDIR)
+    except Exception:
+        pass
+    for d in candidates:
+        p = d / f"{name}.png"
+        if p.is_file():
+            return p
+    return None
+
+
+def set_app_identity(app: QApplication, app_id: str, icon_name: str):
+    """Eigenes Icon + WM_CLASS fuer alle Fenster dieser Qt-Anwendung.
+
+    Muss VOR dem ersten show() laufen: Qt (xcb) liest WM_CLASS beim Anlegen des
+    ersten Fensters. Instanz = RESOURCE_NAME, Klasse = applicationName -> beide
+    app_id, damit Dock/.desktop-Eintraege (StartupWMClass) das Fenster zuordnen.
+    """
+    os.environ.setdefault("RESOURCE_NAME", app_id)
+    app.setApplicationName(app_id)
+    app.setDesktopFileName(app_id)
+    path = find_icon(icon_name)
+    if path is not None:
+        app.setWindowIcon(QIcon(str(path)))
+    return path

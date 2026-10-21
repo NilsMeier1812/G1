@@ -57,7 +57,7 @@ from tf2_ros import Buffer, TransformListener
 
 from g1pilot.navigation import scene_markers as sm
 
-from g1pilot.utils.window_style import DarkStyle
+from g1pilot.utils.window_style import DarkStyle, set_app_identity
 from g1pilot.utils.common import is_sim_mode
 from g1pilot.utils import g1_temperature as g1t
 from g1pilot.utils import push_charge
@@ -2093,6 +2093,11 @@ def main():
     node = DemoNode()
     app = QApplication(sys.argv)
     DarkStyle(app)
+    # Eigenes Dock-Icon, SIM blau / REAL rot (statt Zahnrad), vor dem ersten show().
+    if is_sim_mode():
+        set_app_identity(app, "g1-demo-sim", "g1_demo_sim")
+    else:
+        set_app_identity(app, "g1-demo-real", "g1_demo_real")
     gui = DemoGUI(node)
     # G1_GUI_FULLSCREEN=1: direkt im Vollbild starten (Standard: Fenster).
     if os.environ.get("G1_GUI_FULLSCREEN", "").strip().lower() in ("1", "true", "yes", "on"):

@@ -15,6 +15,7 @@ from grasp_box import GraspBox
 from scene_state_publisher import SceneStatePublisher
 from scene_reset import SceneReset
 from gl_check import check_gl_renderer
+import window_icon
 
 
 locker = threading.Lock()
@@ -92,6 +93,8 @@ scene_reset = SceneReset(mj_model, config)
 
 check_gl_renderer()  # warnt laut bei CPU-Rendering (llvmpipe)
 
+window_icon.prepare_env()  # WM_CLASS g1-mujoco (vor dem Viewer-Fenster)
+
 if config.ENABLE_ELASTIC_BAND:
     elastic_band = ElasticBand()
     if config.ROBOT == "h1" or config.ROBOT == "g1":
@@ -103,6 +106,7 @@ if config.ENABLE_ELASTIC_BAND:
     )
 else:
     viewer = mujoco.viewer.launch_passive(mj_model, mj_data)
+window_icon.apply_async()  # eigenes Dock-Icon statt Zahnrad (rein kosmetisch)
 
 mj_model.opt.timestep = config.SIMULATE_DT
 num_motor_ = mj_model.nu
