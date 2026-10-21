@@ -59,8 +59,16 @@ Jede Kachel hat drei klar unterscheidbare Zustände:
   `walk_ready` kommt sofort.
 - **inaktiv**: dunkelgrau, „antippen zum Wechseln“
 
-Auf dem echten Roboter sind die Kacheln gesperrt, bis „Roboter starten“
-(`/g1pilot/start`) gedrückt wurde. Nach einem NOT-HALT ist das wieder nötig.
+Auf dem echten Roboter sind die Kacheln gesperrt, bis **Start** gedrückt
+wurde. Start ist der erste Knopf der Startleiste (eine Zeile: *Start | Damp |
+Preparation | Walk |* Rückmeldung des loco_client) und sendet `/g1pilot/start`:
+gibt die Kacheln frei, quittiert einen NOT-HALT (arm_controller, loco_client,
+Controller) und stellt einen G1, der noch in Damp/Zero-Torque liegt, auf
+Preparation (FSM 4); steht er schon (Preparation/Walk), schaltet Start nichts um.
+Danach ist der Knopf grau (*Gestartet ✓*), nach einem NOT-HALT wieder frei
+(*NOT-HALT quittieren*). Der Controller-Zustand steht nicht mehr als eigene
+Zeile in der GUI (Modus, Hand und Tempo zeigt die GUI selbst); solange ein
+Controller aktiv ist, zeigt *🎮 Belegung* oben rechts die Tastenbelegung.
 In der Sim startet die GUI wie der Streamdeck nach 3 s automatisch in GREIFEN.
 
 **Mit Controller (PS4/Xbox) gekoppelt:** Kacheln, Hand-Auswahl, Tempo »Hand
@@ -202,11 +210,15 @@ Ablauf anlegen: GREIFEN → Erweitert → *Pose speichern …*, Kategorie
 `Ablauf <Name>`, Posen in Reihenfolge benennen (`AP1_01_…`, `AP1_02_…`).
 Der Ablauf erscheint danach als Knopf „<Name>“.
 
-**Vollbild:** Knopf *⛶ Vollbild* rechts in der Info-Zeile (unter den
-Modus-Kacheln), im Vollbild heißt er *Vollbild beenden*. Tasten: **F11**
+**Fenstergröße / Vollbild:** Die Demo-GUI startet maximiert. Der Steuerbereich
+liegt in einem Scrollbereich, damit die Mindesthöhe des Fensters klein bleibt
+(~600 px; vorher ~1160 px, höher als ein 1080er-Schirm: der Fenstermanager bot
+dann kein Maximieren an und auch das Vollbild blieb größer als der Schirm).
+Ab ca. 1000 px Höhe passt alles ohne Scrollen. Knopf *⛶ Vollbild* oben rechts
+in der Zeile „1 · MODUS“, im Vollbild heißt er *Vollbild beenden*. Tasten: **F11**
 schaltet um, **Esc** verlässt das Vollbild. Funktioniert auch ohne Titelleiste
 des Fenstermanagers (Roboter-Rechner). `G1_GUI_FULLSCREEN=1` startet die
-Demo-GUI direkt im Vollbild (Default 0 = Fenster). Reine Fensterfunktion,
+Demo-GUI direkt im Vollbild (Default 0 = maximiert). Reine Fensterfunktion,
 sendet nichts an den Roboter.
 
 ## Technik

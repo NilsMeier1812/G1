@@ -83,9 +83,9 @@ def onboard_text(state, age_s, walk_requested=False):
     name = state.get("name") or "Modus"
     text = f"G1: {name} (FSM {fsm})"
     if state.get("full_estop"):
-        return text + " · VOLL-NOTAUS – »Roboter starten« quittiert, dann Startleiste", RED
+        return text + " · VOLL-NOTAUS – »Start« quittiert, dann Startleiste", RED
     if state.get("estop"):
-        return text + " · NOT-HALT – mit »Roboter starten« quittieren", RED
+        return text + " · NOT-HALT – mit »Start« quittieren", RED
     if fsm in WALK_FSM:
         text += " · Gehen aktiv" if state.get("walk") else " · bereit"
         if walk_switch(state):
@@ -123,10 +123,10 @@ def ps4_text(status, age_s, sim=False, walk=None, device=None):
     if status.get("full_arming"):
         return f"{c}: VOLL-NOTAUS wird ausgelöst – loslassen bricht ab", RED
     if status.get("full_estop"):
-        how = "Modus wählen" if sim else "»Roboter starten«"
+        how = "Modus wählen" if sim else "»Start«"
         return f"{c}: VOLL-NOTAUS (ganzer G1 Damp) – gesperrt bis {how}", RED
     if status.get("estop"):
-        how = "Modus wählen" if sim else "»Roboter starten«"
+        how = "Modus wählen" if sim else "»Start«"
         return f"{c}: NOT-HALT – gesperrt bis {how}", RED
     if not status.get("connected"):
         return f"{c}: nicht verbunden", GREY

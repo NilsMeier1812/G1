@@ -104,9 +104,9 @@ def test_gui_choices_go_to_shared_state(gui):
 def test_controller_mode_switch_moves_tiles(gui):
     which, dg, node, g, shared_log, bools = gui
     if which == "real":
-        node._on_shared(controller(mode="walk"))     # vor »Roboter starten«: nur Hinweis
+        node._on_shared(controller(mode="walk"))     # vor »Start«: nur Hinweis
         assert g.mode is None and g.pending is None
-        assert "Roboter starten" in g.status.text()
+        assert "»Start«" in g.status.text()
         g._start_robot()
         bools.clear()
     # L2 am Controller: Kachel GEHEN »wechselt«, bis die Arme eingeklappt sind
@@ -158,7 +158,7 @@ def test_real_walk_tile_blocked_does_not_share(gui):
     assert g.pending is None and len(shared_log) == n
 
 
-def test_info_line_shows_controller_walk_and_kind(gui):
+def test_controller_help_button_follows_controller(gui):
     _, dg, node, g, _, _ = gui
     now = time.monotonic()
     node.ps4 = {"connected": True, "selection": "left", "mode": "move", "speed": "Normal",
@@ -167,9 +167,12 @@ def test_info_line_shows_controller_walk_and_kind(gui):
     node.ps4dev = {"kind": "xbox", "name": "Xbox Wireless Controller"}
     node.ps4walk = {"active": True, "speed": "Langsam", "walk_ready": True, "estop": False}
     g._refresh_info()
-    assert g.info_ps4.text().startswith("Xbox: GEHT (L2 gehalten) · Geh-Tempo Langsam")
-    assert "Xbox Wireless Controller" in g.info_ps4.toolTip()
-    node.ps4walk = dict(node.ps4walk, active=False)
+    # Zustand zeigt die GUI selbst; Controller nur noch als Belegungs-Knopf.
+    assert not hasattr(g, "info_ps4")
+    assert g.btn_pad_help.isVisibleTo(g)
+    assert "Xbox Wireless Controller" in g.btn_pad_help.toolTip()
+    assert "Xbox-Controllers" in g.btn_pad_help.toolTip()
+    node.ps4, node.ps4walk = None, None             # kein Controller -> Knopf weg
     g._refresh_info()
-    assert g.info_ps4.text().startswith("Xbox: Hand LINKS")
+    assert not g.btn_pad_help.isVisibleTo(g)
     g._ps4_help()                                   # darf nicht werfen
