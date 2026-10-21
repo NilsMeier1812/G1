@@ -75,6 +75,11 @@ class FakeG1:
         self.writes = []            # (weight, q14, kp14) je Write
         self.waist_writes = []      # (weight, q3, kp3, kd3) je Write
         self.freeze = False         # True: Arm festgehalten (Messung steht)
+        # Optional (test_jog_reference_real): bleibender Regelfehler je Gelenk
+        # (Durchhang, die Messung steht um `sag` neben dem Soll) und Haftreibung
+        # (die Messung folgt erst, wenn der Fehler `friction` uebersteigt).
+        self.sag = np.zeros(14)
+        self.friction = np.zeros(14)
 
     def waist(self):
         return np.array([self.state.motor_state[j].q for j in WAIST_IDX])
@@ -114,7 +119,8 @@ class FakeG1:
         if w > 0.0 and float(np.max(kp)) == 0.0:      # E-Stop-Slack: Arme sacken
             soll = self.measured()
         meas = self.measured()
-        meas += 0.5 * (soll - meas)
+        err = soll + self.sag - meas
+        meas += 0.5 * (err - np.clip(err, -self.friction, self.friction))
         for k, j in enumerate(ARM_IDX):
             self.state.motor_state[j].q = float(meas[k])
 
@@ -224,6 +230,8 @@ def _reset_robot():
     ROBOT.writes.clear()
     ROBOT.waist_writes.clear()
     ROBOT.freeze = False
+    ROBOT.sag = np.zeros(14)
+    ROBOT.friction = np.zeros(14)
     for k, j in enumerate(ARM_IDX):
         ROBOT.state.motor_state[j].q = float(ONBOARD[k])
     for k, j in enumerate(WAIST_IDX):

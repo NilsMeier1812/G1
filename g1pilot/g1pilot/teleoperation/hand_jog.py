@@ -7,8 +7,8 @@ PS4-Controller (ps4_arm_teleop.py). Beide schicken kartesische Hand-Ziele im
 pelvis-Frame auf /g1pilot/hand_goal/<side>; der arm_controller loest per IK.
 
 Prinzip: Das Ziel startet an der Hand (kommandiert, sonst TF -- siehe
-JOG_CMD_TOPIC) und wird mit der Soll-
-Geschwindigkeit verschoben/gedreht, laeuft der echten Hand aber hoechstens
+JOG_CMD_TOPIC/JogReference) und wird mit der Soll-
+Geschwindigkeit verschoben/gedreht, laeuft der Hand (Bezug) aber hoechstens
 `lead_m` / `lead_rad` voraus. Sonst wuerde es weiterwandern, wenn der Arm
 nicht folgen kann (Gelenkgrenze, Tisch), und beim Loslassen noch lange
 nachfahren. Begrenzt wird der Vorlauf ENTLANG der Bewegungsrichtung; quer
@@ -27,12 +27,75 @@ JOG_TF = {"left": "left_hand_point_contact", "right": "right_hand_point_contact"
 # Startete jedes Jog-Ziel an der gemessenen Hand, uebernahm der Arm diesen
 # Versatz bei JEDER Fahrt erneut: die Hand kippte pro Fahrt ein Stueck weiter
 # (gemessen: nach 8x Tippen 9-18 Grad) und wanderte in den Nebenachsen.
-# NUR der Start: Vorlauf-Begrenzung und Anhalten bleiben an der gemessenen
-# Hand. Vorlauf relativ zur kommandierten Hand liess das Ziel weiter
-# vorauslaufen -> waehrend der Fahrt deutlich mehr Kippen/Querversatz und
-# Nachlauf (in der Sim gemessen). Fehlt das Topic, startet das Ziel an TF.
+# 2026-10-21: auch Vorlauf-Begrenzung und Anhalten an der kommandierten Hand
+# (jog_reference "command", siehe JogReference). Am gemessenen Bezug hing das
+# Fahrtende am Schleppfehler/der Reibung des jeweiligen Arms: gespiegelte
+# Fahrten endeten links und rechts verschieden, Hin- und Rueckweg waren
+# ungleich lang. Der RViz-Marker hatte das nie -- der arm_controller faehrt
+# dort die KOMMANDIERTE Hand exakt aufs Ziel. Preis: die echte Hand laeuft
+# nach dem Loslassen um ihren Schleppfehler nach (in der Sim gemessen, siehe
+# docs/43_ps4_controller.md). Fehlt das Topic, laeuft die Fahrt an TF.
 JOG_CMD_TOPIC = "/g1pilot/hand_cmd_pose/{side}"
-JOG_CMD_MAX_AGE_S = 0.3
+# Aelter -> die kommandierte Pose gilt als unbekannt (arm_controller laeuft
+# nicht / WALK). Nicht zu knapp: in einer ueberlasteten Sim kommt das Topic
+# mit dem Regeltakt (teils nur 2-8 Hz), ein Wechsel auf TF mitten in der
+# Fahrt waere ein Bezugssprung.
+JOG_CMD_MAX_AGE_S = 1.0
+
+# Bezug des Jog-Ziels (Parameter jog_reference, Env G1_JOG_REFERENCE):
+#   "command" Start, Vorlauf UND Anhalten an der KOMMANDIERTEN Hand -- wie beim
+#             RViz-Marker: der Sollwert ist deterministisch (gleiche Eingabe ->
+#             gleiche Bahn, links/rechts gespiegelt gleich), Reibung, Durchhang
+#             und Schleppfehler der echten Hand fliessen nicht ins Ziel ein.
+#             Fehlt die kommandierte Pose beim Start, laeuft diese Fahrt an TF.
+#   "start"   nur der Start an der kommandierten Hand, Vorlauf/Anhalten an TF
+#             (Stand 2026-10-14, bisheriger Sim-Default).
+#   "tf"      alles an der gemessenen Hand (urspruengliches Verhalten, bisheriger
+#             Real-Default).
+JOG_REFERENCES = ("command", "start", "tf")
+JOG_REFERENCE_DEFAULT = "command"
+
+
+def jog_reference_mode(value=None):
+    """Gueltigen Bezug aus Parameter/Env (G1_JOG_REFERENCE) -> JOG_REFERENCES."""
+    import os
+    v = str(value if value is not None
+            else os.environ.get("G1_JOG_REFERENCE", JOG_REFERENCE_DEFAULT)).strip().lower()
+    return v if v in JOG_REFERENCES else JOG_REFERENCE_DEFAULT
+
+
+class JogReference:
+    """Welche Handpose ein Jog-Schritt als Bezug nimmt (siehe JOG_REFERENCES).
+
+    pose(side, cmd, tf, new) -> (start, ref)
+        cmd/tf: kommandierte bzw. gemessene Handpose (pos, quat) oder None.
+        new:    True beim ersten Schritt eines neuen Jog-Ziels.
+        start:  Startpose fuer jog_step (None -> Start an ref)
+        ref:    Bezug fuer Vorlauf-Begrenzung und Anhalten (None = unbekannt)
+    end(side) -> Fahrt vorbei (naechste beginnt neu).
+
+    Die Quelle wird je Fahrt beim Start festgelegt: kommt die kommandierte
+    Pose erst waehrend einer TF-Fahrt (erste Auto-Kalibrierung), wird nicht
+    mitten in der Fahrt umgeschaltet; faellt sie aus, geht es an TF weiter.
+    """
+
+    def __init__(self, mode=JOG_REFERENCE_DEFAULT):
+        self.mode = jog_reference_mode(mode)
+        self._src = {}
+
+    def pose(self, side, cmd, tf, new):
+        if self.mode == "tf":
+            return None, tf
+        if self.mode == "start":
+            return (cmd if new else None), tf
+        if new or side not in self._src:
+            self._src[side] = "command" if cmd is not None else "tf"
+        if self._src[side] == "command" and cmd is None:
+            self._src[side] = "tf"
+        return None, (cmd if self._src[side] == "command" else tf)
+
+    def end(self, side):
+        self._src.pop(side, None)
 
 
 class CommandedPoses:
@@ -125,7 +188,8 @@ def jog_step(target, hand, lin, ang, dt, lead_m, lead_rad, start=None):
 
     target : [pos(list3), quat(tuple4)] bisheriges Ziel (oder None -> Start bei
              `start`, ohne `start` an der Hand)
-    hand   : (pos, quat) echte Hand im JOG_FRAME (Vorlauf-Begrenzung)
+    hand   : (pos, quat) Bezugshand im JOG_FRAME (Vorlauf-Begrenzung) --
+             kommandiert oder gemessen, siehe JogReference
     start  : (pos, quat) Startpose eines neuen Ziels, i.d.R. die KOMMANDIERTE
              Hand (JOG_CMD_TOPIC) -- oder None
     lin    : (vx, vy, vz) m/s im JOG_FRAME
@@ -136,7 +200,7 @@ def jog_step(target, hand, lin, ang, dt, lead_m, lead_rad, start=None):
     if target is None:
         sp0, sq0 = start if start is not None else hand
         target = [list(sp0), tuple(sq0)]
-    # Verschieben, Vorlauf zur echten Hand begrenzen -- nur ENTLANG der
+    # Verschieben, Vorlauf zur Hand (Bezug) begrenzen -- nur ENTLANG der
     # Bewegungsrichtung. Frueher wurde das Ziel auf die Kugel um die Hand
     # zurueckgezogen; dabei uebernahm es jede Querabweichung der Hand (IK-
     # Restfehler, Nachziehen in Gelenkkoordinaten) und behielt sie: die Hand
@@ -168,13 +232,13 @@ def jog_step(target, hand, lin, ang, dt, lead_m, lead_rad, start=None):
 def hold_pose(target, hand, lin, ang):
     """Halte-Ziel beim Loslassen.
 
-    Entlang der letzten Bewegungsrichtung stoppt es an der echten Hand (der
+    Entlang der letzten Bewegungsrichtung stoppt es an der Hand (Bezug) (der
     Vorlauf faellt weg), quer dazu bleibt es auf der Linie des Ziels -- so
     wird eine Querabweichung der Hand nicht als neue Ruhelage uebernommen.
-    Orientierung: nach Drehen die echte Hand, nach reinem Verschieben die
+    Orientierung: nach Drehen die der Hand, nach reinem Verschieben die
     des Ziels (die Hand soll ihre Ausrichtung behalten).
-    target : [pos, quat] laufendes Jog-Ziel oder None (-> echte Hand)
-    hand   : (pos, quat) echte Hand
+    target : [pos, quat] laufendes Jog-Ziel oder None (-> Hand)
+    hand   : (pos, quat) Bezugshand (siehe JogReference)
     lin/ang: letzte Sollbewegung (m/s, rad/s)
     -> (pos, quat)
     """

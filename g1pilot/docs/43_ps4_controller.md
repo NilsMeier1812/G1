@@ -43,7 +43,7 @@ Am echten Roboter erst in der GUI starten, siehe unten.
 | Steuerkreuz ↑ | **beide** Hände, parallel (LED violett) — z. B. eine Kiste tragen |
 | Steuerkreuz ↓ | **beide gespiegelt** (LED türkis): links/rechts und Drehungen spiegelbildlich, Bezug ist die rechte Hand — z. B. Hände auseinander/zueinander |
 | Dreieck | Umschalten **VERSCHIEBEN ↔ DREHEN** (beim Drehen leuchtet die LED gedimmt) |
-| Linker Stick | VERSCHIEBEN: vor/zurück + links/rechts · DREHEN: kippen (Finger hoch/runter) + schwenken |
+| Linker Stick | VERSCHIEBEN: vor/zurück + links/rechts · DREHEN: kippen (Finger hoch/runter) + schwenken. Rastet auf die Achse ein (bis 20° daneben zählt nur die Hauptrichtung), erst echt schräg fahren beide Achsen |
 | Rechter Stick | VERSCHIEBEN: hoch/runter (vertikal) · DREHEN: rollen (horizontal) |
 | L1 / R1 | Tempo langsamer / schneller: Langsam 5 cm/s · Normal 15 cm/s · Schnell 30 cm/s (Drehen 20 / 45 / 90 °/s). Start: Sim **Normal**, Real **Langsam** (höchstens Normal) |
 | Kreis | gewählte Hand(e) **öffnen** |
@@ -374,6 +374,7 @@ Ablauf:
 | `G1_PS4_SPEED` | `Langsam` | Start-Tempo |
 | `G1_PS4_MAX_SPEED` | `Normal` | höchstes Tempo per R1 |
 | `G1_PS4_PS_ESTOP` | `1` | `0` = PS nur Stopp (wie Kreuz) statt NOT-HALT |
+| `G1_JOG_REFERENCE` | `command` | Bezug der Controller-/GUI-Jogs, `tf` = alter Stand (siehe [Präzise Achsen](#präzise-achsen-2026-10-21)) |
 | `G1_PS4_WALK` | `1` | `0` = kein Gehen per Controller (L2 ohne Wirkung) |
 | `G1_PS4_WALK_SPEED` | `Langsam` | Start-Geh-Tempo |
 | `G1_PS4_WALK_MAX_SPEED` | `Schnell` | höchstes Geh-Tempo per L2 + ▲ (Schnell = volle `G1_MAX_VX/VY/VYAW`) |
@@ -563,6 +564,76 @@ vorher → nachher: Kippen nach der Fahrt Median 3,1° → 0,6°, Querversatz
 kippt die Hand in beiden Varianten während der Fahrt kurz bis ~10°
 (Gelenkgrenzen/Kollisions-Gate). Messskript: `jog_axis_probe_sim.py`.
 
+### Präzise Achsen (2026-10-21)
+
+Rückmeldung Nils: am Controller kommt fast nie die gewollte Bewegung raus
+(hoch/runter dreht die Hand mit, nach innen drehen sich die Hände,
+gespiegelte Fahrten aus derselben Lage enden verschieden), der RViz-Marker
+fährt dagegen sauber in einer Achse.
+
+Befund:
+
+- Die IK-Kette selbst (Ziel-Filter, Servo-IK, Tempo-Grenzen) ist sauber:
+  offline (nur Kinematik) hält sie bei Fahrten in jeder Achse die Orientierung
+  auf < 0,1° und die Nebenachsen auf < 0,3 cm, links und rechts exakt
+  gespiegelt.
+- Der Unterschied ist der **Bezug**. Der Marker gibt ein Ziel vor, der
+  arm_controller bringt die *kommandierte* Hand genau dorthin. Der Jog bezog
+  sich real (`jog_reference=tf`) auf die *gemessene* Hand: jede Fahrt
+  startete dort, Vorlauf und Anhalten hingen daran. Durchhang und Reibung der
+  echten Arme wurden so bei jeder Fahrt als neue Soll-Lage übernommen (die
+  Hand kippt Fahrt für Fahrt weiter), und das Fahrtende hing am
+  Schleppfehler des jeweiligen Arms (links ≠ rechts). In der Sim war seit
+  2026-10-14 nur der Start umgestellt.
+- Ein Daumen drückt den Stick nie exakt gerade: 10–15° schräg gaben trotz
+  Totzone 3–5 % des Tempos in der Nebenachse.
+
+Änderung:
+
+- `jog_reference=command` (Default Sim **und Real**, Env `G1_JOG_REFERENCE`):
+  Start, Vorlauf und Anhalten an der kommandierten Hand
+  (`/g1pilot/hand_cmd_pose`), wie beim Marker. Die Quelle wird je Fahrt
+  festgelegt; fehlt die kommandierte Pose (vor der ersten Auto-Kalibrierung,
+  arm_controller aus), läuft die Fahrt an TF. `start` = Stand 2026-10-14,
+  `tf` = alter Real-Stand (Rückfall ohne Neubau: `G1_JOG_REFERENCE=tf` bzw.
+  `ros2 param set /ps4_arm_teleop jog_reference tf`). Die Demo-GUI
+  (»Hand bewegen«) nutzt dieselbe Logik.
+- Linker Stick rastet auf die Achse ein (`axis_snap_deg` = 20): bis 20°
+  daneben zählt nur die Hauptrichtung, VERSCHIEBEN wie DREHEN. Echte
+  Diagonalen gehen weiter.
+- Folge: nach dem Loslassen läuft die echte Hand um ihren Schleppfehler
+  nach (sie fährt dahin, wo der Sollwert schon ist), statt dort zu stehen,
+  wo sie gerade war. Real ist das bei den kleinen Real-Gains nur wenige mm.
+
+Messungen:
+
+| Prüfung | `tf` (alter Real-Stand) | `start` (alter Sim-Stand) | `command` (neu) |
+|---|---|---|---|
+| Real-Pfad ohne Hardware¹: 8× tippen hoch/runter, Kippen / Rückkehrfehler | 49° / 28 cm | 2,7° / 0,1 cm | 0,9° / 0,3 cm |
+| Real-Pfad¹: 5 Fahrten gespiegelt, Abweichung vom Spiegelbild (gemessen) / Drehung | 8,0 cm / 46° | 3,8 cm / 3,5° | 0,7 cm / 3,1° (kommandiert 0,06 cm / < 1°) |
+| MuJoCo-Sim², 18 Fahrten: Kippen nach der Fahrt (Median) / Querversatz | 3,0° / 1,0 cm | 0,5° / 0,1 cm | 1,0° / 0,2 cm |
+| MuJoCo-Sim²: 8× tippen vor/zurück, Kippen / Rückkehrfehler (Median) | 11,7° / 5,8 cm | 0,2° / 2,4 cm | 0,4° / 2,2 cm |
+| MuJoCo-Sim²: gespiegelt, 14 Fahrten, Abweichung vom Spiegelbild / Drehung (Median) | 1,2 cm / 3,5° | – | 0,2 cm / 0,6° |
+
+¹ Echter arm_controller (Real-Modus) gegen den Fake-G1 aus
+`test_arm_controller_real` mit bleibendem Regelfehler (Durchhang bis
+0,09 rad je Gelenk) und Haftreibung, links stärker als rechts
+(`test/test_jog_reference_real.py`). Modell, nicht der echte Roboter.
+² Ohne Inspire-Hände, Cloud-PC mit 4 Kernen unter Volllast (Load 12–16):
+einzelne Fahrten kamen in 1 s kaum vom Fleck, Ausreißer bis 9 cm quer in
+beiden Varianten; die Mediane sind belastbarer als die Maxima. Messskript
+`jog_axis_probe_sim.py [--mirror] [--reference command|start|tf]`.
+
+In der Sim liegen `start` und `command` gleichauf (dort sind gemessene und
+kommandierte Hand fast deckungsgleich); entscheidend ist der echte Roboter
+mit Reibung, dort trennt erst `command` die beiden Arme sauber.
+
+Grenze: in der **Grundstellung** (Arme hängen neben dem Körper) steht die
+Hand bei 97 % der Reichweite, genau an der Reichweiten-Klemme der IK.
+»Runter« und »außen« sind dort kaum möglich, die Hand weicht entlang der
+Kugel um die Schulter aus (offline bis 1,8 cm quer). Erst ein Stück nach
+vorn/oben fahren, dann fein positionieren. Das gilt für den Marker genauso.
+
 ### Parameter `ps4_arm_teleop`
 
 | Parameter | Default | Bedeutung |
@@ -580,7 +651,8 @@ kippt die Hand in beiden Varianten während der Fahrt kurz bis ~10°
 | `modes_need_onboard_walk` | Sim `false`, Real `true` | start_walking/start_balancing nur, wenn der G1 laut `/g1pilot/onboard_state` im Walk steht |
 | `joy_timeout_s` | 0.5 | Abriss-Erkennung |
 | `options_starts_balancing` | `true` (Real `false`) | Options sendet zusätzlich `start_balancing` |
-| `jog_reference` | `command` (Real `tf`) | Startpose neuer Jog-Ziele: kommandierte Hand (`/g1pilot/hand_cmd_pose`) oder gemessene (TF) |
+| `jog_reference` | `command` (Env `G1_JOG_REFERENCE`) | Bezug der Jog-Ziele: `command` = Start, Vorlauf und Anhalten an der kommandierten Hand (`/g1pilot/hand_cmd_pose`, wie der RViz-Marker), `start` = nur der Start dort (Stand 2026-10-14), `tf` = alles an der gemessenen Hand (alter Real-Stand) |
+| `axis_snap_deg` | 20 | Achsen-Einrasten des linken Sticks; 0 = aus |
 
 ### Tests
 

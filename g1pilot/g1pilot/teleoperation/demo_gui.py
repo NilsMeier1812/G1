@@ -73,7 +73,7 @@ from g1pilot.teleoperation.ps4_arm_teleop import mirror_twist
 from g1pilot.teleoperation.ps4_joystick import DEVICE_TOPIC
 from g1pilot.teleoperation.hand_jog import (
     JOG_FRAME, JOG_TF, JOG_SPEEDS, JOG_CMD_TOPIC, CommandedPoses, HoldStreamer, hold_pose,
-    lead_limits, jog_step,
+    JogReference, jog_reference_mode, lead_limits, jog_step,
 )
 
 WALK = "walk"
@@ -222,9 +222,11 @@ class DemoNode(StreamDeck):
         self.pub_hand_goal = {
             side: self.create_publisher(PoseStamped, f"/g1pilot/hand_goal/{side}", 10)
             for side in ("left", "right")}
-        # Jog-Bezug = kommandierte Hand (Sim), siehe hand_jog.JOG_CMD_TOPIC.
-        # Real vorerst wie bisher die gemessene Hand (TF).
-        self.jog_from_command = is_sim_mode()
+        # Jog-Bezug wie am PS4-Controller (hand_jog.JogReference, Env
+        # G1_JOG_REFERENCE): Default Start, Vorlauf und Anhalten an der
+        # kommandierten Hand (sim + real), "tf" = gemessene Hand wie frueher.
+        self.jog_ref = JogReference(jog_reference_mode())
+        self.jog_from_command = self.jog_ref.mode != "tf"
         self.cmd_poses = CommandedPoses()
         if self.jog_from_command:
             for side in ("left", "right"):
@@ -238,12 +240,15 @@ class DemoNode(StreamDeck):
         p, q = msg.pose.position, msg.pose.orientation
         self.cmd_poses.update(side, (p.x, p.y, p.z), (q.x, q.y, q.z, q.w), time.monotonic())
 
-    def jog_start_pose(self, side):
-        """Startpose eines neuen »Hand bewegen«-Ziels: kommandierte Hand, falls
-        aktuell, sonst None (-> an der gemessenen Hand)."""
-        if self.jog_from_command:
-            return self.cmd_poses.get(side, time.monotonic())
-        return None
+    def jog_pose(self, side, new):
+        """-> (start, ref) fuer einen »Hand bewegen«-Schritt (JogReference):
+        Startpose eines neuen Ziels (None = an ref) und Bezugshand fuer
+        Vorlauf/Anhalten (None = unbekannt)."""
+        cmd = self.cmd_poses.get(side, time.monotonic()) if self.jog_from_command else None
+        return self.jog_ref.pose(side, cmd, self.hand_pose(side), new)
+
+    def jog_end(self, side):
+        self.jog_ref.end(side)
 
     def hand_pose(self, side):
         """-> ([x, y, z], (qx, qy, qz, qw)) der Hand im JOG_FRAME oder None (kein TF)."""
@@ -1725,7 +1730,7 @@ class DemoGUI(QWidget):
     def _jog_tick(self):
         """~30 Hz: solange ein Bedienelement ausgelenkt ist, das Hand-Ziel mit
         dem eingestellten Tempo verschieben/drehen (Drehung um die Hand, Achsen
-        im JOG_FRAME). Startpunkt ist die echte Hand (TF) beim Anfassen."""
+        im JOG_FRAME). Startpunkt ist die kommandierte Hand (JogReference, sonst TF)."""
         now = time.monotonic()
         dt = min(0.1, now - self._jog_t)
         self._jog_t = now
@@ -1750,12 +1755,10 @@ class DemoGUI(QWidget):
         lead_m, lead_rad = lead_limits(jog.lin_speed, jog.ang_speed)
         missing = []
         for side in jog.sides():
-            hand = self.node.hand_pose(side)
+            start, hand = self.node.jog_pose(side, side not in self._jog_targets)
             if hand is None:
                 missing.append(side)
                 continue
-            start = (self.node.jog_start_pose(side)
-                     if side not in self._jog_targets else None)
             lin_s, ang_s = jog.side_twist(side, lin, ang)
             p, q = jog_step(self._jog_targets.get(side), hand, lin_s, ang_s, dt,
                             lead_m, lead_rad, start=start)
@@ -1773,7 +1776,8 @@ class DemoGUI(QWidget):
         Weile wiederholt (HoldStreamer, Ziel-Glaettung im arm_controller)."""
         now = time.monotonic()
         for side, target in self._jog_targets.items():
-            hand = self.node.hand_pose(side)
+            _, hand = self.node.jog_pose(side, False)
+            self.node.jog_end(side)
             if hand is not None:
                 pose = hold_pose(target, hand,
                                  *self._jog_twist.get(side, ((0.0,) * 3, (0.0,) * 3)))
