@@ -46,6 +46,9 @@
   .status { border-left: 6px solid #555; padding: 8px 12px; background: #141414; border-radius: 8px;
     font-size: 18px; font-weight: 700; }
   .sub { color: var(--dim); font-size: 14px; margin-top: 8px; }
+  .update { margin: 8px 12px; padding: 10px 12px; border-radius: 10px; background: #1e3a5f; color: #fff;
+    font-size: 14px; display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+  .update button { width: auto; padding: 8px 12px; }
   .banner { background: var(--stop); color: #fff; font-weight: 800; text-align: center;
     padding: 12px; border-radius: 12px; margin-bottom: 12px; font-size: 18px; }
   .stalebar { background: #7f1d1d; color: #ffcdd2; text-align: center; padding: 10px;
@@ -86,6 +89,9 @@
   <span id="pill" class="pill">Getrennt</span>
 </header>
 
+<div id="updateBar" class="update hidden">Neue Version der Handy-Seite geladen.
+  <button id="btnUpdate" class="ghost">Aktualisieren</button></div>
+
 <div id="unsupported" class="banner hidden">Dieser Browser kann kein Web Bluetooth. Bitte Chrome auf Android nutzen.</div>
 
 <!-- Koppeln -->
@@ -106,6 +112,7 @@
   <div class="sub" id="connectInfo"></div>
   <div class="row" style="grid-template-columns:1fr"><button id="btnConnect" class="primary">Mit G1 verbinden</button></div>
   <div class="row" style="grid-template-columns:1fr"><button id="btnForget" class="ghost">Kopplung auf diesem Handy löschen</button></div>
+  <div class="sub" id="version"></div>
 </section>
 
 <!-- Bedienung -->

@@ -411,5 +411,23 @@ $("btnSafe").addEventListener("click", () => confirmAction("Sichere Pose",
 $("btnHome").addEventListener("click", () => confirmAction("Grundstellung",
   "Die Arme fahren neben den Körper.", () => cmd("home")));
 
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+// Version der Handy-Seite; muss zu CACHE in sw.js passen. Kein Auto-Update: eine neue Version
+// wartet im Hintergrund, bis hier »Aktualisieren« getippt wird.
+const VERSION = "v2";
+$("version").textContent = `Handy-Seite ${VERSION}`;
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then((reg) => {
+    const offer = () => { if (reg.waiting && navigator.serviceWorker.controller) $("updateBar").classList.remove("hidden"); };
+    offer();
+    reg.addEventListener("updatefound", () => {
+      const w = reg.installing;
+      if (w) w.addEventListener("statechange", () => { if (w.state === "installed") offer(); });
+    });
+    $("btnUpdate").addEventListener("click", () => {
+      if (!reg.waiting) return;
+      navigator.serviceWorker.addEventListener("controllerchange", () => location.reload(), { once: true });
+      reg.waiting.postMessage({ type: "activate" });
+    });
+  }).catch(() => {});
+}
 render();

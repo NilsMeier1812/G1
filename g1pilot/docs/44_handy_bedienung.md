@@ -28,14 +28,18 @@ Hintergrund und Abwägung (WLAN, Bildschirmspiegelung, App): Analysebericht
 
 ## Einrichten (einmalig)
 
-1. **Handy-Seite aufs Handy bringen.** Handy per USB anschließen (USB-Debugging an), am PC:
-   ```
-   make phone-web
-   ```
-   Am Handy in Chrome `http://localhost:8790/index.html` öffnen und über das Chrome-Menü
-   „Zum Startbildschirm hinzufügen“ wählen. Danach läuft die Seite **offline aus dem Cache**, also auch ohne
-   Kabel und ohne Netz. Der Webserver lauscht nur auf `127.0.0.1` des PCs und ist von außen nicht erreichbar.
-   Nach einem Update der Seite wiederholst du den Schritt einmal.
+1. **Handy-Seite aufs Handy bringen.** Am Handy in Chrome **https://nilsmeier1812.github.io/G1/** öffnen und
+   über das Chrome-Menü „Zum Startbildschirm hinzufügen“ wählen. Danach läuft die Seite **offline aus dem
+   Cache**, also auch ohne Netz in der Halle.
+   **Kein automatisches Update:** Die installierte Version bleibt, bis du sie selbst wechselst. Liegt eine neue
+   Version auf GitHub, lädt Chrome sie im Hintergrund, und oben erscheint „Neue Version … Aktualisieren“. Erst
+   der Tipp darauf macht sie aktiv. Welche Version läuft, steht unter „Verbindung“ („Handy-Seite v2“).
+   Die Seite ist öffentlich, das ist gewollt. Der Schutz hängt am Kopplungscode, der nur am PC erscheint.
+   Veröffentlicht wird automatisch bei Änderungen unter `phone/web/` auf `main`
+   (`.github/workflows/phone-pages.yml`, einmalig Settings → Pages → Source „GitHub Actions“).
+
+   *Ohne Internet:* Handy per USB (USB-Debugging an), am PC im Ordner `g1pilot` `make phone-web`, am Handy
+   `http://localhost:8790/index.html` öffnen. Der Webserver lauscht nur auf `127.0.0.1`.
 2. **Start-Fenster:** Ausstattung → **Handy-Zugang (Bluetooth)** anhaken, starten. Ohne den Haken gibt es weder
    Knopf noch Funk.
 3. **Koppeln:** In der Demo-GUI oben **📱 Handy** → **Als Bediener koppeln** (oder **Nur Ansicht koppeln**).
@@ -147,6 +151,7 @@ das Gerät 60 s gesperrt.
 | `test/test_phone_ble_dbus.py` | BLE-Server gegen ein nachgebautes BlueZ auf privatem D-Bus |
 | `test/test_phone_protocol_js.py` | `proto.js` (Node) gegen `protocol.py` |
 | `test/test_phone_web_e2e.py` | Handy-Seite in Chromium gegen das echte Gateway (Web Bluetooth als Attrappe) |
+| `test/test_phone_web_offline.py` | Offline aus dem Cache, neue Version erst nach „Aktualisieren“ |
 | `test/test_phone_demo_gui.py` | Einbindung in die Demo-GUI (offscreen) |
 
 Echtes Bluetooth (BlueZ, Android-Chrome) ist damit **nicht** abgedeckt. Das muss einmal am PC mit Handy
