@@ -12,8 +12,9 @@ beiden Kniegelenke. Steht der G1, traegt jedes Knie das halbe Koerpergewicht
 ueber den gebeugten Unterschenkel; haengt er, nur Unterschenkel + Fuss.
 MuJoCo-Abschaetzung (G1 29 DoF, 35 kg, Knie 0.3 rad, PD-gehalten, Probe
 2026-10-21): Boden 6.6 Nm je Knie, Kran traegt 30 % -> 3.7, 50 % -> 2.0,
-70 % -> 0.4, frei haengend 0.0. Am echten G1 NICHT gemessen -> Schwelle
-(knee_load_min_nm, Default 3.0) ist ein Parameter, die GUI zeigt die Werte.
+70 % -> 0.4, frei haengend 0.0. Real-Test Nils 2026-10-21: frei stehend
+~14 Nm je Knie -> Schwelle knee_load_min_nm Default 10.0 (Parameter, die GUI
+zeigt die Werte).
 
 Beide Knie muessen die Schwelle erreichen (eine Fussspitze am Boden reicht
 nicht). Werte werden geglaettet (Zeitkonstante tau_s); ohne frische Daten
@@ -30,7 +31,7 @@ CHECK_MODES = ("knee_load", "fsm_mode", "none")
 
 
 class GroundContact:
-    def __init__(self, min_nm=3.0, tau_s=0.2, stale_s=0.5, clock=time.monotonic):
+    def __init__(self, min_nm=10.0, tau_s=0.2, stale_s=0.5, clock=time.monotonic):
         self.min_nm = float(min_nm)
         self.tau_s = max(1e-3, float(tau_s))
         self.stale_s = float(stale_s)

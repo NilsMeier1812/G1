@@ -323,7 +323,10 @@ Seit 2026-10-16 (Review des Real-Ablaufs):
   war auch die alte Prüfung beim Klick wirkungslos). Bodenkontakt kommt jetzt
   aus der **Knie-Last**: `loco_client` abonniert `rt/lowstate` und glättet
   `tau_est` beider Knie (Gelenk 3/9, 0,2 s). Beide Knie ≥
-  `knee_load_min_nm` (Env `G1_KNEE_LOAD_MIN_NM`, Default 3,0 Nm) → Bodenkontakt.
+  `knee_load_min_nm` (Env `G1_KNEE_LOAD_MIN_NM`, Default 10 Nm; Real-Test
+  2026-10-21: frei stehend ≈ 14 Nm je Knie) → Bodenkontakt. `rt/lowstate` wird
+  ohne Listener nur in Preparation mit 10 Hz gelesen (ein Listener mit 500 Hz
+  brachte die Loco-RPCs ständig in Zeitüberschreitung).
   MuJoCo-Abschätzung (ungeprüft am G1): stehend ≈ 6,6 Nm je Knie, Kran trägt
   30 % → 3,7, 50 % → 2,0, hängend ≈ 0. Ohne frische `rt/lowstate` gilt
   „nicht messbar“ → »Walk« gesperrt. Die Info-Zeile zeigt die gemessenen

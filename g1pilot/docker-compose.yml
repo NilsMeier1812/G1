@@ -200,7 +200,7 @@ services:
       # Bodenkontakt vor Walk: Knie-Last je Knie >= G1_KNEE_LOAD_MIN_NM (Nm).
       # G1_GROUND_CHECK=fsm_mode = alt (am Kran wirkungslos), none = ohne Pruefung.
       - G1_GROUND_CHECK=${G1_GROUND_CHECK:-knee_load}
-      - G1_KNEE_LOAD_MIN_NM=${G1_KNEE_LOAD_MIN_NM:-3.0}
+      - G1_KNEE_LOAD_MIN_NM=${G1_KNEE_LOAD_MIN_NM:-10.0}
       # Konservative Walk-Limits fuer die ersten Tests (loco_client skaliert
       # die normierten UI-/PS4-Kommandos damit).
       - G1_MAX_VX=${G1_MAX_VX:-0.4}

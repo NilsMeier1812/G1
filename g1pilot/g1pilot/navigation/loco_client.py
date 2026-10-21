@@ -187,9 +187,14 @@ class G1LocoClient(Node):
         #   none:     keine Bodenkontakt-Pruefung (nur fuer Tests am Kran!).
         # Der FSM-Mode-Test laeuft in jedem Fall weiter mit.
         self.declare_parameter('ground_check', 'knee_load')
-        self.declare_parameter('knee_load_min_nm', 3.0)
+        # Real-Test 2026-10-21 (Nils): G1 frei stehend ~14 Nm je Knie.
+        self.declare_parameter('knee_load_min_nm', 10.0)
+        # rt/lowstate wird nur in Preparation abgefragt (nicht abonniert).
+        self.declare_parameter('lowstate_poll_hz', 10.0)
         self._ground = GroundContact(float(self.get_parameter('knee_load_min_nm').value))
         self._lowstate_sub = None
+        self._lowstate_backoff = 0
+        self._lowstate_group = MutuallyExclusiveCallbackGroup()
 
         ik_use_waist = self.get_parameter('ik_use_waist').get_parameter_value().bool_value
         ik_alpha = float(self.get_parameter('ik_alpha').value)
@@ -267,24 +272,60 @@ class G1LocoClient(Node):
         self.publisher_homming_arms = self.create_publisher(Bool, '/g1pilot/arms/home', 1)
 
     def _init_lowstate(self):
-        """rt/lowstate abonnieren (Knie-Momente fuer den Bodenkontakt)."""
+        """rt/lowstate-Leser fuer die Knie-Momente (Bodenkontakt) -- OHNE
+        Listener. Real-Test 2026-10-21: mit Listener (Init(handler)) lief fuer
+        jedes der 500 Pakete/s Python im DDS-Empfang; die Loco-RPC-Antworten
+        kommen ueber denselben Teilnehmer -> staendig 3104 (Zeitueberschreitung).
+        Jetzt: nur Leser anlegen, _poll_lowstate holt den neuesten Wert, und
+        das nur in Preparation (FSM 4)."""
         try:
             from unitree_sdk2py.core.channel import ChannelSubscriber
             from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_
             self._lowstate_sub = ChannelSubscriber("rt/lowstate", LowState_)
-            self._lowstate_sub.Init(self._ground.feed_lowstate, 10)
+            self._lowstate_sub.Init()
         except Exception as e:
+            self._lowstate_sub = None
             self.get_logger().error(
                 f"rt/lowstate nicht abonniert ({e}) -- Bodenkontakt nicht messbar, "
                 "»Walk« aus Preparation bleibt gesperrt.")
+            return
+        hz = float(self.get_parameter('lowstate_poll_hz').value)
+        if hz > 0.0:
+            self.create_timer(1.0 / hz, self._poll_lowstate,
+                              callback_group=self._lowstate_group)
 
-    def _ground_check(self, fsm_mode=None):
-        """Bodenkontakt fuer den Walk-Start -> (ok, Grund)."""
+    def _poll_lowstate(self):
+        """Neuesten LowState holen (Leser haelt nur das letzte Paket), nur
+        in Preparation bzw. waehrend des Walk-Starts. Fehlt er, seltener fragen
+        (das SDK schreibt bei jedem Fehlversuch eine Zeile)."""
+        if self._lowstate_sub is None:
+            return
+        if self._onboard_fsm != FSM_READY and not self._entering:
+            return
+        if self._lowstate_backoff > 0:
+            self._lowstate_backoff -= 1
+            return
+        try:
+            msg = self._lowstate_sub.Read(0.05)
+        except Exception:
+            msg = None
+        if msg is None:
+            self._lowstate_backoff = 9
+            return
+        try:
+            self._ground.feed_lowstate(msg)
+        except Exception as e:
+            self._log_once("warn", f"LowState unlesbar ({e}).", "_lowstate_bad_logged")
+
+    def _ground_mode(self):
         how = str(self.get_parameter('ground_check').value).strip().lower()
         if how in ("off", "false", "0"):
             how = "none"
-        if how not in CHECK_MODES:
-            how = "knee_load"
+        return how if how in CHECK_MODES else "knee_load"
+
+    def _ground_check(self, fsm_mode=None):
+        """Bodenkontakt fuer den Walk-Start -> (ok, Grund)."""
+        how = self._ground_mode()
         if how == "none":
             return True, "Bodenkontakt-Prüfung aus (ground_check:=none)"
         if how == "fsm_mode":
@@ -392,8 +433,9 @@ class G1LocoClient(Node):
         try:
             fsm, code = _rpc_get(self.robot, ROBOT_API_ID_LOCO_GET_FSM_ID)
             mode = None
-            if fsm == FSM_READY:
-                # Vorab, was »Walk« pruefen wird: haben die Fuesse Last?
+            if fsm == FSM_READY and self._ground_mode() == "fsm_mode":
+                # Nur beim alten Test (ground_check:=fsm_mode) -- sonst kein
+                # zweiter RPC je Takt (der Mode ist am G1 ohnehin stets 0).
                 mode = _rpc_get_int(self.robot, ROBOT_API_ID_LOCO_GET_FSM_MODE)
         finally:
             self._rpc_lock.release()

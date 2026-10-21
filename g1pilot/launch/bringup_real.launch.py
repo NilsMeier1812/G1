@@ -183,7 +183,7 @@ def generate_launch_description():
                 # Bodenkontakt vor Walk: knee_load (Knie-Last aus rt/lowstate),
                 # fsm_mode (alt, am Kran wirkungslos) oder none. Schwelle je Knie.
                 'ground_check':     os.environ.get('G1_GROUND_CHECK', 'knee_load'),
-                'knee_load_min_nm': float(os.environ.get('G1_KNEE_LOAD_MIN_NM', '3.0')),
+                'knee_load_min_nm': float(os.environ.get('G1_KNEE_LOAD_MIN_NM', '10.0')),
             }]
         ),
     ]
