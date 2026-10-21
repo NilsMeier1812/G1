@@ -22,7 +22,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy
 from std_msgs.msg import Float32, Bool, String
 from geometry_msgs.msg import Twist
-from g1pilot.utils.window_style import DarkStyle
+from g1pilot.utils.window_style import DarkStyle, set_app_identity
 from g1pilot.utils.common import is_sim_mode
 from g1pilot.utils import push_charge
 from g1pilot.utils.push_charge import PushCharger
@@ -846,6 +846,7 @@ def main():
 
     app = QApplication(sys.argv)
     DarkStyle(app)
+    set_app_identity(app, "g1-streamdeck", "g1_streamdeck")  # eigenes Dock-Icon
     gui = ButtonGUI(node)
     gui.show()
 
