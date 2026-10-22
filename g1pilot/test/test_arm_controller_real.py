@@ -1222,3 +1222,84 @@ def test_mirror_command_real(ac_module):
         assert states[-1][:2] == ("m2", "rejected") and "E-Stop" in states[-1][2]
     finally:
         _close(node)
+
+
+# Messung liegt bleibend neben dem Soll: Schulter-Pitch nach vorn/oben,
+# Ellbogen etwas gebeugt (wie Nils es real sah: Haende wandern hoch/vor).
+TRACK_BIAS = np.array([-0.04, 0.0, 0.0, -0.03, 0.0, 0.0, 0.0,
+                       -0.04, 0.0, 0.0, -0.03, 0.0, 0.0, 0.0])
+
+
+def test_walk_grasp_toggle_does_not_creep(ac_module):
+    """Regression (real 2026-10-22): am Controller L2 (GEHEN) / R2 (GREIFEN)
+    im Wechsel -- R2 sendet start_balancing UND arms/enabled. Das wiederholte
+    ENABLE darf das Soll nicht auf die Messung setzen, sonst wandern die Arme
+    je Wechsel um den Regelfehler weiter (6 Wechsel = 6x Fehler)."""
+    _reset_robot()
+    node = _make_node(ac_module, walk_park_arms=False)
+    try:
+        _enable_and_raise(ac_module, node)
+        ROBOT.sag = TRACK_BIAS.copy()
+        _run(node, 0.5)
+        q_cmd = node._last_q_target.copy()
+        for _ in range(6):
+            node._on_walk_mode(_bool(True))
+            _run(node, 0.3)
+            node._on_balance_mode(_bool(True))
+            node._arms_controlled_callback(_bool(True))
+            assert node._weight_state == "on" and node.arms_enabled
+            _run(node, 0.3)
+        assert float(np.max(np.abs(node._last_q_target - q_cmd))) < 1e-6, \
+            "Soll ist beim Wechsel GEHEN -> GREIFEN gewandert"
+        assert float(np.max(np.abs(ROBOT.measured() - (q_cmd + TRACK_BIAS)))) < 0.01
+        assert float(np.max(np.abs(ROBOT.writes[-1][1] - q_cmd))) < 1e-6
+    finally:
+        _close(node)
+
+
+def test_first_jog_after_mode_change_starts_at_command(ac_module):
+    """Nach GREIFEN (IK-Halten) setzt das erste neue Ziel (Jog, Marker) am
+    bisherigen Soll an -- nicht an der Messung (sonst springt das Soll um den
+    Regelfehler und die Hand ratscht bei jedem Moduswechsel + Jog weiter)."""
+    from geometry_msgs.msg import PoseStamped
+    _reset_robot()
+    node = _make_node(ac_module, walk_park_arms=False)
+    try:
+        _enable_and_raise(ac_module, node)
+        ROBOT.sag = TRACK_BIAS.copy()
+        _run(node, 0.5)
+        q_cmd = node._last_q_target.copy()
+        node._on_walk_mode(_bool(True))
+        node._on_balance_mode(_bool(True))
+        node._arms_controlled_callback(_bool(True))
+        assert node._reset_after_home
+        T = node._fk_current_ee("right")      # Ziel egal: geprueft wird der Ansatz
+        ps = PoseStamped()
+        ps.header.frame_id = "pelvis"
+        ps.pose.position.x, ps.pose.position.y, ps.pose.position.z = map(
+            float, T.translation)
+        ps.pose.orientation.w = 1.0
+        node._right_goal_callback(ps)
+        assert not node._reset_after_home
+        assert float(np.max(np.abs(node._last_q_target - q_cmd))) < 1e-6
+    finally:
+        _close(node)
+
+
+def test_enable_after_estop_still_takes_measured_pose(ac_module):
+    """Nach NOT-HALT (Arme schlaff) gilt weiter: ENABLE haelt an der MESSUNG
+    (die Arme sind abgesackt, ein altes Soll waere ein Sprung)."""
+    _reset_robot()
+    node = _make_node(ac_module)
+    try:
+        _enable_and_raise(ac_module, node)
+        node._on_emergency_stop(_bool(True))
+        _run(node, 0.3)
+        sag = np.array([0.15, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0] * 2)
+        for k, j in enumerate(ARM_IDX):
+            ROBOT.state.motor_state[j].q += float(sag[k])
+        node._on_start(_bool(True))
+        node._arms_controlled_callback(_bool(True))
+        assert float(np.max(np.abs(node._last_q_target - ROBOT.measured()))) < 1e-6
+    finally:
+        _close(node)
