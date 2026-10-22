@@ -40,7 +40,8 @@ case "${1:-}" in
                  test_gui_external_estop test_status_line test_g1_temperature test_shared_state
                  test_window_icons test_phone_demo_gui test_demo_gui_waist" ;;
   nav)        T="test_nav_supervisor test_nav_supervisor_node test_lidar_config test_odom_drift_log
-                 test_ps4_walk test_ps4_walk_node test_joy_mux" ;;
+                 test_ps4_walk test_ps4_walk_node test_joy_mux test_mola_fixed test_mola_synthetic
+                 test_start_gui_nav" ;;
   haende)     T="test_inspire_modbus_backend" ;;
   sim)        T="test_walk_policy test_loco_sim_health test_push_charge test_sim_autostart" ;;
   handy)      T="test_phone_gateway test_phone_demo_gui test_phone_ble_dbus test_phone_protocol_js

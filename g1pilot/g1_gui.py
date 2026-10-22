@@ -1007,7 +1007,7 @@ class RealFrame(tk.Frame):
         hint(self._lidar_box,
              "Eigenes Image g1pilot-real-lidar: wird beim ersten Start automatisch gebaut "
              "(dauert länger). Der LiDAR schickt an die IP des gewählten Interfaces. "
-             "Ohne MOLA (Stufe 2) gibt es noch keine Pose -> AUTO NAV bleibt gesperrt. "
+             "MOLA (LiDAR-Odometrie) startet mit; Karte ab der Startpose. "
              "Controller wird dafür eingeschaltet.")
         for v in (self.v_hands, self.v_gui, self.v_lidar):
             v.trace_add("write", lambda *_: self._sync())

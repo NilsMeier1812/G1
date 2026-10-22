@@ -121,9 +121,16 @@ Tempo-Deckel real: `G1_NAV_MAX_VX` (0,15 m/s) und `G1_NAV_MAX_VYAW`
   in `/tmp/g1pilot_livox_mid360.json`, das Log nennt die IPs.
 - **Pflicht: Pose-Quelle.** Planer (`dijkstra_planner`) und Folger (`nav2point`)
   brauchen `/lidar_odometry/pose_fixed`. Auf dem echten G1 liefert die nur die
-  MOLA-LiDAR-Odometrie — **die ist noch nicht eingebunden (Stufe 2)**. Bis dahin
-  gibt es real keine Pose: der Planer meldet „No odom pose yet“, der
-  `nav_supervisor` sperrt AUTO NAV.
+  MOLA-LiDAR-Odometrie (Stufe 2, Stand 2026-10-22): startet mit dem
+  LiDAR-Schalter automatisch, Karte ab der Startpose („map“ = wo der G1 beim
+  Start steht/schaut). `mola_fixed` spiegelt die Pose (MID-360 kopfüber) und
+  rechnet die Hüftdrehung heraus (LiDAR sitzt am Oberkörper). Prüfen:
+  `ros2 topic hz /lidar_odometry/pose_fixed` (≈ 10 Hz), 1 m vor → x ≈ +1,
+  nach links drehen → Gier steigt. Läuft die Pose falsch herum: Parameter
+  `mirror_y` von `mola_fixed` (Default an) — bitte melden. Pose-Timeout real
+  0,5 s (`G1_NAV_POSE_TIMEOUT`). Fehlt die Pose, sperrt der `nav_supervisor`.
+- **Neu starten = neue Karte.** MOLA beginnt bei jedem Start bei (0, 0). Ziele
+  aus einem früheren Lauf passen nur, wenn der G1 wieder genau gleich steht.
 - **Drift-Test (Stufe 0):** `python3 tools/odom_drift_log.py --iface <ROBOT_INTERFACE>`
   neben dem Real-Stack starten, G1 per Controller eine vermessene Strecke laufen
   lassen (z. B. 4 m geradeaus, 1 m rechts), Strg+C. Ausgabe: Endpose im
@@ -140,8 +147,9 @@ Tempo-Deckel real: `G1_NAV_MAX_VX` (0,15 m/s) und `G1_NAV_MAX_VYAW`
   `loco_client` (`Move`, Limits `G1_MAX_VX/VY/VYAW`). Der Roboter muss im
   Walk-Zustand sein (LAUFEN); bleibt der Joy-Strom aus, stoppt `loco_client`
   nach 0,5 s.
-- Das Koordinatensystem „map“ ist die MOLA-Startpose; Drift der LiDAR-Odometrie
-  ist nicht vermessen.
+- Das Koordinatensystem „map“ ist die MOLA-Startpose. Im künstlichen Test
+  (`test/test_mola_synthetic.py`, Raum mit Kisten, 2 m vor, 90° links, 1 m weiter)
+  lag die Pose auf 2 cm / 2° genau; am echten G1 ist die Drift nicht vermessen.
 
 ## Worauf zu achten ist
 

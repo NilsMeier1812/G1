@@ -59,7 +59,8 @@ setup(
         (f'share/{package_name}/resource/icons',
             expand(['resource/icons/*.png', 'resource/icons/*.svg'])),
 
-        # MOLA LiDAR-odometry pipeline (used by mola_launcher.launch.py)
+        # Alte MOLA-Pipeline aus dem Original-g1pilot (MOLA 1.x-Format). Seit Stufe 2
+        # nutzt mola_launcher die Standard-Pipeline des installierten MOLA.
         (f'share/{package_name}/pipelines',
             expand(['pipelines/*.yaml'])),
 

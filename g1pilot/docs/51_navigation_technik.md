@@ -186,6 +186,19 @@ Rest des Stacks erwartet: `/lidar_odometry/pose_fixed`
 (Livox-SLAM) dieselbe Rolle; `mola_fixed` transformiert deren Odometrie in
 das vom Stack erwartete Frame.
 
+Real (Stufe 2): `mola_launcher` bindet den Launch des installierten MOLA 3.x
+ein (`ros2-lidar-odometry.launch.py`, Standard-Pipeline, Sensorpose =
+Ursprung, kein MOLA-GUI). MOLA-TF nur `map → mola_lidar` (zum Anschauen).
+`mola_fixed`: `fix_pose()` spiegelt y/Gier/Roll (`mirror_y`, MID-360 im G1
+kopfüber, wie im Original-g1pilot) und zieht `waist_yaw_joint` aus
+`/joint_states` von der Gier ab (`waist_compensation`). Ausgabe
+`/lidar_odometry/pose_fixed` (map → base_link) + TF `odom_unitree → base_link`.
+TF-Baum real damit wie in der Sim: `map → world → odom_unitree → base_link →
+pelvis` (statisch `map → world`, `world → odom_unitree`, `base_link → pelvis`).
+Vorher sendete `mola_fixed` `map → pelvis` — `pelvis` hatte zwei Eltern.
+Test: `test/test_mola_synthetic.py` (künstlicher kopfüber-LiDAR durch echten
+MOLA, nur im LiDAR-Image), `test/test_mola_fixed.py`.
+
 ### `joy_mux` / `joy_to_cmdvel`
 
 Siehe [41_teleoperation_technik.md](41_teleoperation_technik.md). Auf real
@@ -218,4 +231,4 @@ gibt keinen zweiten, ungetesteten Steuerweg zum Roboter.
   Umgebung, keine spontanen Hindernisse.
 - Auf echter Hardware ist ein Livox MID360 + das LiDAR-Image
   `g1pilot-real-lidar` Voraussetzung für Navigation (`G1_ENABLE_LIDAR=1`).
-  MOLA ist im Image, aber noch nicht im Real-Launch eingebunden (Stufe 2).
+  MOLA startet mit dem LiDAR-Schalter (Stufe 2), Karte ab der Startpose.
