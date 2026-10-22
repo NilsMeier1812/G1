@@ -6,7 +6,9 @@ Die Rueckmeldungen des arm_controller (/g1pilot/arm_command/status) werden
 direkt eingespielt. Geprueft: Schritt-Modus wartet auf »Weiter« (Knopf und
 Controller-Topic), NOT-HALT / Stopp / Moduswechsel beenden auch einen
 wartenden Ablauf ohne spaeteres Weiterfahren, fehlende Posen starten nicht,
-Fenster »Posen & Abläufe« (zusammenstellen, umsortieren, Teach-in)."""
+Fenster »Posen & Abläufe« (zusammenstellen, umsortieren, Teach-in),
+relative Bewegungen (»Box anheben«: aktuelle Hand + Verschiebung als
+arm_command, Ziel unbekannt -> Abbruch, im Editor anlegen/einfuegen)."""
 import json
 import os
 
@@ -185,6 +187,110 @@ def test_jog_cancels_only_during_motion(gui):
     g.manip_panel.jog.twist = lambda: ((0.05, 0.0, 0.0), (0.0, 0.0, 0.0))
     g._jog_tick()                                            # Fahrt laeuft: Jog beendet Ablauf
     assert not g.seq.active and states[-1]["event"] == "aborted"
+
+
+def commands(strs):
+    return [json.loads(v) for t, v in strs if t == "/g1pilot/arm_command"]
+
+
+HANDS = {"left": ([0.30, 0.20, 0.10], (0.0, 0.0, 0.0, 1.0)),
+         "right": ([0.30, -0.20, 0.12], (0.0, 0.7071068, 0.0, 0.7071068))}
+
+
+def test_relative_move_step_from_current_hands(gui):
+    dg, g, node, sent, strs, states, store = gui
+    store.save_move("Box anheben", dz=0.05)
+    store.save_sequence("Heben", ["Greifen", {"move": "Box anheben"}, "Sichere_Pose"])
+    node.hand_reference = lambda side: HANDS[side]
+    node.torso_yaw = lambda: 0.0
+    g.set_sequence_mode(sr.MODE_AUTO)
+    assert g.run_sequence("Heben")
+    reach(g)
+    cmd = commands(strs)[-1]
+    assert cmd["type"] == "pose" and cmd["id"].startswith("demo_gui_move_")
+    assert cmd["left"]["position"] == pytest.approx([0.30, 0.20, 0.15])
+    assert cmd["right"]["position"] == pytest.approx([0.30, -0.20, 0.17])
+    assert cmd["right"]["orientation"] == pytest.approx([0.0, 0.7071068, 0.0, 0.7071068])
+    assert cmd["left"]["frame"] == dg.JOG_FRAME
+    assert states[-1]["pose"] == "Box anheben"
+    reach(g)                                                 # gleiche Statusfolge wie goto
+    assert gotos(strs) == ["Greifen", "Sichere_Pose"]
+    # Format passt zum arm_controller-Parser.
+    from g1pilot.manipulation.arm_command import parse_command
+    assert parse_command(cmd)["sides"] == ["left", "right"]
+
+
+def test_relative_move_rotated_with_waist_and_one_side():
+    from g1pilot.teleoperation import demo_gui as dg
+    import math
+    cmd, err = dg.relative_move_command(
+        {"dx": 0.10, "dy": 0.0, "dz": 0.0, "sides": ["right"]},
+        lambda side: HANDS[side], yaw=math.pi / 2)
+    assert err is None and "left" not in cmd
+    assert cmd["right"]["position"] == pytest.approx([0.30, -0.10, 0.12])
+    cmd, err = dg.relative_move_command(
+        {"dx": 0.0, "dy": 0.0, "dz": 0.05, "sides": ["left"]}, lambda side: None)
+    assert cmd is None and "links" in err
+
+
+def test_relative_move_unknown_hand_aborts_at_once(gui):
+    dg, g, node, sent, strs, states, store = gui
+    store.save_move("Box anheben", dz=0.05)
+    store.save_sequence("Heben", [{"move": "Box anheben"}, "Greifen"])
+    node.hand_reference = lambda side: None
+    assert not g.run_sequence("Heben")
+    assert commands(strs) == [] and gotos(strs) == []
+    assert "unbekannt" in g.status.text() and states[-1]["event"] == "aborted"
+
+
+def test_missing_move_refuses_start(gui):
+    dg, g, node, sent, strs, states, store = gui
+    store.save_sequence("Heben", ["Greifen", {"move": "Gibts nicht"}])
+    assert not g.run_sequence("Heben") and gotos(strs) == []
+    assert "Gibts nicht" in g.status.text()
+
+
+def test_editor_relative_moves(gui, monkeypatch):
+    dg, g, node, sent, strs, states, store = gui
+    from g1pilot.teleoperation import sequence_editor as se
+    g.open_sequence_editor()
+    ed = g.seq_editor
+    # »Neue relative Bewegung …« -> Dialog ausfuellen
+    def fake_exec(dlg):
+        dlg.ed_name.setText("Box anheben")
+        dlg.spins["dz"].setValue(5.0)
+        dlg.cb_left.setChecked(True)
+        dlg.cb_right.setChecked(True)
+        return QDialog.DialogCode.Accepted
+    monkeypatch.setattr(se.MoveDialog, "exec", fake_exec)
+    ed.btn_new_move.click()
+    assert store.get_move("Box anheben")["dz"] == pytest.approx(0.05)
+    assert ed._selected_item() == {"move": "Box anheben"}
+    assert ed.btn_edit_move.isEnabled()
+    top = ed.pose_tree.topLevelItem(0)
+    assert top.text(0) == se.MOVES_GROUP and "hoch 5 cm · beide" in top.child(0).text(0)
+    # als Schritt in einen Ablauf
+    ed.reload(select="Kiste")
+    ed.step_list.setCurrentRow(0)
+    ed._select_item({"move": "Box anheben"})
+    ed.btn_add.click()
+    assert store.get_sequence("Kiste")[1] == {"move": "Box anheben", "wait_s": 0.0}
+    assert "↕ Box anheben" in ed.step_list.item(1).text()
+    # Umbenennen ueber »Bearbeiten …« zieht den Schritt mit
+    def rename(dlg):
+        assert dlg.spins["dz"].value() == pytest.approx(5.0)
+        dlg.ed_name.setText("Anheben")
+        return QDialog.DialogCode.Accepted
+    monkeypatch.setattr(se.MoveDialog, "exec", rename)
+    ed.btn_edit_move.click()
+    assert store.get_sequence("Kiste")[1]["move"] == "Anheben"
+    assert "↕ Anheben" in ed.step_list.item(1).text()
+    # Ungueltig (0 cm) -> Dialog meldet und bleibt offen
+    warned = []
+    monkeypatch.setattr(se.QMessageBox, "warning", lambda *a: warned.append(a[2]))
+    dlg = se.MoveDialog(ed, "Nichts", {"dx": 0, "dy": 0, "dz": 0, "sides": ["left"]})
+    dlg._accept()
+    assert warned and dlg.result()[0] == "Nichts"
 
 
 def test_missing_pose_refuses_start(gui):

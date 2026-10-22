@@ -271,11 +271,21 @@ Dateiformat Version 3 (seit 2026-10-22, Abläufe):
 {"version": 3,
  "categories": ["Allgemein", "Greifen"],
  "poses": {"<name>": {"category": "...", "left_arm": [...], "saved_at": 0.0}},
- "sequences": {"<ablauf>": {"steps": [{"pose": "<name>", "wait_s": 0.0}]}}}
+ "moves": {"<bewegung>": {"dx": 0.0, "dy": 0.0, "dz": 0.05, "sides": ["left", "right"]}},
+ "sequences": {"<ablauf>": {"steps": [{"pose": "<name>", "wait_s": 0.0},
+                                      {"move": "<bewegung>", "wait_s": 0.0}]}}}
 ```
 
-Ein Ablauf (`sequences`) verweist nur auf Posennamen; dieselbe Pose kann in
-mehreren Abläufen stehen. `wait_s` = Pause nach dem Schritt (nur „Am
+Ein Ablauf (`sequences`) verweist nur auf Posennamen bzw. relative
+Bewegungen; dieselbe Pose kann in mehreren Abläufen stehen. Eine **relative
+Bewegung** (`moves`, z. B. „Box anheben“ = 5 cm hoch) verschiebt die Hände
+von dort, wo sie gerade sind: Meter im Oberkörper-Bezug (`dx` vor, `dy`
+links, `dz` hoch; mit dem Taillen-Yaw gedreht wie der Jog), je Achse höchstens
+±0,30 m, Orientierung bleibt. Die Demo-GUI rechnet daraus ein Ziel (aktuelle
+kommandierte Hand, sonst TF `hand_point_contact`, plus Verschiebung) und
+schickt es als `/g1pilot/arm_command` `type=pose` -- geplant, mit Kollisionsschutz
+und denselben Statusmeldungen wie ein Pose-Anfahren. Ist die Hand unbekannt,
+bricht der Ablauf sofort ab. `wait_s` = Pause nach dem Schritt (nur „Am
 Stück“, 0…600 s). Fehlt `sequences` (Version 2), werden die Abläufe aus den
 Kategorien `Ablauf <Name>` abgeleitet (Posen nach Namen sortiert) und beim
 nächsten Schreiben fest übernommen. `save()` in eine Kategorie
@@ -284,7 +294,7 @@ doppelt). Ausgeführt werden Abläufe von der Demo-GUI
 (`teleoperation/sequence_runner.py`: am Stück / Schritt für Schritt,
 `/g1pilot/sequence/next` = Weiter, `/g1pilot/sequence/state` = Stand,
 latched JSON); der arm_controller sieht davon nur einzelne
-`/g1pilot/pose_store/goto`.
+`/g1pilot/pose_store/goto` bzw. `arm_command`.
 
 Speicherbare Komponenten: `left_arm`, `right_arm`, `left_hand`, `right_hand`
 (`COMPONENTS`-Tupel). Speicherpfad-Priorität: `G1_POSE_STORE`-Env-Variable

@@ -589,3 +589,50 @@ def test_l3_next_only_while_sequence_waits_and_rumbles(rig):
     rig.press(L.L3)
     time.sleep(0.3)
     assert len(g["seq_next"]) == 1
+
+
+def test_l3_while_jogging_sends_one_hold_then_nothing(rig):
+    """Nils 2026-10-22: Stick beim L3 versehentlich bewegt -> Ablauf brach mit
+    »manueller Vorrang« ab. Jetzt: EIN Halte-Ziel vor dem »Weiter«, danach kein
+    Halte-Strom; solange der Ablauf faehrt, sind die Sticks gesperrt."""
+    g = rig.got
+    rig.seq_state("waiting")
+    time.sleep(0.3)
+    rig.state["axes"][L.LY] = 0.6                        # nachkorrigieren beim Warten
+    assert wait_for(lambda: len(g["goal_right"]) >= 3, 2.0)
+    rig.state["buttons"][L.L3] = 1                       # L3 mit ausgelenktem Stick
+    assert wait_for(lambda: len(g["seq_next"]) == 1, 2.0)
+    t_next = g["seq_next"][0][0]
+    rig.seq_state("sent")                                # Demo-GUI schickt den Schritt
+    time.sleep(0.15)
+    rig.state["buttons"][L.L3] = 0
+    rig.seq_state("moving")
+    time.sleep(1.2)                                      # Stick bleibt ausgelenkt
+    late = goals_since(rig, "right", t_next + 0.05)
+    assert late == [], "nach Weiter keine Hand-Ziele (braechen die Fahrt ab)"
+    assert rig.status().get("seq_busy") and "ABLAUF" in rig.status()["label"]
+    rig.state["axes"][L.LY] = 0.0
+    rig.seq_state("waiting")                             # Schritt erreicht -> Jog wieder frei
+    time.sleep(0.3)
+    t0 = time.monotonic()
+    rig.state["axes"][L.LY] = 0.6
+    assert wait_for(lambda: len(goals_since(rig, "right", t0)) >= 2, 2.0)
+    rig.state["axes"][L.LY] = 0.0
+
+
+def test_stick_during_sequence_motion_sends_no_goal(rig):
+    rig.seq_state("moving")
+    time.sleep(0.3)
+    t0 = time.monotonic()
+    rig.state["axes"][L.LY] = 0.8
+    rig.state["axes"][L.RX] = 0.8
+    time.sleep(0.8)
+    rig.state["axes"][L.LY] = rig.state["axes"][L.RX] = 0.0
+    time.sleep(0.3)
+    assert goals_since(rig, "right", t0) == [] and goals_since(rig, "left", t0) == []
+    rig.seq_state("idle")                                # Ablauf fertig/abgebrochen
+    time.sleep(0.3)
+    t1 = time.monotonic()
+    rig.state["axes"][L.LY] = 0.6
+    assert wait_for(lambda: goals_since(rig, "right", t1), 2.0)
+    rig.state["axes"][L.LY] = 0.0
