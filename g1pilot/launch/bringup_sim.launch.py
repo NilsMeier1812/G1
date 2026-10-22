@@ -222,10 +222,20 @@ def generate_launch_description():
             package='g1pilot', executable='dijkstra_planner', name='dijkstra_planner',
             output='screen'
         ))
-        # Waypoint-Follower: Pose + Pfad -> /g1pilot/auto_joy (virtueller Joystick).
+        # Waypoint-Follower: Pose + Pfad -> /g1pilot/nav/raw_joy (virtueller Joystick).
         nodes.append(Node(
             package='g1pilot', executable='nav2point', name='nav2point',
             output='screen'
+        ))
+        # Waechter: gibt den Nav-Joy erst frei (/g1pilot/auto_joy + nav/auto_active),
+        # wenn alle Pruefungen gruen sind. Sim: Totmann optional (G1_NAV_DEADMAN=1
+        # = wie real, L2 + linker Stick), sonst startet AUTO NAV wie bisher sofort.
+        nodes.append(Node(
+            package='g1pilot', executable='nav_supervisor', name='nav_supervisor',
+            output='screen',
+            parameters=[{
+                'require_deadman': os.environ.get('G1_NAV_DEADMAN', '0').strip() == '1',
+            }]
         ))
         # Sim-Bruecke: /g1pilot/joy (aus joy_mux, auto-gegated) -> /g1pilot/loco_cmd_vel,
         # weil loco_sim keinen Joy liest. Auf real uebernimmt loco_client den Joy direkt.

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import math
+import time
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy
@@ -23,7 +24,9 @@ class Nav2Point(Node):
         self.declare_parameter('waypoint_tolerance', 0.20)
         self.declare_parameter('goal_tolerance', 0.03)
         self.declare_parameter('frame_id', 'map')
-        self.declare_parameter('joy_topic', '/g1pilot/auto_joy')
+        # Roh-Joystick an den nav_supervisor (der prueft alle Waechter und gibt
+        # erst dann auf /g1pilot/auto_joy an joy_mux weiter).
+        self.declare_parameter('joy_topic', '/g1pilot/nav/raw_joy')
         self.declare_parameter('path_topic', '/g1pilot/path')
         self.declare_parameter('auto_enable_topic', '/g1pilot/auto_enable')
         self.declare_parameter('vx_limit', 0.6)
@@ -58,6 +61,8 @@ class Nav2Point(Node):
         self.declare_parameter('min_yaw_axis', 0.25)    # Endausrichtung, normiert
         self.declare_parameter('stall_s', 3.0)          # kein Fortschritt nahe Ziel -> ausrichten
         self.declare_parameter('stall_dist', 0.35)      # [m]
+        # Pose aelter als das -> EIN Stop-Joy, dann nichts (nie mit alter Pose fahren).
+        self.declare_parameter('pose_timeout_s', 0.3)
         goal_topic = self.get_parameter('goal_topic').value
         self.final_align = bool(self.get_parameter('final_align').value)
         self.yaw_tol = math.radians(float(self.get_parameter('yaw_tol_deg').value))
@@ -88,6 +93,9 @@ class Nav2Point(Node):
         self.min_yaw_axis = float(self.get_parameter('min_yaw_axis').value)
         self.stall_s = float(self.get_parameter('stall_s').value)
         self.stall_dist = float(self.get_parameter('stall_dist').value)
+        self.pose_timeout = float(self.get_parameter('pose_timeout_s').value)
+        self._t_pose = None
+        self._stale_stopped = False
         self._best_dist = None
         self._best_t = None
 
@@ -108,6 +116,10 @@ class Nav2Point(Node):
     def publish_status(self, state):
         self.pub_status.publish(String(data=state))
 
+    def pose_stale(self):
+        return (self.pose_timeout > 0 and self._t_pose is not None
+                and time.monotonic() - self._t_pose > self.pose_timeout)
+
     def publish_stop(self):
         joy = Joy()
         joy.header.stamp = self.get_clock().now().to_msg()
@@ -122,6 +134,7 @@ class Nav2Point(Node):
         self.yaw = yaw_from_quat(qx, qy, qz, qw)
         self.have_pose = True
         self.logged_no_pose = False
+        self._t_pose = time.monotonic()
 
     def cb_auto_enable(self, msg: Bool):
         self.auto_enabled = msg.data
@@ -211,6 +224,14 @@ class Nav2Point(Node):
                     self.get_logger().warn('Reached the end of the path.')
                     self.logged_end_path = True
                 return
+
+            if self.pose_stale():
+                if not self._stale_stopped:
+                    self.get_logger().warn('Pose zu alt -> Stopp, warte auf frische Pose.')
+                    self.publish_stop()
+                    self._stale_stopped = True
+                return
+            self._stale_stopped = False
 
             self.logged_no_pose = False
             self.logged_no_path = False

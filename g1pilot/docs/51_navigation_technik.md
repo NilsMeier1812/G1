@@ -33,11 +33,16 @@ wollen. Für die Bedienung siehe
  ┌───────────────────┐                                    └──────────┬───────────┘
  │ nav2point         │◄────────────── Pose ──────────────────────────┘
  │ Pure-Pursuit-     │
- │ Waypoint-Follower │────► /g1pilot/auto_joy  (virtueller Joystick, Deadman-Btn 8)
+ │ Waypoint-Follower │────► /g1pilot/nav/raw_joy  (virtueller Joystick, Deadman-Btn 8)
  └───────────────────┘                    │
                                           ▼
-                         ┌────────────────────────────┐   /g1pilot/auto_enable
-                         │ joy_mux (Auto/Manuell-Mux)  │◄── (scharfschalten)
+   /g1pilot/auto_enable (Anfrage) ┌────────────────────────────┐
+   /g1pilot/ps4/deadman (L2)  ───►│ nav_supervisor (Waechter)  │
+   /g1pilot/nav/heartbeat (GUI)   └──────┬──────────────┬──────┘
+                                         │ /g1pilot/    │ /g1pilot/nav/auto_active
+                                         ▼ auto_joy     ▼ (Freigabe)
+                         ┌────────────────────────────┐
+                         │ joy_mux (Auto/Manuell-Mux)  │
                          └──────────────┬──────────────┘
                                         │ /g1pilot/joy
                        ┌────────────────┴─────────────────┐
@@ -137,7 +142,7 @@ Fortschritt meldet der Node als `std_msgs/String` auf `/g1pilot/nav_status`
 | Wert | Bedeutung |
 |---|---|
 | `idle` | seit dem Start noch kein Ziel |
-| `moving` | neuer Pfad empfangen; läuft, sobald `auto_enable` an ist |
+| `moving` | neuer Pfad empfangen; läuft, sobald `nav_supervisor` freigibt |
 | `arrived` | Ziel inkl. Endausrichtung erreicht, Pfad verworfen |
 | `no_path` | Planer fand keinen Weg (leerer Pfad), Roboter wurde angehalten |
 
@@ -145,6 +150,30 @@ Fortschritt meldet der Node als `std_msgs/String` auf `/g1pilot/nav_status`
 blockiert, kein kollisionsfreier Weg) einen **leeren Pfad**. `nav2point` hält
 dann an, statt dem vorherigen Pfad weiter zu folgen. Die Demo-GUI nutzt
 `nav_status` für die AUTO-NAV-Anzeige (siehe `42_demo_gui_konzept.md`).
+
+### `nav_supervisor`
+
+Sicherheits-Schicht zwischen Folger und `joy_mux` (Logik ROS-frei in
+`SupervisorLogic`, Tests `test/test_nav_supervisor.py`). Zustände:
+`off` → `queued` (angefragt, wartet auf Pfad/Freigabe/Totmann) → `running`
+→ `paused` (Totmann los) / `stopped` (Wächter, braucht neue Anfrage).
+Nur in `running` wird `raw_joy` (mit Tempo-Deckel `axis_cap_lin/yaw`) nach
+`/g1pilot/auto_joy` weitergereicht und `/g1pilot/nav/auto_active` = true.
+Jeder Übergang aus `running` sendet genau einen Stopp-Joy. Zustand + Grund
+als JSON auf `/g1pilot/nav/state` (latched, 10 Hz).
+
+Totmann: `ps4_walk` veröffentlicht `/g1pilot/ps4/deadman`
+(`{"held","go"}`, 20 Hz, nur solange der Controller-Joy frisch ist).
+`held` = L2, `go` = linker Stick ausgelenkt. Start/Fortsetzen braucht beides,
+Halten nur L2. Solange `nav/state` in `queued/running/paused/stopped` mit
+`require_deadman` steht, sendet `ps4_walk` kein `walk_cmd`; bei der Übergabe
+wird das Hand-Gehen entschärft (erst nach L2-los wieder scharf).
+
+Herzschlag: Demo-GUI und Streamdeck senden `/g1pilot/nav/heartbeat` mit 5 Hz.
+Bleibt er 1 s aus, stoppt die Autonomie.
+
+Wächter-Parameter siehe `DEFAULTS` in `nav_supervisor.py`; real ist
+`require_deadman` fest an, in der Sim per `G1_NAV_DEADMAN=1`.
 
 ### `sim_localization` (nur Sim) / MOLA + `mola_fixed` (nur Real)
 
@@ -162,7 +191,7 @@ das vom Stack erwartete Frame.
 Siehe [41_teleoperation_technik.md](41_teleoperation_technik.md). Auf real
 liest `loco_client` `/g1pilot/joy` direkt; in der Simulation liest
 `loco_sim` keinen `Joy`, daher übersetzt `joy_to_cmdvel` das (bereits durch
-`joy_mux`/`auto_enable` gegatete) `/g1pilot/joy` in `/g1pilot/loco_cmd_vel`
+`joy_mux`/`nav/auto_active` gegatete) `/g1pilot/joy` in `/g1pilot/loco_cmd_vel`
 (mit Watchdog: bleibt der Strom aus, wird einmalig 0 gesendet).
 
 ## Warum der Umweg über einen „Fake-Joystick"?
@@ -178,6 +207,7 @@ gibt keinen zweiten, ungetesteten Steuerweg zum Roboter.
 | Lokalisierung | `sim_localization` | MOLA + `mola_fixed` |
 | Planer | `dijkstra_planner` | identisch |
 | Follower | `nav2point` | identisch |
+| Wächter | `nav_supervisor` (Totmann optional) | identisch, Totmann L2 Pflicht |
 | Joy-Mux | `joy_mux` | identisch |
 | Loco-Anbindung | `joy_to_cmdvel` → `loco_sim` | Joy direkt → `loco_client` |
 | Karte | `create_map` aus `/scene_markers` | `create_map`, i. d. R. leer ohne eigenes Setup |
@@ -186,5 +216,6 @@ gibt keinen zweiten, ungetesteten Steuerweg zum Roboter.
 
 - Keine Live-Perzeption: die Karte spiegelt nur die beim Sim-Start geladene
   Umgebung, keine spontanen Hindernisse.
-- Auf echter Hardware ist ein Livox MID360 + das große Docker-Image
-  Voraussetzung für Navigation (`G1_ENABLE_LIDAR=1`).
+- Auf echter Hardware ist ein Livox MID360 + das LiDAR-Image
+  `g1pilot-real-lidar` Voraussetzung für Navigation (`G1_ENABLE_LIDAR=1`).
+  MOLA ist im Image, aber noch nicht im Real-Launch eingebunden (Stufe 2).

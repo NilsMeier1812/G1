@@ -486,6 +486,12 @@ if [ -z "${G1_NV_PRIME_OFFLOAD:-}" ]; then
   fi
 fi
 
+# ── LiDAR: eigenes Real-Image mit Livox + MOLA (compose baut es, falls es fehlt) ─
+if [ "$PROFILE" = "real" ] && [ "${G1_ENABLE_LIDAR:-0}" = "1" ]; then
+  export G1_REAL_IMAGE=g1pilot-real-lidar
+  echo -e "${G}[start] LiDAR an: Image ${G1_REAL_IMAGE}:v1.2.0 (Livox MID-360 + MOLA).${R}"
+fi
+
 # ── Reste eines frueheren Laufs sauber entfernen ────────────────────────
 docker compose --profile "$PROFILE" down --remove-orphans
 

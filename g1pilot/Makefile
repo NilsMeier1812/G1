@@ -32,7 +32,7 @@ export G1_NV_PRIME_OFFLOAD
 
 .PHONY: sim sim-bg real real-full stop \
         build-sim build-real build-real-full \
-        build-mujoco build-g1pilot-sim build-g1pilot-real build-g1pilot-real-full \
+        build-mujoco build-g1pilot-sim build-g1pilot-real build-g1pilot-real-lidar build-g1pilot-real-full \
         logs status clean shell-sim shell-mujoco shell-real gpu-check phone-web
 
 # ─── SIMULATION ─────────────────────────────────────────────
@@ -78,6 +78,10 @@ build-g1pilot-sim:
 build-g1pilot-real:
 	@echo "📦 Baue G1Pilot REAL Image (schlank, ~10 min)..."
 	docker build -f docker/Dockerfile.real -t g1pilot-real:v1.2.0 .
+
+build-g1pilot-real-lidar:
+	@echo "📦 Baue G1Pilot REAL Image + LiDAR (Livox MID-360 + MOLA)..."
+	docker build -f docker/Dockerfile.real --build-arg WITH_LIDAR=1 -t g1pilot-real-lidar:v1.2.0 .
 
 build-g1pilot-real-full:
 	@echo "📦 Baue G1Pilot REAL-FULL Image (+ Livox/MOLA, ~45 min)..."

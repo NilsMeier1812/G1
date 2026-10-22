@@ -375,8 +375,9 @@ Seit 2026-10-19:
 
 ## Weiterführend
 
-`G1_ENABLE_LIDAR=1` (+ Compose-Profil `real-full`) schaltet Livox/Navigation
-zu — braucht das große Image und den MID360; siehe
+`G1_ENABLE_LIDAR=1 ./start.sh --build` baut/nutzt das Image
+`g1pilot-real-lidar` und schaltet Livox/Navigation zu (LiDAR-IPs über
+`G1_LIDAR_HOST_IP`/`G1_LIDAR_IP`, Default Host = IP von `ROBOT_INTERFACE`); siehe
 [50_navigation_anleitung.md](50_navigation_anleitung.md). `arm_sdk` parallel
 zum Gehen funktioniert konstruktionsbedingt (Gewichts-Überblendung), für die
 ersten Geh-Tests aber die Arme deaktiviert lassen — der natürliche Armschwung

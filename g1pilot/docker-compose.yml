@@ -109,6 +109,8 @@ services:
       # Navigation (g1pilot-Ansatz) in der Sim mitstarten: dijkstra_planner +
       # nav2point + Sim-Glue (sim_localization, joy_to_cmdvel). Siehe g1pilot/docs/50_navigation_anleitung.md.
       - G1_ENABLE_NAV=${G1_ENABLE_NAV:-0}
+      # AUTO NAV in der Sim wie real nur mit Totmann (L2 + linker Stick): 1.
+      - G1_NAV_DEADMAN=${G1_NAV_DEADMAN:-0}
       # Lauf-Policy von loco_sim (Ordner unter g1pilot/policies), im Startmenue
       # waehlbar: g1_wholebody (Default, alt) | agile_velocity_g1 |
       # agile_velocity_height_g1. Siehe g1pilot/docs/31_loco_technik.md.
@@ -158,13 +160,17 @@ services:
   g1pilot-real:
     # ── G1Pilot mit echtem G1 (schlank: Arme + Haende + Unitree-Loco) ──
     # Roboter per LAN (192.168.123.x), Haende ebenfalls im Roboter-LAN.
-    # LiDAR/Nav: G1_ENABLE_LIDAR=1 + grosses Image (siehe g1pilot-real-full).
+    # LiDAR/Nav: G1_ENABLE_LIDAR=1 -> Image g1pilot-real-lidar (Livox + MOLA, ~+15 min Bau).
     profiles: ["real"]
     <<: *g1pilot-base
     build:
       context: .
       dockerfile: docker/Dockerfile.real
-    image: g1pilot-real:v1.2.0
+      # LiDAR (Livox MID-360 + MOLA) nur mit G1_ENABLE_LIDAR=1 ins Image;
+      # start.sh setzt dann G1_REAL_IMAGE=g1pilot-real-lidar (eigener Tag).
+      args:
+        WITH_LIDAR: ${G1_ENABLE_LIDAR:-0}
+    image: ${G1_REAL_IMAGE:-g1pilot-real}:v1.2.0
     # PS4-Controller (evdev) braucht Zugriff auf /dev/input + udev-Infos.
     privileged: true
     environment:
@@ -234,6 +240,12 @@ services:
       - G1_MAX_VY=${G1_MAX_VY:-0.3}
       - G1_MAX_VYAW=${G1_MAX_VYAW:-0.4}
       - G1_ENABLE_LIDAR=${G1_ENABLE_LIDAR:-0}
+      # LiDAR-Netz: Host-IP Default = IPv4 von ROBOT_INTERFACE, LiDAR im G1 .120.
+      - G1_LIDAR_HOST_IP=${G1_LIDAR_HOST_IP:-}
+      - G1_LIDAR_IP=${G1_LIDAR_IP:-192.168.123.120}
+      # Tempo-Deckel der Autonomie (nav_supervisor), unter G1_MAX_VX/VYAW.
+      - G1_NAV_MAX_VX=${G1_NAV_MAX_VX:-0.15}
+      - G1_NAV_MAX_VYAW=${G1_NAV_MAX_VYAW:-0.3}
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - .:/ros2_ws/src/g1pilot:rw

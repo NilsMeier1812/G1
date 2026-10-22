@@ -53,7 +53,7 @@ setup(
 
         # Configuration Files (YAML + RViz both live in config/)
         (f'share/{package_name}/config',
-            expand(['config/*.yaml', 'config/*.rviz'])),
+            expand(['config/*.yaml', 'config/*.rviz', 'config/*.json'])),
 
         # Fenster-Icons (Dock/Taskleiste), siehe g1pilot/utils/window_style.py
         (f'share/{package_name}/resource/icons',
@@ -124,6 +124,7 @@ setup(
             # Sim-Nav-Glue (nur Sim): Ersatz fuer MOLA (Pose aus rt/sportmodestate)
             # und Joy->cmd_vel-Bruecke, damit der Real-Nav-Stack in MuJoCo laeuft.
             'sim_localization = g1pilot.navigation.sim_localization:main',
+            'nav_supervisor = g1pilot.navigation.nav_supervisor:main',
             'joy_to_cmdvel = g1pilot.navigation.joy_to_cmdvel:main',
 
             # Diagnostics / sim tools

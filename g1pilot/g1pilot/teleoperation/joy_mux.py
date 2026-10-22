@@ -21,7 +21,10 @@ class JoyMux(Node):
         self.declare_parameter('odom_topic','/lidar_odometry/pose_fixed')
         self.declare_parameter('manual_topic','/g1pilot/joy_manual')
         self.declare_parameter('out_topic','/g1pilot/joy')
-        self.declare_parameter('auto_enable_topic','/g1pilot/auto_enable')
+        # Freigabe der Autonomie kommt vom nav_supervisor (alle Waechter gruen),
+        # NICHT direkt vom AUTO-NAV-Knopf (/g1pilot/auto_enable ist dort nur die
+        # Anfrage). Laeuft kein Supervisor, bleibt die Autonomie gesperrt.
+        self.declare_parameter('auto_enable_topic','/g1pilot/nav/auto_active')
         self.declare_parameter('publish_rate',50.0)
         self.declare_parameter('lookahead',0.6)
         self.declare_parameter('goal_tol',0.30)
