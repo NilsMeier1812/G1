@@ -32,12 +32,23 @@ Pose-Namen sind global eindeutig (der Name ist der Schluessel, mit dem
 kein Namensraum. Leere Kategorien werden mitgespeichert, damit ein im
 Speichern-Dialog angelegter "Ordner" auch ohne Pose darin erhalten bleibt.
 
-Dateiformat (Version 2):
-    {"version": 2,
+ABLAEUFE: Ein Ablauf ist eine geordnete Liste von VERWEISEN auf Posen
+(Schritte), getrennt von den Kategorien gefuehrt. Dieselbe Pose kann so in
+mehreren Ablaeufen (und mehrfach in einem) vorkommen -- keine Kopien, kein
+Umbenennen zum Sortieren. Je Schritt optional `wait_s` (Pause nach dem
+Erreichen, nur beim Ablauf »am Stueck«). Wer eine Pose in eine Kategorie
+"Ablauf <Name>" speichert, haengt sie zusaetzlich hinten an den Ablauf
+<Name> an (bisherige Arbeitsweise bleibt gueltig).
+
+Dateiformat (Version 3):
+    {"version": 3,
      "categories": ["Allgemein", "Greifen"],
-     "poses": {"<name>": {"category": ..., "left_arm": [...], "saved_at": ...}}}
-Version 1 (flaches {name: eintrag}) wird transparent gelesen und beim naechsten
-Schreiben in Version 2 ueberfuehrt.
+     "poses": {"<name>": {"category": ..., "left_arm": [...], "saved_at": ...}},
+     "sequences": {"<ablauf>": {"steps": [{"pose": "<name>", "wait_s": 0.0}]}}}
+Version 1 (flaches {name: eintrag}) und Version 2 (ohne "sequences") werden
+transparent gelesen. Fehlt "sequences", werden die Ablaeufe aus den
+Kategorien "Ablauf <Name>" abgeleitet (Posen in Namensreihenfolge, wie die
+Demo-GUI sie frueher abfuhr) und beim naechsten Schreiben fest uebernommen.
 
 Wird von ZWEI Prozessen genutzt (arm_controller.py speichert/laedt, die
 Streamdeck-GUI in teleoperation/ui_interface.py listet zum Anzeigen und legt
@@ -66,7 +77,12 @@ COMPONENTS = ("left_arm", "right_arm", "left_hand", "right_hand")
 # Kategorie fuer Posen ohne explizite Angabe (und fuer Legacy-Eintraege).
 DEFAULT_CATEGORY = "Allgemein"
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+
+# Kategorien "Ablauf <Name>" = Ablauf <Name> (Altform + Speichern-Abkuerzung).
+SEQUENCE_PREFIX = "Ablauf "
+# Obergrenze fuer die Pause nach einem Schritt (Tippfehler abfangen).
+MAX_WAIT_S = 600.0
 
 
 def default_store_path() -> Path:
@@ -84,6 +100,41 @@ def default_store_path() -> Path:
 def _clean_category(category) -> str:
     name = (category or "").strip()
     return name or DEFAULT_CATEGORY
+
+
+def _clean_step(step):
+    """Schritt -> {"pose": name, "wait_s": s} oder None (ungueltig). Nimmt auch
+    einen reinen Posennamen."""
+    if isinstance(step, str):
+        step = {"pose": step}
+    if not isinstance(step, dict):
+        return None
+    pose = str(step.get("pose") or "").strip()
+    if not pose:
+        return None
+    try:
+        wait = float(step.get("wait_s") or 0.0)
+    except (TypeError, ValueError):
+        wait = 0.0
+    if not wait == wait:      # NaN
+        wait = 0.0
+    return {"pose": pose, "wait_s": round(min(max(wait, 0.0), MAX_WAIT_S), 2)}
+
+
+def _clean_steps(steps) -> list:
+    return [st for st in (_clean_step(x) for x in (steps or [])) if st is not None]
+
+
+def legacy_sequences(poses: dict) -> dict:
+    """Ablaeufe aus den Kategorien "Ablauf <Name>" ableiten (Altform):
+    Posen der Kategorie in Namensreihenfolge (Gross/klein egal)."""
+    out = {}
+    for name, entry in poses.items():
+        cat = _clean_category(entry.get("category"))
+        if cat.startswith(SEQUENCE_PREFIX) and cat[len(SEQUENCE_PREFIX):].strip():
+            out.setdefault(cat[len(SEQUENCE_PREFIX):].strip(), []).append(name)
+    return {seq: {"steps": [{"pose": n, "wait_s": 0.0} for n in sorted(names, key=str.lower)]}
+            for seq, names in out.items()}
 
 
 class PoseStore:
@@ -127,20 +178,29 @@ class PoseStore:
         """-> normalisiertes Version-2-Dokument (auch fuer Version-1-Dateien)."""
         raw = self._read_raw()
         if not raw:
-            return {"version": SCHEMA_VERSION, "categories": [], "poses": {}}
+            return {"version": SCHEMA_VERSION, "categories": [], "poses": {}, "sequences": {}}
         if isinstance(raw.get("poses"), dict):
             cats = [c for c in raw.get("categories", []) if isinstance(c, str)]
             poses = {k: v for k, v in raw["poses"].items() if isinstance(v, dict)}
-            return {"version": SCHEMA_VERSION, "categories": cats, "poses": poses}
+            seqs = raw.get("sequences")
+            if isinstance(seqs, dict):
+                seqs = {str(k).strip(): {"steps": _clean_steps(v.get("steps"))}
+                        for k, v in seqs.items() if isinstance(v, dict) and str(k).strip()}
+            else:
+                seqs = legacy_sequences(poses)     # Version 2: aus Kategorien
+            return {"version": SCHEMA_VERSION, "categories": cats, "poses": poses,
+                    "sequences": seqs}
         # Version 1: flaches {name: eintrag} ohne Kategorien.
         poses = {k: v for k, v in raw.items() if isinstance(v, dict)}
-        return {"version": SCHEMA_VERSION, "categories": [], "poses": poses}
+        return {"version": SCHEMA_VERSION, "categories": [], "poses": poses,
+                "sequences": legacy_sequences(poses)}
 
     def _save(self, doc: dict) -> None:
         out = {
             "version": SCHEMA_VERSION,
             "categories": sorted(set(doc.get("categories", []))),
             "poses": doc.get("poses", {}),
+            "sequences": doc.get("sequences", {}),
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
@@ -234,6 +294,14 @@ class PoseStore:
         doc = self._load()
         doc["poses"][name] = entry
         doc["categories"] = list(doc["categories"]) + [entry["category"]]
+        if entry["category"].startswith(SEQUENCE_PREFIX):
+            # Speichern in "Ablauf <X>" = hinten an Ablauf <X> anhaengen
+            # (Ueberschreiben einer schon enthaltenen Pose haengt nicht doppelt an).
+            seq = entry["category"][len(SEQUENCE_PREFIX):].strip()
+            if seq:
+                steps = doc["sequences"].setdefault(seq, {"steps": []})["steps"]
+                if name not in [st["pose"] for st in steps]:
+                    steps.append({"pose": name, "wait_s": 0.0})
         self._save(doc)
 
     def add_category(self, category: str) -> str:
@@ -253,6 +321,73 @@ class PoseStore:
         doc = self._load()
         if name in doc["poses"]:
             del doc["poses"][name]
+            self._save(doc)
+            return True
+        return False
+
+    # ── Ablaeufe ─────────────────────────────────────────────────────────
+    def list_sequences(self) -> list:
+        """-> [(ablauf, [schritt, ...]), ...] nach Namen sortiert; schritt =
+        {"pose", "wait_s"}. Leere Ablaeufe sind enthalten (frisch angelegt)."""
+        seqs = self._load()["sequences"]
+        return [(k, [dict(st) for st in seqs[k]["steps"]])
+                for k in sorted(seqs, key=str.lower)]
+
+    def get_sequence(self, name: str):
+        """-> Schrittliste des Ablaufs `name` oder None."""
+        seq = self._load()["sequences"].get((name or "").strip())
+        return None if seq is None else [dict(st) for st in seq["steps"]]
+
+    def missing_poses(self, steps) -> list:
+        """-> Posennamen aus `steps`, die (nicht mehr) gespeichert sind."""
+        poses = self._load()["poses"]
+        out = []
+        for st in _clean_steps(steps):
+            if st["pose"] not in poses and st["pose"] not in out:
+                out.append(st["pose"])
+        return out
+
+    def save_sequence(self, name: str, steps, *, old_name=None) -> str:
+        """Ablauf `name` mit genau diesen Schritten speichern. `old_name` (anders
+        als `name`) = umbenennen. Ein Name, den schon ein ANDERER Ablauf hat,
+        wird abgelehnt (ValueError) -- nie still ueberschreiben. -> Name."""
+        name = (name or "").strip()
+        if not name:
+            raise ValueError("Ablauf-Name darf nicht leer sein.")
+        old = (old_name or "").strip() or name
+        doc = self._load()
+        if name != old and name in doc["sequences"]:
+            raise ValueError(f"Einen Ablauf »{name}« gibt es schon.")
+        if name != old:
+            doc["sequences"].pop(old, None)
+        doc["sequences"][name] = {"steps": _clean_steps(steps)}
+        self._save(doc)
+        return name
+
+    def create_sequence(self, name: str) -> str:
+        """Neuen, leeren Ablauf anlegen (ValueError, wenn es ihn schon gibt)."""
+        name = (name or "").strip()
+        if name in self._load()["sequences"]:
+            raise ValueError(f"Einen Ablauf »{name}« gibt es schon.")
+        return self.save_sequence(name, [])
+
+    def append_step(self, name: str, pose: str, wait_s: float = 0.0) -> None:
+        """Pose hinten an den Ablauf `name` haengen (legt ihn bei Bedarf an)."""
+        name = (name or "").strip()
+        if not name:
+            raise ValueError("Ablauf-Name darf nicht leer sein.")
+        step = _clean_step({"pose": pose, "wait_s": wait_s})
+        if step is None:
+            raise ValueError("Pose-Name darf nicht leer sein.")
+        doc = self._load()
+        doc["sequences"].setdefault(name, {"steps": []})["steps"].append(step)
+        self._save(doc)
+
+    def delete_sequence(self, name: str) -> bool:
+        """Ablauf loeschen -- die Posen selbst bleiben."""
+        doc = self._load()
+        if (name or "").strip() in doc["sequences"]:
+            del doc["sequences"][name.strip()]
             self._save(doc)
             return True
         return False

@@ -27,6 +27,7 @@ ergeben. Die Demo-GUI reduziert die Bedienung auf **eine Entscheidung zur Zeit**
 │  GREIFEN              [ ARME | HÄNDE ]                           │
 │  ──────────────────────────────────────────────────────────────  │
 │   Abläufe: [ Arbeitsplatz 1 ] [ Arbeitsplatz 2 ]                 │
+│   [Am Stück|Schritt für Schritt] [ Weiter ▶ ] [Posen & Abläufe…] │
 │   [Sichere Pose]   [Grundstellung]   [Bewegung stoppen]          │
 │   Erweitert ▸   (Pose anfahren … / Pose speichern … / Marker)    │
 │                                                                  │
@@ -121,18 +122,45 @@ Titelzeile vom Inhalt (auch bei GEHEN).
 
 *Seite ARME*
 
-- **Abläufe**: jede Pose-Store-Kategorie `Ablauf <Name>` wird ein eigener
-  Knopf „<Name>“; ihre Posen laufen in Namensreihenfolge ab (`AP1_01_…`,
-  `AP1_02_…`), die Statuszeile zeigt „Schritt n/m“. Ablauf-Posen erscheinen
-  nicht als Einzelknöpfe. Reine Hand-Posen (nur `left_hand`/`right_hand`)
-  melden nach `hand_only_settle_s` (1.8 s) `reached`. Beispiel-Abläufe für die
-  Szene A5 (Arbeitsplatz 1: Zylinder links greifen und an rechts übergeben;
-  Arbeitsplatz 2: blaue KLT mit beiden Händen anheben) installiert
-  `python3 -m g1pilot.tools.install_example_sequences`; sie gelten für den
-  Roboter genau an der jeweiligen Station. Der nächste Schritt startet erst,
-  wenn `/g1pilot/arm_command/status` `reached` meldet. Bei
-  `failed`/`rejected`/`cancelled` bricht der Ablauf ab und der Grund steht im
-  Status. Gibt es noch keine Abläufe, erklärt ein Hinweis, wie man einen anlegt.
+- **Abläufe** (seit 2026-10-22): ein Ablauf ist eine Liste von **Verweisen auf
+  gespeicherte Posen** im Pose-Store (`sequences`, siehe
+  [11_arm_manipulation_technik.md](11_arm_manipulation_technik.md)). Dieselbe
+  Pose (z. B. `Sichere_Pose`) kann in mehreren Abläufen und mehrfach in einem
+  stehen, ohne Kopie und ohne Umbenennen. Jeder Ablauf mit mindestens einem
+  Schritt wird ein Knopf „<Name>“, die Statuszeile zeigt „Schritt n/m“.
+  Jeder Schritt ist ein geplantes POSE ANFAHREN (Kollisionsschutz wie immer);
+  reine Hand-Posen melden nach `hand_only_settle_s` (1.8 s) `reached`.
+  Beispiel-Abläufe für die Szene A5 installiert
+  `python3 -m g1pilot.tools.install_example_sequences` (gelten genau an der
+  jeweiligen Station). Fehlt eine Pose eines Ablaufs, startet er nicht und der
+  Status nennt sie.
+- **Am Stück | Schritt für Schritt** (Umschalter unter den Ablauf-Knöpfen):
+  *Am Stück* fährt nach jedem `reached` (+ optionaler Pause des Schritts)
+  sofort weiter. *Schritt für Schritt* hält nach jedem Schritt an; weiter geht
+  es erst mit **Weiter ▶** (GUI), am Handy oder mit **L3** am PS4-/Xbox-
+  Controller (Controller vibriert kurz, sobald der Ablauf wartet). Der
+  Umschalter wirkt auch während eines Ablaufs ab dem nächsten Schritt; so
+  hält man einen Ablauf am Stück an. Start: **real Schritt für Schritt, Sim
+  am Stück** (`G1_SEQUENCE_MODE=auto|step`).
+- **Abbruch**: `failed`/`rejected`/`cancelled` der laufenden Fahrt, NOT-HALT
+  (GUI, Controller PS, Voll-Notaus, Handy, Streamdeck), Stopp (Knopf
+  „Bewegung stoppen“, Controller Kreuz, `/g1pilot/pose_store/cancel`),
+  Moduswechsel und „Hand bewegen“ während einer Fahrt beenden den Ablauf, auch
+  wenn er gerade auf „Weiter“ wartet. Danach geht es nie von selbst weiter,
+  auch nicht nach dem Quittieren. Wartet ein Ablauf, darf man die Hand mit Jog
+  oder Controller nachkorrigieren; der nächste Schritt wird von dort geplant.
+  Kommt auf ein Anfahren 4 s keine Antwort vom Arm-Regler (Arme nicht
+  übernommen), bricht der Ablauf mit Hinweis ab.
+- **Posen & Abläufe …** öffnet das Fenster zum Zusammenstellen (nicht modal,
+  man kann nebenher die Hand bewegen): links die Abläufe (neu, umbenennen,
+  kopieren, löschen, starten), in der Mitte die Schritte (ziehen oder ▲/▼,
+  entfernen, Pause nach dem Schritt für „Am Stück“) und **„＋ Aktuelle Stellung
+  als Schritt …“** (speichert die Pose und hängt sie an, nachdem der
+  Arm-Controller das Speichern quittiert hat), rechts alle Posen nach Kategorie
+  (Doppelklick oder „← Hinzufügen“ hängt hinter dem markierten Schritt an,
+  Anfahren, Löschen, aktuelle Stellung speichern). Jede Änderung wird sofort
+  gespeichert. Auch der Dialog „Pose speichern“ hat das Feld **An Ablauf
+  anhängen** (neuer Name legt den Ablauf an).
 - **Sichere Pose** fährt die gespeicherte Pose `Sichere_Pose` geplant an
   (Arme hoch, Ellbogen hinten; Hinweis, falls sie fehlt; Name über
   `G1_SAFE_POSE` änderbar). **Grundstellung** sendet `/g1pilot/arms/home`: der
@@ -206,9 +234,13 @@ der Hand-Bridge (`hand_controller_viewer.html`, `inspire_hand_viewer.html`):
 ./start.sh --menu   # Text-Menü: 2) Bedienoberfläche → Demo-GUI
 ```
 
-Ablauf anlegen: GREIFEN → Erweitert → *Pose speichern …*, Kategorie
-`Ablauf <Name>`, Posen in Reihenfolge benennen (`AP1_01_…`, `AP1_02_…`).
-Der Ablauf erscheint danach als Knopf „<Name>“.
+Ablauf anlegen: GREIFEN → **Posen & Abläufe …** → *Neu …*, dann Posen aus
+der Liste rechts hinzufügen oder die Hand hinstellen und **„＋ Aktuelle
+Stellung als Schritt …“**. Der Ablauf erscheint als Knopf „<Name>“. Die alte
+Arbeitsweise geht weiter: eine Pose in die Kategorie `Ablauf <Name>`
+speichern hängt sie hinten an den Ablauf <Name> an. Bestehende Kategorien
+`Ablauf …` werden beim ersten Speichern als Abläufe übernommen (Reihenfolge
+wie bisher nach Namen).
 
 **Fenstergröße / Vollbild:** Die Demo-GUI startet maximiert. Der Steuerbereich
 liegt in einem Scrollbereich, damit die Mindesthöhe des Fensters klein bleibt

@@ -270,7 +270,7 @@ function render() {
   const t = $("stText");
   t.textContent = st.txt || "—";
   t.style.borderLeftColor = st.col || "#555";
-  $("stInfo").textContent = [st.sim ? "SIM" : "REAL", st.info, st.busy ? "Bewegung läuft" : ""].filter(Boolean).join(" · ");
+  $("stInfo").textContent = [st.sim ? "SIM" : "REAL", st.info, st.seq && st.seq.s === "waiting" ? "Ablauf wartet" : st.busy ? "Bewegung läuft" : ""].filter(Boolean).join(" · ");
   renderPad(st.pad);
   renderTemps(st.tmp);
 
@@ -284,6 +284,10 @@ function render() {
   $("btnTake").classList.toggle("on", ctl);
   $("btnTake").disabled = !ok && !ctl;
   show("btnStopMove", operator && !!st.busy);
+  const seq = st.seq || null;
+  const waiting = !!seq && seq.s === "waiting";
+  show("btnSeqNext", operator && waiting);
+  if (waiting) $("btnSeqNext").textContent = `Weiter ▶  (${seq.i + 1}/${seq.t}${seq.n ? " · " + seq.n : ""})`;
 
   const can = operator && ctl && ok;
   show("controls", operator && ctl);
@@ -305,6 +309,11 @@ function render() {
   for (const id of ["btnHandsOpen", "btnHandsClose", "btnLeftClose", "btnRightClose", "btnSafe", "btnHome",
     "btnPoseGo", "btnPoseSave"]) $(id).disabled = !can;
   renderSeqs(sequences(), can);
+  $("btnSeqNext").disabled = !can;
+  for (const [id, m] of [["btnSeqAuto", "auto"], ["btnSeqStep", "step"]]) {
+    $(id).classList.toggle("on", st.sm === m);
+    $(id).disabled = !can;
+  }
 }
 
 // Controller: Art (Verschieben/Drehen/Gehen/Hüfte), Tempo, Hand -- was am Pad nur die LED zeigt.
@@ -353,8 +362,9 @@ function renderTemps(tmp) {
   for (const [title, val, lvl] of tmp.g || []) add(title, String(val), lvl);
 }
 
-// Ablaeufe = Kategorien »Ablauf …« der Posenliste (wie in der PC-GUI).
+// Ablaeufe: Liste "s" des Katalogs (pose_store); aeltere PC-GUI: Kategorien »Ablauf …«.
 function sequences() {
+  if (Array.isArray(catalog.s)) return catalog.s.slice().sort((a, b) => a.localeCompare(b));
   return Object.entries(catalog.g || {})
     .filter(([cat, names]) => cat.startsWith("Ablauf ") && names.length)
     .map(([cat]) => cat.slice("Ablauf ".length).trim())
@@ -365,6 +375,7 @@ let seqKey = "";
 function renderSeqs(seqs, can) {
   const box = $("seqs");
   show("seqCap", seqs.length > 0);
+  show("seqModeRow", seqs.length > 0);
   const key = JSON.stringify(seqs);
   if (key !== seqKey) {
     seqKey = key;
@@ -511,6 +522,9 @@ $("estop").addEventListener("click", () => {
 });
 $("btnTake").addEventListener("click", () => cmd(body && body.me && body.me.ctl ? "release" : "take"));
 $("btnStopMove").addEventListener("click", () => cmd("cancel"));
+$("btnSeqNext").addEventListener("click", () => cmd("seq_next"));
+$("btnSeqAuto").addEventListener("click", () => cmd("seq_mode", "auto"));
+$("btnSeqStep").addEventListener("click", () => cmd("seq_mode", "step"));
 $("btnAck").addEventListener("click", () => {
   const st = (body && body.st) || {};
   confirmAction(st.estop ? "NOT-HALT quittieren" : "Start",
@@ -539,7 +553,7 @@ $("btnHome").addEventListener("click", () => confirmAction("Grundstellung",
 
 // Version der Handy-Seite; muss zu CACHE in sw.js passen. Kein Auto-Update: eine neue Version
 // wartet im Hintergrund, bis hier »Aktualisieren« getippt wird.
-const VERSION = "v3";
+const VERSION = "v4";
 $("version").textContent = `Handy-Seite ${VERSION}`;
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then((reg) => {

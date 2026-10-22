@@ -265,20 +265,33 @@ den Latch (`estop_active`); die Arme bleiben schlaff, bis
 
 ### `pose_store.py`
 
-Dateiformat Version 2:
+Dateiformat Version 3 (seit 2026-10-22, Abläufe):
 
 ```json
-{"version": 2,
+{"version": 3,
  "categories": ["Allgemein", "Greifen"],
- "poses": {"<name>": {"category": "...", "left_arm": [...], "saved_at": 0.0}}}
+ "poses": {"<name>": {"category": "...", "left_arm": [...], "saved_at": 0.0}},
+ "sequences": {"<ablauf>": {"steps": [{"pose": "<name>", "wait_s": 0.0}]}}}
 ```
+
+Ein Ablauf (`sequences`) verweist nur auf Posennamen; dieselbe Pose kann in
+mehreren Abläufen stehen. `wait_s` = Pause nach dem Schritt (nur „Am
+Stück“, 0…600 s). Fehlt `sequences` (Version 2), werden die Abläufe aus den
+Kategorien `Ablauf <Name>` abgeleitet (Posen nach Namen sortiert) und beim
+nächsten Schreiben fest übernommen. `save()` in eine Kategorie
+`Ablauf <X>` hängt die Pose zusätzlich hinten an Ablauf `<X>` an (nicht
+doppelt). Ausgeführt werden Abläufe von der Demo-GUI
+(`teleoperation/sequence_runner.py`: am Stück / Schritt für Schritt,
+`/g1pilot/sequence/next` = Weiter, `/g1pilot/sequence/state` = Stand,
+latched JSON); der arm_controller sieht davon nur einzelne
+`/g1pilot/pose_store/goto`.
 
 Speicherbare Komponenten: `left_arm`, `right_arm`, `left_hand`, `right_hand`
 (`COMPONENTS`-Tupel). Speicherpfad-Priorität: `G1_POSE_STORE`-Env-Variable
 > `<repo>/data/arm_poses.json` (bind-gemountet, überlebt Container-Neustarts)
 > `~/.g1pilot/` (Host-Betrieb ohne Mount). Schreiben ist atomar
 (`write-tmp-then-rename`), Version-1-Dateien (flaches Format ohne
-Kategorien) werden transparent migriert.
+Kategorien) und Version 2 (ohne Abläufe) werden transparent migriert.
 
 ## `G1IKSolver` (`utils/ik_solver.py`)
 

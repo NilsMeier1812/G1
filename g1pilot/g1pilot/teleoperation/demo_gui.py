@@ -12,9 +12,11 @@ Streamdeck-Kacheln gibt es drei klar getrennte Bereiche:
   2) STEUERUNG (Mitte) : zeigt NUR die Bedienelemente des aktiven Modus.
                          GEHEN   -> Joystick-Knopf + Pfeiltasten + Drehen.
                          GREIFEN -> Umschalter ARME | HAENDE:
-                                    ARME   = Ablaeufe (Pose-Store-Kategorien
-                                             "Ablauf <Name>"), Grundstellung und
-                                             eingeklappter "Erweitert"-Bereich.
+                                    ARME   = Ablaeufe (pose_store, Fenster
+                                             »Posen & Abläufe«), Am Stück /
+                                             Schritt für Schritt + »Weiter ▶«
+                                             (Controller: L3), Grundstellung
+                                             und eingeklappter "Erweitert"-Bereich.
                                     HAENDE = ganze Hand auf/zu, Griffkraft,
                                              Kraftzonen + einzelne Finger
                                              (hand_panel.py, ersetzt die
@@ -36,7 +38,6 @@ siehe launch/teleoperation_launcher.launch.py und docs/42_demo_gui_konzept.md.
 import json
 import math
 import os
-import re
 import sys
 import time
 
@@ -69,6 +70,8 @@ from g1pilot.teleoperation.ui_interface import (
 from g1pilot.teleoperation.hand_panel import HandPanel
 from g1pilot.teleoperation import status_line
 from g1pilot.teleoperation import shared_state
+from g1pilot.teleoperation import sequence_runner as sr
+from g1pilot.teleoperation.sequence_editor import SequenceEditor
 from g1pilot.teleoperation.phone import link as phone_link
 from g1pilot.teleoperation.ps4_arm_teleop import mirror_twist
 from g1pilot.manipulation.waist_yaw import (
@@ -97,16 +100,18 @@ WALK_GUI_MAX = "Normal"
 
 # Vorgeschlagene Kategorie im Dialog »Pose speichern« (auch demo_sequence.py).
 DEMO_CATEGORY = os.environ.get("G1_DEMO_CATEGORY", "Demo")
-# Ablaeufe: jede Kategorie "Ablauf <Name>" = eine Sequenz (Posen in Namens-
-# reihenfolge, z.B. AP1_01_..., AP1_02_...) -> ein Knopf "<Name>".
+# Ablaeufe stehen im pose_store (Liste von Pose-Verweisen, Fenster »Posen &
+# Abläufe«). Speichern in eine Kategorie "Ablauf <Name>" haengt die Pose dort an.
 SEQUENCE_PREFIX = "Ablauf "
+# Ablauf-Modus beim Start: real Schritt fuer Schritt (jeder Schritt bestaetigt),
+# Sim am Stueck. G1_SEQUENCE_MODE=auto|step ueberschreibt.
+SEQUENCE_MODE_ENV = "G1_SEQUENCE_MODE"
 # Knopf "Sichere Pose" faehrt diese gespeicherte Pose an.
 SAFE_POSE = os.environ.get("G1_SAFE_POSE", "Sichere_Pose")
 # WALK gilt als "angekommen", wenn arms/walk_ready kommt -- spaetestens nach
 # diesem Timeout (loco_sim laeuft dann ohnehin selbst los).
 WALK_SWITCH_TIMEOUT_MS = 16000   # > loco_sim walk_arm_timeout_s (15 s)
 
-TERMINAL = ("reached", "failed", "rejected", "cancelled")
 
 # AUTO-NAV-Anzeige: aus | an, wartet auf Ziel | laeuft (gestrichelt) | angekommen.
 NAV_OFF, NAV_WAIT, NAV_MOVING, NAV_ARRIVED = "off", "waiting", "moving", "arrived"
@@ -152,10 +157,14 @@ def _envflag(name):
 NAV_AVAILABLE = _envflag('G1_ENABLE_NAV') or _envflag('G1_ENABLE_LIDAR')
 
 
-def pretty_pose_name(name: str) -> str:
-    """'Demo_2_Winken' -> 'Winken' (Reihenfolge-Praefix ausblenden)."""
-    short = re.sub(r"^[^_]+_\d+_", "", name)
-    return short.replace("_", " ")
+pretty_pose_name = sr.pretty_pose_name   # 'Demo_2_Winken' -> 'Winken'
+
+
+def default_sequence_mode(sim):
+    env = (os.environ.get(SEQUENCE_MODE_ENV) or "").strip().lower()
+    if env in sr.MODE_TITLE:
+        return env
+    return sr.MODE_AUTO if sim else sr.MODE_STEP
 
 
 class DemoNode(StreamDeck):
@@ -170,6 +179,23 @@ class DemoNode(StreamDeck):
                                  lambda m: self.on_walk_ready and self.on_walk_ready(m.data), 10)
         self.create_subscription(String, "/g1pilot/arm_command/status",
                                  self._arm_status, 10)
+        # Ablauf: »Weiter« vom Controller (L3), Stopp von Controller/Streamdeck
+        # (pose_store/cancel beendet auch einen wartenden Ablauf), Speicher-
+        # Quittung (Schritt anhaengen) und eigener Stand (latched, Controller
+        # vibriert beim Warten; Handy/Logs).
+        self.on_seq_next = None
+        self.on_pose_cancel = None
+        self.on_save_status = None
+        self.create_subscription(Bool, sr.NEXT_TOPIC,
+                                 lambda m: m.data and self.on_seq_next and self.on_seq_next(), 10)
+        self.create_subscription(Bool, "/g1pilot/pose_store/cancel",
+                                 lambda m: m.data and self.on_pose_cancel and self.on_pose_cancel(),
+                                 10)
+        self.create_subscription(String, "/g1pilot/pose_store/save/status",
+                                 self._save_status, 10)
+        seq_qos = QoSProfile(depth=1)
+        seq_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
+        self.pub_seq_state = self.create_publisher(String, sr.STATE_TOPIC, seq_qos)
         # Hand-Bridge (inspire_ftp/bridge.py): Einzelbefehle + Zustand.
         self.pub_hand_cmd = self.create_publisher(String, "/g1pilot/hand_cmd", 10)
         self.create_subscription(String, "/g1pilot/hand_status", self._hand_status, 10)
@@ -351,6 +377,14 @@ class DemoNode(StreamDeck):
             return
         if self.on_arm_status:
             self.on_arm_status(data)
+
+    def _save_status(self, msg: String):
+        try:
+            data = json.loads(msg.data)
+        except ValueError:
+            return
+        if isinstance(data, dict) and self.on_save_status:
+            self.on_save_status(data)
 
 
 # ── Bereich 1: Modus-Kachel ──────────────────────────────────────────────
@@ -961,6 +995,38 @@ class ManipPanel(QWidget):
         self.seq_row.setSpacing(10)
         lay.addLayout(self.seq_row)
 
+        # Ablauf-Steuerung: Am Stueck | Schritt fuer Schritt, »Weiter ▶« (nur
+        # wenn ein Ablauf auf Bestaetigung wartet; Controller: L3), Fenster
+        # »Posen & Abläufe« (zusammenstellen, Posen anfahren/speichern).
+        ctl = QHBoxLayout()
+        ctl.setSpacing(10)
+        self.seq_mode_btns = {}
+        seg = QHBoxLayout()
+        seg.setSpacing(0)
+        for key, radius in ((sr.MODE_AUTO, "12px 0 0 12px"), (sr.MODE_STEP, "0 12px 12px 0")):
+            b = QPushButton(sr.MODE_TITLE[key])
+            b.setCheckable(True)
+            b.setMinimumHeight(44)
+            r = radius.split()
+            b.setStyleSheet(f"""
+                QPushButton {{ background:#1c1c1c; color:#999; font-size:15px; font-weight:700;
+                               border:2px solid #333; padding:4px 12px;
+                               border-top-left-radius:{r[0]}; border-top-right-radius:{r[1]};
+                               border-bottom-right-radius:{r[2]}; border-bottom-left-radius:{r[3]}; }}
+                QPushButton:checked {{ background:#1565c0; color:white; border-color:white; }}
+            """)
+            b.clicked.connect(lambda _, k=key: self.gui.set_sequence_mode(k))
+            seg.addWidget(b)
+            self.seq_mode_btns[key] = b
+        ctl.addLayout(seg)
+        self.btn_next = big_button("Weiter ▶", "#2e7d32", font=18, height=44)
+        self.btn_next.setToolTip("Nächsten Schritt des Ablaufs anfahren (Controller: L3)")
+        ctl.addWidget(self.btn_next, 1)
+        self.btn_sequences = big_button("Posen && Abläufe …", font=15, height=44)
+        self.btn_sequences.setFixedWidth(220)
+        ctl.addWidget(self.btn_sequences)
+        lay.addLayout(ctl)
+
         row = QHBoxLayout()
         # Haende auf/zu gibt es auf der Seite HAENDE.
         self.btn_safe = big_button("Sichere Pose", font=18, height=50)
@@ -1019,22 +1085,36 @@ class ManipPanel(QWidget):
         self.btn_expert.setText("Erweitert ▾" if on else "Erweitert ▸")
 
     def fill_sequence_buttons(self, sequences):
-        """sequences: [(Anzeigename, [Posennamen ...]), ...]"""
+        """sequences: [(Ablauf, [Posennamen ...]), ...] (leere Ablaeufe ohne Knopf)."""
         while self.seq_row.count():
             w = self.seq_row.takeAt(0).widget()
             if w is not None:
                 w.deleteLater()
+        sequences = [(label, names) for label, names in sequences if names]
         if not sequences:
             self.seq_row.addWidget(WalkPanel._caption(
-                f"Noch keine Abläufe — Posen in einer Kategorie »{SEQUENCE_PREFIX}<Name>« "
-                "speichern (Erweitert → Pose speichern)."))
+                "Noch keine Abläufe — »Posen & Abläufe …« öffnen, Ablauf anlegen und "
+                "Posen hinzufügen."))
             return
         self.seq_row.addWidget(WalkPanel._caption("Abläufe:"))
         for label, names in sequences:
             b = big_button(label, "#1565c0", font=17, height=64)
             b.setToolTip(" → ".join(pretty_pose_name(n) for n in names))
-            b.clicked.connect(lambda _, ns=list(names), lb=label: self.gui.run_poses(ns, lb))
+            b.clicked.connect(lambda _, lb=label: self.gui.run_sequence(lb))
             self.seq_row.addWidget(b)
+
+    def show_sequence(self, runner):
+        """Modus-Knoepfe und »Weiter ▶« nach dem Runner-Stand."""
+        for k, b in self.seq_mode_btns.items():
+            b.setChecked(k == runner.mode)
+        waiting = runner.state == sr.WAITING
+        self.btn_next.setEnabled(waiting)
+        if waiting:
+            self.btn_next.setText(f"Weiter ▶  ({runner.index + 2}/{runner.total})")
+        elif runner.active and runner.label:
+            self.btn_next.setText(f"Schritt {runner.index + 1}/{runner.total} läuft …")
+        else:
+            self.btn_next.setText("Weiter ▶")
 
 
 # ── Hauptfenster ─────────────────────────────────────────────────────────
@@ -1049,8 +1129,12 @@ class DemoGUI(QWidget):
         self.started = self.sim_mode
         self._estop_unacked = False   # Sim: NOT-HALT noch nicht per START quittiert
         self._estop_shown = False     # NOT-HALT angezeigt, noch nicht quittiert
-        self.queue = []             # verbleibende Posen einer laufenden Sequenz
-        self.current_pose = None
+        # Ablauf/Einzelpose (sequence_runner.py): wann welcher Schritt losfaehrt.
+        self.seq = sr.SequenceRunner(self._seq_goto, self._on_seq_change,
+                                     mode=default_sequence_mode(self.sim_mode))
+        self.seq_editor = None
+        self._save_wait = {}        # Speicher-ID -> Ablauf, an den angehaengt wird
+        self._save_n = 0
         self._walk_req = 0          # verwirft veraltete WALK-Timeouts
         self.auto_nav = False
         self.nav_phase = NAV_OFF
@@ -1067,6 +1151,9 @@ class DemoGUI(QWidget):
         node.on_nav_status = self._on_nav_status
         node.on_emergency_stop = self._external_estop
         node.on_shared = self._on_shared
+        node.on_seq_next = self.sequence_next
+        node.on_pose_cancel = self._on_pose_cancel
+        node.on_save_status = self._on_save_status
 
         self.setWindowTitle("G1 Demo — " + ("SIM" if self.sim_mode else "REAL"))
         self.setStyleSheet("QWidget { background:#111; }")
@@ -1091,6 +1178,10 @@ class DemoGUI(QWidget):
         self.info_timer = QTimer(self)
         self.info_timer.timeout.connect(self._refresh_info)
         self.info_timer.start(500)
+        self.seq_timer = QTimer(self)
+        self.seq_timer.timeout.connect(self.seq.tick)
+        self.seq_timer.start(100)
+        self._on_seq_change(self.seq, "init", "")
         self._refresh_info()
         # Handy-Bedienung (G1_PHONE=1): ruft dieselben Methoden wie die Knoepfe.
         self.phone = phone_link.attach(self)
@@ -1480,7 +1571,9 @@ class DemoGUI(QWidget):
         mp.btn_waist_center.clicked.connect(
             lambda: n.publish_bool(n.pub_waist_center, True))
         mp.btn_goto.clicked.connect(self._pose_goto_dialog)
-        mp.btn_save.clicked.connect(self._pose_save_dialog)
+        mp.btn_save.clicked.connect(lambda: self.save_current_pose())
+        mp.btn_next.clicked.connect(self.sequence_next)
+        mp.btn_sequences.clicked.connect(self.open_sequence_editor)
         mp.btn_marker.toggled.connect(lambda on: n.publish_bool(n.pub_marker_follow, on))
         # Einstellungen gehen in den gemeinsamen Zustand (Controller zieht nach).
         mp.jog.on_change = n.share
@@ -1785,56 +1878,96 @@ class DemoGUI(QWidget):
             return None
 
     def _sequences(self):
+        """-> [(Ablauf, [Posennamen])] aus dem pose_store (fuer Knoepfe/Handy)."""
         store = self._pose_store()
         if store is None:
             return []
-        return [(cat[len(SEQUENCE_PREFIX):].strip(), sorted(ns, key=str.lower))
-                for cat, ns in sorted(store.list_grouped().items())
-                if cat.startswith(SEQUENCE_PREFIX) and ns]
+        try:
+            return [(name, [st["pose"] for st in steps])
+                    for name, steps in store.list_sequences()]
+        except Exception as e:   # noqa: BLE001
+            self.node.get_logger().warn(f"Ablaeufe nicht lesbar: {e}")
+            return []
 
     def _reload_sequence_buttons(self):
         self.manip_panel.fill_sequence_buttons(self._sequences())
+        if self.seq_editor is not None and self.seq_editor.isVisible():
+            self.seq_editor.reload()
+
+    # Kompatibilitaet (Handy, Tests): laufende Pose / verbleibende Schritte.
+    @property
+    def current_pose(self):
+        return self.seq.current_pose
+
+    @property
+    def queue(self):
+        if not self.seq.active:
+            return []
+        return [st["pose"] for st in self.seq.steps[self.seq.index + 1:]]
+
+    def run_sequence(self, name):
+        """Ablauf `name` aus dem pose_store starten (Knopf, Editor, Handy).
+        -> True, wenn er losfaehrt."""
+        store = self._pose_store()
+        steps = store.get_sequence(name) if store is not None else None
+        if not steps:
+            self._status(f"Ablauf »{name}« ist leer oder fehlt.", "#ffb300")
+            return False
+        missing = store.missing_poses(steps)
+        if missing:
+            self._status(f"Ablauf »{name}«: Pose »{missing[0]}« fehlt — in »Posen & "
+                         "Abläufe« ersetzen oder neu speichern.", "#ef5350")
+            return False
+        return self.run_poses(steps, name)
 
     def run_poses(self, names, label=None):
-        """Eine oder mehrere Posen nacheinander anfahren; der naechste Schritt
-        startet, wenn arm_command/status 'reached' meldet."""
-        if self.mode != MANIP or not names:
-            return
-        self.queue = list(names)
-        self._seq_label = label
-        self._seq_total = len(names)
-        self._next_pose()
+        """Eine oder mehrere Posen nacheinander anfahren (Schritte als Namen oder
+        {"pose", "wait_s"}). Weiter je nach Modus von selbst oder auf »Weiter«.
+        -> True, wenn der erste Schritt losgeschickt wurde."""
+        if self.mode != MANIP or self.pending is not None or not names:
+            if names and self.mode != MANIP:
+                self._status("Posen und Abläufe nur im Modus GREIFEN.", "#ffb300")
+            return False
+        return self.seq.start(names, label)
 
-    def _next_pose(self):
-        if not self.queue:
-            self.current_pose = None
-            self._status("Fertig.", "#66bb6a")
-            return
-        self.current_pose = self.queue.pop(0)
+    def set_sequence_mode(self, mode):
+        """Am Stueck / Schritt fuer Schritt (auch waehrend eines Ablaufs)."""
+        self.seq.set_mode(mode)
+        self.manip_panel.show_sequence(self.seq)
+
+    def sequence_next(self):
+        """»Weiter ▶« (GUI, Handy, Controller L3). -> True, wenn es weiterging."""
+        if self.mode != MANIP or self.pending is not None:
+            return False
+        return self.seq.confirm()
+
+    def _seq_goto(self, pose):
         self._jog_holds.clear()     # ein Halte-Ziel braeche die Fahrt ab
-        self.node.publish_str(self.node.pub_pose_goto, self.current_pose)
-        step = ""
-        if getattr(self, "_seq_label", None):
-            step = f"{self._seq_label} · Schritt {self._seq_total - len(self.queue)}/{self._seq_total}: "
-        self._status(f"{step}{pretty_pose_name(self.current_pose)} …", MODE_COLOR[MANIP])
+        self.node.publish_str(self.node.pub_pose_goto, pose)
+
+    def _on_seq_change(self, runner, event, text):
+        color = {"done": "#66bb6a", "aborted": "#ef5350", "waiting": "#66bb6a"}.get(
+            event, MODE_COLOR[MANIP])
+        if text:
+            self._status(text, color)
+        self.manip_panel.show_sequence(runner)
+        try:
+            snap = runner.snapshot()
+            snap["event"] = event
+            self.node.pub_seq_state.publish(String(data=json.dumps(snap, ensure_ascii=False)))
+        except Exception:   # noqa: BLE001 -- Anzeige darf nie den Ablauf stoeren
+            pass
 
     def _on_arm_status(self, data):
-        if self.current_pose is None:
-            return
-        state = data.get("state")
-        if state not in TERMINAL:
-            return
-        if state == "reached":
-            QTimer.singleShot(300, self._next_pose)
-        else:
-            self.queue.clear()
-            self.current_pose = None
-            reason = data.get("reason", "")
-            self._status(f"Abgebrochen ({state}) {reason}", "#ef5350")
+        self.seq.on_status(data)
 
-    def _cancel_sequence(self):
-        self.queue.clear()
-        self.current_pose = None
+    def _on_pose_cancel(self):
+        """Stopp von aussen (Controller Kreuz, Streamdeck, eigener Knopf):
+        auch ein auf »Weiter« wartender Ablauf endet."""
+        self.seq.cancel("Stopp")
+
+    def _cancel_sequence(self, reason=""):
+        self.seq.cancel(reason)
 
     def _cancel(self):
         self._cancel_sequence()
@@ -1849,7 +1982,7 @@ class DemoGUI(QWidget):
             self._status(f"Pose »{pretty_pose_name(SAFE_POSE)}« ist nicht gespeichert "
                          "(Erweitert → Pose speichern).", "#ffb300")
             return
-        self.run_poses([SAFE_POSE], "Sichere Pose")
+        self.run_poses([SAFE_POSE])
 
     def _home(self):
         """Grundstellung = Homing des arm_controller (/g1pilot/arms/home): Lauf-
@@ -1883,8 +2016,10 @@ class DemoGUI(QWidget):
             if self._jog_targets:
                 self._jog_stop()
             return
-        if not self._jog_targets:
-            self._cancel_sequence()     # laufenden Ablauf beenden (Marker-Vorrang)
+        if not self._jog_targets and self.seq.moving:
+            # Fahrt laeuft: Jog hat Vorrang (arm_controller bricht sie ab) ->
+            # Ablauf beenden. Wartet er auf »Weiter«, darf man nachkorrigieren.
+            self._cancel_sequence("Hand bewegt")
             self._status(f"Hand bewegen: {jog.side.lower()} …", MODE_COLOR[MANIP])
         lead_m, lead_rad = lead_limits(jog.lin_speed, jog.ang_speed)
         missing = []
@@ -1934,18 +2069,63 @@ class DemoGUI(QWidget):
         if dlg.exec() == QDialog.DialogCode.Accepted and dlg.selected_name():
             self.run_poses([dlg.selected_name()])
 
-    def _pose_save_dialog(self):
+    def open_sequence_editor(self):
+        """Fenster »Posen & Abläufe« (nicht modal: nebenher Hand bewegen)."""
+        if self.seq_editor is None:
+            self.seq_editor = SequenceEditor(self, parent=self)
+        self.seq_editor.reload()
+        self.seq_editor.show()
+        self.seq_editor.raise_()
+        self.seq_editor.activateWindow()
+
+    def save_current_pose(self, sequence=None):
+        """Aktuelle Stellung speichern (Dialog). `sequence`: Ablauf, an den die
+        Pose angehaengt wird (vorausgewaehlt, im Dialog aenderbar). Der
+        arm_controller speichert; angehaengt wird erst nach seiner Quittung."""
         store = self._pose_store()
         cats = store.list_categories() if store is not None else [DEMO_CATEGORY]
         if DEMO_CATEGORY not in cats:
             cats = [DEMO_CATEGORY] + cats
-        dlg = PoseSaveDialog(self, store=store, categories=cats)
+        seqs = [n for n, _ in store.list_sequences()] if store is not None else []
+        parent = self.seq_editor if (self.seq_editor is not None
+                                     and self.seq_editor.isVisible()) else self
+        dlg = PoseSaveDialog(parent, store=store, categories=cats,
+                             sequences=seqs, sequence=sequence)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
-        self.node.publish_str(self.node.pub_pose_save, json.dumps(dlg.result_data()))
-        self._status("Pose gespeichert.", "#66bb6a")
-        # arm_controller schreibt die Datei asynchron -> kurz warten, dann neu laden.
+        data = dlg.result_data()
+        target = data.pop("sequence", None)
+        self._save_n += 1
+        data["id"] = f"demo_gui_save_{self._save_n}"
+        self._save_wait[data["id"]] = (data["name"], target)
+        self.node.publish_str(self.node.pub_pose_save, json.dumps(data))
+        self._status(f"Pose »{data['name']}« wird gespeichert …", MODE_COLOR[MANIP])
+        # Ohne Quittung (alter arm_controller, Arme aus): trotzdem neu laden.
         QTimer.singleShot(1500, self._reload_sequence_buttons)
+
+    def _on_save_status(self, data):
+        """Quittung des arm_controller (/g1pilot/pose_store/save/status)."""
+        entry = self._save_wait.pop(data.get("id", ""), None)
+        if entry is None:
+            return
+        name, target = entry
+        if data.get("state") != "saved":
+            self._status(f"Pose »{name}« NICHT gespeichert: "
+                         f"{data.get('reason', data.get('state', '?'))}", "#ef5350")
+            return
+        text = f"Pose »{name}« gespeichert."
+        if target:
+            store = self._pose_store()
+            try:
+                steps = store.get_sequence(target) or []
+                # Kategorie "Ablauf <X>" haengt schon im pose_store an -- nicht doppelt.
+                if not (steps and steps[-1]["pose"] == name):
+                    store.append_step(target, name)
+                text = f"Pose »{name}« gespeichert und an Ablauf »{target}« angehängt."
+            except Exception as e:   # noqa: BLE001
+                text = f"Pose »{name}« gespeichert, Anhängen an »{target}« fehlgeschlagen: {e}"
+        self._status(text, "#66bb6a")
+        self._reload_sequence_buttons()
 
     # ── Sicherheit / Status ─────────────────────────────────────────────
     def _pulse(self, pub, duration=1000):

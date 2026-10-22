@@ -105,9 +105,11 @@
     font-size: 14px !important; border-radius: 999px; }
   #btnTake.on { background: #4a3b00; color: #ffe082; }
   button.stopmove { background: #455a64; margin-top: 8px; }
+  button.seqnext { background: #2e7d32; margin-top: 8px; min-height: 56px; font-size: 18px; }
   #btnModeWalk.on, #btnModeGrasp.on { outline: 3px solid #fff; outline-offset: -3px; }
   #btnModeWalk.on::after, #btnModeGrasp.on::after { content: " ✓"; }
   #btnModeWalk.on:disabled, #btnModeGrasp.on:disabled { opacity: 1; }
+  #btnSeqAuto.on, #btnSeqStep.on { background: #1565c0; color: #fff; outline: 2px solid #fff; outline-offset: -2px; }
   .foot { display: flex; gap: 10px; align-items: center; margin-top: 14px; }
   .foot .note { margin: 0; font-size: 11px; }
   .list button { margin-top: 6px; text-align: left; min-height: 46px; }
@@ -175,6 +177,7 @@
 
   <div id="meInfo" class="sub tight"></div>
   <button id="btnStopMove" class="stopmove hidden">■ Bewegung stoppen</button>
+  <button id="btnSeqNext" class="seqnext hidden">Weiter ▶</button>
 
   <div id="controls">
     <button id="btnAck" class="primary hidden">NOT-HALT quittieren …</button>
@@ -212,6 +215,10 @@
         <button id="btnRightClose" class="ghost">R zu</button>
       </div>
       <div id="seqCap" class="cap hidden">Abläufe</div>
+      <div id="seqModeRow" class="row hidden">
+        <button id="btnSeqAuto" class="ghost">Am Stück</button>
+        <button id="btnSeqStep" class="ghost">Schritt für Schritt</button>
+      </div>
       <div class="seqs" id="seqs"></div>
     </div>
   </div>

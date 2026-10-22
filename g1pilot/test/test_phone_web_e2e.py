@@ -284,3 +284,61 @@ def test_phone_grasp_view_poses_and_controller(server, browser, tmp_path):
     assert save["arg"] == "1010|Allgemein|Tisch links"
     assert errors == []
     ctx.close()
+
+
+def test_phone_sequence_step_mode_next(server, browser, tmp_path):
+    """Ablauf »Schritt für Schritt«: »Weiter ▶« erscheint nur beim Warten und
+    schickt seq_next; Modus-Knoepfe schicken seq_mode."""
+    gw = G.PhoneGateway(store_path=str(tmp_path / "d.json"))
+    br = Bridge(gw)
+    gw.set_catalog({"Demo": ["A", "B"]}, sequences=["Kiste", "Tisch"])
+    status = {"sim": True, "started": True, "estop": False, "ack": False, "mode": "grasp",
+              "pend": None, "txt": "Kiste · Schritt 1/3: A …", "col": "#fb8c00", "busy": True,
+              "sm": "step", "seq": {"s": "moving", "n": "Kiste", "i": 1, "t": 3}}
+    actions = []
+    ctx = browser.new_context(viewport={"width": 412, "height": 915}, device_scale_factor=2,
+                              is_mobile=True, has_touch=True)
+    page = ctx.new_page()
+    page.add_init_script(FAKE_BT)
+    page.expose_function("pyWrite", br.write)
+    page.expose_function("pyRead", br.read)
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+
+    def pump(ms, until=None):
+        for _ in range(max(1, ms // 100)):
+            page.wait_for_timeout(100)
+            gw.publish_status(status)
+            acts, _events = gw.tick()
+            actions.extend(acts)
+            for a in acts:
+                gw.result(a["id"], True, "ok")
+            if until is not None and until():
+                return True
+        return until() if until is not None else True
+
+    page.goto(server + "/index.html")
+    code = gw.start_pairing(G.ROLE_OPERATE)
+    page.fill("#pairName", "Nils Pixel")
+    page.fill("#pairCode", code)
+    page.click("#btnPair")
+    assert pump(4000, lambda: page.is_visible("#mainView"))
+    page.click("#btnTake")
+    assert pump(2000, lambda: gw.has_control() and page.is_visible("#secGrasp"))
+    assert pump(2000, lambda: page.locator("#seqs button").count() == 2)   # Liste "s"
+    assert "on" in page.get_attribute("#btnSeqStep", "class")
+    assert not page.is_visible("#btnSeqNext")                              # faehrt noch
+    status["seq"] = {"s": "waiting", "n": "Kiste", "i": 1, "t": 3}
+    status["txt"] = "Kiste · Schritt 1/3: erreicht. Weiter mit »Weiter ▶« oder L3"
+    assert pump(1500, lambda: page.is_visible("#btnSeqNext"))
+    assert "2/3" in page.inner_text("#btnSeqNext")
+    if SHOT_DIR:
+        os.makedirs(SHOT_DIR, exist_ok=True)
+        page.screenshot(path=os.path.join(SHOT_DIR, "8_ablauf_weiter.png"))
+    page.click("#btnSeqNext")
+    assert pump(2000, lambda: any(a["action"] == "seq_next" for a in actions))
+    page.click("#btnSeqAuto")
+    assert pump(2000, lambda: any(a["action"] == "seq_mode" and a["arg"] == "auto"
+                                  for a in actions))
+    assert errors == []
+    ctx.close()

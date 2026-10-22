@@ -166,7 +166,10 @@ def test_sim_sequence_cancelled_when_heartbeat_stops(sim):
     dg, g, node, app, sent, strs, loco = sim
     ph, clk = _phone(g)
     g.mode, g.pending = dg.MANIP, None
-    g._sequences = lambda: [("Winken", ["W_01_a", "W_02_b"])]
+    from g1pilot.manipulation.pose_store import PoseStore
+    store = PoseStore()
+    for n in ("W_01_a", "W_02_b"):
+        store.save(n, category="Ablauf Winken", left_arm=[0.0] * 7)
     r = _run(g, ph, "seq", "Winken")
     assert r["ok"] and ("/g1pilot/pose_store/goto", "W_01_a") in strs
     assert ph.last["st"]["busy"] is True
@@ -308,3 +311,28 @@ def test_status_pad_and_temps(real):
     node.ps4["arms_locked"] = True
     g.phone.publish_status()
     assert ph.last["st"]["pad"]["k"] == "walking" and ph.last["st"]["pad"]["sp"] == "Schnell"
+
+
+def test_sim_sequence_step_mode_next_and_mode_from_phone(sim):
+    dg, g, node, app, sent, strs, loco = sim
+    from g1pilot.manipulation.pose_store import PoseStore
+    from g1pilot.teleoperation import sequence_runner as sr
+    store = PoseStore()
+    for n in ("A", "B"):
+        store.save(n, category="Demo", left_arm=[0.0] * 7)
+    store.save_sequence("Kiste", ["A", "B"])
+    g.phone.refresh_catalog()
+    assert g.phone.gw._catalog["s"] == ["Kiste"]
+    ph, clk = _phone(g)
+    g.mode, g.pending = dg.MANIP, None
+    r = _run(g, ph, "seq_mode", "step")
+    assert r["ok"] and g.seq.mode == sr.MODE_STEP and ph.last["st"]["sm"] == "step"
+    assert _run(g, ph, "seq_next")["ok"] is False             # nichts wartet
+    assert _run(g, ph, "seq", "Kiste")["ok"]
+    for st in ("accepted", "reached"):
+        g._on_arm_status({"state": st})
+    g.phone.publish_status()
+    assert ph.last["st"]["seq"] == {"s": "waiting", "n": "Kiste", "i": 1, "t": 2}
+    assert _run(g, ph, "seq_next")["ok"]
+    assert [v for t, v in strs if t == "/g1pilot/pose_store/goto"] == ["A", "B"]
+    assert _run(g, ph, "seq_mode", "quatsch")["ok"] is False

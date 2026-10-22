@@ -379,3 +379,20 @@ def test_catalog_cut_and_fits_pages(env):
     ph.signed({"t": "cat"})
     assert ph.last["cat"]["cut"] is True
     assert len(json.dumps(ph.tx, ensure_ascii=False).encode()) <= P.TX_MAX
+
+
+def test_catalog_carries_sequences_and_new_actions(env):
+    gw, clk, _ = env
+    ph = _paired(gw)
+    gw.set_catalog({"Demo": ["Winken"]}, sequences=["Kiste", "Tisch"])
+    h = gw._catalog_hash
+    gw.publish_status({"txt": "x"})
+    ph.signed({"t": "cat"})
+    assert ph.last["cat"]["s"] == ["Kiste", "Tisch"]
+    gw.set_catalog({"Demo": ["Winken"]}, sequences=["Kiste"])
+    assert gw._catalog_hash != h                         # Ablauf geaendert -> neuer Hash
+    # Viele Posen: die Ablauf-Namen bleiben, hintere Kategorien fallen weg.
+    gw.set_catalog({f"K{i}": [f"Pose_{i}_{k}_lang" for k in range(10)] for i in range(30)},
+                   sequences=["Kiste"])
+    assert gw._catalog["s"] == ["Kiste"] and gw._catalog["cut"]
+    assert G.ACTIONS["seq_next"][0] == G.ROLE_OPERATE and "seq_mode" in G.GUI_ACTIONS

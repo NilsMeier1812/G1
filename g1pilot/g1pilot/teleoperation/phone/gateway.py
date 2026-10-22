@@ -63,6 +63,8 @@ ACTIONS = {
     "mode":    (ROLE_OPERATE, True, True),
     "hand":    (ROLE_OPERATE, True, True),
     "seq":     (ROLE_OPERATE, True, True),
+    "seq_next": (ROLE_OPERATE, True, True),
+    "seq_mode": (ROLE_OPERATE, True, False),
     "safe":    (ROLE_OPERATE, True, True),
     "home":    (ROLE_OPERATE, True, True),
     "pose":    (ROLE_OPERATE, True, True),
@@ -431,18 +433,23 @@ class PhoneGateway:
         raw = json.dumps(obj, sort_keys=True, ensure_ascii=False).encode("utf-8")
         return format(zlib.crc32(raw), "08x")
 
-    def set_catalog(self, grouped):
-        """Posenliste {kategorie: [namen]} (Qt-Thread). Zu gross -> hintere
-        Kategorien weg, "cut" gesetzt. Neuer Stand -> neuer Hash im Status."""
+    def set_catalog(self, grouped, sequences=None):
+        """Posenliste {kategorie: [namen]} (Qt-Thread), dazu die Ablauf-Namen
+        (Liste, "s"; zuerst eingeplant). Zu gross -> hintere Kategorien weg,
+        "cut" gesetzt. Neuer Stand -> neuer Hash im Status."""
+        seqs = [str(n)[:40] for n in (sequences or [])][:20]
         cat, cut = {}, False
         for k, names in grouped.items():
             trial = dict(cat)
             trial[str(k)[:40]] = [str(n)[:60] for n in names][:40]
-            if len(json.dumps(trial, ensure_ascii=False, separators=(",", ":")).encode()) > CATALOG_MAX:
+            if len(json.dumps({"g": trial, "s": seqs}, ensure_ascii=False,
+                              separators=(",", ":")).encode()) > CATALOG_MAX:
                 cut = True
                 break
             cat = trial
         new = {"g": cat, "cut": cut}
+        if sequences is not None:
+            new["s"] = seqs
         with self._lock:
             if new != self._catalog:
                 self._catalog = new

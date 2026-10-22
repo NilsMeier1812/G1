@@ -17,6 +17,10 @@ arm_controller bzw. in der Inspire-Bridge:
   /g1pilot/full_emergency_stop  Bool         VOLL-NOTAUS: ganzer G1 Damp (R1+L1+PS)
   /g1pilot/arm_command          String(JSON) Arm spiegeln ({"type": "mirror"}),
                                              Antwort auf /g1pilot/arm_command/status
+  /g1pilot/sequence/next        Bool         Ablauf: naechster Schritt (L3); die
+                                             Demo-GUI nimmt es nur an, wenn ein
+                                             Ablauf auf Bestaetigung wartet
+                                             (/g1pilot/sequence/state, latched)
 
 KEIN Laufen: der Node publiziert nichts an loco_cmd_vel / joy_mux. Rueckmeldung:
   /g1pilot/ps4/feedback  String(JSON)  LED-Farbe + Vibration -> ps4_joystick
@@ -39,6 +43,9 @@ Belegung (Details: g1pilot/docs/43_ps4_controller.md):
   Options      Arme uebernehmen (Sim: + Greifen-Modus/stehen, siehe
                options_starts_balancing -- real aus)
   Share (1 s halten)  Grundstellung
+  L3 (linken Stick druecken)  Ablauf »Schritt für Schritt«: naechster Schritt
+               (wie »Weiter ▶« in der Demo-GUI). Kurze Vibration, sobald ein
+               Ablauf wartet; Kreuz bricht ihn ab, PS (NOT-HALT) sowieso.
   PS           NOT-HALT (ps_estop=false: nur Stopp wie Kreuz)
   R1 + L1 + PS (2 s halten, Controller vibriert)  VOLL-NOTAUS: ganzer G1
                in Damp (auch die Beine, /g1pilot/full_emergency_stop).
@@ -71,6 +78,7 @@ import time
 
 from g1pilot.teleoperation import ps4_layout as L
 from g1pilot.teleoperation import shared_state
+from g1pilot.teleoperation import sequence_runner as sr
 from g1pilot.teleoperation.ps4_walk import deadman_held
 from g1pilot.teleoperation.hand_jog import (
     JOG_FRAME, JOG_TF, JOG_SPEEDS, JOG_SPEED_ORDER, JOG_CMD_TOPIC, CommandedPoses,
@@ -151,6 +159,7 @@ class ArmTeleopLogic:
       ("estop",), ("hold", sides), ("changed",),
       ("full_arm",), ("full_abort",), ("full_estop",)   -- Voll-Notaus
       ("mirror_arm", side), ("mirror_abort",), ("mirror", side)  -- Spiegeln
+      ("seq_next",)                                          -- Ablauf weiter (L3)
     twist(axes) -> {side: (lin, ang)} fuer die gerade aktiven Seiten (oder {}).
     """
 
@@ -217,6 +226,10 @@ class ArmTeleopLogic:
         self._waist_was = False
         self._waist_stop = False     # Kreuz: bis der Stick zurueck ist, kein Drehen
         self._prev = [0] * L.NUM_BUTTONS
+        # L3 (Ablauf weiter) = linken Stick DRUECKEN: dabei kippt er leicht ->
+        # bis L3 los und der Stick in der Mitte ist, kein Jog (ein Hand-Ziel
+        # braeche die gerade gestartete geplante Fahrt ab).
+        self._stick_block = False
         self._share_since = None
         self._home_sent = False
 
@@ -547,6 +560,9 @@ class ArmTeleopLogic:
             out.append(("cancel",))
         if rise[L.OPTIONS]:
             out.append(("enable",))
+        if rise[L.L3] and not self.walking:
+            self._stick_block = True
+            out.append(("seq_next",))
 
         # Grundstellung nur nach bewusstem Halten (versehentliches Antippen)
         if b[L.SHARE]:
@@ -584,6 +600,10 @@ class ArmTeleopLogic:
                 self.walk_deadman and (self.walking or deadman_held(axes, ()))):
             return {}
         a = list(axes) + [0.0] * max(0, L.NUM_AXES - len(axes))
+        if self._stick_block:
+            if self._prev[L.L3] or max(abs(a[L.LX]), abs(a[L.LY])) > self.deadzone:
+                return {}
+            self._stick_block = False
         a[L.LX], a[L.LY] = snap_stick(a[L.LX], a[L.LY], self.axis_snap_deg)
         s = lambda i: shape_axis(a[i], self.deadzone, self.expo)   # noqa: E731
         v, w = JOG_SPEEDS[self.speed]
@@ -756,6 +776,10 @@ def main(args=None):
             self.create_subscription(String, "/g1pilot/onboard_state", self._on_onboard, latched)
             self.create_subscription(String, "/g1pilot/arm_command/status",
                                      self._on_cmd_status, 10)
+            # Ablauf (Demo-GUI): L3 = Weiter; vibrieren, sobald er wartet.
+            self.pub_seq_next = self.create_publisher(Bool, sr.NEXT_TOPIC, 10)
+            self.seq_waiting = False
+            self.create_subscription(String, sr.STATE_TOPIC, self._on_seq_state, latched)
 
             self.create_timer(1.0 / float(gp("rate_hz")), self._tick)
             self.create_timer(0.2, self._publish_markers)
@@ -894,6 +918,18 @@ def main(args=None):
                 self.get_logger().info("NOT-HALT quittiert (START) -- PS4 wieder aktiv.")
                 self._changed()
 
+        def _on_seq_state(self, msg):
+            """Stand des Ablaufs der Demo-GUI: beim Uebergang zu »wartet auf
+            Weiter« zweimal kurz vibrieren (ohne Blick auf die GUI erkennbar)."""
+            try:
+                data = json.loads(msg.data)
+            except ValueError:
+                return
+            waiting = isinstance(data, dict) and data.get("state") == sr.WAITING
+            if waiting and not self.seq_waiting and not self.logic.estop:
+                self._send_feedback(rumble_ms=250, strong=0.3, weak=0.8)
+            self.seq_waiting = waiting
+
         def _on_estop(self, msg):
             if msg.data and self.logic.latch_estop():
                 self._hold(("left", "right"))
@@ -949,6 +985,14 @@ def main(args=None):
                 self._home_off_at = time.monotonic() + 1.0
                 self.get_logger().info("Grundstellung angefordert (Share gehalten).")
                 self._send_feedback(rumble_ms=300)
+            elif kind == "seq_next":
+                if not self.seq_waiting:
+                    return      # kein Ablauf wartet -> L3 ohne Wirkung
+                # Halte-Strom weg: ein Ziel braeche die naechste geplante Fahrt ab.
+                self.holds.clear()
+                self.pub_seq_next.publish(Bool(data=True))
+                self.get_logger().info("L3: Ablauf weiter (naechster Schritt).")
+                self._send_feedback(rumble_ms=120, strong=0.0, weak=0.6)
             elif kind == "cancel":
                 self.pub_cancel.publish(Bool(data=True))
                 self.get_logger().info("STOPP: Hand haelt, geplante Bewegung abgebrochen.")

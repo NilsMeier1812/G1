@@ -101,7 +101,7 @@ class PhoneLink:
         for a in actions:
             self._execute(a)
         g = self.gui
-        if self._phone_motion and g.current_pose is None and not g.queue:
+        if self._phone_motion and not g.seq.active:
             self._phone_motion = False
         if self.ble.state != self._ble_state:
             self._ble_state = self.ble.state
@@ -222,12 +222,27 @@ class PhoneLink:
     def _do_seq(self, name):
         if not self._need_grasp():
             return False, "Abläufe nur im Modus GREIFEN."
-        for label, names in self.gui._sequences():
-            if label == name:
-                self.gui.run_poses(names, label)
-                self._phone_motion = True
-                return True, f"Ablauf »{label}« gestartet."
-        return False, f"Ablauf »{name}« nicht gefunden."
+        if name not in [label for label, _ in self.gui._sequences()]:
+            return False, f"Ablauf »{name}« nicht gefunden."
+        if not self.gui.run_sequence(name):
+            return False, self.gui.status.text()
+        self._phone_motion = True
+        return True, f"Ablauf »{name}« gestartet."
+
+    def _do_seq_next(self, _arg):
+        if not self._need_grasp():
+            return False, "Nur im Modus GREIFEN."
+        if not self.gui.sequence_next():
+            return False, "Kein Ablauf wartet auf »Weiter«."
+        self._phone_motion = True
+        return True, "Nächster Schritt."
+
+    def _do_seq_mode(self, mode):
+        from g1pilot.teleoperation import sequence_runner as sr
+        if mode not in sr.MODE_TITLE:
+            return False, "Unbekannter Ablauf-Modus."
+        self.gui.set_sequence_mode(mode)
+        return True, f"Abläufe: {sr.MODE_TITLE[mode]}."
 
     def _do_safe(self, _arg):
         if not self._need_grasp():
@@ -285,7 +300,8 @@ class PhoneLink:
     def refresh_catalog(self):
         try:
             store = self.gui._pose_store()
-            self.gw.set_catalog(store.list_grouped() if store is not None else {})
+            self.gw.set_catalog(store.list_grouped() if store is not None else {},
+                                sequences=[n for n, names in self.gui._sequences() if names])
         except Exception as e:  # noqa: BLE001
             self.gui.node.get_logger().warn(f"Handy-Posenliste: {e}")
 
@@ -303,8 +319,13 @@ class PhoneLink:
             "pend": key.get(g.pending),
             "txt": g.status.text()[:160],
             "col": getattr(g, "_status_color", "#aaa"),
-            "busy": g.current_pose is not None or bool(g.queue),
+            "busy": g.seq.active,
+            "sm": g.seq.mode,
         }
+        if g.seq.active:
+            # Ablauf: Zustand, Name, Schritt i/n (Handy: »Weiter ▶« beim Warten).
+            st["seq"] = {"s": g.seq.state, "n": (g.seq.label or "")[:40],
+                         "i": g.seq.index + 1, "t": g.seq.total}
         if not g.sim_mode:
             now = time.monotonic()
             age = None if n.onboard_t is None else now - n.onboard_t

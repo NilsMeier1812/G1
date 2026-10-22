@@ -1169,3 +1169,42 @@ def test_waist_r2_hold_aborts_mirror_and_never_mirrors():
     out = hold_combo(lg, 1.06, 4.0, buttons=(L.DPAD_LEFT, L.CROSS), R2_AXIS=1.0)
     assert not any(c[0] in ("mirror", "mirror_arm") for c in out)
     assert ("waist_stop",) in out and lg.waist_mode
+
+
+# ── L3 = Ablauf weiter ────────────────────────────────────────────────────
+def test_l3_sends_seq_next_in_grasp():
+    lg = ArmTeleopLogic(walk_deadman=True, trigger_modes=True)
+    assert ("seq_next",) in press(lg, L.L3)
+    lg.robot_mode = "grasp"
+    assert ("seq_next",) in press(lg, L.L3, 1.0)
+
+
+def test_l3_without_effect_in_walk_estop_and_waist():
+    lg = ArmTeleopLogic(walk_deadman=True, trigger_modes=True, waist_yaw=True)
+    trig(lg, 0.0, L2_AXIS=1.0)                               # GEHEN
+    trig(lg, 0.1)
+    assert ("seq_next",) not in press(lg, L.L3, 0.2)
+    trig(lg, 0.3, R2_AXIS=1.0)                               # GREIFEN, R2 gehalten = Huefte
+    assert lg.waist_mode
+    assert ("seq_next",) not in trig(lg, 0.4, [L.L3], R2_AXIS=1.0)
+    trig(lg, 0.5)
+    press(lg, L.PS, 0.6)                                     # NOT-HALT
+    assert ("seq_next",) not in press(lg, L.L3, 0.7)
+
+
+def test_l3_blocks_jog_until_stick_released_and_centered():
+    """Beim Druecken kippt der Stick leicht: kein Hand-Ziel (es braeche die
+    gerade gestartete geplante Fahrt ab), bis L3 los und der Stick mittig ist."""
+    lg = ArmTeleopLogic()
+    a, b = joy([L.L3], LY=0.6)
+    assert ("seq_next",) in lg.update(a, b, 0.0)
+    assert lg.twist(a) == {}
+    a, b = joy(LY=0.6)                                       # los, Stick noch ausgelenkt
+    lg.update(a, b, 0.05)
+    assert lg.twist(a) == {}
+    a, b = joy()                                             # Mitte -> Sperre weg
+    lg.update(a, b, 0.1)
+    assert lg.twist(a) == {}
+    a, b = joy(LY=0.6)
+    lg.update(a, b, 0.15)
+    assert "right" in lg.twist(a)
