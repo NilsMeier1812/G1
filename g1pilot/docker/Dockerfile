@@ -42,7 +42,7 @@ RUN rm -f package.xml && \
 
 WORKDIR /ros2_ws
 RUN . /opt/ros/${ROS_DISTRO}/setup.sh && \
-    colcon build --cmake-args -DROS_EDITION=ROS2 -DHUMBLE_ROS=humble
+    colcon build --cmake-args -DROS_EDITION=ROS2 -DDISTRO_ROS=humble
 
 RUN pip install pyqt6 pin meshcat evdev
 # OMPL: Wegplaner-Backend fuer den Positionsspeicher (arm_planner.py). Reines

@@ -9,7 +9,7 @@
 #   schnell     alles ausser den drei langsamen Fake-G1-Dateien (~2 min)
 #   sicherheit  Notaus, Totmann, Walk/Modus, Bodenkontakt, Arm-Controller real (~10 min)
 #   voll        komplette Suite (~14 min)
-#   arm | planer | loco | controller | gui | haende | sim | handy   je Bereich
+#   arm | planer | loco | controller | gui | nav | haende | sim | handy   je Bereich
 # Uebersprungene Tests werden mit Grund angezeigt (-rs): fehlt z. B. pinocchio,
 # skippen ganze Dateien still -- dann ist der Lauf KEIN Nachweis.
 set -u
@@ -24,7 +24,8 @@ case "${1:-}" in
                  test_ground_contact test_status_line test_demo_gui_ground_precheck
                  test_demo_gui_temperature test_gui_external_estop test_demo_gui_real_quit
                  test_waist_hold test_arm_planner test_ik_servo_async test_inspire_modbus_backend
-                 test_phone_gateway test_phone_demo_gui test_waist_yaw" ;;
+                 test_phone_gateway test_phone_demo_gui test_waist_yaw
+                 test_nav_supervisor test_nav_supervisor_node" ;;
   arm)        T="test_arm_controller_real test_ik_servo_async test_jog_reference_real
                  test_waist_hold test_waist_yaw test_demo_gui_jog_hold test_ps4_arm_teleop test_arm_mirror" ;;
   planer)     T="test_arm_planner test_arm_controller_real" ;;
@@ -38,6 +39,9 @@ case "${1:-}" in
                  test_demo_gui_jog_hold test_demo_gui_real_quit test_demo_gui_temperature
                  test_gui_external_estop test_status_line test_g1_temperature test_shared_state
                  test_window_icons test_phone_demo_gui test_demo_gui_waist" ;;
+  nav)        T="test_nav_supervisor test_nav_supervisor_node test_lidar_config test_odom_drift_log
+                 test_ps4_walk test_ps4_walk_node test_joy_mux test_mola_fixed test_mola_synthetic
+                 test_start_gui_nav" ;;
   haende)     T="test_inspire_modbus_backend" ;;
   sim)        T="test_walk_policy test_loco_sim_health test_push_charge test_sim_autostart" ;;
   handy)      T="test_phone_gateway test_phone_demo_gui test_phone_ble_dbus test_phone_protocol_js

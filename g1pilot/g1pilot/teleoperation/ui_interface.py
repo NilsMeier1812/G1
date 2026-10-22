@@ -282,9 +282,13 @@ class StreamDeck(Node):
         self.pub_start_balancing = self.create_publisher(Bool, '/g1pilot/start_balancing', 10)
         self.pub_start_walking = self.create_publisher(Bool, '/g1pilot/start_walking', 10)
         self.pub_cmd_vel = self.create_publisher(Twist, '/g1pilot/loco_cmd_vel', 10)
-        # Navigation scharfschalten (AUTO NAV-Button): joy_mux gibt den Nav-Joy
-        # nur bei True weiter -> der Roboter faehrt das Ziel autonom an.
+        # Navigation anfragen (AUTO NAV-Button): der nav_supervisor gibt den
+        # Nav-Joy erst frei, wenn alle Waechter gruen sind (real: L2 + Stick).
         self.pub_auto_enable = self.create_publisher(Bool, '/g1pilot/auto_enable', 10)
+        # Herzschlag fuer den nav_supervisor (laeuft ueber spin_once im Qt-Timer:
+        # haengt die GUI, verstummt er -> AUTO NAV stoppt).
+        self.pub_nav_heartbeat = self.create_publisher(Bool, '/g1pilot/nav/heartbeat', 10)
+        self.create_timer(0.2, lambda: self.pub_nav_heartbeat.publish(Bool(data=True)))
         self.pub_arms_enabled = self.create_publisher(Bool, '/g1pilot/arms/enabled', 10)
         self.pub_arms_home = self.create_publisher(Bool, '/g1pilot/arms/home', 10)
         self.pub_marker_follow = self.create_publisher(Bool, '/g1pilot/marker_follow_ee', 10)

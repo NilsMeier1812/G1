@@ -1,7 +1,7 @@
 # Schlankes Image fuer den ECHTEN G1 (Arme + Haende + Unitree-Loco).
 # Basis = Dockerfile.sim MINUS onnxruntime (loco_sim laeuft nur in der Sim),
-# MIT Real-Umgebungsvariablen. KEIN livox/MOLA/realsense -- fuer den vollen
-# Navigations-Stack weiterhin docker/Dockerfile (g1pilot:v1.1.0) nutzen.
+# MIT Real-Umgebungsvariablen. Livox MID-360 + MOLA nur mit
+# --build-arg WITH_LIDAR=1 (Image g1pilot-real-lidar, siehe unten).
 #
 # Die Inspire-Haende brauchen KEINE Extra-Bibliothek: das Modbus-TCP-Backend
 # (inspire_ftp/modbus_client.py) ist stdlib-only.
@@ -59,6 +59,35 @@ RUN git clone https://github.com/CDonosoK/astroviz_interfaces.git
 WORKDIR /ros2_ws
 RUN . /opt/ros/${ROS_DISTRO}/setup.sh && \
     colcon build --packages-select astroviz_interfaces
+
+# ── Optional: LiDAR (Livox MID-360 im G1-Kopf + MOLA LiDAR-Odometrie) ─────
+#  Nur mit --build-arg WITH_LIDAR=1 (G1_ENABLE_LIDAR=1 ./start.sh --build ->
+#  Image g1pilot-real-lidar). Feste Commits, damit der Build reproduzierbar
+#  bleibt. Der Fehler aus dem Juni (LIVOX_INTERFACES_INCLUDE_DIRECTORIES
+#  NOTFOUND): livox_ros_driver2 heisst die Distro-Variable seit der Jazzy-
+#  Unterstuetzung DISTRO_ROS statt HUMBLE_ROS.
+ARG WITH_LIDAR=0
+ARG LIVOX_SDK2_REF=c0796f04c143143899c87a773d9f6b7136453c0b
+ARG LIVOX_DRIVER2_REF=21445540f0d100dc86a7e6df312dd70bbdb4afdf
+RUN if [ "$WITH_LIDAR" = "1" ]; then \
+      set -e; \
+      apt-get update && apt-get install -y --no-install-recommends \
+        cmake build-essential \
+        ros-${ROS_DISTRO}-pcl-conversions libpcl-dev \
+        ros-${ROS_DISTRO}-mola \
+        ros-${ROS_DISTRO}-mola-state-estimation \
+        ros-${ROS_DISTRO}-mola-lidar-odometry \
+      && rm -rf /var/lib/apt/lists/*; \
+      git clone https://github.com/Livox-SDK/Livox-SDK2.git /opt/Livox-SDK2; \
+      cd /opt/Livox-SDK2 && git checkout "$LIVOX_SDK2_REF"; \
+      mkdir build && cd build && cmake .. && make -j"$(nproc)" && make install && ldconfig; \
+      git clone https://github.com/Livox-SDK/livox_ros_driver2.git /ros2_ws/src/livox_ros_driver2; \
+      cd /ros2_ws/src/livox_ros_driver2 && git checkout "$LIVOX_DRIVER2_REF"; \
+      cp package_ROS2.xml package.xml && cp -rf launch_ROS2 launch; \
+      cd /ros2_ws && . /opt/ros/${ROS_DISTRO}/setup.sh && \
+        colcon build --packages-select livox_ros_driver2 \
+          --cmake-args -DROS_EDITION=ROS2 -DDISTRO_ROS=${ROS_DISTRO}; \
+    fi
 
 RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> /root/.bashrc && \
     echo "source /ros2_ws/install/setup.bash" >> /root/.bashrc && \

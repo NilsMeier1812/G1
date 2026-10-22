@@ -114,6 +114,10 @@ NAV_OFF, NAV_WAIT, NAV_MOVING, NAV_ARRIVED = "off", "waiting", "moving", "arrive
 # das Ziel als unerreichbar (z.B. Planer laeuft nicht) -> AUTO NAV wieder aus.
 NAV_PLAN_TIMEOUT_MS = 5000
 NAV_DONE_COLOR = "#66bb6a"
+# nav_supervisor (navigation/nav_supervisor.py): Zustand der Freigabe + unser Herzschlag.
+NAV_STATE_TOPIC = "/g1pilot/nav/state"
+NAV_HEARTBEAT_TOPIC = "/g1pilot/nav/heartbeat"
+NAV_HEARTBEAT_PERIOD_S = 0.2
 
 # »Hand bewegen« (Joystick + Hoch/Runter-Schieber): kartesische Hand-Ziele im
 # pelvis-Frame auf /g1pilot/hand_goal/<side> -- dieselbe Schnittstelle wie der
@@ -221,6 +225,15 @@ class DemoNode(StreamDeck):
         self.nav_status = "idle"
         self.on_nav_status = None
         self.create_subscription(String, "/g1pilot/nav_status", self._nav_status, qos_scene)
+        # nav_supervisor (Waechter der Autonomie): Zustand + Grund, und unser
+        # Herzschlag. Der Timer laeuft ueber spin_once im Qt-Timer -> haengt die
+        # GUI, verstummt der Herzschlag und der Supervisor stoppt AUTO NAV.
+        self.nav_state = None
+        self.on_nav_state = None
+        self.create_subscription(String, NAV_STATE_TOPIC, self._nav_state, qos_scene)
+        self.pub_nav_heartbeat = self.create_publisher(Bool, NAV_HEARTBEAT_TOPIC, 10)
+        self.create_timer(NAV_HEARTBEAT_PERIOD_S,
+                          lambda: self.pub_nav_heartbeat.publish(Bool(data=True)))
         # Hand bewegen: aktuelle Hand-Pose per TF, Ziele wie der RViz-Marker.
         # /tf kommt mit hoher Rate -> eigener Node mit eigenem Spin-Thread, damit
         # die GUI-Schleife (spin_once im Qt-Timer) nicht von TF-Nachrichten
@@ -286,6 +299,14 @@ class DemoNode(StreamDeck):
         o = msg.pose.orientation
         o.x, o.y, o.z, o.w = map(float, rot)
         self.pub_hand_goal[side].publish(msg)
+
+    def _nav_state(self, msg: String):
+        try:
+            self.nav_state = json.loads(msg.data)
+        except (TypeError, ValueError):
+            return
+        if self.on_nav_state:
+            self.on_nav_state(self.nav_state)
 
     def _nav_status(self, msg: String):
         self.nav_status = msg.data
@@ -1065,6 +1086,8 @@ class DemoGUI(QWidget):
         node.on_walk_ready = self._on_walk_ready
         node.on_arm_status = self._on_arm_status
         node.on_nav_status = self._on_nav_status
+        node.on_nav_state = self._on_nav_state
+        self._nav_sup = (None, None)
         node.on_emergency_stop = self._external_estop
         node.on_shared = self._on_shared
 
@@ -1763,6 +1786,29 @@ class DemoGUI(QWidget):
                 self._show_nav()
                 self._status("AUTO NAV: kein Weg zum Ziel gefunden — anderes Ziel "
                              "in RViz setzen.", "#ffb300")
+
+    def _on_nav_state(self, st):
+        """nav_supervisor: Waechter-Stopp schaltet AUTO NAV hier aus (neu
+        anfragen = bewusste Quittung), "bereit" sagt, wie es losgeht."""
+        key = (st.get("state"), st.get("reason"))
+        if key == self._nav_sup:
+            return
+        self._nav_sup = key
+        if not self.auto_nav:
+            return
+        state, text = key[0], st.get("text") or ""
+        if state == "stopped":
+            self.set_auto_nav(False)
+            self._status(f"AUTO NAV gestoppt: {text}. Zum Weiterfahren AUTO NAV neu "
+                         "einschalten.", "#ef5350")
+        elif state == "paused":
+            self._status("AUTO NAV pausiert (L2 losgelassen) — L2 halten + linken "
+                         "Stick bewegen zum Weiterfahren.", "#ffb300")
+        elif state == "queued" and key[1] == "wait_go":
+            self._status("AUTO NAV bereit — am Controller L2 halten + linken Stick "
+                         "bewegen.", MODE_COLOR[WALK])
+        elif state == "queued" and text and key[1] not in ("arrived", "no_path"):
+            self._status(f"AUTO NAV wartet: {text}.", "#ffb300")
 
     def _publish_cmd_vel(self):
         # Dauerhaft senden (wie ui_interface): ausserhalb von GEHEN immer 0.

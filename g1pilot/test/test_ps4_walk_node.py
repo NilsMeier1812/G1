@@ -65,6 +65,12 @@ def rig():
         node.create_subscription(String, "/g1pilot/teleop_state",
                                  lambda m: got["shared"].append(json.loads(m.data)), latched)
         pub_shared = node.create_publisher(String, "/g1pilot/teleop_state", latched)
+        got["deadman"] = []
+        node.create_subscription(String, "/g1pilot/ps4/deadman",
+                                 lambda m: got["deadman"].append((time.monotonic(),
+                                                                  json.loads(m.data))), 50)
+        pub_nav = node.create_publisher(String, "/g1pilot/nav/state", latched)
+        state["nav"] = None
         state.update({"axes": [0.0] * L.NUM_AXES, "buttons": [0] * L.NUM_BUTTONS,
                       "run": True})
 
@@ -75,6 +81,9 @@ def rig():
                     m.axes = [float(a) for a in state["axes"]]
                     m.buttons = [int(b) for b in state["buttons"]]
                     pub_joy.publish(m)
+                if state["nav"] is not None:     # nav_supervisor: 10 Hz-artig frisch
+                    pub_nav.publish(String(data=json.dumps(
+                        {"state": state["nav"], "require_deadman": True})))
                 time.sleep(1 / 50)
 
         ex = rclpy.executors.SingleThreadedExecutor()
@@ -89,6 +98,7 @@ def rig():
         r.start = lambda: pub_start.publish(Bool(data=True))
         r.onboard = lambda bal: pub_onboard.publish(
             String(data=json.dumps({"fsm": 500 if bal else 4, "balanced": bal})))
+        r.nav = lambda st: state.__setitem__("nav", st)
         r.l2 = lambda v: state["axes"].__setitem__(L.L2_AXIS, v)
         r.gui_walk_speed = lambda name: pub_shared.publish(String(data=json.dumps(
             {"source": "demo_gui", "fields": {"walk_speed": {"v": name, "t": time.time()}}})))
@@ -258,3 +268,49 @@ def test_r1_l1_walk_speed_in_walk_mode_reaches_gui(rig):
     _tap(rig, L.R1)
     time.sleep(0.2)
     assert _own_walk_speed(g) == "Langsam"
+
+
+def test_l2_is_nav_deadman_while_auto_nav_requested(rig):
+    """AUTO NAV angefragt: L2 geht nicht selbst, sondern meldet den Totmann
+    (held/go) an den nav_supervisor; Funkabriss = keine Meldung; nach AUTO NAV
+    aus erst nach L2 los wieder Hand-Gehen."""
+    g = rig.got
+    rig.onboard(True)
+    rig.nav("queued")
+    time.sleep(0.3)
+    rig.l2(1.0)
+    rig.state["axes"][L.LY] = 1.0           # L2 + Stick = Losgeh-Geste
+    t0 = time.monotonic()
+    assert wait_for(lambda: any(d["held"] and d["go"] for t, d in g["deadman"] if t >= t0))
+    time.sleep(0.5)
+    assert all(m.linear.x == 0.0 for m in cmds_since(rig, t0)), "L2 darf nicht selbst gehen"
+    rig.state["axes"][L.LY] = 0.0
+    assert wait_for(lambda: g["deadman"][-1][1] == {"held": True, "go": False})
+    rig.l2(0.0)
+    assert wait_for(lambda: g["deadman"][-1][1]["held"] is False)
+    # Funkabriss: keine Totmann-Meldungen mehr
+    rig.l2(1.0)
+    rig.state["send"] = False
+    time.sleep(0.5)
+    t1 = time.monotonic()
+    time.sleep(0.5)
+    assert [d for t, d in g["deadman"] if t >= t1] == []
+    rig.state["send"] = True
+    # Waechter-Stopp: L2 + Stick geht trotzdem nicht von Hand los
+    rig.l2(0.0)
+    rig.nav("stopped")
+    time.sleep(0.2)
+    rig.l2(1.0)
+    rig.state["axes"][L.LY] = 1.0
+    t2 = time.monotonic()
+    time.sleep(0.6)
+    assert all(m.linear.x == 0.0 for m in cmds_since(rig, t2))
+    # AUTO NAV aus (Supervisor verstummt): erst L2 los, dann wieder Hand-Gehen
+    rig.nav(None)
+    time.sleep(0.8)
+    assert all(m.linear.x == 0.0 for m in cmds_since(rig, t2))
+    rig.l2(0.0)
+    time.sleep(0.15)
+    t3 = time.monotonic()
+    rig.l2(1.0)
+    assert wait_for(lambda: any(m.linear.x > 0.3 for m in cmds_since(rig, t3)))

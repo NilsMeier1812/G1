@@ -10,7 +10,7 @@ import pytest
 
 from g1pilot.teleoperation import ps4_layout as L
 from g1pilot.teleoperation.ps4_walk import (
-    WALK_SPEED_SCALE, WalkLogic, deadman_held,
+    WALK_SPEED_SCALE, WalkLogic, deadman_held, go_gesture,
 )
 from g1pilot.teleoperation.ps4_arm_teleop import ArmTeleopLogic
 
@@ -50,6 +50,24 @@ def test_walks_only_while_l2_held():
     assert vx == pytest.approx(WALK_SPEED_SCALE["Langsam"]) and vy == 0.0 and vyaw == 0.0
     assert w.update(*joy(LY=1.0)) == [("stop",)]
     assert w.command(joy(LY=1.0)[0]) is None
+
+
+def test_go_gesture_left_stick_only():
+    assert not go_gesture(joy(LY=0.3)[0])
+    assert go_gesture(joy(LY=0.6)[0]) and go_gesture(joy(LX=-0.7)[0])
+    assert not go_gesture(joy(RX=1.0)[0]), "rechter Stick ist keine Losgeh-Geste"
+    assert not go_gesture([])
+
+
+def test_disarm_needs_l2_release_without_fake_edges():
+    """Wechsel Gehen <-> AUTO NAV: aktiv -> Stopp, erst nach L2 los wieder
+    scharf; gehaltene Tasten loesen dabei keine neue Flanke aus."""
+    w = WalkLogic()
+    armed(w, buttons=(L.R1,))
+    assert w.disarm() == [("stop",)]
+    assert w.update(*joy(l2=1.0, LY=1.0, buttons=(L.R1,))) == []   # kein Tempo-Schritt
+    assert w.command(joy(l2=1.0, LY=1.0)[0]) is None
+    assert armed(w) == [("start",)]
 
 
 def test_l2_already_held_at_start_does_not_walk():

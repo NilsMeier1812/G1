@@ -787,6 +787,8 @@ class SimFrame(tk.Frame):
         self.v_hands = tk.BooleanVar(value=st.get("hands", True))
         self.v_nav = tk.BooleanVar(value=st.get("nav", False))
         self.v_ps4 = tk.BooleanVar(value=st.get("ps4", False))
+        self.v_nav_deadman = tk.BooleanVar(value=st.get("nav_deadman", True))
+        self._ps4_own = None    # eigene Controller-Wahl, solange der Nav-Totmann ihn erzwingt
         self.v_phone = tk.BooleanVar(value=st.get("phone", False))
         self.v_rviz = tk.BooleanVar(value=st.get("rviz", False))
         self._rviz_own = None   # eigene RViz-Wahl, solange Navigation RViz erzwingt
@@ -819,13 +821,19 @@ class SimFrame(tk.Frame):
         self._open_row, self._hand_hint = hand_gui_rows(hand_box, self.v_open_guis)
         toggle_row(s, "Navigation", self.v_nav,
                    "Planer + Stationen / AUTO NAV in der Demo-GUI")
-        toggle_row(s, "PS4-Controller", self.v_ps4,
-                   "PS4 oder Xbox: Arme + Hände, Gehen mit L2/LT; Belegung: docs/43_ps4_controller.md")
+        nav_box = tk.Frame(s, bg=CARD)
+        nav_box.pack(fill="x", padx=(24, 0))
+        self._nav_deadman_row = toggle_row(
+            nav_box, "Totmann wie am echten G1", self.v_nav_deadman,
+            "AUTO NAV läuft erst mit L2 + linkem Stick, L2 los = Stopp (braucht Controller)")
+        self._ps4_row = toggle_row(
+            s, "PS4-Controller", self.v_ps4,
+            "PS4 oder Xbox: Arme + Hände, Gehen mit L2/LT; Belegung: docs/43_ps4_controller.md")
         toggle_row(s, "Handy-Zugang (Bluetooth)", self.v_phone,
                    "nur Demo-GUI; Kopplung über 📱 in der GUI, docs/44_handy_bedienung.md")
         self._rviz_row = toggle_row(s, "RViz", self.v_rviz,
                                     "Zusatzfenster mit TF/Markern; MuJoCo-Fenster kommt immer")
-        for v in (self.v_hands, self.v_gui, self.v_nav):
+        for v in (self.v_hands, self.v_gui, self.v_nav, self.v_nav_deadman):
             v.trace_add("write", lambda *_: self._sync())
 
         # 5) Erweitert
@@ -852,6 +860,16 @@ class SimFrame(tk.Frame):
         elif not nav and self._rviz_own is not None:
             self.v_rviz.set(self._rviz_own)
             self._rviz_own = None
+        # Totmann der Navigation kommt vom Controller (ps4_walk) -> Controller erzwungen.
+        set_row_state(self._nav_deadman_row, nav)
+        deadman = nav and self.v_nav_deadman.get()
+        set_row_state(self._ps4_row, not deadman)
+        if deadman and self._ps4_own is None:
+            self._ps4_own = self.v_ps4.get()
+            self.v_ps4.set(True)
+        elif not deadman and self._ps4_own is not None:
+            self.v_ps4.set(self._ps4_own)
+            self._ps4_own = None
 
     def _start(self) -> None:
         rt = self.v_rt.get().strip() or "1.0"
@@ -869,8 +887,9 @@ class SimFrame(tk.Frame):
             "env": env_name, "gui": gui, "walk_policy": self.v_policy.get(),
             "hands": hands, "nav": self.v_nav.get(),
             "rviz": self.v_rviz.get() if self._rviz_own is None else self._rviz_own,
-            "open_guis": self.v_open_guis.get(), "rt": rt, "ps4": self.v_ps4.get(),
-            "phone": self.v_phone.get(),
+            "open_guis": self.v_open_guis.get(), "rt": rt,
+            "ps4": self.v_ps4.get() if self._ps4_own is None else self._ps4_own,
+            "nav_deadman": self.v_nav_deadman.get(), "phone": self.v_phone.get(),
         })
 
         env = os.environ.copy()
@@ -882,6 +901,7 @@ class SimFrame(tk.Frame):
         env["OPEN_GUIS"] = "true" if (hands and gui == "streamdeck"
                                       and self.v_open_guis.get()) else "false"
         env["G1_ENABLE_NAV"] = "1" if self.v_nav.get() else "0"
+        env["G1_NAV_DEADMAN"] = "1" if self.v_nav.get() and self.v_nav_deadman.get() else "0"
         env["G1_PS4_ARMS"] = "1" if self.v_ps4.get() else "0"
         env["G1_PHONE"] = "1" if self.v_phone.get() and gui == "demo" else "0"
         # BlueZ ueber den System-D-Bus geht nur ohne Dockers AppArmor-Profil (docker-compose.yml).
@@ -934,7 +954,9 @@ class RealFrame(tk.Frame):
         self.v_joy = tk.StringVar(value=st.get("joy", "Wireless Controller"))
         self.v_ps4 = tk.BooleanVar(value=st.get("ps4", False))
         self.v_phone = tk.BooleanVar(value=st.get("phone", False))
-        self.v_lidar = tk.BooleanVar(value=False)
+        self.v_lidar = tk.BooleanVar(value=False)   # bewusst nie gemerkt (experimentell)
+        self.v_lidar_ip = tk.StringVar(value=st.get("lidar_ip", "192.168.123.120"))
+        self._ps4_own = None    # eigene Controller-Wahl, solange LiDAR-Nav ihn erzwingt
         self.v_rebuild = tk.BooleanVar(value=False)
         self.v_confirm = tk.BooleanVar(value=False)
 
@@ -973,11 +995,21 @@ class RealFrame(tk.Frame):
         field_row(self._hand_box, "IP rechte Hand", self.v_right)
         self._open_row, self._hand_hint = hand_gui_rows(self._hand_box, self.v_open_guis)
         toggle_row(s, "RViz", self.v_rviz, "empfohlen: Arm-Marker + Zustand sichtbar")
-        toggle_row(s, "PS4-Controller für Arme + Hände", self.v_ps4,
-                   "PS4 oder Xbox; aus = Gehen mit Deadman (bisher, nur PS4)")
+        self._ps4_row = toggle_row(s, "PS4-Controller für Arme + Hände", self.v_ps4,
+                                   "PS4 oder Xbox; aus = Gehen mit Deadman (bisher, nur PS4)")
         toggle_row(s, "Handy-Zugang (Bluetooth)", self.v_phone,
                    "nur Demo-GUI; Ansicht, NOT-HALT, Quittieren, Startleiste (docs/44_handy_bedienung.md)")
-        for v in (self.v_hands, self.v_gui):
+        toggle_row(s, "LiDAR + Navigation (experimentell)", self.v_lidar,
+                   "Livox MID-360; AUTO NAV nur mit L2 + linkem Stick (Totmann)")
+        self._lidar_box = tk.Frame(s, bg=CARD)
+        self._lidar_box.pack(fill="x", padx=(24, 0))
+        field_row(self._lidar_box, "IP des LiDAR", self.v_lidar_ip)
+        hint(self._lidar_box,
+             "Eigenes Image g1pilot-real-lidar: wird beim ersten Start automatisch gebaut "
+             "(dauert länger). Der LiDAR schickt an die IP des gewählten Interfaces. "
+             "MOLA (LiDAR-Odometrie) startet mit; Karte ab der Startpose. "
+             "Controller wird dafür eingeschaltet.")
+        for v in (self.v_hands, self.v_gui, self.v_lidar):
             v.trace_add("write", lambda *_: self._sync())
 
         # 4) Geh-Limits
@@ -995,8 +1027,6 @@ class RealFrame(tk.Frame):
         s = collapsible(b, "Erweitert")
         field_row(s, "Modbus-Port der Hände", self.v_port, width=8)
         field_row(s, "Gamepad-Name (evdev)", self.v_joy, width=24)
-        toggle_row(s, "LiDAR + Navigation", self.v_lidar,
-                   "experimentell: braucht Livox MID360 und das volle Image (make real-full)")
         toggle_row(s, "Docker-Images neu bauen", self.v_rebuild,
                    "nur nach Änderungen an Dockerfiles/Abhängigkeiten")
 
@@ -1037,6 +1067,16 @@ class RealFrame(tk.Frame):
         set_row_state(self._hand_box, hands)
         show_row(self._open_row, streamdeck)
         show_row(self._hand_hint, not streamdeck)
+        # LiDAR-Navigation: Totmann kommt von ps4_walk -> Controller erzwungen.
+        lidar = self.v_lidar.get()
+        set_row_state(self._lidar_box, lidar)
+        set_row_state(self._ps4_row, not lidar)
+        if lidar and self._ps4_own is None:
+            self._ps4_own = self.v_ps4.get()
+            self.v_ps4.set(True)
+        elif not lidar and self._ps4_own is not None:
+            self.v_ps4.set(self._ps4_own)
+            self._ps4_own = None
 
     def _sync_confirm(self) -> None:
         self.start_btn.configure(state="normal" if self.v_confirm.get() else "disabled")
@@ -1063,8 +1103,10 @@ class RealFrame(tk.Frame):
             "vyaw": self.v_vyaw.get().strip() or "0.4",
             "joy": self.v_joy.get().strip() or "Wireless Controller",
             "ps4": self.v_ps4.get(), "phone": self.v_phone.get(),
+            "lidar_ip": self.v_lidar_ip.get().strip() or "192.168.123.120",
         }
-        save_settings("real", vals)
+        save_settings("real", dict(vals, ps4=vals["ps4"] if self._ps4_own is None
+                                   else self._ps4_own))
 
         env = os.environ.copy()
         env["G1_MODE"] = "real"
@@ -1079,6 +1121,8 @@ class RealFrame(tk.Frame):
         env["G1_HAND_PORT"] = vals["port"]
         env["USE_RVIZ"] = "true" if vals["rviz"] else "false"
         env["G1_ENABLE_LIDAR"] = "1" if self.v_lidar.get() else "0"
+        env["G1_LIDAR_IP"] = vals["lidar_ip"]
+        # start.sh nimmt dann das Image g1pilot-real-lidar; compose baut es, falls es fehlt.
         env["JOYSTICK_NAME"] = vals["joy"]
         env["G1_PS4_ARMS"] = "1" if vals["ps4"] else "0"
         env["G1_PHONE"] = "1" if vals["phone"] and gui == "demo" else "0"

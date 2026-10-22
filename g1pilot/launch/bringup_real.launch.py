@@ -78,6 +78,8 @@ def generate_launch_description():
                 # RViz default AN: der rviz-Marker ist auf real das Interface
                 # fuer die Arm-Manipulation.
                 'use_rviz':             use_rviz,
+                # Mit LiDAR die Nav-Ansicht (Fixed Frame map, Punktwolke, Pfad, Ziel).
+                'rviz_config':          'nav.rviz' if enable_lidar else '29dof.rviz',
                 # Ohne LiDAR keine MOLA-Odometrie -> mola_fixed wuerde nur idle
                 # auf /lidar_odometry/pose warten. Mit LiDAR (G1_ENABLE_LIDAR=1)
                 # wieder an.
@@ -85,14 +87,21 @@ def generate_launch_description():
             }.items()
         ),
 
-        # Statische TF: odom_unitree -> base_link (Identity; ohne LiDAR-Odometrie
-        # gibt es keine bewegte odom-Quelle -- RViz braucht den Frame trotzdem).
+        # TF-Baum wie in der Sim: map -> world -> odom_unitree -> base_link -> pelvis.
+        # Ohne LiDAR: odom_unitree -> base_link statisch (Identitaet, RViz braucht
+        # den Frame). Mit LiDAR kommt sie bewegt von mola_fixed (MOLA-Pose).
         Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='map_to_world_real_tf',
+            arguments=['0', '0', '0', '0', '0', '0', 'map', 'world']
+        ),
+        *([] if enable_lidar else [Node(
             package='tf2_ros',
             executable='static_transform_publisher',
             name='odom_to_base_link_real_tf',
             arguments=['0', '0', '0', '0', '0', '0', 'odom_unitree', 'base_link']
-        ),
+        )]),
 
         # ── 2. arm_controller + interactive_marker (rt/arm_sdk) ─────────────
         #    Gewichts-Rampe AKTIV (Defaults 2.0 s) -- weiche Uebergabe zwischen
@@ -215,21 +224,48 @@ def generate_launch_description():
         ))
 
     # ── 6. Optional: LiDAR (+ Navigation) zuschalten ─────────────────────────
-    #    Braucht den Livox MID360 + das VOLLE Docker-Image (g1pilot:v1.1.0 mit
-    #    livox_ros_driver2/MOLA) -- im schlanken Real-Image schlaegt der Include
-    #    fehl. nav2point/dijkstra direkt als Nodes (navigation_launcher wuerde
-    #    loco_client ein zweites Mal starten).
+    #    Braucht das Image MIT Livox/MOLA (G1_ENABLE_LIDAR=1 ./start.sh --build ->
+    #    g1pilot-real-lidar). Im schlanken Image meldet livox_launcher nur einen
+    #    Fehler, alles andere startet normal. nav2point/dijkstra direkt als Nodes
+    #    (navigation_launcher wuerde loco_client ein zweites Mal starten).
+    #    Die Autonomie gibt NUR der nav_supervisor frei (Totmann L2 + Stick,
+    #    Waechter siehe navigation/nav_supervisor.py); ohne MOLA-Pose bleibt sie
+    #    gesperrt ("noch keine Pose").
     if enable_lidar:
         nodes.append(IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 os.path.join(pkg_share, 'launch', 'livox_launcher.launch.py'))))
+        # Stufe 2: MOLA-LiDAR-Odometrie -> /lidar_odometry/pose -> mola_fixed
+        # (robot_state_launcher, enable_mola) -> /lidar_odometry/pose_fixed.
+        nodes.append(IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                os.path.join(pkg_share, 'launch', 'mola_launcher.launch.py'))))
+        # LiDAR 10 Hz -> Pose alle 0,1 s; 0,5 s = 5 Scans Puffer fuer MOLA-Aussetzer.
+        pose_timeout = float(os.environ.get('G1_NAV_POSE_TIMEOUT', '0.5'))
         nodes.append(Node(
             package='g1pilot', executable='nav2point', name='nav2point',
             output='screen',
-            parameters=[{'interface': interface, 'use_robot': True}]))
+            parameters=[{'interface': interface, 'use_robot': True,
+                         'pose_timeout_s': pose_timeout}]))
         nodes.append(Node(
             package='g1pilot', executable='dijkstra_planner', name='dijkstra_planner',
             output='screen',
             parameters=[{'interface': interface, 'use_robot': True}]))
+        # Tempo-Deckel der Autonomie relativ zu den loco_client-Limits (die
+        # normierten Joy-Achsen werden dort mit G1_MAX_VX/VY/VYAW skaliert).
+        nav_vx = float(os.environ.get('G1_NAV_MAX_VX', '0.15'))
+        nav_vyaw = float(os.environ.get('G1_NAV_MAX_VYAW', '0.3'))
+        cap_lin = min(1.0, nav_vx / max(1e-3, min(float(max_vx), float(max_vy))))
+        cap_yaw = min(1.0, nav_vyaw / max(1e-3, float(max_vyaw)))
+        nodes.append(Node(
+            package='g1pilot', executable='nav_supervisor', name='nav_supervisor',
+            output='screen',
+            parameters=[{
+                # Real: Totmann IMMER Pflicht (kein Env-Schalter).
+                'require_deadman': True,
+                'pose_timeout_s': pose_timeout,
+                'axis_cap_lin': cap_lin,
+                'axis_cap_yaw': cap_yaw,
+            }]))
 
     return LaunchDescription(nodes)

@@ -25,6 +25,12 @@ ps4_joystick), sendet der Node einmal 0 und dann nichts mehr; loco_client
 stoppt zusaetzlich selbst, wenn der Strom ausbleibt (cmd_vel_timeout).
 NOT-HALT (PS bzw. von GUI/Streamdeck) sperrt das Gehen bis START.
 
+AUTO NAV (nav_supervisor, docs/50_navigation_anleitung.md): solange eine
+Navigation angefragt ist (nav/state queued/running/paused mit Totmann), geht
+L2 NICHT selbst, sondern ist der Totmann der Autonomie: L2 + linker Stick
+startet, L2 halten laeuft weiter, L2 los = Stopp. Dafuer meldet der Node
+/g1pilot/ps4/deadman mit 20 Hz, solange Joy-Daten kommen.
+
 Rueckmeldung: /g1pilot/ps4/walk_status (JSON) + Vibration ueber
 /g1pilot/ps4/feedback (ohne LED-Farbe -- die LED gehoert ps4_arm_teleop).
 Geh-Tempo im gemeinsamen Zustand mit der Demo-GUI (/g1pilot/teleop_state,
@@ -42,6 +48,23 @@ WALK_SPEED_ORDER = ("Langsam", "Normal", "Schnell")
 WALK_SPEED_SCALE = {"Langsam": 0.35, "Normal": 0.65, "Schnell": 1.0}
 WALK_CMD_TOPIC = "/g1pilot/ps4/walk_cmd"
 DEADMAN_THRESHOLD = 0.5   # L2 mindestens halb gedrueckt
+# Totmann fuer AUTO NAV (nav_supervisor): {"held": L2 scharf gehalten,
+# "go": linker Stick ausgelenkt}. Kommt nur, solange der Controller Daten
+# liefert -- Funkabriss = keine Meldung = Stopp im nav_supervisor.
+DEADMAN_TOPIC = "/g1pilot/ps4/deadman"
+NAV_STATE_TOPIC = "/g1pilot/nav/state"
+GO_THRESHOLD = 0.5        # linker Stick so weit ausgelenkt = "los"
+NAV_STATE_TIMEOUT_S = 0.5  # aelterer nav/state gilt nicht (Supervisor tot)
+# In diesen AUTO-NAV-Zustaenden gehoert L2 dem nav_supervisor: kein eigenes Gehen.
+# Auch "stopped": wer nach einem Waechter-Stopp L2 + Stick drueckt, will weiter
+# navigieren -- der G1 darf dann NICHT von Hand in Stick-Richtung loslaufen.
+NAV_OWNS_L2 = ("queued", "running", "paused", "stopped")
+
+
+def go_gesture(axes):
+    """Linker Stick deutlich ausgelenkt (Losgeh-Geste fuer AUTO NAV)."""
+    a = list(axes) + [0.0] * max(0, L.NUM_AXES - len(axes))
+    return abs(a[L.LX]) >= GO_THRESHOLD or abs(a[L.LY]) >= GO_THRESHOLD
 
 
 def deadman_held(axes, buttons):
@@ -124,6 +147,11 @@ class WalkLogic:
     def release(self):
         """Joy-Strom weg: wie Deadman los."""
         self._prev = [0] * L.NUM_BUTTONS
+        return self._deactivate()
+
+    def disarm(self):
+        """Wie Deadman los, aber ohne die Tastenflanken zurueckzusetzen
+        (Wechsel Gehen <-> AUTO NAV): erst nach "L2 los" wieder scharf."""
         return self._deactivate()
 
     def _deactivate(self):
@@ -218,8 +246,11 @@ def main(args=None):
             self.joy_timeout = float(gp("joy_timeout_s"))
             self.axes, self.t_joy = [], None
             self.walk_ready = None       # G1 im Walk-Modus? None = unbekannt
+            self.nav_state, self.t_nav = None, None
+            self._owned = False
 
             self.pub_cmd = self.create_publisher(Twist, WALK_CMD_TOPIC, 10)
+            self.pub_deadman = self.create_publisher(String, DEADMAN_TOPIC, 10)
             self.pub_feedback = self.create_publisher(String, "/g1pilot/ps4/feedback", 10)
             latched = QoSProfile(depth=1)
             latched.durability = DurabilityPolicy.TRANSIENT_LOCAL
@@ -233,6 +264,7 @@ def main(args=None):
                                      latched)
             self.create_subscription(String, "/g1pilot/loco_state", self._on_loco_state,
                                      latched)
+            self.create_subscription(String, NAV_STATE_TOPIC, self._on_nav_state, latched)
             self.create_timer(1.0 / float(gp("rate_hz")), self._tick)
             # Gemeinsamer Zustand mit der Demo-GUI: Start-Tempo gilt ab Node-Start.
             self.shared = shared_state.SharedState("ps4_walk")
@@ -284,10 +316,42 @@ def main(args=None):
         def _on_loco_state(self, msg):
             self.walk_ready = msg.data == "walk"
 
+        def _on_nav_state(self, msg):
+            try:
+                d = json.loads(msg.data)
+            except (TypeError, ValueError):
+                return
+            owns = d.get("state") in NAV_OWNS_L2 and bool(d.get("require_deadman"))
+            self.nav_state, self.t_nav = (d.get("state") if owns else None), time.monotonic()
+            self._nav_handover()
+
+        def _nav_handover(self):
+            """Wechsel der L2-Zustaendigkeit Gehen <-> AUTO NAV. In beide
+            Richtungen erst nach einem gesehenen "L2 los" wieder scharf, und
+            ein laufendes Hand-Gehen bekommt sofort eine 0."""
+            owns = self._nav_owns()
+            if owns == self._owned:
+                return
+            self._owned = owns
+            self.get_logger().info(
+                "AUTO NAV angefragt: L2 ist jetzt der Totmann der Navigation "
+                "(L2 + linker Stick = los)." if owns else
+                "AUTO NAV aus: L2 geht wieder selbst (erst L2 loslassen).")
+            for ev in self.logic.disarm():
+                self._event(ev)
+            self._publish_status()
+
+        def _nav_owns(self):
+            return (self.nav_state is not None and self.t_nav is not None
+                    and time.monotonic() - self.t_nav <= NAV_STATE_TIMEOUT_S)
+
         def _event(self, ev):
             kind = ev[0]
             if kind == "start":
-                if self.walk_ready is False:
+                if self._nav_owns():
+                    self.get_logger().info("L2: Totmann AUTO NAV gehalten.")
+                    self._rumble(80, strong=0.0, weak=0.5)
+                elif self.walk_ready is False:
                     self.get_logger().warn(
                         "L2: G1 steht nicht im Walk-Modus -- erst in der GUI "
                         "(Startleiste »Walk« bzw. LAUFEN) oder per Handy-App umschalten.")
@@ -330,6 +394,13 @@ def main(args=None):
                 for ev in self.logic.release():
                     self._event(ev)
                 return
+            self._nav_handover()     # Supervisor verstummt -> Zustaendigkeit endet
+            if self.t_joy is not None:
+                held = self.logic.active and not self.logic.estop
+                self.pub_deadman.publish(String(data=json.dumps(
+                    {"held": held, "go": held and go_gesture(self.axes)})))
+            if self._nav_owns():
+                return          # Sticks gehoeren der Navigation, nicht dem Gehen
             cmd = self.logic.command(self.axes)
             if cmd is not None:
                 self._send(*cmd)
