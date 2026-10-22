@@ -212,3 +212,29 @@ def test_error_names_step_and_type(tmp_path):
     srv.stop()
     assert "Verbindung zum System-D-Bus" in state
     assert "FileNotFoundError" in state
+
+
+def _bluez_objects(pad_on=None, powered=("hci0", "hci1")):
+    objs = {f"/org/bluez/{h}": {"org.bluez.Adapter1": {"Address": a, "Powered": h in powered}}
+            for h, a in (("hci0", "C0:3A:55:A5:54:25"), ("hci1", "00:1A:7D:DA:71:13"))}
+    if pad_on:
+        objs[f"/org/bluez/{pad_on}/dev_AA"] = {"org.bluez.Device1": {
+            "Adapter": f"/org/bluez/{pad_on}", "Icon": "input-gaming", "Paired": True, "Connected": False}}
+    return objs
+
+
+def test_choose_adapter_auto_avoids_controller():
+    path, why = B.choose_adapter(_bluez_objects(pad_on="hci0"), "auto")
+    assert path == "/org/bluez/hci1" and "ohne Controller" in why
+    path, _ = B.choose_adapter(_bluez_objects(pad_on="hci1"), "auto")
+    assert path == "/org/bluez/hci0"                     # Nummern vertauscht (Neustart) -> egal
+
+
+def test_choose_adapter_single_dongle_and_explicit():
+    one = {k: v for k, v in _bluez_objects(pad_on="hci0").items() if "hci1" not in k}
+    path, why = B.choose_adapter(one, "auto")
+    assert path == "/org/bluez/hci0" and "geteilt" in why
+    assert B.choose_adapter(_bluez_objects(), "hci1")[0] == "/org/bluez/hci1"
+    assert B.choose_adapter(_bluez_objects(), "00:1a:7d:da:71:13")[0] == "/org/bluez/hci1"
+    assert B.choose_adapter(_bluez_objects(), "hci7")[0] is None
+    assert B.choose_adapter({}, "auto")[0] is None

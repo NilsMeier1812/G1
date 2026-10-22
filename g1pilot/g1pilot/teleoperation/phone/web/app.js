@@ -3,13 +3,13 @@
 //  * Geraete-Schluessel aus dem Kopplungscode (nie gesendet), jede Nachricht
 //    signiert + Zaehler; der PC prueft Rolle, Steuerhoheit und Statusbezug.
 //  * Herzschlag 5 Hz nur bei sichtbarer Seite; Seite weg -> Bedienung abgeben.
-//  * Anzeige aelter als 1 s -> alles gesperrt ausser NOT-HALT.
+//  * Anzeige aelter als 1,5 s -> alles gesperrt ausser NOT-HALT und Pose speichern.
 import * as P from "./proto.js";
 
 const $ = (id) => document.getElementById(id);
 const STORE = "g1phone.v1";
 const HB_MS = 200;
-const FRESH_MS = 1000;
+const FRESH_MS = 1500;
 const SESSION_LOST_MS = 3000;
 
 let cfg = loadCfg();          // {dev, key(hex), name}
@@ -307,7 +307,8 @@ function render() {
   const grasp = st.mode === "grasp" && !st.pend;
   show("secGrasp", grasp);
   for (const id of ["btnHandsOpen", "btnHandsClose", "btnLeftClose", "btnRightClose", "btnSafe", "btnHome",
-    "btnPoseGo", "btnPoseSave"]) $(id).disabled = !can;
+    "btnPoseGo"]) $(id).disabled = !can;
+  $("btnPoseSave").disabled = !(operator && ctl);     // Speichern bewegt nichts: auch bei »Daten alt«
   renderSeqs(sequences(), can);
   $("btnSeqNext").disabled = !can;
   for (const [id, m] of [["btnSeqAuto", "auto"], ["btnSeqStep", "step"]]) {
@@ -479,7 +480,8 @@ $("btnPoseSave").addEventListener("click", openSave);
 $("saveCancel").addEventListener("click", () => show("saveSheet", false));
 $("saveOk").addEventListener("click", () => {
   const name = $("saveName").value.trim().replace(/\|/g, "/");
-  if (!name || !(fresh() && body.me && body.me.ctl)) { toast("Anzeige nicht aktuell — nichts gespeichert.", true); return; }
+  // Speichern bewegt nichts: nur Bedienung noetig, keine frische Anzeige.
+  if (!name || !(body && body.me && body.me.ctl)) { toast("Erst »Bedienen« – nichts gespeichert.", true); return; }
   const clean = (v) => v.replace(/\|/g, "/");
   cmd("pose_save", `${saveMask()}|${clean($("saveCat").value)}|${clean($("saveSeq").value)}|${name}`);
   show("saveSheet", false);
@@ -582,7 +584,7 @@ $("btnHome").addEventListener("click", () => confirmAction("Grundstellung",
 
 // Version der Handy-Seite; muss zu CACHE in sw.js passen. Kein Auto-Update: eine neue Version
 // wartet im Hintergrund, bis hier »Aktualisieren« getippt wird.
-const VERSION = "v5";
+const VERSION = "v6";
 $("version").textContent = `Handy-Seite ${VERSION}`;
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then((reg) => {

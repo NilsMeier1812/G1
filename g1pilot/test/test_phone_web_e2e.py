@@ -176,7 +176,7 @@ def test_phone_page_end_to_end(server, browser, tmp_path):
 
     # Alte Daten -> gesperrt (NOT-HALT bleibt)
     pump(300)
-    pump(1500, publish=False)
+    pump(2000, publish=False)
     assert page.is_visible("#staleBar")
     assert page.inner_text("#pill") == "Daten alt"
     assert page.is_disabled("#btnModeWalk") and page.is_enabled("#estop")

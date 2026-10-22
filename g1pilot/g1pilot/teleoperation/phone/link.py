@@ -8,7 +8,7 @@ fuers Handy zusammenstellen, Kopplung/Steuerhoheit am PC.
 Nur aktiv mit G1_PHONE=1 (Start-Fenster: »Handy-Zugang«). Sonst gibt es
 keinen Knopf, keinen Thread und keine Bluetooth-Werbung.
 
-  G1_PHONE_BT_ADAPTER   hci0 (Default, ein Dongle) | hci1 (zweiter Dongle)
+  G1_PHONE_BT_ADAPTER   auto (Default: Dongle ohne Controller) | hciN | MAC des Dongles
   G1_PHONE_BT_NAME      Name beim Werben (Default "G1 SIM" / "G1 REAL")
   G1_PHONE_BT_ENCRYPT   1 = zusaetzlich BLE-Kopplung verlangen (Default 0)
   G1_PHONE_VIEW_ESTOP   1 = auch Ansicht-Handys duerfen NOT-HALT (Default 1)
@@ -64,7 +64,7 @@ class PhoneLink:
         name = os.environ.get("G1_PHONE_BT_NAME") or ("G1 SIM" if gui.sim_mode else "G1 REAL")
         # Erst hier laden: dbus_next beim Import der Demo-GUI liess in Tests alte GUI-Timer weiterlaufen.
         from g1pilot.teleoperation.phone.ble_server import BleServer
-        self.ble = BleServer(self.gw, adapter=os.environ.get("G1_PHONE_BT_ADAPTER", "hci0"),
+        self.ble = BleServer(self.gw, adapter=os.environ.get("G1_PHONE_BT_ADAPTER", "auto"),
                              name=name, encrypt=_env_flag("G1_PHONE_BT_ENCRYPT", "0"), log=log)
         self._phone_motion = False      # Bewegung vom Handy gestartet, laeuft evtl. noch
         self._ble_state = None
