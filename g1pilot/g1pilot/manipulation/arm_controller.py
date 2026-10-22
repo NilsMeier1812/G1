@@ -2074,6 +2074,13 @@ class ArmController(Node):
             self.get_logger().warn("ENABLE ignoriert: E-Stop aktiv -- erst mit "
                                    "START quittieren.")
             return
+        # ENABLE, obwohl die Arme schon von uns gefuehrt werden (z.B. jedes
+        # R2/GREIFEN am Controller, Kachel GREIFEN der Demo-GUI): am bisherigen
+        # SOLL halten, nicht an der Messung. Die Messung liegt um den Regelfehler
+        # daneben (Schwerkraft-FF, Lauf-Dynamik); sie als neues Soll zu
+        # uebernehmen liess die Haende bei jedem Wechsel GEHEN -> GREIFEN ein
+        # Stueck weiter wandern (real: nach oben/vorne, kumulativ).
+        already_held = msg.data and self._arms_held()
         if not msg.data:
             if self._releasing:
                 return                   # Rueckgabe laeuft bereits
@@ -2107,13 +2114,14 @@ class ArmController(Node):
             # Slack-Latch aufheben: ENABLE holt die Kontrolle bewusst zurueck.
             self._arm_slack = False
             self._waist_engage("ENABLE")
-            try:
-                cur = self.get_current_motor_q()
-                left = [cur[j] for j in LEFT_JOINT_INDICES_LIST]
-                right= [cur[j] for j in RIGHT_JOINT_INDICES_LIST]
-                self._last_q_target = np.array(left + right, dtype=float)
-            except Exception:
-                pass
+            if not already_held:
+                try:
+                    cur = self.get_current_motor_q()
+                    left = [cur[j] for j in LEFT_JOINT_INDICES_LIST]
+                    right= [cur[j] for j in RIGHT_JOINT_INDICES_LIST]
+                    self._last_q_target = np.array(left + right, dtype=float)
+                except Exception:
+                    pass
             # Reste einer frueheren Session verwerfen: alte IK-Ziele wuerden den
             # Arm beim Re-Enable SOFORT auf ein altes Marker-Ziel losfahren
             # lassen, ein altes homing_reached wuerde ihn zur Home-Pose treiben.
@@ -2229,6 +2237,14 @@ class ArmController(Node):
             self._reset_after_home = True
         except Exception as e:
             self.get_logger().warning(f"IK-Align fehlgeschlagen: {e}")
+
+    def _arms_held(self) -> bool:
+        """True, wenn wir die Arme gerade aktiv fuehren (aktiviert, keine
+        Rueckgabe, nicht schlaff) -- dann ist _last_q_target das gesendete Soll
+        und die Referenz fuer jedes neue Halten/Ziel. Die Messung liegt um den
+        Regelfehler daneben; sie zu uebernehmen verschiebt die Arme bei jedem
+        Moduswechsel/Jog-Start ein Stueck (kumulativ)."""
+        return self.arms_enabled and not self._releasing and not self._arm_slack
 
     def _ik_side_held(self, side: str) -> bool:
         """True, wenn das IK-Ziel dieser Seite noch das per _align_ik_to_config
@@ -3044,13 +3060,14 @@ class ArmController(Node):
         if self._reset_after_home:
             self._reset_after_home = False
             self.homing_reached = False
-            try:
-                cur = self.get_current_motor_q()
-                left  = [cur[j] for j in LEFT_JOINT_INDICES_LIST]
-                right = [cur[j] for j in RIGHT_JOINT_INDICES_LIST]
-                self._last_q_target = np.array(left + right, dtype=float)
-            except Exception:
-                self._last_q_target = np.concatenate((self.home_left, self.home_right)).copy()
+            if not self._arms_held():
+                try:
+                    cur = self.get_current_motor_q()
+                    left  = [cur[j] for j in LEFT_JOINT_INDICES_LIST]
+                    right = [cur[j] for j in RIGHT_JOINT_INDICES_LIST]
+                    self._last_q_target = np.array(left + right, dtype=float)
+                except Exception:
+                    self._last_q_target = np.concatenate((self.home_left, self.home_right)).copy()
 
             self._goal_left_filt  = None
             self._goal_right_filt = None
@@ -3125,13 +3142,14 @@ class ArmController(Node):
         if self._reset_after_home:
             self._reset_after_home = False
             self.homing_reached = False
-            try:
-                cur = self.get_current_motor_q()
-                left  = [cur[j] for j in LEFT_JOINT_INDICES_LIST]
-                right = [cur[j] for j in RIGHT_JOINT_INDICES_LIST]
-                self._last_q_target = np.array(left + right, dtype=float)
-            except Exception:
-                self._last_q_target = np.concatenate((self.home_left, self.home_right)).copy()
+            if not self._arms_held():
+                try:
+                    cur = self.get_current_motor_q()
+                    left  = [cur[j] for j in LEFT_JOINT_INDICES_LIST]
+                    right = [cur[j] for j in RIGHT_JOINT_INDICES_LIST]
+                    self._last_q_target = np.array(left + right, dtype=float)
+                except Exception:
+                    self._last_q_target = np.concatenate((self.home_left, self.home_right)).copy()
 
             self._goal_left_filt  = None
             self._goal_right_filt = None
