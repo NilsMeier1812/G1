@@ -80,11 +80,15 @@ Am PC kannst du unter **📱 Handy** Geräte entfernen. Ein entferntes Handy mus
 
 Im Modus GREIFEN:
 
-- **Pose anfahren …** öffnet die Liste aller gespeicherten Posen nach Kategorie. Pose antippen, dann
+- **Pose anfahren …** öffnet die Liste aller gespeicherten Posen nach Kategorie, darunter die
+  **↕ Relativen Bewegungen** (z. B. „Box anheben“, gerechnet ab der aktuellen Hand). Antippen, dann
   Schieber. Bricht die Verbindung ab, wird die Fahrt gestoppt.
 - **Pose speichern …** speichert die aktuelle Haltung: Name, Kategorie (Vorgabe „Demo“) und was
   gespeichert wird (Arme/Hände einzeln, alle an). Gibt es den Namen schon, warnt das Handy vor dem
-  Überschreiben. Neue Kategorien legst du am PC an.
+  Überschreiben. Unter **An Ablauf anhängen** hängst du die neue Pose direkt als letzten Schritt an
+  einen Ablauf (auch einen noch leeren) – wie im PC-Dialog erst, wenn der arm_controller das Speichern
+  quittiert hat; das Ergebnis steht danach in der Statuszeile. Neue Kategorien, Abläufe anlegen und
+  Umsortieren gehen nur am PC.
 - **Abläufe** sind dieselben wie in der PC-GUI (Fenster „Posen & Abläufe“). Darüber wählst du
   **Am Stück** oder **Schritt für Schritt** (gilt für PC, Handy und Controller gemeinsam). Wartet ein
   Ablauf auf Bestätigung, erscheint oben unter „Bewegung stoppen“ der grüne Knopf **Weiter ▶ (n/m)**;

@@ -206,8 +206,8 @@ def _slide(page):
 def test_phone_grasp_view_poses_and_controller(server, browser, tmp_path):
     gw = G.PhoneGateway(store_path=str(tmp_path / "d.json"))
     br = Bridge(gw)
-    gw.set_catalog({"Demo": ["Regal_oben", "Winken"], "Ablauf Arbeitsplatz 1": ["AP1_a", "AP1_b"],
-                    "Allgemein": ["Ablage"]})
+    gw.set_catalog({"Demo": ["Regal_oben", "Winken"], "Allgemein": ["Ablage"]},
+                   sequences=["Arbeitsplatz 1"], empty=["Neu"], moves=["Box anheben"])
     status = {"sim": False, "started": True, "estop": False, "ack": False, "mode": "grasp", "pend": None,
               "txt": "GREIFEN aktiv – Arme werden geregelt.", "col": "#fb8c00", "busy": False,
               "info": "G1: Walk (FSM 501)", "loco": {"damp": True, "preparation": True, "walk": False},
@@ -267,6 +267,12 @@ def test_phone_grasp_view_poses_and_controller(server, browser, tmp_path):
     _slide(page)
     assert pump(2000, lambda: any(a["action"] == "pose" and a["arg"] == "Regal_oben" for a in actions))
 
+    # Relative Bewegung aus derselben Liste
+    page.click("#btnPoseGo")
+    page.click("#poseList button:has-text('Box anheben')")
+    _slide(page)
+    assert pump(2000, lambda: any(a["action"] == "move" and a["arg"] == "Box anheben" for a in actions))
+
     # Pose speichern: Formular
     page.click("#btnPoseSave")
     assert page.is_visible("#saveSheet") and page.is_disabled("#saveOk")
@@ -276,12 +282,14 @@ def test_phone_grasp_view_poses_and_controller(server, browser, tmp_path):
     page.uncheck("#cRA")
     page.uncheck("#cRH")
     page.select_option("#saveCat", "Allgemein")
+    assert page.locator("#saveSeq option").all_inner_texts() == ["— nicht anhängen —", "Arbeitsplatz 1", "Neu"]
+    page.select_option("#saveSeq", "Neu")
     if SHOT_DIR:
         page.screenshot(path=os.path.join(SHOT_DIR, "7_pose_speichern.png"))
     page.click("#saveOk")
     assert pump(2000, lambda: any(a["action"] == "pose_save" for a in actions))
     save = [a for a in actions if a["action"] == "pose_save"][-1]
-    assert save["arg"] == "1010|Allgemein|Tisch links"
+    assert save["arg"] == "1010|Allgemein|Neu|Tisch links"
     assert errors == []
     ctx.close()
 

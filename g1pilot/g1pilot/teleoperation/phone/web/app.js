@@ -414,6 +414,24 @@ function openPoseList() {
       list.appendChild(b);
     }
   }
+  const moves = catalog.m || [];
+  if (moves.length) {
+    const h = document.createElement("div");
+    h.className = "cat";
+    h.textContent = "↕ Relative Bewegungen";
+    list.appendChild(h);
+    for (const name of moves) {
+      const b = document.createElement("button");
+      b.textContent = `↕ ${name}`;
+      b.addEventListener("click", () => {
+        show("poseSheet", false);
+        confirmAction(`Bewegung »${name}«`,
+          "Die Hände bewegen sich relativ zur aktuellen Stellung. Bricht die Verbindung ab, wird gestoppt.",
+          () => cmd("move", name));
+      });
+      list.appendChild(b);
+    }
+  }
   show("poseCut", !!catalog.cut);
   show("poseSheet", true);
 }
@@ -432,6 +450,16 @@ function openSave() {
     sel.appendChild(o);
   }
   sel.value = cats.includes(keep) ? keep : "Demo";
+  // Ablauf zum Anhaengen: startbare ("s") und noch leere ("e") Ablaeufe.
+  const seqSel = $("saveSeq");
+  seqSel.innerHTML = "";
+  const names = [...new Set([...(catalog.s || []), ...(catalog.e || [])])].sort((a, b) => a.localeCompare(b));
+  for (const [v, label] of [["", "— nicht anhängen —"], ...names.map((n) => [n, n])]) {
+    const o = document.createElement("option");
+    o.value = v;
+    o.textContent = label;
+    seqSel.appendChild(o);
+  }
   $("saveName").value = "";
   checkSave();
   show("saveSheet", true);
@@ -452,7 +480,8 @@ $("saveCancel").addEventListener("click", () => show("saveSheet", false));
 $("saveOk").addEventListener("click", () => {
   const name = $("saveName").value.trim().replace(/\|/g, "/");
   if (!name || !(fresh() && body.me && body.me.ctl)) { toast("Anzeige nicht aktuell — nichts gespeichert.", true); return; }
-  cmd("pose_save", `${saveMask()}|${$("saveCat").value.replace(/\|/g, "/")}|${name}`);
+  const clean = (v) => v.replace(/\|/g, "/");
+  cmd("pose_save", `${saveMask()}|${clean($("saveCat").value)}|${clean($("saveSeq").value)}|${name}`);
   show("saveSheet", false);
 });
 
@@ -553,7 +582,7 @@ $("btnHome").addEventListener("click", () => confirmAction("Grundstellung",
 
 // Version der Handy-Seite; muss zu CACHE in sw.js passen. Kein Auto-Update: eine neue Version
 // wartet im Hintergrund, bis hier »Aktualisieren« getippt wird.
-const VERSION = "v4";
+const VERSION = "v5";
 $("version").textContent = `Handy-Seite ${VERSION}`;
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then((reg) => {
