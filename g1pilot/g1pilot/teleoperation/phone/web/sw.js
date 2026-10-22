@@ -2,7 +2,7 @@
 // (auch ohne Netz). Es gibt KEIN automatisches Update. Findet Chrome eine neue sw.js
 // (anderer CACHE-Name), wird sie nur geladen und wartet; aktiv wird sie erst, wenn am Handy
 // »Aktualisieren« getippt wird. Neue Version = CACHE hier UND VERSION in app.js hochzaehlen.
-const CACHE = "g1phone-v6";
+const CACHE = "g1phone-v7";
 const FILES = ["./", "index.html", "app.js", "proto.js", "manifest.webmanifest", "icon.svg"];
 
 self.addEventListener("install", (e) => {

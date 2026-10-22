@@ -68,10 +68,19 @@ Der Code geht nie über Funk. Aus ihm leiten PC und Handy getrennt denselben Ger
 |---|---|
 | **Live** (grün) | Status jünger als 1,5 s, Bedienung frei. |
 | **Daten alt** (rot) | Kein frischer Status seit 1,5 s. Alles gesperrt außer NOT-HALT und Pose speichern. |
-| Bildschirm aus, App gewechselt, Tab im Hintergrund | Handy gibt die Bedienung sofort ab. |
+| Bildschirm aus, App gewechselt, Tab im Hintergrund | Handy gibt die Bedienung sofort ab. Verbindung und Anmeldung bleiben (Herzschlag läuft weiter). Kommst du binnen 60 s zurück, übernimmt das Handy die Bedienung von selbst wieder. |
+| Seite neu geladen (z. B. versehentlich runtergezogen) | Handy verbindet sich von selbst neu, meldet sich an und übernimmt die Bedienung wieder (binnen 60 s). Kein Auswahlfenster, siehe *Automatisch wieder verbinden*. |
+| Funkverbindung kurz weg | Handy versucht es selbst wieder (1, 2, 4, 8 s, dann alle 8 s). |
+| **Trennen** getippt | Bleibt getrennt, auch nach Neuladen, bis du wieder **Mit G1 verbinden** tippst. |
 | Kein Herzschlag vom Handy für 2 s (Funk weg, Akku leer) | PC entzieht die Bedienung. **Ein vom Handy gestarteter Ablauf, die Sichere Pose und die Grundstellung werden abgebrochen.** |
 | Keine Nachricht für 4 s | Sitzung beendet, PC-GUI meldet „Handy getrennt“. |
-| PC-GUI: 📱 → **Bedienung zurückholen** | Handy ist sofort wieder nur Ansicht. |
+| PC-GUI: 📱 → **Bedienung zurückholen** | Handy ist sofort wieder nur Ansicht und holt sie sich auch nicht von selbst zurück. |
+
+**Automatisch wieder verbinden (seit Handy-Seite v7):** Nach dem Neuladen verbindet die Seite ohne Auswahlfenster nur, wenn Chrome
+schon erlaubte Bluetooth-Geräte herausgibt (`navigator.bluetooth.getDevices`). Bei manchen Chrome-Versionen muss man dafür unter
+`chrome://flags` **»Use the new permissions backend for Web Bluetooth«** einschalten. Ohne das steht nach dem Neuladen
+„Nach dem Neuladen einmal »Mit G1 verbinden« tippen.“: ein Tipp + Gerät wählen, Anmelden und Bedienung gehen dann von selbst.
+Das Herunterziehen zum Neuladen ist auf der Seite ohnehin abgeschaltet.
 
 Am PC kannst du unter **📱 Handy** Geräte entfernen. Ein entferntes Handy muss neu koppeln.
 
