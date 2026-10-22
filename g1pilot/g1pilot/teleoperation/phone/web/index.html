@@ -16,9 +16,9 @@
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; background: var(--bg); color: var(--text);
     font: 16px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  body { padding: 12px 16px calc(132px + env(safe-area-inset-bottom)); max-width: 640px; margin: 0 auto;
+  body { padding: 10px 16px calc(112px + env(safe-area-inset-bottom)); max-width: 640px; margin: 0 auto;
     user-select: none; overscroll-behavior: none; }
-  header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
   header h1 { font-size: 20px; margin: 0; flex: 1; letter-spacing: .5px; }
   .pill { padding: 5px 12px; border-radius: 999px; font-weight: 700; font-size: 14px;
     background: #333; color: var(--dim); white-space: nowrap; }
@@ -58,20 +58,20 @@
   .chip.on.walk { background: var(--walk); color: #fff; } .chip.on.grasp { background: var(--grasp); color: #fff; }
   .chip.pend { outline: 2px dashed var(--warn); }
   #estop { position: fixed; left: 16px; right: 16px; bottom: calc(14px + env(safe-area-inset-bottom));
-    width: auto; max-width: 608px; margin: 0 auto; min-height: 96px; font-size: 28px; letter-spacing: 2px;
+    width: auto; max-width: 608px; margin: 0 auto; min-height: 84px; font-size: 28px; letter-spacing: 2px;
     background: var(--stop); border: 4px solid #ffcdd2; border-radius: 18px; z-index: 5;
     box-shadow: 0 6px 24px rgba(0,0,0,.6); }
   #estop:disabled { opacity: .5; }
-  #toast { position: fixed; left: 16px; right: 16px; bottom: calc(124px + env(safe-area-inset-bottom));
+  #toast { position: fixed; left: 16px; right: 16px; bottom: calc(110px + env(safe-area-inset-bottom));
     max-width: 608px; margin: 0 auto; padding: 12px; border-radius: 12px; background: #263238;
     font-weight: 700; z-index: 6; transition: opacity .3s; }
   #toast.bad { background: #4e342e; color: #ffe0b2; }
-  #sheet { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 10; display: flex;
+  .sheetbg { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 10; display: flex;
     align-items: flex-end; }
-  #sheet .box { background: #1e1e1e; width: 100%; max-width: 640px; margin: 0 auto; padding: 18px 16px
+  .sheetbg .box { max-height: 88vh; overflow-y: auto; background: #1e1e1e; width: 100%; max-width: 640px; margin: 0 auto; padding: 18px 16px
     calc(20px + env(safe-area-inset-bottom)); border-radius: 18px 18px 0 0; }
-  #sheet h3 { margin: 0 0 8px; font-size: 22px; }
-  #sheet p { color: #ccc; margin: 0 0 16px; }
+  .sheetbg h3 { margin: 0 0 8px; font-size: 22px; }
+  .sheetbg p { color: #ccc; margin: 0 0 16px; }
   .slide { position: relative; height: 68px; border-radius: 34px; background: #2a2a2a;
     border: 2px solid #444; overflow: hidden; touch-action: none; }
   .slide .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #1565c0; }
@@ -79,13 +79,53 @@
     background: #fff; color: #111; display: grid; place-items: center; font-size: 26px; font-weight: 900; }
   .slide .lbl { position: absolute; inset: 0 12px 0 68px; display: grid; place-items: center; color: var(--dim);
     font-weight: 700; pointer-events: none; }
-  .seqs button { margin-top: 8px; text-align: left; }
+  .seqs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .seqs button { text-align: left; min-height: 44px; font-size: 14px; }
+  /* Bedienansicht kompakt: alles ohne langes Scrollen */
+  #mainView button { min-height: 46px; font-size: 15px; padding: 8px 10px; }
+  #mainView .row, #mainView .row3 { margin-top: 8px; gap: 8px; }
+  .row4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; }
+  .cap { font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--dim);
+    margin: 12px 0 4px; }
+  .tight { margin-top: 4px !important; }
+  #mainView .status { font-size: 14px; font-weight: 600; padding: 6px 10px; border-left-width: 4px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  #mainView .banner, #mainView .stalebar { padding: 8px; margin-bottom: 8px; font-size: 16px; }
+  .tiles3 { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 6px; margin-top: 8px; }
+  .tiles6 { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin-top: 6px; }
+  .tile { background: #222; border-radius: 10px; padding: 6px 8px; min-width: 0;
+    border-top: 4px solid #444; }
+  .tile small { display: block; font-size: 10px; color: var(--dim); text-transform: uppercase;
+    letter-spacing: .8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile b { display: block; font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tiles6 .tile { padding: 4px 4px; text-align: center; border-top: 0; color: #fff; }
+  .tiles6 .tile b { font-size: 14px; }
+  .tiles6 .tile small { color: #eee; font-size: 9px; }
+  button.mini { width: auto; min-height: 34px !important; padding: 4px 12px !important;
+    font-size: 14px !important; border-radius: 999px; }
+  #btnTake.on { background: #4a3b00; color: #ffe082; }
+  button.stopmove { background: #455a64; margin-top: 8px; }
+  #btnModeWalk.on, #btnModeGrasp.on { outline: 3px solid #fff; outline-offset: -3px; }
+  #btnModeWalk.on::after, #btnModeGrasp.on::after { content: " ✓"; }
+  #btnModeWalk.on:disabled, #btnModeGrasp.on:disabled { opacity: 1; }
+  .foot { display: flex; gap: 10px; align-items: center; margin-top: 14px; }
+  .foot .note { margin: 0; font-size: 11px; }
+  .list button { margin-top: 6px; text-align: left; min-height: 46px; }
+  .list .cat { font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--dim);
+    margin: 12px 0 2px; }
+  select { width: 100%; font-size: 18px; padding: 10px; border-radius: 10px; border: 1px solid #444;
+    background: #0c0c0c; color: var(--text); }
+  .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; margin-top: 10px; }
+  .checks label { margin: 0; font-size: 16px; color: var(--text); display: flex; gap: 8px; align-items: center; }
+  .checks input { width: 22px; height: 22px; }
+  .warn { color: var(--warn); }
   .note { color: var(--dim); font-size: 13px; margin-top: 10px; }
 </style>
 </head>
 <body>
 <header>
   <h1>G1 Handy</h1>
+  <button id="btnTake" class="mini hidden">Bedienen</button>
   <span id="pill" class="pill">Getrennt</span>
 </header>
 
@@ -120,74 +160,102 @@
   <div id="estopBanner" class="banner hidden">NOT-HALT AKTIV</div>
   <div id="staleBar" class="stalebar hidden">Daten alt — Bedienung gesperrt</div>
 
-  <section>
-    <h2>Zustand</h2>
-    <div id="stText" class="status">…</div>
-    <div id="stInfo" class="sub"></div>
-    <div class="chips">
-      <span id="chipWalk" class="chip walk">GEHEN</span>
-      <span id="chipGrasp" class="chip grasp">GREIFEN</span>
-      <span id="chipPad" class="chip hidden"></span>
-      <span id="chipBusy" class="chip hidden">Bewegung läuft</span>
-    </div>
-  </section>
+  <div id="stText" class="status">…</div>
+  <div id="stInfo" class="sub tight"></div>
 
-  <section>
-    <h2>Bedienung</h2>
-    <div id="meInfo" class="sub" style="margin-top:0"></div>
-    <div class="row" style="grid-template-columns:1fr"><button id="btnTake" class="primary">Bedienung übernehmen</button></div>
-    <div class="row" style="grid-template-columns:1fr"><button id="btnStopMove" class="ghost hidden">Bewegung stoppen</button></div>
-  </section>
+  <div id="padBox" class="hidden">
+    <div class="tiles3">
+      <div class="tile" id="tileArt"><small>Controller</small><b>–</b></div>
+      <div class="tile" id="tileSpeed"><small>Tempo</small><b>–</b></div>
+      <div class="tile" id="tileHand"><small>Hand</small><b>–</b></div>
+    </div>
+    <div id="padLine" class="sub tight hidden"></div>
+  </div>
+  <div id="tmpBox" class="tiles6 hidden"></div>
+
+  <div id="meInfo" class="sub tight"></div>
+  <button id="btnStopMove" class="stopmove hidden">■ Bewegung stoppen</button>
 
   <div id="controls">
-    <section id="secAck" class="hidden">
-      <h2>Start</h2>
-      <button id="btnAck" class="primary">NOT-HALT quittieren …</button>
-    </section>
+    <button id="btnAck" class="primary hidden">NOT-HALT quittieren …</button>
 
-    <section id="secLoco" class="hidden">
-      <h2>Startleiste (echter G1)</h2>
+    <div id="secLoco" class="hidden">
+      <div class="cap">Startleiste</div>
       <div class="row3">
         <button id="btnDamp">Damp …</button>
-        <button id="btnPrep">Preparation …</button>
+        <button id="btnPrep">Prep …</button>
         <button id="btnWalkFsm">Walk …</button>
       </div>
-    </section>
+    </div>
 
-    <section id="secMode">
-      <h2>Modus</h2>
-      <div class="row">
-        <button id="btnModeWalk" class="walk">GEHEN …</button>
-        <button id="btnModeGrasp" class="grasp">GREIFEN …</button>
-      </div>
-      <div class="note">Gehen selbst steuerst du mit dem Controller (L2).</div>
-    </section>
+    <div class="cap">Modus</div>
+    <div class="row">
+      <button id="btnModeWalk" class="walk">GEHEN …</button>
+      <button id="btnModeGrasp" class="grasp">GREIFEN …</button>
+    </div>
 
-    <section id="secGrasp" class="hidden">
-      <h2>Greifen</h2>
+    <div id="secGrasp" class="hidden">
+      <div class="cap">Posen</div>
       <div class="row">
-        <button id="btnHandsOpen">Hände öffnen</button>
-        <button id="btnHandsClose">Hände schließen</button>
-      </div>
-      <div class="row">
-        <button id="btnLeftClose" class="ghost">Links schließen</button>
-        <button id="btnRightClose" class="ghost">Rechts schließen</button>
+        <button id="btnPoseGo">Pose anfahren …</button>
+        <button id="btnPoseSave">Pose speichern …</button>
       </div>
       <div class="row">
         <button id="btnSafe">Sichere Pose …</button>
         <button id="btnHome">Grundstellung …</button>
       </div>
+      <div class="cap">Hände</div>
+      <div class="row4">
+        <button id="btnHandsOpen">Öffnen</button>
+        <button id="btnHandsClose">Schließen</button>
+        <button id="btnLeftClose" class="ghost">L zu</button>
+        <button id="btnRightClose" class="ghost">R zu</button>
+      </div>
+      <div id="seqCap" class="cap hidden">Abläufe</div>
       <div class="seqs" id="seqs"></div>
-    </section>
+    </div>
   </div>
-  <div class="row" style="grid-template-columns:1fr"><button id="btnDisconnect" class="ghost">Trennen</button></div>
-  <div class="note">Der NOT-HALT vom Handy läuft über den PC. Maßgeblich bleiben Controller, Unitree-Fernbedienung und Kran.</div>
+  <div class="foot">
+    <button id="btnDisconnect" class="ghost mini">Trennen</button>
+    <span class="note">NOT-HALT vom Handy läuft über den PC. Maßgeblich: Controller, Fernbedienung, Kran.</span>
+  </div>
 </div>
 
 <button id="estop">NOT-HALT</button>
 <div id="toast" class="hidden"></div>
 
-<div id="sheet" class="hidden">
+<div id="poseSheet" class="sheetbg hidden">
+  <div class="box">
+    <h3>Pose anfahren</h3>
+    <div id="poseCut" class="sub tight hidden">Liste gekürzt, nicht alle Posen passen ins Handy.</div>
+    <div id="poseList" class="list"></div>
+    <div class="row" style="grid-template-columns:1fr"><button id="poseCancel" class="ghost">Abbrechen</button></div>
+  </div>
+</div>
+
+<div id="saveSheet" class="sheetbg hidden">
+  <div class="box">
+    <h3>Pose speichern</h3>
+    <p class="tight">Speichert die aktuelle Haltung des Roboters.</p>
+    <label for="saveName">Name</label>
+    <input id="saveName" type="text" maxlength="40" placeholder="z. B. Regal oben rechts" autocomplete="off">
+    <label for="saveCat">Kategorie</label>
+    <select id="saveCat"></select>
+    <div class="checks">
+      <label><input type="checkbox" id="cLA" checked> Linker Arm</label>
+      <label><input type="checkbox" id="cRA" checked> Rechter Arm</label>
+      <label><input type="checkbox" id="cLH" checked> Linke Hand</label>
+      <label><input type="checkbox" id="cRH" checked> Rechte Hand</label>
+    </div>
+    <div id="saveWarn" class="sub tight warn hidden"></div>
+    <div class="row">
+      <button id="saveCancel" class="ghost">Abbrechen</button>
+      <button id="saveOk" class="primary">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<div id="sheet" class="sheetbg hidden">
   <div class="box">
     <h3 id="sheetTitle"></h3>
     <p id="sheetText"></p>

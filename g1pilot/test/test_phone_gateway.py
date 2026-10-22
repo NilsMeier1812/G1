@@ -294,8 +294,8 @@ def test_bye_ends_session(env):
 def test_status_signed_and_sized(env):
     gw, clk, _ = env
     ph = _paired(gw)
-    gw.publish_status({"text": "x" * 100, "seqs": ["Ablauf %d" % i * 3 for i in range(200)]})
-    assert ph.last["st"].get("seqs_cut") is True
+    gw.publish_status({"txt": "x" * 100, "tmp": {"g": [["Bein", 40, "ok"]] * 400}})
+    assert ph.last["st"].get("slim") is True and "tmp" not in ph.last["st"]
     pages = P.tx_pages(1, json.dumps(ph.tx).encode())
     assert len(pages) <= len(P.TX_UUIDS) and all(len(p) <= 512 for p in pages)
     assert P.join_pages(pages)[1] == json.dumps(ph.tx).encode()
@@ -349,3 +349,33 @@ def test_tx_pages_consistent_with_slow_reader():
     # Anderes Geraet hat seinen eigenen Stand, drop() vergisst ihn.
     txp.drop("phone")
     assert txp.read("other", 1) == txp.pages[1]
+
+
+def test_catalog_only_on_request(env):
+    gw, clk, _ = env
+    ph = _paired(gw)
+    gw.set_catalog({"Demo": ["Winken", "Zeigen"], "Ablauf A": ["A_1"]})
+    gw.publish_status({"txt": "x"})
+    assert "cat" not in ph.last and ph.last["ph"]
+    h = ph.last["ph"]
+    ph.signed({"t": "cat"})                              # Handy fragt nach
+    assert ph.last["cat"]["g"]["Demo"] == ["Winken", "Zeigen"] and ph.last["cat"]["h"] == h
+    for _ in range(G.CATALOG_SENDS - 1):
+        gw.publish_status({"txt": "x"})
+        assert "cat" in ph.last
+    gw.publish_status({"txt": "x"})
+    assert "cat" not in ph.last                         # danach wieder schlank
+    gw.set_catalog({"Demo": ["Winken"]})
+    gw.publish_status({"txt": "x"})
+    assert ph.last["ph"] != h                           # neuer Stand -> neuer Hash
+    assert gw.catalog_names() == {"Winken"}
+
+
+def test_catalog_cut_and_fits_pages(env):
+    gw, clk, _ = env
+    ph = _paired(gw)
+    gw.set_catalog({f"Kategorie {i}": [f"Pose_{i}_{k}_langer_name" for k in range(10)] for i in range(30)})
+    gw.publish_status({"txt": "Status " * 20, "pad": {"t": "x" * 80}})
+    ph.signed({"t": "cat"})
+    assert ph.last["cat"]["cut"] is True
+    assert len(json.dumps(ph.tx, ensure_ascii=False).encode()) <= P.TX_MAX

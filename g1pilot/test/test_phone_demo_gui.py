@@ -33,6 +33,7 @@ def _make(monkeypatch, tmp_path, sim, phone=True):
     monkeypatch.setenv("G1_SIM_MODE", "true" if sim else "false")
     monkeypatch.setenv("G1_PHONE", "1" if phone else "0")
     monkeypatch.setenv("G1_PHONE_STORE", str(tmp_path / "devices.json"))
+    monkeypatch.setenv("G1_POSE_STORE", str(tmp_path / "poses.json"))
     from g1pilot.teleoperation.phone import ble_server
     monkeypatch.setattr(ble_server.BleServer, "start", lambda self: True)
     rclpy.init()
@@ -166,8 +167,6 @@ def test_sim_sequence_cancelled_when_heartbeat_stops(sim):
     ph, clk = _phone(g)
     g.mode, g.pending = dg.MANIP, None
     g._sequences = lambda: [("Winken", ["W_01_a", "W_02_b"])]
-    g.phone.publish_status()
-    assert ph.last["st"]["seqs"] == ["Winken"]
     r = _run(g, ph, "seq", "Winken")
     assert r["ok"] and ("/g1pilot/pose_store/goto", "W_01_a") in strs
     assert ph.last["st"]["busy"] is True
@@ -241,3 +240,71 @@ def test_status_fits_tx_pages(real):
     g.phone.publish_status()
     data = json.dumps(ph.tx).encode()
     assert len(data) < P.TX_MAX
+
+
+def _poses(tmp_path):
+    from g1pilot.manipulation.pose_store import PoseStore
+    st = PoseStore(str(tmp_path / "poses.json"))
+    st.save("Regal_oben", category="Demo", left_arm=[0.0] * 7, right_arm=[0.1] * 7)
+    st.save("A_1", category="Ablauf Test", right_arm=[0.2] * 7)
+    return st
+
+
+def test_pose_goto_and_catalog(sim, tmp_path):
+    dg, g, node, app, sent, strs, loco = sim
+    _poses(tmp_path)
+    ph, clk = _phone(g)
+    g.phone.refresh_catalog()
+    g.phone.publish_status()
+    ph.signed({"t": "cat"})
+    assert ph.last["cat"]["g"]["Demo"] == ["Regal_oben"]
+    r = _run(g, ph, "pose", "Regal_oben")              # nicht im Modus GREIFEN
+    assert r["ok"] is False and "GREIFEN" in r["m"]
+    g.mode, g.pending = dg.MANIP, None
+    r = _run(g, ph, "pose", "Gibt_es_nicht")
+    assert r["ok"] is False
+    r = _run(g, ph, "pose", "Regal_oben")
+    assert r["ok"] and ("/g1pilot/pose_store/goto", "Regal_oben") in strs
+    sent.clear()
+    clk.t += G.CONTROL_TIMEOUT_S + 0.1                   # Handy verstummt -> Abbruch
+    g.phone.tick()
+    assert ("/g1pilot/pose_store/cancel", True) in sent
+
+
+def test_pose_save_from_phone(sim, tmp_path):
+    dg, g, node, app, sent, strs, loco = sim
+    ph, clk = _phone(g)
+    g.mode, g.pending = dg.MANIP, None
+    r = _run(g, ph, "pose_save", "1010|Demo|Tisch links")
+    assert r["ok"], r
+    topic, payload = [x for x in strs if x[0].endswith("save")][-1]
+    assert json.loads(payload) == {"name": "Tisch links", "category": "Demo",
+                                   "components": ["left_arm", "left_hand"]}
+    r = _run(g, ph, "pose_save", "0000|Demo|Nix")
+    assert r["ok"] is False
+    r = _run(g, ph, "pose_save", "1111|Demo|  ")
+    assert r["ok"] is False
+    g.phone.gw.revoke_control()
+    r = _run(g, ph, "pose_save", "1111|Demo|Ohne Hoheit")
+    assert r["ok"] is False
+
+
+def test_status_pad_and_temps(real):
+    dg, g, node, app, sent, strs, loco = real
+    ph, clk = _phone(g, take=False)
+    now = time.monotonic()
+    node.ps4 = {"connected": True, "selection": "right", "mode": "turn", "speed": "Normal"}
+    node.ps4_t = now
+    node.ps4dev = {"kind": "ps4", "name": "Wireless Controller"}
+    from g1pilot.utils import g1_temperature as g1t
+    node.temps = g1t.parse_payload(g1t.build_payload(
+        [type("M", (), {"temperature": [40 + i % 3, 41], "vol": 30.0})() for i in range(g1t.N_MOTORS)], 33))
+    node.temps_t = now
+    g.phone.publish_status()
+    pad, tmp = ph.last["st"]["pad"], ph.last["st"]["tmp"]
+    assert pad["k"] == "arm" and pad["jm"] == "Drehen" and pad["sp"] == "Normal" and pad["sel"] == "RECHTS"
+    assert tmp["max"][1] == 42 and len(tmp["g"]) == len(g1t.GROUPS)
+    node.ps4walk = {"active": True, "speed": "Schnell"}
+    node.ps4["arms_locked"] = True
+    g.phone.publish_status()
+    assert ph.last["st"]["pad"]["k"] == "walking" and ph.last["st"]["pad"]["sp"] == "Schnell"

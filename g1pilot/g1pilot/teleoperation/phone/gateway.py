@@ -19,10 +19,14 @@ Regeln (docs/44_handy_bedienung.md):
   * Befehle muessen sich auf einen frischen Status beziehen (STATUS_MAX_LAG
     Statusnummern) -> ein nach Neuladen/Aussetzer verspaeteter Befehl verpufft.
   * NOT-HALT und "Bewegung stoppen" gehen immer (keine Statuspruefung).
+  * Posenliste (Katalog) geht nur auf Anfrage mit ({"t": "cat"}): sie kaeme sonst
+    in jedem Status mit und machte das Lesen ueber BLE langsam. Jeder Status traegt
+    nur ihren Hash "ph"; das Handy fragt nach, wenn sein Stand nicht passt.
 """
 
 import json
 import os
+import zlib
 import secrets
 import threading
 import time
@@ -44,6 +48,9 @@ CONTROL_TIMEOUT_S = 2.0       # ohne Herzschlag -> Steuerhoheit weg
 SESSION_TIMEOUT_S = 4.0       # ohne gueltige Nachricht -> Sitzung weg
 STATUS_MAX_LAG = 5            # Statusnummern (~1 s bei 5 Hz)
 MAX_NAME = 32
+MAX_ARG = 96                  # Zeichen; Pose speichern: "maske|kategorie|name"
+CATALOG_MAX = 1100            # Byte JSON; groesser -> hintere Kategorien weg ("cut")
+CATALOG_SENDS = 3             # so viele TX-Werte tragen den Katalog nach einer Anfrage
 
 # Aktion -> (Mindestrolle, braucht Steuerhoheit, prueft Statusbezug)
 ACTIONS = {
@@ -58,6 +65,8 @@ ACTIONS = {
     "seq":     (ROLE_OPERATE, True, True),
     "safe":    (ROLE_OPERATE, True, True),
     "home":    (ROLE_OPERATE, True, True),
+    "pose":    (ROLE_OPERATE, True, True),
+    "pose_save": (ROLE_OPERATE, True, True),
 }
 # Aktionen, die die GUI selbst ausfuehrt (take/release erledigt das Gateway).
 GUI_ACTIONS = tuple(a for a in ACTIONS if a not in ("take", "release"))
@@ -102,6 +111,9 @@ class PhoneGateway:
         self._pre = None            # letzte Antwort vor der Anmeldung (an "to": dev)
         self._status = {}
         self.status_seq = 0
+        self._catalog = {"g": {}, "cut": False}
+        self._catalog_hash = self._hash(self._catalog)
+        self._catalog_left = 0
         self._tx_n = 0
         self._load()
 
@@ -288,6 +300,9 @@ class PhoneGateway:
             s.last_hb = now
         elif t == "bye":
             self._end_session("Handy hat getrennt")
+        elif t == "cat":
+            self._catalog_left = CATALOG_SENDS
+            self._push_tx()
         elif t == "cmd":
             s.last_hb = now
             self._handle_cmd(s, msg)
@@ -336,7 +351,7 @@ class PhoneGateway:
         if arg is not None and not isinstance(arg, (str, int, float, bool)):
             arg = None
         if isinstance(arg, str):
-            arg = arg[:64]
+            arg = arg[:MAX_ARG]
         self._actions.append({"id": cid, "action": action, "arg": arg, "name": s.name})
 
     # ── GUI-Seite (Qt-Thread) ───────────────────────────────────────────
@@ -411,6 +426,32 @@ class PhoneGateway:
             self.status_seq += 1
             self._push_tx()
 
+    @staticmethod
+    def _hash(obj):
+        raw = json.dumps(obj, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        return format(zlib.crc32(raw), "08x")
+
+    def set_catalog(self, grouped):
+        """Posenliste {kategorie: [namen]} (Qt-Thread). Zu gross -> hintere
+        Kategorien weg, "cut" gesetzt. Neuer Stand -> neuer Hash im Status."""
+        cat, cut = {}, False
+        for k, names in grouped.items():
+            trial = dict(cat)
+            trial[str(k)[:40]] = [str(n)[:60] for n in names][:40]
+            if len(json.dumps(trial, ensure_ascii=False, separators=(",", ":")).encode()) > CATALOG_MAX:
+                cut = True
+                break
+            cat = trial
+        new = {"g": cat, "cut": cut}
+        with self._lock:
+            if new != self._catalog:
+                self._catalog = new
+                self._catalog_hash = self._hash(new)
+
+    def catalog_names(self):
+        with self._lock:
+            return {n for names in self._catalog["g"].values() for n in names}
+
     def refresh_tx(self):
         """TX-Wert neu senden (Transport gerade gestartet)."""
         with self._lock:
@@ -426,15 +467,26 @@ class PhoneGateway:
             body = {"q": self.status_seq, "st": self._status,
                     "me": {"name": s.name, "role": s.role, "ctl": s.control},
                     "r": list(self._results),
-                    "lim": {"ctl_s": CONTROL_TIMEOUT_S, "lag": STATUS_MAX_LAG}}
+                    "lim": {"ctl_s": CONTROL_TIMEOUT_S, "lag": STATUS_MAX_LAG},
+                    "ph": self._catalog_hash}
+            if self._catalog_left > 0:
+                self._catalog_left -= 1
+                body["cat"] = dict(self._catalog, h=self._catalog_hash)
             doc["a"] = P.encode_signed(s.skey, "s2c", s.c_out, body)
         data = json.dumps(doc, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         if len(data) > P.TX_MAX and s is not None:
-            # Zu gross fuer die TX-Seiten: Ablaufliste weglassen, Rest bleibt.
-            body["st"] = {k: v for k, v in self._status.items() if k != "seqs"}
-            body["st"]["seqs_cut"] = True
-            doc["a"] = P.encode_signed(s.skey, "s2c", s.c_out, body)
-            data = json.dumps(doc, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+            # Zu gross fuer die TX-Seiten: erst den Status verschlanken (Temperaturen,
+            # Info, langer Text), notfalls auch den Katalog weglassen.
+            body["st"] = {k: v for k, v in self._status.items() if k not in ("tmp", "info")}
+            body["st"]["txt"] = str(self._status.get("txt", ""))[:60]
+            body["st"]["slim"] = True
+            for drop in (None, "cat"):
+                if drop:
+                    body.pop(drop, None)
+                doc["a"] = P.encode_signed(s.skey, "s2c", s.c_out, body)
+                data = json.dumps(doc, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+                if len(data) <= P.TX_MAX:
+                    break
         if self.on_tx is not None:
             try:
                 self.on_tx(data)

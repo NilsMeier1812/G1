@@ -18,6 +18,7 @@ Verbindungsverlust oder entzogene Steuerhoheit bricht eine vom Handy
 gestartete Bewegung (Ablauf, Sichere Pose, Grundstellung) ab.
 """
 
+import json
 import os
 import time
 
@@ -31,6 +32,8 @@ from g1pilot.teleoperation.phone import gateway as G
 
 TICK_MS = 50
 STATUS_MS = 200          # 5 Hz -> STATUS_MAX_LAG 5 ~ 1 s
+CATALOG_MS = 2000        # Posenliste neu lesen (Datei; neue Posen auch vom PC)
+POSE_COMPONENTS = ("left_arm", "right_arm", "left_hand", "right_hand")   # Maske "1111"
 HAND_ARGS = {"open": (None, "open"), "close": (None, "close"),
              "left_open": ("left", "open"), "left_close": ("left", "close"),
              "right_open": ("right", "open"), "right_close": ("right", "close")}
@@ -74,6 +77,10 @@ class PhoneLink:
         self._status_timer = QTimer(gui)
         self._status_timer.timeout.connect(self.publish_status)
         self._status_timer.start(STATUS_MS)
+        self._catalog_timer = QTimer(gui)
+        self._catalog_timer.timeout.connect(self.refresh_catalog)
+        self._catalog_timer.start(CATALOG_MS)
+        self.refresh_catalog()
         btn = gui.btn_phone
         self._btn_css = btn.styleSheet()
         btn.setVisible(True)
@@ -83,6 +90,7 @@ class PhoneLink:
     def stop(self):
         self._tick_timer.stop()
         self._status_timer.stop()
+        self._catalog_timer.stop()
         self.ble.stop()
 
     # ── Takt ────────────────────────────────────────────────────────────
@@ -237,6 +245,50 @@ class PhoneLink:
         self.gui._home()
         return True, "Arme fahren in Grundstellung."
 
+    def _do_pose(self, name):
+        if not self._need_grasp():
+            return False, "Posen nur im Modus GREIFEN."
+        self.refresh_catalog()
+        if not name or name not in self.gw.catalog_names():
+            return False, f"Pose »{name}« nicht gefunden."
+        g = self.gui
+        g.run_poses([name])
+        if g.current_pose is None:
+            return False, g.status.text()
+        self._phone_motion = True
+        return True, f"Pose »{name}« wird angefahren."
+
+    def _do_pose_save(self, arg):
+        """arg = "maske|kategorie|name", maske = 4 Ziffern 0/1 in POSE_COMPONENTS-Folge.
+        Speichert die aktuelle Haltung wie »Pose speichern …« der PC-GUI."""
+        if not self._need_grasp():
+            return False, "Posen speichern nur im Modus GREIFEN."
+        try:
+            mask, category, name = str(arg).split("|", 2)
+        except ValueError:
+            return False, "Ungültige Angaben."
+        name, category = name.strip()[:40], category.strip()[:40]
+        comps = [c for c, bit in zip(POSE_COMPONENTS, mask) if bit == "1"]
+        if not name:
+            return False, "Bitte einen Namen eingeben."
+        if not comps:
+            return False, "Mindestens Arm oder Hand wählen."
+        from g1pilot.teleoperation.demo_gui import DEMO_CATEGORY
+        n = self.gui.node
+        n.publish_str(n.pub_pose_save, json.dumps(
+            {"name": name, "category": category or DEMO_CATEGORY, "components": comps}))
+        # arm_controller schreibt asynchron -> wie die PC-GUI kurz warten, dann neu laden.
+        QTimer.singleShot(1500, self.gui._reload_sequence_buttons)
+        QTimer.singleShot(1600, self.refresh_catalog)
+        return True, f"Pose »{name}« gespeichert."
+
+    def refresh_catalog(self):
+        try:
+            store = self.gui._pose_store()
+            self.gw.set_catalog(store.list_grouped() if store is not None else {})
+        except Exception as e:  # noqa: BLE001
+            self.gui.node.get_logger().warn(f"Handy-Posenliste: {e}")
+
     # ── Status fuers Handy ──────────────────────────────────────────────
     def snapshot(self):
         g, n = self.gui, self.gui.node
@@ -258,11 +310,59 @@ class PhoneLink:
             age = None if n.onboard_t is None else now - n.onboard_t
             st["info"] = g.info_onboard.text()[:120]
             st["loco"] = {s: bool(v[0]) for s, v in status_line.start_buttons(n.onboard, age).items()}
-        if n.ps4dev:
-            st["pad"] = status_line.controller_label(n.ps4dev)
-        if g.mode == MANIP:
-            st["seqs"] = [label for label, _names in g._sequences()][:24]
+        pad = self._pad_status(time.monotonic())
+        if pad is not None:
+            st["pad"] = pad
+        tmp = self._temp_status(time.monotonic())
+        if tmp is not None:
+            st["tmp"] = tmp
         return st
+
+    def _pad_status(self, now):
+        """Controller fuers Handy: Art (Verschieben/Drehen/Gehen/Hüfte), Tempo, Hand.
+        k = arm | walkmode | walking | waist | estop | off. Gleiche Reihenfolge wie
+        status_line.ps4_text, deren Zeile als t/c mitkommt."""
+        n = self.gui.node
+        age = None if n.ps4_t is None else now - n.ps4_t
+        res = status_line.ps4_text(n.ps4, age, sim=self.gui.sim_mode, walk=n.ps4walk,
+                                   device=n.ps4dev)
+        if res is None:
+            return None
+        ps, walk = n.ps4 or {}, n.ps4walk or {}
+        out = {"n": status_line.controller_label(n.ps4dev), "t": res[0], "c": res[1]}
+        if age is None or age > status_line.STALE_S or not ps.get("connected"):
+            out["k"] = "off"
+        elif ps.get("estop") or ps.get("full_estop") or ps.get("full_arming"):
+            out["k"] = "estop"
+        elif walk.get("active") and not walk.get("estop"):
+            out.update(k="walking", sp=walk.get("speed", ""))
+        elif ps.get("arms_locked"):
+            out.update(k="walkmode", sp=walk.get("speed", ""))
+        elif ps.get("waist_mode"):
+            out["k"] = "waist"
+        else:
+            from g1pilot.teleoperation.ps4_arm_teleop import MODE_LABEL, SELECTION_LABEL
+            sel = ps.get("selection", "")
+            speed = ps.get("speed", "")
+            if ps.get("speed_req") not in (None, speed):
+                speed += " (max.)"
+            out.update(k="arm", jm=MODE_LABEL.get(ps.get("mode"), ps.get("mode", "")),
+                       sp=speed, sel=SELECTION_LABEL.get(sel, sel.upper()))
+        return out
+
+    def _temp_status(self, now):
+        """Real: heissester Motor + Maximum je Gruppe, Stufe ok/warn/crit."""
+        n = self.gui.node
+        if self.gui.sim_mode or n.temps is None:
+            return None
+        from g1pilot.utils import g1_temperature as g1t
+        if g1t.is_stale(n.temps_t, now):
+            return {"old": True}
+        warn, crit = g1t.thresholds()
+        idx, top = g1t.hottest(n.temps)
+        return {"max": [g1t.motor_label(idx), round(top), g1t.level(top, warn, crit)],
+                "g": [[g["title"], round(g["max"]), g1t.level(g["max"], warn, crit)]
+                      for g in g1t.group_summary(n.temps)]}
 
     def publish_status(self):
         try:
