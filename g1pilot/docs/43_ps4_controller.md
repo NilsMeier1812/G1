@@ -59,7 +59,8 @@ Am echten Roboter erst in der GUI starten, siehe unten.
 | **R2 drücken** | Modus **GREIFEN**: Arme übernehmen (wie Options), Arm-Steuerung wieder frei |
 | **R2 halten + rechter Stick ←/→** | **HÜFTE drehen** (Oberkörper links/rechts, LED weiß), Arme drehen mit. Siehe [Hüfte drehen](#hüfte-drehen-r2-halten) |
 | **R2 halten + R3** | Hüfte sanft zurück zur Mitte |
-| L3, Touchpad | frei (Reserve) |
+| **L3** (linken Stick drücken) | **Ablauf weiter**: wartet ein Ablauf „Schritt für Schritt“ der Demo-GUI auf Bestätigung, fährt er den nächsten Schritt an (wie *Weiter ▶*). Der Controller vibriert zweimal kurz, sobald ein Ablauf wartet, und kurz beim Weiter. Sonst ohne Wirkung. Bis L3 losgelassen und der Stick wieder in der Mitte ist, bewegt der linke Stick die Hand nicht (das Drücken kippt ihn leicht, ein Hand-Ziel würde die neue Fahrt abbrechen). Nicht bei gehaltenem L2/R2 und nicht im GEHEN |
+| Touchpad | frei (Reserve) |
 
 Richtungen gelten **aus Sicht des Roboters** (vor = in Blickrichtung des
 Roboters, links = Roboter-links). Steht man dem Roboter gegenüber, sind
@@ -348,7 +349,8 @@ vorgesehen.
 | R1 + L1 + PS 2 s | **RB + LB + Xbox-Taste 2 s** | **VOLL-NOTAUS**, Controller vibriert beim Halten |
 | Steuerkreuz ←/→ + Kreuz 2 s | **Steuerkreuz ←/→ + A 2 s** | **Arm spiegeln** (nicht Xbox-X: das ist Viereck = Hand schließen) |
 | Sticks, Steuerkreuz | gleich | gleich |
-| L3, Touchpad | L3 (linken Stick drücken) | frei; die Share-Taste der Series-Controller (Mitte) ist frei |
+| L3 | L3 (linken Stick drücken) | **Ablauf weiter** (Schritt für Schritt) |
+| Touchpad | – | frei; die Share-Taste der Series-Controller (Mitte) ist frei |
 
 **Was gleich ist:** Totmann (LT), GEHEN/GREIFEN mit LT/RT, NOT-HALT, Voll-Notaus mit 2 s Halten und
 Vibration, Tempo-Stufen, Abriss-Erkennung über den Joy-Timeout, Vorrang

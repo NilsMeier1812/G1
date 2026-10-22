@@ -58,7 +58,7 @@ def rig(request):
         node = rclpy.create_node("ps4_real_probe")
         got = {k: [] for k in ("goal_left", "goal_right", "enabled", "balance", "estop",
                                "hand_right", "hand_left", "feedback", "status", "walk",
-                               "markers", "full", "shared", "arm_cmd")}
+                               "markers", "full", "shared", "arm_cmd", "seq_next")}
         sub = lambda t, typ, key: node.create_subscription(   # noqa: E731
             typ, t, lambda m: got[key].append((time.monotonic(), m)), 50)
         sub("/g1pilot/hand_goal/left", PoseStamped, "goal_left")
@@ -76,6 +76,7 @@ def rig(request):
         sub("/g1pilot/start_walking", Bool, "walk")
         sub("/g1pilot/ps4/markers", MarkerArray, "markers")
         sub("/g1pilot/arm_command", String, "arm_cmd")
+        sub("/g1pilot/sequence/next", Bool, "seq_next")
         pub_cmd_status = node.create_publisher(String, "/g1pilot/arm_command/status", 10)
         pub_joy = node.create_publisher(Joy, "/g1pilot/ps4/joy", 10)
         pub_estop = node.create_publisher(Bool, "/g1pilot/emergency_stop", 10)
@@ -89,6 +90,7 @@ def rig(request):
                                  lambda m: got["shared"].append((time.monotonic(), m)),
                                  qos_latched)
         pub_shared = node.create_publisher(String, "/g1pilot/teleop_state", qos_latched)
+        pub_seq = node.create_publisher(String, "/g1pilot/sequence/state", qos_latched)
 
         tfb = StaticTransformBroadcaster(node)
         tfs = []
@@ -135,6 +137,8 @@ def rig(request):
         rig.start = lambda: pub_start.publish(Bool(data=True))
         rig.gui_walk = lambda: pub_gui_walk.publish(Bool(data=True))
         rig.onboard = lambda fsm: pub_onboard.publish(String(data=json.dumps({"fsm": fsm})))
+        rig.seq_state = lambda st: pub_seq.publish(String(data=json.dumps(
+            {"state": st, "name": "Kiste", "step": 1, "n": 3, "mode": "step"})))
 
         def gui_share(stamp=None, **fields):
             """Wie die Demo-GUI: Felder mit Zeitstempel (Default: jetzt)."""
@@ -560,3 +564,28 @@ def test_mirror_disabled_by_param(rig):
     time.sleep(2.6)
     st["buttons"][L.DPAD_LEFT] = st["buttons"][L.CROSS] = 0
     assert rig.got["arm_cmd"] == [] and rig.status().get("selection") == "left"
+
+
+def test_l3_next_only_while_sequence_waits_and_rumbles(rig):
+    """L3 = Ablauf weiter (Demo-GUI, Schritt fuer Schritt): ohne wartenden
+    Ablauf nichts; beim Uebergang zu »wartet« vibriert der Controller."""
+    g = rig.got
+    rumbles = lambda n: [json.loads(m.data).get("rumble") for _, m in g["feedback"][n:]]  # noqa: E731
+    rig.press(L.L3)
+    time.sleep(0.3)
+    assert g["seq_next"] == []
+    n = len(g["feedback"])
+    rig.seq_state("waiting")
+    assert wait_for(lambda: any(r and r["ms"] > 0 for r in rumbles(n)), 2.0)
+    t0 = time.monotonic()
+    rig.state["axes"][L.LY] = 0.6                        # Druecken kippt den Stick
+    rig.press(L.L3)
+    assert wait_for(lambda: len(g["seq_next"]) == 1 and g["seq_next"][0][1].data, 2.0)
+    time.sleep(0.3)
+    assert goals_since(rig, "right", t0) == []           # kein Hand-Ziel waehrend L3
+    rig.state["axes"][L.LY] = 0.0
+    rig.seq_state("moving")
+    time.sleep(0.3)
+    rig.press(L.L3)
+    time.sleep(0.3)
+    assert len(g["seq_next"]) == 1

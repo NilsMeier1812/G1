@@ -113,9 +113,15 @@ class PoseSaveDialog(QDialog):
     aus der Version, in der beide Haende eine einzige Komponente waren, und
     kostete nur Klicks. Ergebnis via result_data() als
     {"name", "category", "components"} -- genau das JSON, das
-    arm_controller._on_pose_save erwartet."""
+    arm_controller._on_pose_save erwartet.
 
-    def __init__(self, parent, store=None, categories=None):
+    Demo-GUI: mit `sequences` (Liste der Ablaeufe) gibt es zusaetzlich »An
+    Ablauf anhängen« (`sequence` vorausgewaehlt); result_data() traegt dann
+    "sequence" (Name oder None) -- die GUI nimmt es vor dem Senden heraus."""
+
+    NO_SEQUENCE = "— nicht anhängen —"
+
+    def __init__(self, parent, store=None, categories=None, sequences=None, sequence=None):
         super().__init__(parent)
         self._store = store
         self.setWindowTitle("Pose speichern")
@@ -136,6 +142,15 @@ class PoseSaveDialog(QDialog):
         cat_row.addWidget(self.cb_category, 1)
         cat_row.addWidget(btn_new_cat)
         form.addRow("Kategorie:", cat_row)
+        self.cb_sequence = None
+        if sequences is not None:
+            self.cb_sequence = QComboBox()
+            self.cb_sequence.setEditable(True)     # neuer Name = neuer Ablauf
+            self.cb_sequence.addItems([self.NO_SEQUENCE] + list(sequences))
+            self.cb_sequence.setCurrentText(sequence or self.NO_SEQUENCE)
+            self.cb_sequence.setToolTip("Gespeicherte Pose hinten an diesen Ablauf hängen "
+                                        "(neuer Name legt den Ablauf an).")
+            form.addRow("An Ablauf anhängen:", self.cb_sequence)
         root.addLayout(form)
 
         box = QGroupBox("Was speichern?")
@@ -197,11 +212,15 @@ class PoseSaveDialog(QDialog):
         self.accept()
 
     def result_data(self):
-        return {
+        out = {
             "name": self.ed_name.text().strip(),
             "category": self.cb_category.currentText().strip(),
             "components": self._components(),
         }
+        if self.cb_sequence is not None:
+            seq = self.cb_sequence.currentText().strip()
+            out["sequence"] = None if seq in ("", self.NO_SEQUENCE) else seq
+        return out
 
 
 class PoseLoadDialog(QDialog):

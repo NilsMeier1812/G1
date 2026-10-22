@@ -224,6 +224,7 @@ PS4_HELP = (
     ("Kreuz", "STOPP: Hand hält sofort an, Bewegung abbrechen"),
     ("Options", "Arme übernehmen"),
     ("Share (1 s halten)", "Grundstellung"),
+    ("L3 (linken Stick drücken)", "Ablauf »Schritt für Schritt«: nächster Schritt (Weiter ▶)"),
     ("L2 drücken", "Modus GEHEN (Arm-Tasten gesperrt, LED blau)"),
     ("L2 halten", "GEHEN: linker Stick vor/seitlich, rechter Stick drehen, "
                   "▲/▼ Geh-Tempo (nur im Walk-Modus)"),

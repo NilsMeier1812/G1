@@ -85,7 +85,10 @@ Im Modus GREIFEN:
 - **Pose speichern …** speichert die aktuelle Haltung: Name, Kategorie (Vorgabe „Demo“) und was
   gespeichert wird (Arme/Hände einzeln, alle an). Gibt es den Namen schon, warnt das Handy vor dem
   Überschreiben. Neue Kategorien legst du am PC an.
-- **Abläufe** sind die Kategorien „Ablauf …“, wie in der PC-GUI.
+- **Abläufe** sind dieselben wie in der PC-GUI (Fenster „Posen & Abläufe“). Darüber wählst du
+  **Am Stück** oder **Schritt für Schritt** (gilt für PC, Handy und Controller gemeinsam). Wartet ein
+  Ablauf auf Bestätigung, erscheint oben unter „Bewegung stoppen“ der grüne Knopf **Weiter ▶ (n/m)**;
+  am Controller geht es auch mit L3 weiter. Zusammenstellen geht nur am PC.
 
 Die Posenliste kommt nur auf Anfrage aufs Handy (bei jeder Änderung neu, der PC prüft alle 2 s).
 Passt sie nicht ganz in die Funkübertragung (über ca. 1 KB), fehlen hintere Kategorien und die Liste
