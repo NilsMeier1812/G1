@@ -131,7 +131,7 @@ def generate_launch_description():
                 # Hueftdrehung (R2 halten + rechter Stick): real zuerst nur +-15 deg
                 # (Taillen-Gains am G1 ungeprueft). G1_WAIST_YAW=0 schaltet sie ab.
                 'waist_yaw_control': 'false' if os.environ.get('G1_WAIST_YAW', '1') == '0' else 'true',
-                'waist_yaw_limit_deg': os.environ.get('G1_WAIST_YAW_LIMIT_DEG', '15.0'),
+                'waist_yaw_limit_deg': os.environ.get('G1_WAIST_YAW_LIMIT_DEG', '45.0'),
                 # LAUFEN: Arme bleiben in ihrer Pose (Nils 2026-10-19). Mit
                 # G1_WALK_PARK_ARMS=true wie frueher in die Lauf-Pose parken.
                 'walk_park_arms': os.environ.get('G1_WALK_PARK_ARMS', 'false'),

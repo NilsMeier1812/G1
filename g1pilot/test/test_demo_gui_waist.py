@@ -51,9 +51,9 @@ def test_waist_label_and_center_button(gui):
     node.publish_bool = lambda pub, v: sent.append((pub, v))
     mp.btn_waist_center.click()
     assert sent == [(node.pub_waist_center, True)]
-    node.waist = {"owner": True, "meas_offset_deg": 0.2, "limit_deg": 30.0}
+    node.waist = {"owner": True, "meas_offset_deg": 0.2, "limit_deg": 45.0}
     g._refresh_info()
-    assert mp.waist_label.text() == "Hüfte Mitte (max. ±30°)"
+    assert mp.waist_label.text() == "Hüfte Mitte (max. ±45°)"
     assert not mp.btn_waist_center.isEnabled()
 
 
