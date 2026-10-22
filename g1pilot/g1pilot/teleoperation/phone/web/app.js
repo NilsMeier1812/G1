@@ -181,9 +181,16 @@ async function disconnect() {
 }
 
 // ── Status / Ergebnisse ──────────────────────────────────────────────────
+// Posenliste kommt nur auf Anfrage ({t:"cat"}); jeder Status traegt ihren Hash "ph".
+let catalog = { g: {}, cut: false, h: null }, catAskedAt = 0;
 function onBody(b) {
   if (typeof b.q === "number" && b.q > lastQ) { lastQ = b.q; lastAt = Date.now(); }
   body = b;
+  if (b.cat && b.cat.h) catalog = b.cat;
+  if (b.ph && b.ph !== catalog.h && Date.now() - catAskedAt > 1500) {
+    catAskedAt = Date.now();
+    sendSigned({ t: "cat" }).catch(() => {});
+  }
   for (const r of b.r || []) {
     if (r.i && !seen.has(r.i) && mine.has(r.i)) { seen.add(r.i); toast(r.m, !r.ok); }
   }
@@ -263,28 +270,24 @@ function render() {
   const t = $("stText");
   t.textContent = st.txt || "—";
   t.style.borderLeftColor = st.col || "#555";
-  $("stInfo").textContent = [st.sim ? "SIM" : "REAL", st.info].filter(Boolean).join(" · ");
-  for (const [id, m] of [["chipWalk", "walk"], ["chipGrasp", "grasp"]]) {
-    $(id).classList.toggle("on", st.mode === m);
-    $(id).classList.toggle("pend", st.pend === m);
-  }
-  show("chipPad", !!st.pad);
-  $("chipPad").textContent = st.pad ? `🎮 ${st.pad}` : "";
-  show("chipBusy", !!st.busy);
+  $("stInfo").textContent = [st.sim ? "SIM" : "REAL", st.info, st.busy ? "Bewegung läuft" : ""].filter(Boolean).join(" · ");
+  renderPad(st.pad);
+  renderTemps(st.tmp);
 
   const operator = me.role === "operate";
   const ctl = !!me.ctl;
   $("meInfo").textContent = !operator ? "Dieses Handy darf nur ansehen (und NOT-HALT)."
-    : ctl ? "Du bedienst. Seite verlassen oder Bildschirm aus = Bedienung abgegeben."
-      : "Nur Ansicht. Zum Bedienen übernehmen (der PC sieht das).";
+    : ctl ? "" : "Nur Ansicht. Zum Bedienen oben »Bedienen« tippen.";
+  show("meInfo", !operator || !ctl);
   show("btnTake", operator);
-  $("btnTake").textContent = ctl ? "Bedienung abgeben" : "Bedienung übernehmen";
+  $("btnTake").textContent = ctl ? "Abgeben" : "Bedienen";
+  $("btnTake").classList.toggle("on", ctl);
   $("btnTake").disabled = !ok && !ctl;
   show("btnStopMove", operator && !!st.busy);
 
   const can = operator && ctl && ok;
   show("controls", operator && ctl);
-  show("secAck", !!st.ack);
+  show("btnAck", !!st.ack);
   $("btnAck").textContent = st.estop ? "NOT-HALT quittieren …" : "Start …";
   show("secLoco", !st.sim);
   const loco = st.loco || {};
@@ -294,16 +297,74 @@ function render() {
   const started = !!st.started && !st.ack;
   $("btnModeWalk").disabled = !can || !started || st.mode === "walk" || st.pend === "walk";
   $("btnModeGrasp").disabled = !can || !started || st.mode === "grasp";
+  $("btnModeWalk").classList.toggle("on", st.mode === "walk");
+  $("btnModeGrasp").classList.toggle("on", st.mode === "grasp");
   $("btnAck").disabled = !can;
   const grasp = st.mode === "grasp" && !st.pend;
   show("secGrasp", grasp);
-  for (const id of ["btnHandsOpen", "btnHandsClose", "btnLeftClose", "btnRightClose", "btnSafe", "btnHome"]) $(id).disabled = !can;
-  renderSeqs(st.seqs || [], can);
+  for (const id of ["btnHandsOpen", "btnHandsClose", "btnLeftClose", "btnRightClose", "btnSafe", "btnHome",
+    "btnPoseGo", "btnPoseSave"]) $(id).disabled = !can;
+  renderSeqs(sequences(), can);
+}
+
+// Controller: Art (Verschieben/Drehen/Gehen/Hüfte), Tempo, Hand -- was am Pad nur die LED zeigt.
+const PAD_ART = { walking: "Geht", walkmode: "Gehen", waist: "Hüfte", estop: "NOT-HALT", off: "–" };
+function renderPad(pad) {
+  show("padBox", !!pad);
+  if (!pad) return;
+  const tile = (id, title, val, color) => {
+    const el = $(id);
+    el.querySelector("small").textContent = title;
+    el.querySelector("b").textContent = val || "–";
+    el.style.borderTopColor = color || "#444";
+  };
+  const art = pad.k === "arm" ? pad.jm : PAD_ART[pad.k] || "–";
+  tile("tileArt", `🎮 ${pad.n || "Controller"}`, art, pad.c);
+  tile("tileSpeed", pad.k === "walking" || pad.k === "walkmode" ? "Geh-Tempo" : "Tempo", pad.sp, pad.c);
+  tile("tileHand", "Hand", pad.k === "arm" ? pad.sel : "–", pad.c);
+  const line = pad.k === "off" || pad.k === "estop" || pad.k === "walking";
+  show("padLine", line);
+  $("padLine").textContent = line ? pad.t : "";
+}
+
+// Temperaturen (echter G1): Max + Gruppen, Farbe wie in der PC-GUI.
+const TEMP_COLOR = { ok: "#2e7d32", warn: "#f9a825", crit: "#c62828", none: "#424242" };
+let tmpKey = "";
+function renderTemps(tmp) {
+  show("tmpBox", !!tmp);
+  if (!tmp) return;
+  const key = JSON.stringify(tmp);
+  if (key === tmpKey) return;
+  tmpKey = key;
+  const box = $("tmpBox");
+  box.innerHTML = "";
+  const add = (title, val, lvl, tip) => {
+    const d = document.createElement("div");
+    d.className = "tile";
+    d.style.background = TEMP_COLOR[lvl] || TEMP_COLOR.none;
+    d.title = tip || "";
+    d.innerHTML = "<small></small><b></b>";
+    d.querySelector("small").textContent = title;
+    d.querySelector("b").textContent = val;
+    box.appendChild(d);
+  };
+  if (tmp.old || !tmp.max) { add("Temp.", "–", "none", "Keine Temperaturdaten"); return; }
+  add("Max °C", String(tmp.max[1]), tmp.max[2], tmp.max[0]);
+  for (const [title, val, lvl] of tmp.g || []) add(title, String(val), lvl);
+}
+
+// Ablaeufe = Kategorien »Ablauf …« der Posenliste (wie in der PC-GUI).
+function sequences() {
+  return Object.entries(catalog.g || {})
+    .filter(([cat, names]) => cat.startsWith("Ablauf ") && names.length)
+    .map(([cat]) => cat.slice("Ablauf ".length).trim())
+    .sort((a, b) => a.localeCompare(b));
 }
 
 let seqKey = "";
 function renderSeqs(seqs, can) {
   const box = $("seqs");
+  show("seqCap", seqs.length > 0);
   const key = JSON.stringify(seqs);
   if (key !== seqKey) {
     seqKey = key;
@@ -318,6 +379,71 @@ function renderSeqs(seqs, can) {
   }
   for (const b of box.querySelectorAll("button")) b.disabled = !can;
 }
+
+// ── Posen: anfahren (Liste) und speichern (Formular) ─────────────────────
+const prettyPose = (n) => n.replace(/_/g, " ");
+function openPoseList() {
+  const list = $("poseList");
+  list.innerHTML = "";
+  const groups = Object.entries(catalog.g || {}).filter(([, names]) => names.length);
+  if (!groups.length) list.textContent = "Noch keine Pose gespeichert (oder Liste lädt noch).";
+  for (const [cat, names] of groups) {
+    const h = document.createElement("div");
+    h.className = "cat";
+    h.textContent = cat;
+    list.appendChild(h);
+    for (const name of names) {
+      const b = document.createElement("button");
+      b.textContent = prettyPose(name);
+      b.addEventListener("click", () => {
+        show("poseSheet", false);
+        confirmAction(`Pose »${prettyPose(name)}«`,
+          "Die Arme fahren geplant in diese Pose. Bricht die Verbindung ab, wird gestoppt.", () => cmd("pose", name));
+      });
+      list.appendChild(b);
+    }
+  }
+  show("poseCut", !!catalog.cut);
+  show("poseSheet", true);
+}
+$("btnPoseGo").addEventListener("click", openPoseList);
+$("poseCancel").addEventListener("click", () => show("poseSheet", false));
+
+function openSave() {
+  const sel = $("saveCat");
+  const cats = Object.keys(catalog.g || {});
+  if (!cats.includes("Demo")) cats.unshift("Demo");
+  const keep = sel.value || "Demo";
+  sel.innerHTML = "";
+  for (const c of cats) {
+    const o = document.createElement("option");
+    o.value = o.textContent = c;
+    sel.appendChild(o);
+  }
+  sel.value = cats.includes(keep) ? keep : "Demo";
+  $("saveName").value = "";
+  checkSave();
+  show("saveSheet", true);
+}
+function saveMask() { return ["cLA", "cRA", "cLH", "cRH"].map((id) => ($(id).checked ? "1" : "0")).join(""); }
+function checkSave() {
+  const name = $("saveName").value.trim();
+  const exists = Object.values(catalog.g || {}).some((ns) => ns.includes(name));
+  const msg = !name ? "" : saveMask() === "0000" ? "Mindestens Arm oder Hand wählen."
+    : exists ? `»${name}« gibt es schon und wird überschrieben.` : "";
+  $("saveWarn").textContent = msg;
+  show("saveWarn", !!msg);
+  $("saveOk").disabled = !name || saveMask() === "0000";
+}
+for (const id of ["saveName", "cLA", "cRA", "cLH", "cRH"]) $(id).addEventListener("input", checkSave);
+$("btnPoseSave").addEventListener("click", openSave);
+$("saveCancel").addEventListener("click", () => show("saveSheet", false));
+$("saveOk").addEventListener("click", () => {
+  const name = $("saveName").value.trim().replace(/\|/g, "/");
+  if (!name || !(fresh() && body.me && body.me.ctl)) { toast("Anzeige nicht aktuell — nichts gespeichert.", true); return; }
+  cmd("pose_save", `${saveMask()}|${$("saveCat").value.replace(/\|/g, "/")}|${name}`);
+  show("saveSheet", false);
+});
 
 // ── Bestaetigung per Schieber ────────────────────────────────────────────
 let sheetAction = null;
@@ -413,7 +539,7 @@ $("btnHome").addEventListener("click", () => confirmAction("Grundstellung",
 
 // Version der Handy-Seite; muss zu CACHE in sw.js passen. Kein Auto-Update: eine neue Version
 // wartet im Hintergrund, bis hier »Aktualisieren« getippt wird.
-const VERSION = "v2";
+const VERSION = "v3";
 $("version").textContent = `Handy-Seite ${VERSION}`;
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then((reg) => {

@@ -192,3 +192,95 @@ def test_phone_page_end_to_end(server, browser, tmp_path):
     assert pump(2000, lambda: not gw.has_control())
     assert errors == []
     ctx.close()
+
+
+def _slide(page):
+    box = page.locator("#slider").bounding_box()
+    y = box["y"] + box["height"] / 2
+    page.mouse.move(box["x"] + 30, y)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] - 4, y, steps=8)
+    page.mouse.up()
+
+
+def test_phone_grasp_view_poses_and_controller(server, browser, tmp_path):
+    gw = G.PhoneGateway(store_path=str(tmp_path / "d.json"))
+    br = Bridge(gw)
+    gw.set_catalog({"Demo": ["Regal_oben", "Winken"], "Ablauf Arbeitsplatz 1": ["AP1_a", "AP1_b"],
+                    "Allgemein": ["Ablage"]})
+    status = {"sim": False, "started": True, "estop": False, "ack": False, "mode": "grasp", "pend": None,
+              "txt": "GREIFEN aktiv – Arme werden geregelt.", "col": "#fb8c00", "busy": False,
+              "info": "G1: Walk (FSM 501)", "loco": {"damp": True, "preparation": True, "walk": False},
+              "pad": {"n": "PS4", "t": "PS4: Hand RECHTS · Drehen · Normal", "c": "#00c83c",
+                      "k": "arm", "jm": "Drehen", "sp": "Normal", "sel": "RECHTS"},
+              "tmp": {"max": ["Knie L", 48, "ok"], "g": [["Bein L", 48, "ok"], ["Bein R", 46, "ok"],
+                                                         ["Taille", 41, "ok"], ["Arm L", 62, "warn"],
+                                                         ["Arm R", 39, "ok"]]}}
+    actions = []
+    ctx = browser.new_context(viewport={"width": 412, "height": 915}, device_scale_factor=2,
+                              is_mobile=True, has_touch=True)
+    page = ctx.new_page()
+    page.add_init_script(FAKE_BT)
+    page.expose_function("pyWrite", br.write)
+    page.expose_function("pyRead", br.read)
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+
+    def pump(ms, until=None):
+        for _ in range(max(1, ms // 100)):
+            page.wait_for_timeout(100)
+            gw.publish_status(status)
+            acts, _events = gw.tick()
+            actions.extend(acts)
+            if until is not None and until():
+                return True
+        return until() if until is not None else True
+
+    page.goto(server + "/index.html")
+    code = gw.start_pairing(G.ROLE_OPERATE)
+    page.fill("#pairName", "Nils Pixel")
+    page.fill("#pairCode", code)
+    page.click("#btnPair")
+    assert pump(4000, lambda: page.is_visible("#mainView"))
+    # Controller + Temperaturen sichtbar, auch ohne Bedienung
+    assert page.inner_text("#tileArt b") == "Drehen"
+    assert page.inner_text("#tileSpeed b") == "Normal" and page.inner_text("#tileHand b") == "RECHTS"
+    assert page.locator("#tmpBox .tile").count() == 6
+    page.click("#btnTake")
+    assert pump(2000, lambda: gw.has_control() and page.is_visible("#secGrasp"))
+    assert pump(2000, lambda: page.locator("#seqs button").count() == 1)   # Katalog angekommen
+    assert page.inner_text("#btnTake") == "Abgeben"
+    if SHOT_DIR:
+        os.makedirs(SHOT_DIR, exist_ok=True)
+        page.screenshot(path=os.path.join(SHOT_DIR, "5_greifen.png"))
+    # Alles bis »Abläufe« ohne Scrollen sichtbar (Bildschirm 915 px minus NOT-HALT)
+    bottom = page.evaluate("document.getElementById('seqs').getBoundingClientRect().bottom")
+    assert bottom < 915 - 100, bottom
+
+    # Pose anfahren: Liste -> Pose -> Schieber
+    page.click("#btnPoseGo")
+    assert page.is_visible("#poseSheet")
+    if SHOT_DIR:
+        page.screenshot(path=os.path.join(SHOT_DIR, "6_pose_liste.png"))
+    page.click("#poseList button:has-text('Regal oben')")
+    assert page.is_visible("#sheet")
+    _slide(page)
+    assert pump(2000, lambda: any(a["action"] == "pose" and a["arg"] == "Regal_oben" for a in actions))
+
+    # Pose speichern: Formular
+    page.click("#btnPoseSave")
+    assert page.is_visible("#saveSheet") and page.is_disabled("#saveOk")
+    page.fill("#saveName", "Winken")
+    assert "überschrieben" in page.inner_text("#saveWarn")
+    page.fill("#saveName", "Tisch links")
+    page.uncheck("#cRA")
+    page.uncheck("#cRH")
+    page.select_option("#saveCat", "Allgemein")
+    if SHOT_DIR:
+        page.screenshot(path=os.path.join(SHOT_DIR, "7_pose_speichern.png"))
+    page.click("#saveOk")
+    assert pump(2000, lambda: any(a["action"] == "pose_save" for a in actions))
+    save = [a for a in actions if a["action"] == "pose_save"][-1]
+    assert save["arg"] == "1010|Allgemein|Tisch links"
+    assert errors == []
+    ctx.close()

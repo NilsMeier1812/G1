@@ -3,7 +3,9 @@
 Ein Android-Handy zeigt den Zustand der Demo-GUI und kann bedienen: **NOT-HALT
 auslösen**, **NOT-HALT quittieren/Start**, die **Startleiste** (Damp,
 Preparation, Walk, nur am echten G1), **GEHEN/GREIFEN** wählen, **Hände**
-öffnen/schließen, **Abläufe**, **Sichere Pose** und **Grundstellung**. Der PC
+öffnen/schließen, **Pose anfahren**, **Pose speichern**, **Abläufe**, **Sichere Pose** und
+**Grundstellung**. Dazu zeigt es, was der Controller nur über die LED verrät (Verschieben/Drehen,
+Tempo, Hand) und am echten G1 die Motortemperaturen. Der PC
 rechnet weiter alles. Das Handy ruft nur dieselben Funktionen auf wie die Knöpfe
 der Demo-GUI, mit denselben Prüfungen.
 
@@ -51,12 +53,16 @@ Der Code geht nie über Funk. Aus ihm leiten PC und Handy getrennt denselben Ger
 ## Bedienen
 
 1. Handy-Seite öffnen → **Mit G1 verbinden** (Chrome fragt jedes Mal nach dem Gerät, das ist gewollt).
-2. Du siehst den Zustand: Statuszeile der GUI, Onboard-Modus, Controller, Modus, NOT-HALT.
-3. Zum Bedienen **Bedienung übernehmen**. Die PC-GUI zeigt dann oben „📱 *Name* bedient“.
+2. Du siehst den Zustand: Statuszeile der GUI, Onboard-Modus, NOT-HALT und darunter drei Kacheln
+   zum Controller: **Verschieben/Drehen** (bzw. Gehen, Geht, Hüfte), **Tempo** und **Hand**. Am echten
+   G1 folgt eine Zeile mit den Temperaturen (Max und je Gruppe, gelb ab 60 °C, rot ab 75 °C wie in der
+   PC-GUI).
+3. Zum Bedienen oben **Bedienen** tippen (wird zu **Abgeben**). Die PC-GUI zeigt dann oben
+   „📱 *Name* bedient“.
 4. Alles, was den Roboter bewegt oder umschaltet, bestätigst du mit einem **Schieber ganz nach rechts**. Tippen
    allein reicht nicht. Über dem Schieber steht, was passiert. Ausnahmen sind Hände öffnen/schließen und
    **Bewegung stoppen** (einfaches Tippen).
-5. **NOT-HALT** (unten, immer da): einmal tippen. Das geht auch ohne Bedienung übernehmen und auch bei
+5. **NOT-HALT** (unten, immer da): einmal tippen. Das geht auch ohne »Bedienen« und auch bei
    „Daten alt“.
 
 | Anzeige / Ereignis | Wirkung |
@@ -70,18 +76,34 @@ Der Code geht nie über Funk. Aus ihm leiten PC und Handy getrennt denselben Ger
 
 Am PC kannst du unter **📱 Handy** Geräte entfernen. Ein entferntes Handy muss neu koppeln.
 
+### Posen
+
+Im Modus GREIFEN:
+
+- **Pose anfahren …** öffnet die Liste aller gespeicherten Posen nach Kategorie. Pose antippen, dann
+  Schieber. Bricht die Verbindung ab, wird die Fahrt gestoppt.
+- **Pose speichern …** speichert die aktuelle Haltung: Name, Kategorie (Vorgabe „Demo“) und was
+  gespeichert wird (Arme/Hände einzeln, alle an). Gibt es den Namen schon, warnt das Handy vor dem
+  Überschreiben. Neue Kategorien legst du am PC an.
+- **Abläufe** sind die Kategorien „Ablauf …“, wie in der PC-GUI.
+
+Die Posenliste kommt nur auf Anfrage aufs Handy (bei jeder Änderung neu, der PC prüft alle 2 s).
+Passt sie nicht ganz in die Funkübertragung (über ca. 1 KB), fehlen hintere Kategorien und die Liste
+sagt das.
+
 ### Rollen
 
 | Rolle | Darf |
 |---|---|
 | **Ansicht** | Zustand sehen, NOT-HALT (abschaltbar mit `G1_PHONE_VIEW_ESTOP=0`). |
-| **Bediener** | Zusätzlich nach „Bedienung übernehmen“ alles aus der Liste oben. |
+| **Bediener** | Zusätzlich nach „Bedienen“ alles aus der Liste oben. |
 
 Es ist immer nur **ein Handy gleichzeitig** verbunden. Ein zweites Handy bekommt „Gerade ist … verbunden“.
 
 ### Was das Handy nicht kann
 
-Gehen und Arm-/Hand-Jog, Posen speichern, „Real/Sim beenden“, Parameter, Kopplung neuer Geräte (nur am PC).
+Gehen und Arm-/Hand-Jog, Kategorien anlegen, „Real/Sim beenden“, Parameter, Kopplung neuer Geräte
+(nur am PC).
 
 ## Einstellungen
 
@@ -138,7 +160,7 @@ fälschbar und nicht wiederholbar. Deshalb braucht es keine BLE-Kopplung, sie is
 
 **Regeln im Gateway:** Es gibt eine Sitzung gleichzeitig. Befehle brauchen Rolle, Steuerhoheit und einen
 Statusbezug (`s` höchstens 5 Statusnummern alt, also ca. 1 s). Ausnahmen sind `estop` und `cancel`. Jede
-Befehls-ID wirkt nur einmal. Nach 3 falschen Codes ist die Kopplung beendet. Nach 5 falschen Anmeldungen ist
+Befehls-ID wirkt nur einmal. Die Posenliste geht nur auf `{"t":"cat"}`, jeder Status trägt ihren Hash `ph`. Nach 3 falschen Codes ist die Kopplung beendet. Nach 5 falschen Anmeldungen ist
 das Gerät 60 s gesperrt.
 
 **Zeiten:** Herzschlag 5 Hz (Handy), Steuerhoheit 2 s, Sitzung 4 s, Status 5 Hz, Handy „Daten alt“ nach 1 s.
