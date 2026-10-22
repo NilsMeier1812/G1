@@ -267,41 +267,63 @@ class PhoneLink:
         if not name or name not in self.gw.catalog_names():
             return False, f"Pose »{name}« nicht gefunden."
         g = self.gui
-        g.run_poses([name])
-        if g.current_pose is None:
+        if not g.run_poses([name]):
             return False, g.status.text()
         self._phone_motion = True
         return True, f"Pose »{name}« wird angefahren."
 
+    def _do_move(self, name):
+        """Relative Bewegung (pose_store "moves") von der aktuellen Hand aus."""
+        if not self._need_grasp():
+            return False, "Bewegungen nur im Modus GREIFEN."
+        store = self.gui._pose_store()
+        if not name or store is None or store.get_move(name) is None:
+            return False, f"Bewegung »{name}« nicht gefunden."
+        g = self.gui
+        if not g.run_poses([{"move": name}], name):
+            return False, g.status.text()
+        self._phone_motion = True
+        return True, f"Bewegung »{name}« läuft."
+
     def _do_pose_save(self, arg):
-        """arg = "maske|kategorie|name", maske = 4 Ziffern 0/1 in POSE_COMPONENTS-Folge.
-        Speichert die aktuelle Haltung wie »Pose speichern …« der PC-GUI."""
+        """arg = "maske|kategorie|ablauf|name" (Seite v5+) oder "maske|kategorie|name",
+        maske = 4 Ziffern 0/1 in POSE_COMPONENTS-Folge, ablauf leer = nicht anhaengen.
+        Speichert die aktuelle Haltung wie »Pose speichern …« der PC-GUI (mit Quittung)."""
         if not self._need_grasp():
             return False, "Posen speichern nur im Modus GREIFEN."
-        try:
-            mask, category, name = str(arg).split("|", 2)
-        except ValueError:
+        parts = str(arg).split("|", 3)
+        if len(parts) == 4:
+            mask, category, sequence, name = parts
+        elif len(parts) == 3:
+            (mask, category, name), sequence = parts, ""
+        else:
             return False, "Ungültige Angaben."
-        name, category = name.strip()[:40], category.strip()[:40]
+        name, category, sequence = name.strip()[:40], category.strip()[:40], sequence.strip()[:40]
         comps = [c for c, bit in zip(POSE_COMPONENTS, mask) if bit == "1"]
         if not name:
             return False, "Bitte einen Namen eingeben."
         if not comps:
             return False, "Mindestens Arm oder Hand wählen."
+        if sequence and sequence not in [n for n, _ in self.gui._sequences()]:
+            return False, f"Ablauf »{sequence}« nicht gefunden."
         from g1pilot.teleoperation.demo_gui import DEMO_CATEGORY
-        n = self.gui.node
-        n.publish_str(n.pub_pose_save, json.dumps(
-            {"name": name, "category": category or DEMO_CATEGORY, "components": comps}))
-        # arm_controller schreibt asynchron -> wie die PC-GUI kurz warten, dann neu laden.
-        QTimer.singleShot(1500, self.gui._reload_sequence_buttons)
+        data = {"name": name, "category": category or DEMO_CATEGORY, "components": comps}
+        if sequence:
+            data["sequence"] = sequence
+        self.gui.request_pose_save(data)
+        # Ergebnis (Quittung des arm_controller) steht danach in der Statuszeile.
         QTimer.singleShot(1600, self.refresh_catalog)
-        return True, f"Pose »{name}« gespeichert."
+        return True, (f"Pose »{name}« wird gespeichert"
+                      + (f" und an »{sequence}« angehängt." if sequence else "."))
 
     def refresh_catalog(self):
         try:
             store = self.gui._pose_store()
+            seqs = self.gui._sequences()
             self.gw.set_catalog(store.list_grouped() if store is not None else {},
-                                sequences=[n for n, names in self.gui._sequences() if names])
+                                sequences=[n for n, names in seqs if names],
+                                empty=[n for n, names in seqs if not names],
+                                moves=list(store.list_moves()) if store is not None else [])
         except Exception as e:  # noqa: BLE001
             self.gui.node.get_logger().warn(f"Handy-Posenliste: {e}")
 

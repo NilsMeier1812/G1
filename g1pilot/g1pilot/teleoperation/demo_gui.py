@@ -2136,7 +2136,13 @@ class DemoGUI(QWidget):
                              sequences=seqs, sequence=sequence)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
-        data = dlg.result_data()
+        self.request_pose_save(dlg.result_data())
+
+    def request_pose_save(self, data):
+        """Speichern beim arm_controller anfordern (Dialog, Handy). data =
+        {"name", "category", "components", optional "sequence"}; angehaengt an
+        den Ablauf wird erst nach der Quittung (_on_save_status)."""
+        data = dict(data)
         target = data.pop("sequence", None)
         self._save_n += 1
         data["id"] = f"demo_gui_save_{self._save_n}"

@@ -278,11 +278,13 @@ def test_pose_save_from_phone(sim, tmp_path):
     dg, g, node, app, sent, strs, loco = sim
     ph, clk = _phone(g)
     g.mode, g.pending = dg.MANIP, None
-    r = _run(g, ph, "pose_save", "1010|Demo|Tisch links")
+    r = _run(g, ph, "pose_save", "1010|Demo|Tisch links")      # alte Seite (3 Teile)
     assert r["ok"], r
     topic, payload = [x for x in strs if x[0].endswith("save")][-1]
-    assert json.loads(payload) == {"name": "Tisch links", "category": "Demo",
-                                   "components": ["left_arm", "left_hand"]}
+    data = json.loads(payload)
+    assert data.pop("id").startswith("demo_gui_save_")       # Quittung wie am PC
+    assert data == {"name": "Tisch links", "category": "Demo",
+                    "components": ["left_arm", "left_hand"]}
     r = _run(g, ph, "pose_save", "0000|Demo|Nix")
     assert r["ok"] is False
     r = _run(g, ph, "pose_save", "1111|Demo|  ")
@@ -336,3 +338,39 @@ def test_sim_sequence_step_mode_next_and_mode_from_phone(sim):
     assert _run(g, ph, "seq_next")["ok"]
     assert [v for t, v in strs if t == "/g1pilot/pose_store/goto"] == ["A", "B"]
     assert _run(g, ph, "seq_mode", "quatsch")["ok"] is False
+
+
+def test_pose_save_appends_to_sequence(sim, tmp_path):
+    dg, g, node, app, sent, strs, loco = sim
+    st = _poses(tmp_path)
+    st.create_sequence("Leer")
+    ph, clk = _phone(g)
+    g.mode, g.pending = dg.MANIP, None
+    r = _run(g, ph, "pose_save", "1111|Demo|Gibt es nicht|X")
+    assert r["ok"] is False and "nicht gefunden" in r["m"]
+    r = _run(g, ph, "pose_save", "1100|Demo|Leer|Greifen_1")
+    assert r["ok"] and "Leer" in r["m"]
+    data = json.loads([x for x in strs if x[0].endswith("save")][-1][1])
+    assert "sequence" not in data                          # Anhaengen erst nach Quittung
+    st.save("Greifen_1", category="Demo", left_arm=[0.0] * 7, right_arm=[0.0] * 7)   # = arm_controller
+    g._on_save_status({"id": data["id"], "state": "saved"})
+    assert [s_["pose"] for s_ in st.get_sequence("Leer")] == ["Greifen_1"]
+    assert "angehängt" in g.status.text()
+
+
+def test_catalog_lists_moves_and_empty_sequences(sim, tmp_path):
+    dg, g, node, app, sent, strs, loco = sim
+    st = _poses(tmp_path)
+    st.create_sequence("Leer")
+    st.save_move("Box anheben", dz=0.05)
+    ph, clk = _phone(g)
+    g.phone.refresh_catalog()
+    g.phone.publish_status()
+    ph.signed({"t": "cat"})
+    cat = ph.last["cat"]
+    assert cat["m"] == ["Box anheben"] and "Leer" in cat["e"] and "Leer" not in cat["s"]
+    r = _run(g, ph, "move", "Box anheben")                  # nicht GREIFEN
+    assert r["ok"] is False
+    g.mode, g.pending = dg.MANIP, None
+    r = _run(g, ph, "move", "Gibt es nicht")
+    assert r["ok"] is False

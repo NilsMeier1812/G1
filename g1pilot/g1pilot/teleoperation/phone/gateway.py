@@ -69,6 +69,7 @@ ACTIONS = {
     "home":    (ROLE_OPERATE, True, True),
     "pose":    (ROLE_OPERATE, True, True),
     "pose_save": (ROLE_OPERATE, True, True),
+    "move":    (ROLE_OPERATE, True, True),
 }
 # Aktionen, die die GUI selbst ausfuehrt (take/release erledigt das Gateway).
 GUI_ACTIONS = tuple(a for a in ACTIONS if a not in ("take", "release"))
@@ -433,16 +434,19 @@ class PhoneGateway:
         raw = json.dumps(obj, sort_keys=True, ensure_ascii=False).encode("utf-8")
         return format(zlib.crc32(raw), "08x")
 
-    def set_catalog(self, grouped, sequences=None):
+    def set_catalog(self, grouped, sequences=None, moves=None, empty=None):
         """Posenliste {kategorie: [namen]} (Qt-Thread), dazu die Ablauf-Namen
-        (Liste, "s"; zuerst eingeplant). Zu gross -> hintere Kategorien weg,
+        ("s" startbar, "e" noch leer -- nur zum Anhaengen) und die relativen
+        Bewegungen ("m"); diese Listen sind zuerst eingeplant. Zu gross -> hintere Kategorien weg,
         "cut" gesetzt. Neuer Stand -> neuer Hash im Status."""
         seqs = [str(n)[:40] for n in (sequences or [])][:20]
+        mv = [str(n)[:40] for n in (moves or [])][:20]
+        se = [str(n)[:40] for n in (empty or [])][:10]
         cat, cut = {}, False
         for k, names in grouped.items():
             trial = dict(cat)
             trial[str(k)[:40]] = [str(n)[:60] for n in names][:40]
-            if len(json.dumps({"g": trial, "s": seqs}, ensure_ascii=False,
+            if len(json.dumps({"g": trial, "s": seqs, "m": mv, "e": se}, ensure_ascii=False,
                               separators=(",", ":")).encode()) > CATALOG_MAX:
                 cut = True
                 break
@@ -450,6 +454,10 @@ class PhoneGateway:
         new = {"g": cat, "cut": cut}
         if sequences is not None:
             new["s"] = seqs
+        if moves is not None:
+            new["m"] = mv
+        if empty is not None:
+            new["e"] = se
         with self._lock:
             if new != self._catalog:
                 self._catalog = new
