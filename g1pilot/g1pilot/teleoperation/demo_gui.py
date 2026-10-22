@@ -160,6 +160,24 @@ NAV_AVAILABLE = _envflag('G1_ENABLE_NAV') or _envflag('G1_ENABLE_LIDAR')
 pretty_pose_name = sr.pretty_pose_name   # 'Demo_2_Winken' -> 'Winken'
 
 
+def relative_move_command(move, hand_reference, yaw=0.0):
+    """Relative Bewegung {"dx","dy","dz","sides"} -> (arm_command dict, None)
+    oder (None, Fehlertext). Verschiebung im Oberkoerper-Bezug (um den
+    Taillen-Yaw gedreht, wie der Jog), Orientierung bleibt. Ziel = aktuelle
+    (kommandierte) Hand + Verschiebung, als EIN Kommando fuer alle Seiten."""
+    d, _ = rotate_twist_yaw((move["dx"], move["dy"], move["dz"]), (0.0, 0.0, 0.0), yaw)
+    cmd = {"type": "pose"}
+    for side in move["sides"]:
+        ref = hand_reference(side)
+        if ref is None:
+            return None, (f"Handposition {'links' if side == 'left' else 'rechts'} "
+                          "unbekannt (TF fehlt).")
+        pos, quat = ref
+        cmd[side] = {"position": [float(pos[i]) + d[i] for i in range(3)],
+                     "orientation": [float(q) for q in quat], "frame": JOG_FRAME}
+    return cmd, None
+
+
 def default_sequence_mode(sim):
     env = (os.environ.get(SEQUENCE_MODE_ENV) or "").strip().lower()
     if env in sr.MODE_TITLE:
@@ -193,6 +211,9 @@ class DemoNode(StreamDeck):
                                  10)
         self.create_subscription(String, "/g1pilot/pose_store/save/status",
                                  self._save_status, 10)
+        # Relative Bewegungen (Ablauf-Schritt {"move"}): kartesisches Ziel,
+        # geplant wie jede Pose (arm_command type=pose, Status wie pose_store).
+        self.pub_arm_command = self.create_publisher(String, "/g1pilot/arm_command", 10)
         seq_qos = QoSProfile(depth=1)
         seq_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
         self.pub_seq_state = self.create_publisher(String, sr.STATE_TOPIC, seq_qos)
@@ -303,6 +324,12 @@ class DemoNode(StreamDeck):
             return float(self.waist.get("yaw_rad") or 0.0)
         except (TypeError, ValueError):
             return 0.0
+
+    def hand_reference(self, side):
+        """-> ([x, y, z], (qx, qy, qz, qw)) der Hand im JOG_FRAME fuer relative
+        Bewegungen: kommandierte Hand (wie Jog, ohne Durchhang), sonst TF."""
+        cmd = self.cmd_poses.get(side, time.monotonic()) if self.jog_from_command else None
+        return cmd if cmd is not None else self.hand_pose(side)
 
     def publish_hand_goal(self, side, pos, rot):
         msg = PoseStamped()
@@ -1133,6 +1160,7 @@ class DemoGUI(QWidget):
         self.seq = sr.SequenceRunner(self._seq_goto, self._on_seq_change,
                                      mode=default_sequence_mode(self.sim_mode))
         self.seq_editor = None
+        self._move_n = 0
         self._save_wait = {}        # Speicher-ID -> Ablauf, an den angehaengt wird
         self._save_n = 0
         self._walk_req = 0          # verwirft veraltete WALK-Timeouts
@@ -1883,7 +1911,7 @@ class DemoGUI(QWidget):
         if store is None:
             return []
         try:
-            return [(name, [st["pose"] for st in steps])
+            return [(name, [sr.step_name(st) for st in steps])
                     for name, steps in store.list_sequences()]
         except Exception as e:   # noqa: BLE001
             self.node.get_logger().warn(f"Ablaeufe nicht lesbar: {e}")
@@ -1903,7 +1931,7 @@ class DemoGUI(QWidget):
     def queue(self):
         if not self.seq.active:
             return []
-        return [st["pose"] for st in self.seq.steps[self.seq.index + 1:]]
+        return [sr.step_name(st) for st in self.seq.steps[self.seq.index + 1:]]
 
     def run_sequence(self, name):
         """Ablauf `name` aus dem pose_store starten (Knopf, Editor, Handy).
@@ -1941,9 +1969,24 @@ class DemoGUI(QWidget):
             return False
         return self.seq.confirm()
 
-    def _seq_goto(self, pose):
+    def _seq_goto(self, step):
+        """Schritt losschicken. -> None oder Fehlertext (Ablauf endet dann)."""
         self._jog_holds.clear()     # ein Halte-Ziel braeche die Fahrt ab
-        self.node.publish_str(self.node.pub_pose_goto, pose)
+        if "move" not in step:
+            self.node.publish_str(self.node.pub_pose_goto, step["pose"])
+            return None
+        store = self._pose_store()
+        move = store.get_move(step["move"]) if store is not None else None
+        if move is None:
+            return f"Bewegung »{step['move']}« fehlt."
+        cmd, err = relative_move_command(move, self.node.hand_reference,
+                                         self.node.torso_yaw())
+        if err:
+            return err
+        self._move_n += 1
+        cmd["id"] = f"demo_gui_move_{self._move_n}"
+        self.node.publish_str(self.node.pub_arm_command, json.dumps(cmd))
+        return None
 
     def _on_seq_change(self, runner, event, text):
         color = {"done": "#66bb6a", "aborted": "#ef5350", "waiting": "#66bb6a"}.get(
@@ -2119,7 +2162,7 @@ class DemoGUI(QWidget):
             try:
                 steps = store.get_sequence(target) or []
                 # Kategorie "Ablauf <X>" haengt schon im pose_store an -- nicht doppelt.
-                if not (steps and steps[-1]["pose"] == name):
+                if not (steps and steps[-1].get("pose") == name):
                     store.append_step(target, name)
                 text = f"Pose »{name}« gespeichert und an Ablauf »{target}« angehängt."
             except Exception as e:   # noqa: BLE001

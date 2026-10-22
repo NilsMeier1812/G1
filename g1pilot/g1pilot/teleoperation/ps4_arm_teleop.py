@@ -46,6 +46,8 @@ Belegung (Details: g1pilot/docs/43_ps4_controller.md):
   L3 (linken Stick druecken)  Ablauf »Schritt für Schritt«: naechster Schritt
                (wie »Weiter ▶« in der Demo-GUI). Kurze Vibration, sobald ein
                Ablauf wartet; Kreuz bricht ihn ab, PS (NOT-HALT) sowieso.
+               Solange ein Ablauf-Schritt / eine Pose der GUI faehrt, bewegen
+               die Sticks die Haende nicht (ein Hand-Ziel braeche die Fahrt ab).
   PS           NOT-HALT (ps_estop=false: nur Stopp wie Kreuz)
   R1 + L1 + PS (2 s halten, Controller vibriert)  VOLL-NOTAUS: ganzer G1
                in Damp (auch die Beine, /g1pilot/full_emergency_stop).
@@ -230,6 +232,10 @@ class ArmTeleopLogic:
         # bis L3 los und der Stick in der Mitte ist, kein Jog (ein Hand-Ziel
         # braeche die gerade gestartete geplante Fahrt ab).
         self._stick_block = False
+        # Ablauf/Pose der Demo-GUI faehrt (/g1pilot/sequence/state sent|moving|
+        # pause): Sticks bewegen die Haende NICHT -- ein Hand-Ziel braeche die
+        # geplante Fahrt ab ("manueller Vorrang"). Stopp bleibt Kreuz.
+        self.seq_busy = False
         self._share_since = None
         self._home_sent = False
 
@@ -312,6 +318,8 @@ class ArmTeleopLogic:
             return "PS4 · GEHEN (L2 halten = laufen, R2 = Greifen)"
         if self.waist_mode:
             return "PS4 · HÜFTE (rechter Stick ←/→, R3 = Mitte)"
+        if self.seq_busy:
+            return "PS4 · ABLAUF fährt (Sticks gesperrt, Kreuz = Stopp)"
         return f"PS4 · {SELECTION_LABEL[self.selection]} · {MODE_LABEL[self.mode]} · {self.speed}"
 
     def status(self):
@@ -323,7 +331,7 @@ class ArmTeleopLogic:
                 "mirror_arming": self._mir_side if self.mirror_arming else None,
                 "robot_mode": self.robot_mode,
                 "arms_locked": self.arms_locked, "waist_mode": self.waist_mode,
-                "label": self.label()}
+                "seq_busy": self.seq_busy, "label": self.label()}
 
     def clear_estop(self):
         """NOT-HALT quittiert (START aus GUI/Streamdeck gesehen)."""
@@ -596,7 +604,7 @@ class ArmTeleopLogic:
 
     def twist(self, axes):
         """-> {side: ((vx, vy, vz) m/s, (wx, wy, wz) rad/s)} im JOG_FRAME."""
-        if self.estop or self.arms_locked or self.waist_mode or (
+        if self.estop or self.arms_locked or self.waist_mode or self.seq_busy or (
                 self.walk_deadman and (self.walking or deadman_held(axes, ()))):
             return {}
         a = list(axes) + [0.0] * max(0, L.NUM_AXES - len(axes))
@@ -925,10 +933,19 @@ def main(args=None):
                 data = json.loads(msg.data)
             except ValueError:
                 return
-            waiting = isinstance(data, dict) and data.get("state") == sr.WAITING
+            state = data.get("state") if isinstance(data, dict) else None
+            waiting = state == sr.WAITING
             if waiting and not self.seq_waiting and not self.logic.estop:
                 self._send_feedback(rumble_ms=250, strong=0.3, weak=0.8)
             self.seq_waiting = waiting
+            busy = state in (sr.SENT, sr.MOVING, sr.PAUSE)
+            if busy != self.logic.seq_busy:
+                self.logic.seq_busy = busy
+                if busy:
+                    # Fahrt laeuft schon: laufenden Jog still beenden (KEIN
+                    # Halte-Ziel mehr -- die geplante Bahn hat Vorrang).
+                    self._settle_jog(publish=False)
+                self._changed(rumble_ms=0)
 
         def _on_estop(self, msg):
             if msg.data and self.logic.latch_estop():
@@ -988,8 +1005,10 @@ def main(args=None):
             elif kind == "seq_next":
                 if not self.seq_waiting:
                     return      # kein Ablauf wartet -> L3 ohne Wirkung
-                # Halte-Strom weg: ein Ziel braeche die naechste geplante Fahrt ab.
-                self.holds.clear()
+                # Lief gerade ein Jog: EIN Halte-Ziel jetzt (vor dem goto), dann
+                # kein Halte-Strom mehr -- jedes spaetere Ziel braeche die
+                # naechste geplante Fahrt ab ("manueller Vorrang").
+                self._settle_jog(publish=True)
                 self.pub_seq_next.publish(Bool(data=True))
                 self.get_logger().info("L3: Ablauf weiter (naechster Schritt).")
                 self._send_feedback(rumble_ms=120, strong=0.0, weak=0.6)
@@ -1191,6 +1210,20 @@ def main(args=None):
                     pose = hold_pose(target, hand, lin, ang)
                     self.holds.hold(side, pose, now)
                     self._publish_goal(side, *pose)
+
+        def _settle_jog(self, publish):
+            """Laufenden Jog ohne Halte-Strom beenden: publish=True schickt je
+            Seite EIN Halte-Ziel (vor einer neuen geplanten Fahrt), False gar
+            nichts (Fahrt laeuft schon)."""
+            sides = tuple(self.targets)
+            if publish:
+                self._hold(sides)
+            for side in sides:
+                self.targets.pop(side, None)
+                self.last_twist.pop(side, None)
+                self.last_hand.pop(side, None)
+                self.jog_ref.end(side)
+            self.holds.clear()
 
         def _stream_holds(self, now):
             for side, pose in self.holds.due(now).items():

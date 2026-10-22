@@ -5,14 +5,17 @@
   * pose_store: Ablaeufe als Liste von Pose-Verweisen, Altform (Kategorien
     "Ablauf <Name>") wird gelesen und beim Schreiben uebernommen, Speichern in
     "Ablauf <X>" haengt an, arm_controller-Speichern verliert keine Ablaeufe
+  * relative Bewegungen (»Box anheben«): speichern, pruefen, umbenennen
+    (Verweise wandern mit), als Ablauf-Schritt
   * sequence_runner: am Stueck / Schritt fuer Schritt, Moduswechsel im Lauf,
-    Abbruch (Status, Stopp, Timeout), alte Endzustaende vor accepted
+    Abbruch (Status, Stopp, Timeout, Ziel nicht berechenbar), alte
+    Endzustaende vor accepted
 """
 import json
 
 import pytest
 
-from g1pilot.manipulation.pose_store import PoseStore
+from g1pilot.manipulation.pose_store import PoseStore, clean_move
 from g1pilot.teleoperation import sequence_runner as sr
 
 ARM = [0.1] * 7
@@ -99,6 +102,37 @@ def test_steps_cleaned_and_missing_poses(store):
     assert store.missing_poses(steps) == ["Weg"]
 
 
+def test_moves_saved_checked_renamed(store):
+    store.save("P", left_arm=ARM)
+    store.save_move("Box anheben", dz=0.05, sides=["left", "right"])
+    assert store.get_move("Box anheben") == {"dx": 0.0, "dy": 0.0, "dz": 0.05,
+                                             "sides": ["left", "right"]}
+    store.save_sequence("S", ["P", {"move": "Box anheben", "wait_s": 1}, {"move": "Weg"}])
+    steps = store.get_sequence("S")
+    assert steps[1] == {"move": "Box anheben", "wait_s": 1.0}
+    assert store.missing_poses(steps) == ["Weg"]
+    # Umbenennen zieht die Verweise in den Ablaeufen mit.
+    store.save_move("Anheben", dz=0.08, sides=["right"], old_name="Box anheben")
+    assert store.get_sequence("S")[1]["move"] == "Anheben"
+    assert list(store.list_moves()) == ["Anheben"]
+    store.save_move("Ablegen", dz=-0.05)
+    with pytest.raises(ValueError):                                # nie still ueberschreiben
+        store.save_move("Ablegen", dz=0.01, old_name="Anheben")
+    store.delete_move("Ablegen")
+    store.save("Q", right_arm=ARM)                                 # Posen bleiben
+    assert store.delete_move("Anheben") and not store.delete_move("Anheben")
+    assert store.missing_poses(store.get_sequence("S")) == ["Anheben", "Weg"]
+    assert store.list_names() == ["P", "Q"]
+
+
+@pytest.mark.parametrize("kw", [dict(dz=0.31), dict(dx=float("nan")), dict(dz=0.0),
+                                dict(dz=0.05, sides=[]), dict(dz=0.05, sides=["kopf"])])
+def test_move_limits(kw):
+    kw.setdefault("sides", ["left"])
+    with pytest.raises(ValueError):
+        clean_move(**kw)
+
+
 def test_install_example_sequences_order(tmp_path, monkeypatch):
     monkeypatch.setenv("G1_POSE_STORE", str(tmp_path / "poses.json"))
     from g1pilot.tools import install_example_sequences as ex
@@ -120,7 +154,8 @@ class Clock:
 
 def make(mode=sr.MODE_AUTO):
     sent, events, clk = [], [], Clock()
-    r = sr.SequenceRunner(sent.append, lambda run, ev, text: events.append((ev, text)),
+    r = sr.SequenceRunner(lambda st: sent.append(sr.step_name(st)),
+                          lambda run, ev, text: events.append((ev, text)),
                           clock=clk, mode=mode)
     return r, sent, events, clk
 
@@ -256,6 +291,21 @@ def test_status_ignored_while_waiting():
     reach(r, clk)
     r.on_status({"state": "failed"})                         # z. B. Spiegeln am Controller
     assert r.state == sr.WAITING
+
+
+def test_move_steps_and_goto_error():
+    sent, events, clk = [], [], Clock()
+    errors = {"Kiste hoch": "Handposition links unbekannt (TF fehlt)."}
+    r = sr.SequenceRunner(lambda st: errors.get(sr.step_name(st)) or sent.append(dict(st)),
+                          lambda run, ev, text: events.append((ev, text)), clock=clk)
+    assert r.start(["A", {"move": "Box anheben", "wait_s": 0}], "Demo")
+    reach(r, clk)
+    assert sent[-1] == {"move": "Box anheben", "wait_s": 0.0}
+    assert r.current_pose == "Box anheben"
+    # Ziel nicht berechenbar -> sofort Abbruch, kein Warten auf den Timeout.
+    assert not r.start([{"move": "Kiste hoch"}, "B"], "Demo")
+    assert events[-1] == ("aborted", "Ablauf »Demo« abgebrochen: "
+                                     "Handposition links unbekannt (TF fehlt).")
 
 
 def test_single_pose_and_empty():

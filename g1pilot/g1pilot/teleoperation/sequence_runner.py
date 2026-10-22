@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-sequence_runner.py — einen Ablauf (Liste gespeicherter Posen) abfahren, ohne
+sequence_runner.py — einen Ablauf (gespeicherte Posen und relative
+Bewegungen) abfahren, ohne
 Qt/ROS (testbar). Die Demo-GUI haengt ihn an ihre Knoepfe, das Handy und den
 Controller (L3 = Weiter, /g1pilot/sequence/next).
 
-Jeder Schritt ist ein POSE ANFAHREN (/g1pilot/pose_store/goto): der
+Jeder Schritt ist ein POSE ANFAHREN (/g1pilot/pose_store/goto) bzw. bei
+einer relativen Bewegung ein kartesisches Ziel (/g1pilot/arm_command): der
 arm_controller plant die Bahn jedes Mal neu (Kollisionsschutz). Der Runner
 selbst bewegt nichts -- er entscheidet nur, WANN der naechste Schritt
 geschickt wird:
@@ -62,8 +64,15 @@ def pretty_pose_name(name: str) -> str:
     return short.replace("_", " ")
 
 
+def step_name(step):
+    """{"pose": n} / {"move": n} -> n."""
+    return step.get("pose") or step.get("move") or ""
+
+
 class SequenceRunner:
-    """goto(pose): Schritt anfahren (publiziert /g1pilot/pose_store/goto).
+    """goto(step): Schritt anfahren -- {"pose": name} per /g1pilot/pose_store/goto,
+    {"move": name} (relative Bewegung) als kartesisches Ziel. Rueckgabe: None
+    = gesendet, Text = Fehler (Ablauf endet sofort).
     on_change(runner, event, text): Zustand hat sich geaendert -- event ist
     'step' | 'waiting' | 'done' | 'aborted' | 'mode'; text fuer die Statuszeile."""
 
@@ -94,9 +103,10 @@ class SequenceRunner:
 
     @property
     def current_pose(self):
+        """Name der laufenden Pose bzw. relativen Bewegung (oder None)."""
         if self.state == IDLE or not (0 <= self.index < len(self.steps)):
             return None
-        return self.steps[self.index]["pose"]
+        return step_name(self.steps[self.index])
 
     def prefix(self):
         """'Ablauf X · Schritt 2/5: ' bzw. '' (Einzelpose)."""
@@ -117,13 +127,14 @@ class SequenceRunner:
         for st in steps or []:
             if isinstance(st, str):
                 st = {"pose": st}
-            if st and st.get("pose"):
-                clean.append({"pose": st["pose"], "wait_s": float(st.get("wait_s") or 0.0)})
+            kind = "move" if st and st.get("move") else "pose"
+            if st and st.get(kind):
+                clean.append({kind: st[kind], "wait_s": float(st.get("wait_s") or 0.0)})
         if not clean:
             return False
         self.steps, self.label, self.index = clean, label, -1
         self._send_next()
-        return True
+        return self.active
 
     def set_mode(self, mode):
         """Modus umschalten; gilt ab dem naechsten Schritt. Wartet der Ablauf
@@ -209,7 +220,7 @@ class SequenceRunner:
 
     def _wait_confirm(self):
         self.state = WAITING
-        nxt = pretty_pose_name(self.steps[self.index + 1]["pose"])
+        nxt = pretty_pose_name(step_name(self.steps[self.index + 1]))
         self._on_change(self, "waiting",
                         f"{self.prefix()}erreicht. Weiter mit »Weiter ▶« oder L3 "
                         f"(nächster: {nxt}).")
@@ -218,6 +229,15 @@ class SequenceRunner:
         self.index += 1
         self.state = SENT
         self._t = self._clock()
-        pose = self.steps[self.index]["pose"]
-        self._goto(pose)
-        self._on_change(self, "step", f"{self.prefix()}{pretty_pose_name(pose)} …")
+        step = self.steps[self.index]
+        name = pretty_pose_name(step_name(step))
+        err = self._goto(dict(step))
+        if err:
+            # Ziel nicht berechenbar (z. B. Handposition unbekannt): nichts
+            # gesendet -> sofort beenden statt auf den Timeout zu warten.
+            label = self.label
+            self._reset()
+            what = f"Ablauf »{label}«" if label else f"»{name}«"
+            self._on_change(self, "aborted", f"{what} abgebrochen: {err}")
+            return
+        self._on_change(self, "step", f"{self.prefix()}{name} …")

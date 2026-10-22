@@ -1208,3 +1208,17 @@ def test_l3_blocks_jog_until_stick_released_and_centered():
     a, b = joy(LY=0.6)
     lg.update(a, b, 0.15)
     assert "right" in lg.twist(a)
+
+
+def test_seq_busy_locks_sticks_but_not_stop():
+    lg = ArmTeleopLogic()
+    lg.seq_busy = True                                       # Demo-GUI: Ablauf faehrt
+    a, b = joy(LY=0.8, RY=0.8)
+    lg.update(a, b, 0.0)
+    assert lg.twist(a) == {}
+    assert "ABLAUF" in lg.label() and lg.status()["seq_busy"]
+    assert ("cancel",) in press(lg, L.CROSS, 0.1)            # Stopp geht immer
+    lg.seq_busy = False
+    a, b = joy(LY=0.8)
+    lg.update(a, b, 0.3)
+    assert "right" in lg.twist(a)

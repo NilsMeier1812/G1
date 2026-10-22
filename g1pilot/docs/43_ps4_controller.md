@@ -59,7 +59,7 @@ Am echten Roboter erst in der GUI starten, siehe unten.
 | **R2 drücken** | Modus **GREIFEN**: Arme übernehmen (wie Options), Arm-Steuerung wieder frei |
 | **R2 halten + rechter Stick ←/→** | **HÜFTE drehen** (Oberkörper links/rechts, LED weiß), Arme drehen mit. Siehe [Hüfte drehen](#hüfte-drehen-r2-halten) |
 | **R2 halten + R3** | Hüfte sanft zurück zur Mitte |
-| **L3** (linken Stick drücken) | **Ablauf weiter**: wartet ein Ablauf „Schritt für Schritt“ der Demo-GUI auf Bestätigung, fährt er den nächsten Schritt an (wie *Weiter ▶*). Der Controller vibriert zweimal kurz, sobald ein Ablauf wartet, und kurz beim Weiter. Sonst ohne Wirkung. Bis L3 losgelassen und der Stick wieder in der Mitte ist, bewegt der linke Stick die Hand nicht (das Drücken kippt ihn leicht, ein Hand-Ziel würde die neue Fahrt abbrechen). Nicht bei gehaltenem L2/R2 und nicht im GEHEN |
+| **L3** (linken Stick drücken) | **Ablauf weiter**: wartet ein Ablauf „Schritt für Schritt“ der Demo-GUI auf Bestätigung, fährt er den nächsten Schritt an (wie *Weiter ▶*). Der Controller vibriert zweimal kurz, sobald ein Ablauf wartet, und kurz beim Weiter. Sonst ohne Wirkung. Lief beim Drücken ein Jog (Stick ausgelenkt), hält die Hand genau einmal an, danach kommt kein Hand-Ziel mehr. **Solange der Schritt fährt, sind beide Sticks gesperrt** (Anzeige „ABLAUF fährt (Sticks gesperrt, Kreuz = Stopp)“), sonst bräche ein versehentlich bewegter Stick die Fahrt mit „manueller Vorrang“ ab; Kreuz = Stopp geht immer. Wartet der Ablauf wieder, darf man nachkorrigieren. Nicht bei gehaltenem L2/R2 und nicht im GEHEN |
 | Touchpad | frei (Reserve) |
 
 Richtungen gelten **aus Sicht des Roboters** (vor = in Blickrichtung des

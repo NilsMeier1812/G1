@@ -149,6 +149,9 @@ Titelzeile vom Inhalt (auch bei GEHEN).
   wenn er gerade auf „Weiter“ wartet. Danach geht es nie von selbst weiter,
   auch nicht nach dem Quittieren. Wartet ein Ablauf, darf man die Hand mit Jog
   oder Controller nachkorrigieren; der nächste Schritt wird von dort geplant.
+  Solange ein Schritt fährt, sind die Controller-Sticks gesperrt (Anzeige
+  „ABLAUF fährt“), damit ein versehentlich bewegter Stick die Fahrt nicht mit
+  „manueller Vorrang“ abbricht; Kreuz = Stopp geht immer.
   Kommt auf ein Anfahren 4 s keine Antwort vom Arm-Regler (Arme nicht
   übernommen), bricht der Ablauf mit Hinweis ab.
 - **Posen & Abläufe …** öffnet das Fenster zum Zusammenstellen (nicht modal,
@@ -158,7 +161,12 @@ Titelzeile vom Inhalt (auch bei GEHEN).
   als Schritt …“** (speichert die Pose und hängt sie an, nachdem der
   Arm-Controller das Speichern quittiert hat), rechts alle Posen nach Kategorie
   (Doppelklick oder „← Hinzufügen“ hängt hinter dem markierten Schritt an,
-  Anfahren, Löschen, aktuelle Stellung speichern). Jede Änderung wird sofort
+  Anfahren, Löschen, aktuelle Stellung speichern). Ganz oben stehen die
+  **relativen Bewegungen** (z. B. „Box anheben“ = Hände 5 cm hoch, egal wo sie
+  gerade sind): *Neue relative Bewegung …* / *Bearbeiten …* mit Name, vor/
+  links/hoch in cm (je höchstens ±30 cm, Bezug Oberkörper) und welche Hand;
+  sie werden wie Posen eingefügt (Schritt „↕ Box anheben (hoch 5 cm · beide)“)
+  und geplant angefahren. Jede Änderung wird sofort
   gespeichert. Auch der Dialog „Pose speichern“ hat das Feld **An Ablauf
   anhängen** (neuer Name legt den Ablauf an).
 - **Sichere Pose** fährt die gespeicherte Pose `Sichere_Pose` geplant an
@@ -236,7 +244,9 @@ der Hand-Bridge (`hand_controller_viewer.html`, `inspire_hand_viewer.html`):
 
 Ablauf anlegen: GREIFEN → **Posen & Abläufe …** → *Neu …*, dann Posen aus
 der Liste rechts hinzufügen oder die Hand hinstellen und **„＋ Aktuelle
-Stellung als Schritt …“**. Der Ablauf erscheint als Knopf „<Name>“. Die alte
+Stellung als Schritt …“**. Für „Box greifen, anheben, ablegen“: Pose
+*Greifen*, dann relative Bewegung *Box anheben* (hoch 5 cm), dann die
+Ablage-Pose. Der Ablauf erscheint als Knopf „<Name>“. Die alte
 Arbeitsweise geht weiter: eine Pose in die Kategorie `Ablauf <Name>`
 speichern hängt sie hinten an den Ablauf <Name> an. Bestehende Kategorien
 `Ablauf …` werden beim ersten Speichern als Abläufe übernommen (Reihenfolge

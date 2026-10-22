@@ -40,11 +40,22 @@ Erreichen, nur beim Ablauf »am Stueck«). Wer eine Pose in eine Kategorie
 "Ablauf <Name>" speichert, haengt sie zusaetzlich hinten an den Ablauf
 <Name> an (bisherige Arbeitsweise bleibt gueltig).
 
+RELATIVE BEWEGUNGEN ("moves"): benannte Verschiebung der Hand(e) um
+dx/dy/dz [m] im Oberkoerper-Bezug (x vor, y links, z hoch), z. B. "Box
+anheben" = beide Haende 5 cm hoch -- egal, wo die Haende gerade sind. Ein
+Ablauf-Schritt verweist auf eine Pose ({"pose": name}) ODER eine Bewegung
+({"move": name}). Der arm_controller kennt Bewegungen nicht: die Demo-GUI
+rechnet das Ziel aus der aktuellen Hand und schickt es als kartesisches
+Ziel (arm_command type=pose, geplant wie jede Pose).
+
 Dateiformat (Version 3):
     {"version": 3,
      "categories": ["Allgemein", "Greifen"],
      "poses": {"<name>": {"category": ..., "left_arm": [...], "saved_at": ...}},
-     "sequences": {"<ablauf>": {"steps": [{"pose": "<name>", "wait_s": 0.0}]}}}
+     "sequences": {"<ablauf>": {"steps": [{"pose": "<name>", "wait_s": 0.0},
+                                          {"move": "<bewegung>", "wait_s": 0.0}]}},
+     "moves": {"<bewegung>": {"dx": 0.0, "dy": 0.0, "dz": 0.05,
+                              "sides": ["left", "right"]}}}
 Version 1 (flaches {name: eintrag}) und Version 2 (ohne "sequences") werden
 transparent gelesen. Fehlt "sequences", werden die Ablaeufe aus den
 Kategorien "Ablauf <Name>" abgeleitet (Posen in Namensreihenfolge, wie die
@@ -83,6 +94,10 @@ SCHEMA_VERSION = 3
 SEQUENCE_PREFIX = "Ablauf "
 # Obergrenze fuer die Pause nach einem Schritt (Tippfehler abfangen).
 MAX_WAIT_S = 600.0
+# Groesste Verschiebung je Achse einer relativen Bewegung [m] (Tippfehler:
+# 5 statt 0.05 darf nie ein Ziel werden).
+MAX_MOVE_M = 0.30
+MOVE_SIDES = ("left", "right")
 
 
 def default_store_path() -> Path:
@@ -103,14 +118,15 @@ def _clean_category(category) -> str:
 
 
 def _clean_step(step):
-    """Schritt -> {"pose": name, "wait_s": s} oder None (ungueltig). Nimmt auch
-    einen reinen Posennamen."""
+    """Schritt -> {"pose"|"move": name, "wait_s": s} oder None (ungueltig).
+    Nimmt auch einen reinen Posennamen."""
     if isinstance(step, str):
         step = {"pose": step}
     if not isinstance(step, dict):
         return None
-    pose = str(step.get("pose") or "").strip()
-    if not pose:
+    kind = "move" if step.get("move") else "pose"
+    name = str(step.get(kind) or "").strip()
+    if not name:
         return None
     try:
         wait = float(step.get("wait_s") or 0.0)
@@ -118,7 +134,32 @@ def _clean_step(step):
         wait = 0.0
     if not wait == wait:      # NaN
         wait = 0.0
-    return {"pose": pose, "wait_s": round(min(max(wait, 0.0), MAX_WAIT_S), 2)}
+    return {kind: name, "wait_s": round(min(max(wait, 0.0), MAX_WAIT_S), 2)}
+
+
+def clean_move(dx=0.0, dy=0.0, dz=0.0, sides=MOVE_SIDES):
+    """-> {"dx","dy","dz","sides"} geprueft (ValueError mit Klartext)."""
+    out = {}
+    for key, val in (("dx", dx), ("dy", dy), ("dz", dz)):
+        try:
+            v = float(val)
+        except (TypeError, ValueError):
+            raise ValueError(f"{key}: keine Zahl.")
+        if not v == v or abs(v) > MAX_MOVE_M:
+            raise ValueError(f"{key} = {val}: höchstens ±{MAX_MOVE_M * 100:.0f} cm.")
+        out[key] = round(v, 4)
+    sides = [s for s in MOVE_SIDES if s in (sides or ())]
+    if not sides:
+        raise ValueError("Mindestens eine Hand wählen.")
+    if not any(out.values()):
+        raise ValueError("Verschiebung ist 0.")
+    out["sides"] = sides
+    return out
+
+
+def step_name(step):
+    """-> Name der Pose bzw. Bewegung eines Schritts."""
+    return step.get("pose") or step.get("move") or ""
 
 
 def _clean_steps(steps) -> list:
@@ -178,7 +219,8 @@ class PoseStore:
         """-> normalisiertes Version-2-Dokument (auch fuer Version-1-Dateien)."""
         raw = self._read_raw()
         if not raw:
-            return {"version": SCHEMA_VERSION, "categories": [], "poses": {}, "sequences": {}}
+            return {"version": SCHEMA_VERSION, "categories": [], "poses": {}, "sequences": {},
+                    "moves": {}}
         if isinstance(raw.get("poses"), dict):
             cats = [c for c in raw.get("categories", []) if isinstance(c, str)]
             poses = {k: v for k, v in raw["poses"].items() if isinstance(v, dict)}
@@ -188,12 +230,19 @@ class PoseStore:
                         for k, v in seqs.items() if isinstance(v, dict) and str(k).strip()}
             else:
                 seqs = legacy_sequences(poses)     # Version 2: aus Kategorien
+            moves = {}
+            for k, v in (raw.get("moves") or {}).items():
+                try:
+                    moves[str(k).strip()] = clean_move(v.get("dx", 0), v.get("dy", 0),
+                                                       v.get("dz", 0), v.get("sides"))
+                except (AttributeError, ValueError):
+                    pass    # kaputter Eintrag: lieber weglassen als falsch fahren
             return {"version": SCHEMA_VERSION, "categories": cats, "poses": poses,
-                    "sequences": seqs}
+                    "sequences": seqs, "moves": moves}
         # Version 1: flaches {name: eintrag} ohne Kategorien.
         poses = {k: v for k, v in raw.items() if isinstance(v, dict)}
         return {"version": SCHEMA_VERSION, "categories": [], "poses": poses,
-                "sequences": legacy_sequences(poses)}
+                "sequences": legacy_sequences(poses), "moves": {}}
 
     def _save(self, doc: dict) -> None:
         out = {
@@ -201,6 +250,7 @@ class PoseStore:
             "categories": sorted(set(doc.get("categories", []))),
             "poses": doc.get("poses", {}),
             "sequences": doc.get("sequences", {}),
+            "moves": doc.get("moves", {}),
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
@@ -300,7 +350,7 @@ class PoseStore:
             seq = entry["category"][len(SEQUENCE_PREFIX):].strip()
             if seq:
                 steps = doc["sequences"].setdefault(seq, {"steps": []})["steps"]
-                if name not in [st["pose"] for st in steps]:
+                if name not in [st.get("pose") for st in steps]:
                     steps.append({"pose": name, "wait_s": 0.0})
         self._save(doc)
 
@@ -339,12 +389,14 @@ class PoseStore:
         return None if seq is None else [dict(st) for st in seq["steps"]]
 
     def missing_poses(self, steps) -> list:
-        """-> Posennamen aus `steps`, die (nicht mehr) gespeichert sind."""
-        poses = self._load()["poses"]
+        """-> Namen der Posen/Bewegungen aus `steps`, die (nicht mehr) gespeichert sind."""
+        doc = self._load()
         out = []
         for st in _clean_steps(steps):
-            if st["pose"] not in poses and st["pose"] not in out:
-                out.append(st["pose"])
+            known = doc["moves"] if "move" in st else doc["poses"]
+            name = step_name(st)
+            if name not in known and name not in out:
+                out.append(name)
         return out
 
     def save_sequence(self, name: str, steps, *, old_name=None) -> str:
@@ -388,6 +440,46 @@ class PoseStore:
         doc = self._load()
         if (name or "").strip() in doc["sequences"]:
             del doc["sequences"][name.strip()]
+            self._save(doc)
+            return True
+        return False
+
+    # ── Relative Bewegungen ──────────────────────────────────────────────
+    def list_moves(self) -> dict:
+        """-> {name: {"dx","dy","dz","sides"}} (nach Namen sortiert)."""
+        moves = self._load()["moves"]
+        return {k: dict(moves[k]) for k in sorted(moves, key=str.lower)}
+
+    def get_move(self, name: str):
+        m = self._load()["moves"].get((name or "").strip())
+        return None if m is None else dict(m)
+
+    def save_move(self, name: str, *, dx=0.0, dy=0.0, dz=0.0, sides=MOVE_SIDES,
+                  old_name=None) -> str:
+        """Bewegung speichern (ValueError bei Unsinn); old_name = umbenennen
+        (Verweise in Ablaeufen ziehen mit). -> Name."""
+        name = (name or "").strip()
+        if not name:
+            raise ValueError("Name darf nicht leer sein.")
+        move = clean_move(dx, dy, dz, sides)
+        old = (old_name or "").strip() or name
+        doc = self._load()
+        if name != old and name in doc["moves"]:
+            raise ValueError(f"Eine Bewegung »{name}« gibt es schon.")
+        if name != old:
+            doc["moves"].pop(old, None)
+            for seq in doc["sequences"].values():
+                for st in seq["steps"]:
+                    if st.get("move") == old:
+                        st["move"] = name
+        doc["moves"][name] = move
+        self._save(doc)
+        return name
+
+    def delete_move(self, name: str) -> bool:
+        doc = self._load()
+        if (name or "").strip() in doc["moves"]:
+            del doc["moves"][name.strip()]
             self._save(doc)
             return True
         return False
