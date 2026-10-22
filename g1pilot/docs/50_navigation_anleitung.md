@@ -20,6 +20,11 @@ Real: MOLA-LiDAR-Odometrie).
 
 - **Simulation:** Navigation beim Start aktivieren (Startmenü → Simulation →
   Ausstattung → „Navigation“, oder `G1_ENABLE_NAV=1 ./start.sh --yes`).
+  Darunter „Totmann wie am echten G1“ (Default an, = `G1_NAV_DEADMAN=1`):
+  schaltet den Controller automatisch mit ein (`G1_PS4_ARMS=1`), denn den
+  Totmann liefert der Geh-Node des Controllers.
+- **Echter Roboter im Startmenü:** Ausstattung → „LiDAR + Navigation
+  (experimentell)“ mit LiDAR-IP; schaltet ebenfalls den Controller ein.
 - **Echter Roboter:** Livox-MID360-LiDAR + das LiDAR-Image `g1pilot-real-lidar`,
   aktiviert über `G1_ENABLE_LIDAR=1 ./start.sh --build` (siehe „Echter Roboter“).
 - RViz wird bei aktiver Navigation automatisch mitgestartet (Nav-Ansicht,
