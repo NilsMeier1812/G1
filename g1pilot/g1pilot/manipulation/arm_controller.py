@@ -240,13 +240,13 @@ class ArmController(Node):
         # Hueftdrehung (Taillen-Yaw per Controller/GUI, waist_yaw.py; Nils
         # 2026-10-21). Sollwert haelt real WaistHold (nur mit uebernommenen
         # Armen, Gewicht 1), in der Sim loco_sim im Stand (/g1pilot/waist/state).
-        #   waist_yaw_limit_deg: Bereich um die Mitte (real per bringup_real 15).
+        #   waist_yaw_limit_deg: Bereich um die Mitte (Sim und real 45).
         #   waist_yaw_rate_deg / _center_rate_deg: Tempo Stick / zur Mitte [deg/s].
         #   waist_yaw_center_tol_deg: "in der Mitte" (Sollwert und Messung).
         #   waist_yaw_center_timeout_s: Mitte-Fahrt vor GEHEN/Grundstellung/
         #   Rueckgabe dauert laenger -> trotzdem weiter (mit Warnung).
         self.declare_parameter("waist_yaw_control", True)
-        self.declare_parameter("waist_yaw_limit_deg", 30.0)
+        self.declare_parameter("waist_yaw_limit_deg", 45.0)
         self.declare_parameter("waist_yaw_rate_deg", 15.0)
         self.declare_parameter("waist_yaw_center_rate_deg", 15.0)
         self.declare_parameter("waist_yaw_center_tol_deg", 2.0)
