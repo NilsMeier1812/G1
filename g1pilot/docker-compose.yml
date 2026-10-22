@@ -121,7 +121,7 @@ services:
       # 0 = aus (kein Werben, kein Thread). Adapter: hci0 = einziger Dongle (teilt
       # sich den Funk mit dem Controller), hci1 = zweiter Dongle nur fuers Handy.
       - G1_PHONE=${G1_PHONE:-0}
-      - G1_PHONE_BT_ADAPTER=${G1_PHONE_BT_ADAPTER:-hci0}
+      - G1_PHONE_BT_ADAPTER=${G1_PHONE_BT_ADAPTER:-auto}
       # Szenen-Bruecke (siehe g1pilot/docs/51_navigation_technik.md): MUSS zum mujoco-sim-Wert oben passen.
       - SIM_SCENE_PORT=${SIM_SCENE_PORT:-47902}
     volumes:
@@ -189,7 +189,7 @@ services:
       # 0 = aus (kein Werben, kein Thread). Adapter: hci0 = einziger Dongle (teilt
       # sich den Funk mit dem Controller), hci1 = zweiter Dongle nur fuers Handy.
       - G1_PHONE=${G1_PHONE:-0}
-      - G1_PHONE_BT_ADAPTER=${G1_PHONE_BT_ADAPTER:-hci0}
+      - G1_PHONE_BT_ADAPTER=${G1_PHONE_BT_ADAPTER:-auto}
       # Inspire-FTP-Haende (Modbus TCP im Roboter-LAN).
       - G1_INSPIRE_HANDS=${G1_INSPIRE_HANDS:-0}
       - G1_HAND_LEFT_HOST=${G1_HAND_LEFT_HOST:-192.168.123.210}

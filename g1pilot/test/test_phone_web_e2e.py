@@ -6,7 +6,8 @@ weiterreicht (Zeilenpuffer + TX-Seiten wie im BLE-Server).
 
 Prueft: Koppeln mit Code, Anmelden, Bedienung uebernehmen, Quittieren nur
 per vollem Schieber, NOT-HALT, Sperre bei alten Daten, Seite verlassen ->
-Bedienung abgegeben. Braucht playwright + Chromium, sonst uebersprungen."""
+Bedienung abgegeben (Sitzung bleibt, Bedienung kommt zurueck), Neuladen ->
+von selbst wieder verbunden. Braucht playwright + Chromium, sonst uebersprungen."""
 import functools
 import http.server
 import os
@@ -38,11 +39,15 @@ FAKE_BT = """
   });
   const svc = { async getCharacteristic(u) { return mk(u); } };
   const dev = {
+    id: "fake-g1",
     gatt: { connected: true, async connect() { return { async getPrimaryService() { return svc; } }; },
             disconnect() {} },
     addEventListener() {},
   };
-  Object.defineProperty(navigator, "bluetooth", { value: { async requestDevice() { return dev; } } });
+  // getDevices: bereits erlaubte Geraete (Chrome mit neuem Berechtigungs-Backend)
+  Object.defineProperty(navigator, "bluetooth", { value: {
+    async requestDevice() { window.chooserOpened = (window.chooserOpened || 0) + 1; return dev; },
+    async getDevices() { return [dev]; } } });
 })();
 """
 
@@ -176,7 +181,7 @@ def test_phone_page_end_to_end(server, browser, tmp_path):
 
     # Alte Daten -> gesperrt (NOT-HALT bleibt)
     pump(300)
-    pump(1500, publish=False)
+    pump(2000, publish=False)
     assert page.is_visible("#staleBar")
     assert page.inner_text("#pill") == "Daten alt"
     assert page.is_disabled("#btnModeWalk") and page.is_enabled("#estop")
@@ -348,5 +353,90 @@ def test_phone_sequence_step_mode_next(server, browser, tmp_path):
     page.click("#btnSeqAuto")
     assert pump(2000, lambda: any(a["action"] == "seq_mode" and a["arg"] == "auto"
                                   for a in actions))
+    assert errors == []
+    ctx.close()
+
+
+def _visible(page, on):
+    page.evaluate("""(on) => {
+        Object.defineProperty(document, 'visibilityState', {value: on ? 'visible' : 'hidden', configurable: true});
+        document.dispatchEvent(new Event('visibilitychange'));
+    }""", on)
+
+
+def test_phone_stays_connected_hide_and_reload(server, browser, tmp_path):
+    """Nils 2026-10-22: kurz weg / versehentlich neu geladen -> nicht neu verbinden muessen."""
+    gw = G.PhoneGateway(store_path=str(tmp_path / "d.json"))
+    br = Bridge(gw)
+    status = {"sim": True, "started": True, "estop": False, "ack": False, "mode": "grasp",
+              "txt": "GREIFEN aktiv", "col": "#fb8c00", "info": "",
+              "loco": {"damp": False, "preparation": False, "walk": False}}
+    ctx = browser.new_context(viewport={"width": 412, "height": 915}, is_mobile=True, has_touch=True)
+    page = ctx.new_page()
+    page.add_init_script(FAKE_BT)
+    page.expose_function("pyWrite", br.write)
+    page.expose_function("pyRead", br.read)
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+
+    def pump(ms, until=None):
+        for _ in range(max(1, ms // 100)):
+            page.wait_for_timeout(100)
+            gw.publish_status(status)
+            gw.tick()
+            if until is not None and until():
+                return True
+        return until() if until is not None else True
+
+    page.goto(server + "/index.html")
+    code = gw.start_pairing(G.ROLE_OPERATE)
+    page.fill("#pairName", "Pixel")
+    page.fill("#pairCode", code)
+    page.click("#btnPair")
+    assert pump(4000, lambda: page.is_visible("#mainView"))
+    page.click("#btnTake")
+    assert pump(2000, lambda: gw.has_control())
+
+    # 0) »take« erst angekommen, als die Seite schon verdeckt war -> wird trotzdem abgegeben
+    gw.revoke_control()
+    assert pump(1500, lambda: page.inner_text("#btnTake") != "Abgeben")
+    page.evaluate("() => document.getElementById('btnTake').click()")
+    _visible(page, False)
+    assert pump(3000, lambda: not gw.has_control() and gw.session is not None)
+    _visible(page, True)
+    assert pump(2000, lambda: gw.has_control())
+
+    # 1) Seite kurz weg (App-Wechsel): Bedienung sofort abgegeben, Sitzung bleibt ueber
+    #    SESSION_TIMEOUT_S hinaus, zurueck -> Bedienung von selbst wieder da
+    _visible(page, False)
+    assert pump(1500, lambda: not gw.has_control())
+    sess = gw.session
+    pump(int(G.SESSION_TIMEOUT_S * 1000) + 1500)
+    assert gw.session is sess and not gw.has_control()
+    _visible(page, True)
+    assert pump(2000, lambda: gw.has_control())
+    assert gw.session is sess                                  # keine neue Anmeldung
+    assert pump(1500, lambda: page.inner_text("#btnTake") == "Abgeben")
+
+    # 2) Neu laden: BLE-Verbindung weg -> Seite verbindet + meldet sich selbst an,
+    #    ohne Auswahlfenster, und uebernimmt die Bedienung wieder
+    page.reload()
+    gw.link_lost("web")
+    assert not gw.has_control()
+    assert pump(4000, lambda: gw.session is not None and page.is_visible("#mainView")), errors
+    assert pump(2000, lambda: gw.has_control())
+    assert page.evaluate("window.chooserOpened || 0") == 0
+
+    # 3) PC holt die Bedienung zurueck -> Handy holt sie sich NICHT von selbst wieder
+    gw.revoke_control()
+    pump(1500)
+    assert not gw.has_control()
+
+    # 4) Ausdruecklich »Trennen« -> nach Neuladen KEIN automatisches Verbinden
+    page.click("#btnDisconnect")
+    assert pump(1500, lambda: gw.session is None)
+    page.reload()
+    pump(2000)
+    assert gw.session is None and page.is_visible("#connectView")
     assert errors == []
     ctx.close()

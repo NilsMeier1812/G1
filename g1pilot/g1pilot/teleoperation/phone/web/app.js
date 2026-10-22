@@ -2,15 +2,20 @@
 // Sicherheit: siehe docs/44_handy_bedienung.md. Kurz:
 //  * Geraete-Schluessel aus dem Kopplungscode (nie gesendet), jede Nachricht
 //    signiert + Zaehler; der PC prueft Rolle, Steuerhoheit und Statusbezug.
-//  * Herzschlag 5 Hz nur bei sichtbarer Seite; Seite weg -> Bedienung abgeben.
-//  * Anzeige aelter als 1 s -> alles gesperrt ausser NOT-HALT.
+//  * Verbindung + Anmeldung bleiben, auch wenn die Seite kurz weg ist oder neu
+//    laedt (automatisch wieder verbinden). Die BEDIENUNG wird beim Verlassen
+//    abgegeben und beim Zurueckkommen binnen 60 s von selbst wieder uebernommen.
+//  * Anzeige aelter als 1,5 s -> alles gesperrt ausser NOT-HALT und Pose speichern.
 import * as P from "./proto.js";
 
 const $ = (id) => document.getElementById(id);
 const STORE = "g1phone.v1";
 const HB_MS = 200;
-const FRESH_MS = 1000;
+const FRESH_MS = 1500;
 const SESSION_LOST_MS = 3000;
+const AUTO_KEY = "g1phone.auto";      // localStorage: "1" = verbunden bleiben (bis »Trennen«)
+const RESUME_KEY = "g1phone.resume";  // sessionStorage: Zeitpunkt, als wir die Bedienung wegen Verlassen abgaben
+const RESUME_MS = 60000;
 
 let cfg = loadCfg();          // {dev, key(hex), name}
 let device = null, chars = null;
@@ -22,6 +27,13 @@ let opQueue = Promise.resolve(), opDepth = 0;
 let reading = false, readAgain = false;
 let wakeLock = null;
 let loggingIn = false;
+let autoOn = loadFlag(localStorage, AUTO_KEY) === "1";
+let reconnTimer = null, reconnTry = 0, lastLoginTry = 0;
+let autoHint = "";
+
+function loadFlag(st, k) { try { return st.getItem(k); } catch (e) { return null; } }
+function saveFlag(st, k, v) { try { v == null ? st.removeItem(k) : st.setItem(k, v); } catch (e) { /* privat */ } }
+function setAuto(on) { autoOn = on; saveFlag(localStorage, AUTO_KEY, on ? "1" : null); }
 
 function loadCfg() {
   try { return JSON.parse(localStorage.getItem(STORE)) || null; } catch (e) { return null; }
@@ -111,10 +123,25 @@ function waitPre(types, ms, re) {
 // ── Verbinden / Koppeln / Anmelden ───────────────────────────────────────
 async function connect() {
   if (!navigator.bluetooth) throw new Error("Kein Web Bluetooth.");
-  device = await navigator.bluetooth.requestDevice({ filters: [{ services: [P.SERVICE_UUID] }] });
-  device.addEventListener("gattserverdisconnected", onDisconnected);
+  await attach(await navigator.bluetooth.requestDevice({ filters: [{ services: [P.SERVICE_UUID] }] }));
+}
+
+const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) =>
+  setTimeout(() => rej(new Error("Zeitüberschreitung")), ms))]);
+
+async function attach(dev) {
+  if (dev !== device) {
+    device = dev;
+    dev.addEventListener("gattserverdisconnected", onDisconnected);
+  }
   setPill("Verbinde …", "busy");
-  const server = await device.gatt.connect();
+  let server;
+  try {
+    server = await withTimeout(dev.gatt.connect(), 8000);
+  } catch (e) {
+    try { dev.gatt.disconnect(); } catch (e2) { /* egal */ }
+    throw e;
+  }
   const svc = await server.getPrimaryService(P.SERVICE_UUID);
   const rx = await svc.getCharacteristic(P.RX_UUID);
   const notify = await svc.getCharacteristic(P.NOTIFY_UUID);
@@ -123,7 +150,39 @@ async function connect() {
   chars = { rx, notify, tx };
   await notify.startNotifications();
   notify.addEventListener("characteristicvaluechanged", scheduleRead);
+  setAuto(true);
+  reconnTry = 0;
   scheduleRead();
+}
+
+// Bekanntes Geraet ohne Auswahlfenster (nach Neuladen). Braucht getDevices():
+// Chrome mit »neuem Berechtigungs-Backend« fuer Web Bluetooth (siehe Doku).
+async function knownDevice() {
+  if (!navigator.bluetooth.getDevices) return null;
+  const list = await navigator.bluetooth.getDevices();
+  return list.length ? list[0] : null;
+}
+
+// Verbindung weg oder Seite neu geladen -> selbst wieder verbinden (1, 2, 4, 8 s, ...).
+function scheduleReconnect(first) {
+  if (!autoOn || !cfg || chars || reconnTimer || !navigator.bluetooth) return;
+  const ms = first ? 200 : Math.min(1000 * 2 ** reconnTry, 8000);
+  reconnTry++;
+  reconnTimer = setTimeout(async () => {
+    reconnTimer = null;
+    if (chars || !autoOn || !cfg) return;
+    try {
+      const dev = device || await knownDevice();
+      if (!dev) { autoHint = "Nach dem Neuladen einmal »Mit G1 verbinden« tippen."; render(); return; }
+      autoHint = "";
+      setPill("Verbinde neu …", "busy");
+      await attach(dev);
+      await login();
+    } catch (e) {
+      setPill("Getrennt – versuche neu …", "busy");
+      scheduleReconnect(false);
+    }
+  }, ms);
 }
 
 async function pair(name, code) {
@@ -145,6 +204,7 @@ async function pair(name, code) {
 async function login() {
   if (loggingIn || !chars || !cfg) return;
   loggingIn = true;
+  lastLoginTry = Date.now();
   try {
     sess = null;
     const dk = P.unhex(cfg.key);
@@ -168,13 +228,18 @@ async function login() {
 }
 
 function onDisconnected() {
+  if (autoOn && sess && body && body.me && body.me.ctl) markResume();
   chars = null; sess = null; body = null; lastQ = -1;
   releaseWakeLock();
   setPill("Getrennt", "");
   render();
+  scheduleReconnect(false);
 }
 
 async function disconnect() {
+  setAuto(false);                        // ausdruecklich getrennt -> nicht neu verbinden
+  saveFlag(sessionStorage, RESUME_KEY, null);
+  clearTimeout(reconnTimer); reconnTimer = null;
   try { if (sess) await sendSigned({ t: "bye" }); } catch (e) { /* egal */ }
   if (device && device.gatt.connected) device.gatt.disconnect();
   onDisconnected();
@@ -194,7 +259,20 @@ function onBody(b) {
   for (const r of b.r || []) {
     if (r.i && !seen.has(r.i) && mine.has(r.i)) { seen.add(r.i); toast(r.m, !r.ok); }
   }
+  maybeResume();
   render();
+}
+
+// Bedienung nur dann von selbst zurueckholen, wenn WIR sie wegen Verlassen/Neuladen
+// abgegeben haben -- nie, wenn der PC sie zurueckgeholt hat.
+function markResume() { saveFlag(sessionStorage, RESUME_KEY, String(Date.now())); }
+function maybeResume() {
+  const at = Number(loadFlag(sessionStorage, RESUME_KEY) || 0);
+  if (!at || !sess || !fresh() || document.visibilityState !== "visible") return;
+  const me = body.me || {};
+  if (me.ctl && Date.now() - at < RESUME_MS) return;    // unser »release« ist noch unterwegs
+  saveFlag(sessionStorage, RESUME_KEY, null);
+  if (me.role === "operate" && !me.ctl && Date.now() - at < RESUME_MS) cmd("take");
 }
 
 const mine = new Set();
@@ -206,10 +284,17 @@ function cmd(a, x) {
 }
 
 // ── Herzschlag + Wachhund ────────────────────────────────────────────────
+// Auch bei verdeckter Seite (Chrome drosselt dann auf ~1 Hz): die Sitzung bleibt,
+// die Bedienung ist da schon abgegeben.
 setInterval(() => {
-  if (!sess || document.visibilityState !== "visible") return;
+  if (!chars || !cfg || loggingIn) return;
+  if (!sess) {                                          // Anmeldung fehlgeschlagen -> nachfassen
+    if (autoOn && Date.now() - lastLoginTry > 3000) login().catch(() => {});
+    return;
+  }
   if (opDepth < 3) sendSigned({ t: "hb" }).catch(() => {});
-  if (Date.now() - lastSigAt > SESSION_LOST_MS && chars && !loggingIn) {
+  if (document.visibilityState !== "visible") releaseIfHidden();   // z. B. »take« kam erst nach dem Wegwechseln an
+  if (Date.now() - lastSigAt > SESSION_LOST_MS) {
     login().catch((e) => toast(e.message, true));      // Sitzung weg -> neu anmelden
   }
 }, HB_MS);
@@ -219,13 +304,27 @@ setInterval(render, 250);
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") {
     // Tasche/Sperrbildschirm/App-Wechsel: Bedienung sofort abgeben.
-    if (sess && body && body.me && body.me.ctl) sendSigned({ t: "cmd", a: "release", s: lastQ, i: P.nonce() }).catch(() => {});
+    lastReleaseAt = 0;
+    releaseIfHidden();
     releaseWakeLock();
   } else if (chars && cfg) {
     requestWakeLock();
     if (Date.now() - lastSigAt > SESSION_LOST_MS) login().catch((e) => toast(e.message, true));
+  } else {
+    scheduleReconnect(true);
   }
 });
+// Verdeckte Seite darf nie bedienen: solange der PC uns noch Bedienung meldet, abgeben.
+let lastReleaseAt = 0;
+function releaseIfHidden() {
+  if (!sess || !body || !body.me || !body.me.ctl || Date.now() - lastReleaseAt < 1000) return;
+  lastReleaseAt = Date.now();
+  markResume();
+  sendSigned({ t: "cmd", a: "release", s: lastQ, i: P.nonce() }).catch(() => {});
+}
+// Neu laden / schliessen: Seite verschwindet ohne »release« -> PC beendet die Sitzung
+// mit der Verbindung; nach dem Neuladen holen wir die Bedienung zurueck.
+window.addEventListener("pagehide", () => { if (sess && body && body.me && body.me.ctl) markResume(); });
 
 async function requestWakeLock() {
   try { if ("wakeLock" in navigator && !wakeLock) wakeLock = await navigator.wakeLock.request("screen"); } catch (e) { /* egal */ }
@@ -255,7 +354,7 @@ function render() {
   show("pairView", !cfg);
   show("connectView", !!cfg && !sess);
   show("mainView", !!sess && !!body);
-  if (cfg) $("connectInfo").textContent = `Gekoppelt als »${cfg.name}«` + (cfg.role === "view" ? " (nur Ansicht)" : "") + ".";
+  if (cfg) $("connectInfo").textContent = `Gekoppelt als »${cfg.name}«` + (cfg.role === "view" ? " (nur Ansicht)" : "") + ". " + autoHint;
   $("btnConnect").disabled = loggingIn;
   $("btnConnect").textContent = connected ? "Anmelden" : "Mit G1 verbinden";
   $("estop").disabled = !sess;
@@ -307,7 +406,8 @@ function render() {
   const grasp = st.mode === "grasp" && !st.pend;
   show("secGrasp", grasp);
   for (const id of ["btnHandsOpen", "btnHandsClose", "btnLeftClose", "btnRightClose", "btnSafe", "btnHome",
-    "btnPoseGo", "btnPoseSave"]) $(id).disabled = !can;
+    "btnPoseGo"]) $(id).disabled = !can;
+  $("btnPoseSave").disabled = !(operator && ctl);     // Speichern bewegt nichts: auch bei »Daten alt«
   renderSeqs(sequences(), can);
   $("btnSeqNext").disabled = !can;
   for (const [id, m] of [["btnSeqAuto", "auto"], ["btnSeqStep", "step"]]) {
@@ -479,7 +579,8 @@ $("btnPoseSave").addEventListener("click", openSave);
 $("saveCancel").addEventListener("click", () => show("saveSheet", false));
 $("saveOk").addEventListener("click", () => {
   const name = $("saveName").value.trim().replace(/\|/g, "/");
-  if (!name || !(fresh() && body.me && body.me.ctl)) { toast("Anzeige nicht aktuell — nichts gespeichert.", true); return; }
+  // Speichern bewegt nichts: nur Bedienung noetig, keine frische Anzeige.
+  if (!name || !(body && body.me && body.me.ctl)) { toast("Erst »Bedienen« – nichts gespeichert.", true); return; }
   const clean = (v) => v.replace(/\|/g, "/");
   cmd("pose_save", `${saveMask()}|${clean($("saveCat").value)}|${clean($("saveSeq").value)}|${name}`);
   show("saveSheet", false);
@@ -536,6 +637,7 @@ $("btnPair").addEventListener("click", busy($("btnPair"), async () => {
   await login();
 }));
 $("btnConnect").addEventListener("click", busy($("btnConnect"), async () => {
+  clearTimeout(reconnTimer); reconnTimer = null;
   if (!chars) await connect();
   await login();
 }));
@@ -549,7 +651,10 @@ $("estop").addEventListener("click", () => {
   cmd("estop");
   if (navigator.vibrate) navigator.vibrate(200);
 });
-$("btnTake").addEventListener("click", () => cmd(body && body.me && body.me.ctl ? "release" : "take"));
+$("btnTake").addEventListener("click", () => {
+  saveFlag(sessionStorage, RESUME_KEY, null);
+  cmd(body && body.me && body.me.ctl ? "release" : "take");
+});
 $("btnStopMove").addEventListener("click", () => cmd("cancel"));
 $("btnSeqNext").addEventListener("click", () => cmd("seq_next"));
 $("btnSeqAuto").addEventListener("click", () => cmd("seq_mode", "auto"));
@@ -582,7 +687,7 @@ $("btnHome").addEventListener("click", () => confirmAction("Grundstellung",
 
 // Version der Handy-Seite; muss zu CACHE in sw.js passen. Kein Auto-Update: eine neue Version
 // wartet im Hintergrund, bis hier »Aktualisieren« getippt wird.
-const VERSION = "v5";
+const VERSION = "v7";
 $("version").textContent = `Handy-Seite ${VERSION}`;
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then((reg) => {
@@ -600,3 +705,4 @@ if ("serviceWorker" in navigator) {
   }).catch(() => {});
 }
 render();
+if (cfg && autoOn) scheduleReconnect(true);

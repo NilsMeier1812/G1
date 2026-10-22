@@ -10,9 +10,9 @@ Dienst SERVICE_UUID:
   NOTIFY  (read, notify)   kurzer Zaehler: TX hat sich geaendert
   TX0..3  (read)           TX-Text in Seiten (protocol.tx_pages)
 
-Adapter per G1_PHONE_BT_ADAPTER (Default hci0). Mit nur EINEM Dongle teilt
-sich das Handy den Funkchip mit dem Controller -- spaeter zweiten Dongle
-(hci1) nehmen. Der Server scannt nie und aendert am Adapter nichts ausser
+Adapter per G1_PHONE_BT_ADAPTER: "auto" (Default, choose_adapter), "hciN" oder
+die MAC des Dongles. "auto" nimmt bei zwei Dongles den OHNE gekoppelten
+Controller -- Controller und Handy funken dann getrennt. Der Server scannt nie und aendert am Adapter nichts ausser
 dem Werben (Advertising), solange er laeuft.
 
 encrypt=True verlangt zusaetzlich BLE-Kopplung (encrypt-read/-write) -- die
@@ -142,6 +142,44 @@ if HAVE_DBUS:
             pass
 
 
+GAMEPAD_ICONS = ("input-gaming", "input-joystick")
+
+
+def _unwrap(v):
+    return v.value if hasattr(v, "value") and hasattr(v, "signature") else v
+
+
+def choose_adapter(objects, wanted="auto"):
+    """BlueZ-GetManagedObjects (Werte schon ausgepackt) -> (pfad, grund) oder
+    (None, fehler). wanted: "auto" | "hciN" | MAC (AA:BB:..). "auto": Adapter
+    ohne gekoppelten/verbundenen Controller (Icon input-gaming), eingeschaltete
+    zuerst; gibt es nur Adapter MIT Controller (ein Dongle), den ersten."""
+    adapters = {p: i["org.bluez.Adapter1"] for p, i in objects.items() if "org.bluez.Adapter1" in i}
+    if not adapters:
+        return None, "kein Bluetooth-Adapter gefunden"
+    wanted = (wanted or "auto").strip()
+    if wanted.lower().startswith("hci"):
+        path = f"/org/bluez/{wanted.lower()}"
+        return (path, wanted.lower()) if path in adapters else (None, f"Adapter {wanted} fehlt")
+    if wanted.lower() != "auto":
+        for path, a in sorted(adapters.items()):
+            if str(a.get("Address", "")).upper() == wanted.upper():
+                return path, f"{path.rsplit('/', 1)[-1]} = {wanted.upper()}"
+        return None, f"Adapter {wanted} nicht gefunden"
+    pads = set()
+    for i in objects.values():
+        d = i.get("org.bluez.Device1")
+        if d and str(d.get("Icon", "")) in GAMEPAD_ICONS and (d.get("Paired") or d.get("Connected")):
+            pads.add(d.get("Adapter"))
+    free = [p for p in sorted(adapters) if p not in pads]
+    if free:
+        free.sort(key=lambda p: not adapters[p].get("Powered", False))
+        why = "ohne Controller" if pads else "einziger Adapter" if len(adapters) == 1 else "auto"
+        return free[0], f"{free[0].rsplit('/', 1)[-1]}, {why}"
+    first = sorted(adapters)[0]
+    return first, f"{first.rsplit('/', 1)[-1]}, geteilt mit Controller"
+
+
 def _opt(options, key, default=None):
     v = options.get(key) if options else None
     return default if v is None else getattr(v, "value", v)
@@ -151,7 +189,7 @@ class BleServer:
     """start() -> Thread mit asyncio-Loop; stop() raeumt auf. state: Text fuer
     die GUI ("aus" | "startet" | "wirbt" | "Fehler: ...")."""
 
-    def __init__(self, gateway, adapter="hci0", name="G1", encrypt=False,
+    def __init__(self, gateway, adapter="auto", name="G1", encrypt=False,
                  log=None, bus_address=None):
         self.gw = gateway
         self.adapter = adapter
@@ -164,6 +202,7 @@ class BleServer:
         self._thread = None
         self._bus = None
         self._lines = P.LineBuffer()
+        self.adapter_used = self.adapter
         self._tx = P.TxPages()   # Seiten + Momentaufnahme je Geraet
         self._chars = []
         gateway.on_tx = self._on_tx
@@ -286,8 +325,19 @@ class BleServer:
         for ch in self._chars:
             bus.export(ch.path, ch)
         bus.export(f"{APP_PATH}/adv0", self.adv)
-        path = f"/org/bluez/{self.adapter}"
-        self._step = f"BlueZ-Adapter {path} (laeuft bluetoothd?)"
+        self._step = "BlueZ-Adapter suchen (laeuft bluetoothd?)"
+        reply = await bus.call(Message(destination=BLUEZ, path="/",
+                                       interface="org.freedesktop.DBus.ObjectManager",
+                                       member="GetManagedObjects"))
+        if reply.message_type == MessageType.ERROR:
+            raise RuntimeError(f"{reply.error_name}: {reply.body}")
+        objects = {p: {i: {k: _unwrap(v) for k, v in props.items()} for i, props in ifs.items()}
+                   for p, ifs in reply.body[0].items()}
+        path, why = choose_adapter(objects, self.adapter)
+        if path is None:
+            raise RuntimeError(why)
+        self.adapter_used = why
+        self._step = f"BlueZ-Adapter {path}"
         intro = await bus.introspect(BLUEZ, path)
         obj = bus.get_proxy_object(BLUEZ, path, intro)
         try:
@@ -310,7 +360,7 @@ class BleServer:
             body=["type='signal',sender='org.bluez',interface='org.freedesktop.DBus.Properties',"
                   "member='PropertiesChanged',arg0='org.bluez.Device1'"]))
         self.gw.refresh_tx()
-        self.state = f"wirbt als »{self.name}« ({self.adapter})"
+        self.state = f"wirbt als »{self.name}« ({self.adapter_used})"
         self._log(f"Handy-Bluetooth bereit: {self.state}")
 
     async def _teardown(self):

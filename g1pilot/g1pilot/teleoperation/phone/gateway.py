@@ -46,7 +46,10 @@ AUTH_MAX_FAILS = 5            # je Geraet, dann AUTH_LOCK_S gesperrt
 AUTH_LOCK_S = 60.0
 CONTROL_TIMEOUT_S = 2.0       # ohne Herzschlag -> Steuerhoheit weg
 SESSION_TIMEOUT_S = 4.0       # ohne gueltige Nachricht -> Sitzung weg
-STATUS_MAX_LAG = 5            # Statusnummern (~1 s bei 5 Hz)
+# Statusnummern (3 s bei 5 Hz). Das Handy sperrt selbst schon nach 1,5 s ohne frischen
+# Status ("Daten alt"); das hier faengt nur unterwegs haengengebliebene Befehle ab.
+# Mit 1 s (frueher 5) wurden gueltige Befehle ueber langsames BLE oft verworfen.
+STATUS_MAX_LAG = 15
 MAX_NAME = 32
 MAX_ARG = 96                  # Zeichen; Pose speichern: "maske|kategorie|name"
 CATALOG_MAX = 1100            # Byte JSON; groesser -> hintere Kategorien weg ("cut")
@@ -68,7 +71,7 @@ ACTIONS = {
     "safe":    (ROLE_OPERATE, True, True),
     "home":    (ROLE_OPERATE, True, True),
     "pose":    (ROLE_OPERATE, True, True),
-    "pose_save": (ROLE_OPERATE, True, True),
+    "pose_save": (ROLE_OPERATE, True, False),     # bewegt nichts -> kein Statusbezug
     "move":    (ROLE_OPERATE, True, True),
 }
 # Aktionen, die die GUI selbst ausfuehrt (take/release erledigt das Gateway).

@@ -222,6 +222,9 @@ def test_stale_status_reference_rejected(env):
     assert gw.tick()[0] == [] and "nicht aktuell" in ph.result(cid)["m"]
     cid = ph.cmd("ack", seq=gw.status_seq + 3)           # aus der Zukunft
     assert gw.tick()[0] == []
+    cid = ph.cmd("pose_save", "1111|Demo||X", seq=old)   # Speichern bewegt nichts
+    assert [x["action"] for x in gw.tick()[0]] == ["pose_save"]
+    assert G.STATUS_MAX_LAG >= 10                         # >= 2 s bei 5 Hz (langsames BLE)
 
 
 def test_duplicate_command_id_once(env):
