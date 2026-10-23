@@ -213,8 +213,9 @@ if [ "$G1_MODE" = "real" ]; then
     || echo "Gehen mit Deadman" )
   echo -e "   PS4-Controller : ${G}G1_PS4_ARMS=${G1_PS4_ARMS}${R} ${DIM}(${_ps4_lbl})${R}"
   echo -e "   ${DIM}Kein Auto-Start: Der Roboter bewegt sich erst, wenn er in der${R}"
-  echo -e "   ${DIM}Bedienoberflaeche gestartet wird (Demo-GUI: 'Roboter starten', Streamdeck: START).${R}"
-  echo -e "   ${Y}NOT-HALT / E-STOP = Damp = Roboter sackt ZUSAMMEN (sichern!).${R}"
+  echo -e "   ${DIM}Bedienoberflaeche gestartet wird (Demo-GUI: 'Start' in der Startleiste, Streamdeck: START).${R}"
+  echo -e "   ${Y}NOT-HALT / E-STOP: Arme schlaff, Beine bleiben stehen (kein Damp).${R}"
+  echo -e "   ${Y}Voll-Notaus (Controller R1+L1+PS 2 s) = Damp = Roboter sackt in den Kran (sichern!).${R}"
   echo -e "   ${DIM}Checkliste vor dem ersten Lauf: g1pilot/docs/70_echtroboter_anleitung.md${R}"
   echo
   if [ "$ASSUME_YES" = "1" ]; then

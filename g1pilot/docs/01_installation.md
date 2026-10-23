@@ -78,8 +78,8 @@ docker run --rm hello-world   # muss ohne sudo durchlaufen
 **4. Repository klonen**
 
 ```bash
-git clone https://github.com/nilsmeier1812/g1simrepo.git
-cd g1simrepo/g1pilot
+git clone https://github.com/NilsMeier1812/G1.git
+cd G1/g1pilot
 ```
 
 **5. Images bauen** (erstmalig, ca. 8 Minuten; lädt ROS 2 Humble, MuJoCo,
@@ -88,6 +88,11 @@ Pinocchio usw.)
 ```bash
 make build-sim         # baut g1pilot-sim:v1.1.0 + g1pilot-mujoco:v1.0
 ```
+
+Für den **echten Roboter** stattdessen bzw. zusätzlich `make build-real`
+(~10 min, Image `g1pilot-real:v1.2.0`). Der komplette Ablauf vom frischen PC
+bis zur Demo-GUI am G1 steht in
+[70_echtroboter_anleitung.md](70_echtroboter_anleitung.md#kurzfassung-frischer-pc--demo-gui-am-echten-g1).
 
 **5b. Umgebungs-Builder / Scene-Editor einrichten** (einmalig, braucht
 Internet für PyPI)
@@ -169,8 +174,8 @@ sudo service docker start
 
 # Repo INS WSL-Dateisystem klonen (NICHT nach /mnt/c/... — das ist langsam)
 cd ~
-git clone https://github.com/nilsmeier1812/g1simrepo.git
-cd g1simrepo/g1pilot
+git clone https://github.com/NilsMeier1812/G1.git
+cd G1/g1pilot
 make build-sim
 # Umgebungs-Builder einrichten (Schritt 5b oben)
 (cd ../unitree_mujoco/scene_editor && ./setup.sh)

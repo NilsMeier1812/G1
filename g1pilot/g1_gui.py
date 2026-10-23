@@ -1008,7 +1008,8 @@ class RealFrame(tk.Frame):
         tk.Label(gate,
                  text=("Kein Auto-Start: der Roboter bewegt sich erst, wenn er in der\n"
                        "Bedienoberfläche gestartet wird (Demo-GUI: »Start« in der Startleiste,\n"
-                       "Streamdeck: START). NOT-HALT = Damp = Roboter sackt zusammen (sichern!).\n"
+                       "Streamdeck: START). NOT-HALT: Arme schlaff, Beine bleiben stehen.\n"
+                       "Voll-Notaus (Controller R1+L1+PS 2 s) = Damp = sackt in den Kran.\n"
                        "Checkliste vorher: g1pilot/docs/70_echtroboter_anleitung.md"),
                  bg="#3a2326", fg=FG, justify="left",
                  font=("TkDefaultFont", 9)).pack(anchor="w", padx=12, pady=(2, 6))
