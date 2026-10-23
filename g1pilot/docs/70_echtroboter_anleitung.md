@@ -10,82 +10,199 @@ Architektur in Kürze: Unterkörper = Unitrees Onboard-Loco-Controller
 [31_loco_technik.md](31_loco_technik.md) und
 [11_arm_manipulation_technik.md](11_arm_manipulation_technik.md).
 
+## Kurzfassung: frischer PC → Demo-GUI am echten G1
+
+Für Eilige. Jeder Schritt ist unten ausführlich beschrieben.
+
+| # | Wo | Schritt | Prüfen |
+|---|---|---|---|
+| 1 | PC, mit Internet | Ubuntu nativ, Pakete + Docker ([Abschnitt 0](#0--neuer-pc-einmalig-mit-internet)) | `docker run --rm hello-world` ohne sudo |
+| 2 | PC, mit Internet | `git clone https://github.com/NilsMeier1812/G1.git`, `cd G1/g1pilot`, `make build-real` | `docker images \| grep g1pilot-real` |
+| 3 | PC | Controller per Bluetooth koppeln (optional) | `ls /dev/input/by-id/` zeigt `…event-joystick` |
+| 4 | PC + G1 | LAN-Kabel, feste IP `192.168.123.222/24` ([B](#b--netzwerk-ersteinrichtung)) | `ping 192.168.123.161` |
+| 5 | PC | `./start.sh` → *Echter Roboter* ([C](#c--stack-starten)) | Demo-GUI „— REAL“ geht auf |
+| 6 | PC | DDS-Check ([D](#d--dds-verbindung-prüfen-bevor-irgendetwas-kommandiert-wird)) | `rt/lowstate` ~500 Hz |
+| 7 | G1 am Kran | Demo-GUI: **Start** → **Preparation** → Kran lockern → **Walk** ([F](#f--ablauf-der-ersten-tests)) | Info-Zeile „G1: Walk mit Taille (FSM 501)“ |
+| 8 | | Notaus kennen ([Notaus-Reflex](#notaus-reflex-auswendig-lernen)) | zweite Person mit Unitree-Fernbedienung |
+
+## 0 · Neuer PC (einmalig, mit Internet)
+
+Alles in diesem Abschnitt braucht Internet (apt, Docker Hub, GitHub, PyPI).
+Am besten erledigen, **bevor** der PC ans Roboter-LAN kommt. Danach läuft
+der Real-Stack komplett offline.
+
+**Rechner:** nativer Linux-PC (Ubuntu 22.04 oder 24.04), freier
+Ethernet-Port (USB-Ethernet-Adapter geht auch), X11-Desktop. **Kein WSL2**,
+denn das Unitree-SDK braucht die Netzwerkkarte direkt, und DDS kommt durch die
+WSL2-NAT nicht zuverlässig. Keine GPU nötig.
+
+1. **Pakete und Docker** wie in [01_installation.md](01_installation.md)
+   Schritte 1–3 (System-Pakete inkl. `python3-tk` für das grafische
+   Startmenü, Docker Engine + Compose-Plugin, Docker ohne `sudo`). Danach
+   einmal ab- und wieder anmelden. Für das Prüfen der Hände zusätzlich
+   `sudo apt install netcat-openbsd` (für `nc`).
+2. **Repository holen** (gearbeitet wird auf Branch `main`):
+   ```bash
+   git clone https://github.com/NilsMeier1812/G1.git
+   cd G1/g1pilot
+   git checkout main
+   ```
+   Ist das Repo privat, braucht der PC einen GitHub-Zugang (SSH-Key oder
+   Personal Access Token).
+3. **Real-Image bauen** (ca. 10 min):
+   ```bash
+   make build-real          # -> Image g1pilot-real:v1.2.0
+   ```
+   Das Sim-Image (`make build-sim`) wird für den echten Roboter **nicht**
+   gebraucht. Ohne fertiges Image versucht der erste Start selbst zu bauen.
+   Hängt der PC dann schon nur am Roboter-LAN, bricht der Build ab.
+4. **Controller koppeln** (optional, PS4 oder Xbox). Bluetooth am Host:
+   ```bash
+   bluetoothctl
+   #  power on
+   #  scan on            (PS4: Share + PS halten, bis die LED blitzt)
+   #  pair <MAC>
+   #  trust <MAC>
+   #  connect <MAC>
+   ```
+   Per USB-Kabel geht es ohne Koppeln. Prüfen:
+   `ls /dev/input/by-id/` zeigt einen `…event-joystick`-Eintrag. Details und
+   Xbox: [43_ps4_controller.md](43_ps4_controller.md#xbox-controller).
+5. **Daten vom alten PC:**
+   - Gespeicherte **Posen und Abläufe** liegen versioniert in
+     `g1pilot/data/arm_poses.json`. Wurden auf dem alten PC neue Posen
+     gespeichert, dort vorher committen und pushen (oder die Datei kopieren).
+   - **Gekoppelte Handys** stehen in `~/.config/g1pilot/phone_devices.json`
+     auf dem alten PC. Entweder die Datei kopieren oder die Handys neu
+     koppeln ([44_handy_bedienung.md](44_handy_bedienung.md)).
+   - Die zuletzt gewählten Startmenü-Optionen (`~/.config/g1pilot/launcher.json`)
+     sind nur Komfort. Auf dem neuen PC einmal neu auswählen.
+
 ## A · Vor dem Einschalten
 
 - [ ] Gantry/Traggurt für die ersten Balance-/Geh-Tests, oder mindestens
       2 m freie Sturzfläche in alle Richtungen.
-- [ ] Eine zweite Person hält die **Unitree-Fernbedienung** bereit — das ist
+- [ ] Eine zweite Person hält die **Unitree-Fernbedienung** bereit. Sie ist
       immer der übergeordnete Notaus, über allem anderen.
-- [ ] E-Stop-Semantik verstanden (siehe Abschnitt „Notaus" unten).
+- [ ] E-Stop-Semantik verstanden (siehe Abschnitt „Notaus“ unten).
 - [ ] Akku geladen, keine Kabel/Hindernisse in Fußnähe.
 - [ ] Erste Arm-Tests am hängenden/knienden Roboter, nicht am stehenden.
 
 ## B · Netzwerk (Ersteinrichtung)
 
-Voraussetzung: nativer Linux-PC mit freiem Ethernet-Port. **Kein WSL2** für
-den echten Roboter — das SDK braucht die physische Netzwerkkarte direkt, das
-funktioniert durch die WSL2-NAT nicht zuverlässig (die Simulation unter
-WSL2 ist hiervon nicht betroffen).
-
 | Adresse | Wer |
 |---|---|
 | `192.168.123.161` | G1-Onboard-PC (DDS-Quelle) |
 | `192.168.123.210` / `.211` | Inspire-Hand links/rechts (Modbus TCP 6000) |
-| `192.168.123.222` | eigener PC (selbst vergeben, Konvention) |
+| `192.168.123.222` | eigener PC (selbst vergeben, Konvention; jede freie `.x` geht) |
 
 1. G1 einschalten, per Ethernet-Kabel mit dem PC verbinden.
-2. Interface-Namen finden: `ip -br link` (z. B. `enp3s0`, `eth0`; `lo`/WLAN
-   ignorieren).
-3. Statische IP vergeben:
-   ```bash
-   sudo ip addr add 192.168.123.222/24 dev <NIC>
-   sudo ip link set <NIC> up
-   ```
-   Dauerhaft über NetworkManager (kein Gateway/DNS eintragen, sonst
-   versucht der PC, über das Roboter-LAN ins Internet zu gehen):
+2. Interface-Namen finden: `ip -br link` (z. B. `enp3s0`, `enx…` bei
+   USB-Adaptern, `eth0`; `lo`, `wl…`/WLAN und `docker0` ignorieren). Das
+   richtige Interface ist das, das beim Einstecken des Kabels auf `UP`
+   springt.
+3. Statische IP **dauerhaft** über NetworkManager vergeben. Kein Gateway und
+   kein DNS eintragen, sonst versucht der PC, über das Roboter-LAN ins
+   Internet zu gehen. Das WLAN bleibt fürs Internet nutzbar.
    ```bash
    sudo nmcli con add type ethernet ifname <NIC> con-name g1-robot \
-        ipv4.method manual ipv4.addresses 192.168.123.222/24
+        ipv4.method manual ipv4.addresses 192.168.123.222/24 \
+        ipv4.never-default yes ipv6.method disabled
    sudo nmcli con up g1-robot
+   ip -br addr show <NIC>      # muss 192.168.123.222/24 zeigen
    ```
+   Nur zum schnellen Ausprobieren geht auch
+   `sudo ip addr add 192.168.123.222/24 dev <NIC> && sudo ip link set <NIC> up`.
+   Diese Adresse überlebt aber kein Abziehen des Kabels und keinen Neustart,
+   und NetworkManager kann sie wieder entfernen.
 4. Erreichbarkeit prüfen:
    ```bash
    ping -c3 192.168.123.161
    ping -c3 192.168.123.210   # nur mit Inspire-Händen
    nc -zv 192.168.123.210 6000
+   nc -zv 192.168.123.211 6000
    ```
-   Ohne Ping zum Roboter hat nichts Weiteres Sinn — Kabel/IP/Interface
-   prüfen, bevor es weitergeht.
-5. Firewall beachten: `sudo ufw status` — falls aktiv, den DDS-UDP-Verkehr
-   erlauben (`sudo ufw allow in on <NIC>`) oder deaktivieren.
+   Ohne Ping zum Roboter hat nichts Weiteres Sinn. Erst Kabel, IP und
+   Interface prüfen, dann weitermachen.
+5. Firewall beachten: `sudo ufw status`. Ist sie aktiv, den DDS-UDP-Verkehr
+   auf dem Roboter-Interface erlauben (`sudo ufw allow in on <NIC>`).
 
 Die Interface-Auswahl im Startmenü markiert die NIC mit
 `192.168.123.x`-Adresse automatisch als Vorschlag und warnt, wenn das
 gewählte Interface keine solche Adresse hat.
 
+**Wie die beiden DDS-Netze zusammenspielen (nichts einzustellen):** Im
+Container laufen zwei DDS-Teilnehmer nebeneinander. Das Unitree-SDK spricht
+auf **Domain 0** über das gewählte `ROBOT_INTERFACE` mit dem G1. Der
+ROS-2-Graph der eigenen Nodes läuft auf **Domain 1** und nur über Loopback
+(`docker/cyclonedds.xml`, kein Multicast). Beides setzt Compose bzw. das
+Real-Image selbst. Eine eigene `CYCLONEDDS_URI` oder `ROS_DOMAIN_ID` auf dem
+Host ist nicht nötig, der Container nimmt ohnehin seine eigenen Werte.
+
 ## C · Stack starten
 
 ```bash
-cd g1pilot && ./start.sh
-# -> "Echter Roboter" wählen
-# -> Interface bestätigen, Bedienoberfläche (Demo-GUI / Streamdeck),
-#    Hände ja/nein + IPs, RViz an, Geh-Limits prüfen
-# -> Sicherheitshinweis bestätigen (Text-Menü: "REAL" eintippen)
+cd G1/g1pilot && ./start.sh
 ```
 
-Erwartung: Container startet, Build läuft durch, RViz und die gewählte
-Bedienoberfläche (Titel „— REAL") öffnen sich. **Der Roboter tut nichts von selbst.**
+Im grafischen Startmenü **Echter Roboter** wählen:
+
+| Abschnitt | Einstellung |
+|---|---|
+| Verbindung zum G1 | Interface mit `192.168.123.x` (wird vorgeschlagen, grüner Hinweis „Im Roboter-LAN“) |
+| Bedienoberfläche | **Demo-GUI** (Vorführung) oder Streamdeck (Entwicklung, alle Einzelfunktionen) |
+| Ausstattung | Inspire-Hände + IPs; RViz; **PS4-Controller für Arme + Hände** (PS4 oder Xbox, siehe unten); Handy-Zugang (nur Demo-GUI) |
+| Geh-Limits | Default vorwärts 0,4 m/s, seitlich 0,3 m/s, drehen 0,4 rad/s |
+| Erweitert | Modbus-Port, Gamepad-Name, LiDAR (experimentell, nicht für den Normalbetrieb), Images neu bauen |
+
+Danach den Haken „Sicherheitshinweise gelesen“ setzen und **Echten Roboter
+starten**. Die Docker-Ausgabe läuft im Startmenü-Fenster mit.
+
+**Was der Controller-Schalter bedeutet:**
+
+- **an** (`G1_PS4_ARMS=1`, empfohlen mit Demo-GUI): Controller steuert Arme
+  und Hände, **L2 halten + Sticks = Gehen** (Totmann), PS4 oder Xbox.
+  Siehe [43_ps4_controller.md](43_ps4_controller.md).
+- **aus** (`G1_PS4_ARMS=0`): alter Weg, nur PS4. Der Controller steuert
+  ausschließlich das Gehen (Deadman Button 8 + Sticks), keine Arme.
+
+Ohne grafisches Menü (kein `python3-tk`, SSH): `./start.sh --menu` fragt
+dasselbe im Terminal ab und verlangt zum Schluss die Eingabe `REAL`. Ganz
+ohne Rückfragen:
+```bash
+G1_MODE=real ROBOT_INTERFACE=<NIC> G1_GUI=demo G1_INSPIRE_HANDS=1 \
+  G1_PS4_ARMS=1 G1_REAL_CONFIRM=1 ./start.sh --yes
+```
+`make real ROBOT_INTERFACE=<NIC>` geht auch, nimmt aber die Compose-Defaults
+(u. a. Streamdeck statt Demo-GUI, ohne Hände), solange die Variablen nicht
+gesetzt sind.
+
+Erwartung: Container startet, `colcon build` läuft durch, RViz und die gewählte Bedienoberfläche (Titel „— REAL")
+öffnen sich. **Der Roboter tut nichts von selbst.**
 
 ## D · DDS-Verbindung prüfen (bevor irgendetwas kommandiert wird)
 
+In einem zweiten Terminal, während der Stack läuft:
+
 ```bash
-ros2 run g1pilot dds_check --interface $ROBOT_INTERFACE
+cd G1/g1pilot
+docker compose --profile real exec g1pilot-real \
+  bash -ic 'ros2 run g1pilot dds_check --interface $ROBOT_INTERFACE'
 ```
+
+(`make shell-real` öffnet eine Shell im Container; dort reicht
+`ros2 run g1pilot dds_check --interface $ROBOT_INTERFACE`.)
 
 Erwartung: `rt/lowstate` kommt mit ~500 Hz, `mode_machine` ≠ 0, die
 Arm-Gelenkwinkel ändern sich plausibel, wenn die Arme von Hand bewegt
 werden. Ohne `lowstate`: falsches Interface, Roboter nicht im
-192.168.123.x-Netz, oder Kabelproblem — nicht weitermachen.
+192.168.123.x-Netz oder Kabelproblem. Dann nicht weitermachen.
+
+Weitere Lebenszeichen ohne Extra-Werkzeug: Die Demo-GUI zeigt in der
+Startleiste den Onboard-Modus („G1: Damp (FSM 1)“ o. ä.). Steht dort
+„keine Daten vom loco_client“ oder „Modus unbekannt (keine Antwort vom
+Roboter)“, kommt `loco_client` nicht an den G1. Mit Inspire-Händen darf
+keine Hand „nicht verbunden“ zeigen.
 
 ## E · Guarantees, die bereits im Code stehen
 
@@ -141,6 +258,32 @@ werden. Ohne `lowstate`: falsches Interface, Roboter nicht im
 
 ## F · Ablauf der ersten Tests
 
+### Mit der Demo-GUI (Normalfall)
+
+Der G1 hängt am Kran, die zweite Person hat die Unitree-Fernbedienung.
+
+1. G1 einschalten und warten, bis er in Damp liegt. Die Startleiste der
+   Demo-GUI zeigt „G1: Damp (FSM 1)“.
+2. **Start** klicken. Das gibt die Modus-Kacheln frei und quittiert einen
+   alten NOT-HALT. Liegt der G1 noch in Damp, stellt `loco_client` ihn dabei
+   auf **Preparation** (FSM 4, Gelenke werden steif).
+3. **Arme zuerst, noch hängend:** Kachel **GREIFEN** übernimmt in
+   Preparation nur die Arme (2-s-Rampe, kein Ruck). Hand mit der GUI oder dem
+   Controller wenig bewegen, dann den NOT-HALT einmal testen (Arme sacken
+   gedämpft) und mit **Start** quittieren.
+4. **Kran lockern**, bis die Füße tragen. Die Startleiste zeigt dann
+   „Bodenkontakt ✓ – »Walk« möglich“ mit der gemessenen Knie-Last.
+5. **Walk** in der Startleiste, zweiter Klick bestätigt „Kran gelockert?“.
+   Info-Zeile: „G1: Walk mit Taille (FSM 501)“.
+6. **GEHEN**: mit dem Joystick der GUI oder mit dem Controller (L2 halten +
+   linker Stick) erst ganz wenig. Loslassen hält an.
+7. Ende: **Real beenden** zweimal (siehe [G](#g--sicher-beenden)).
+
+Die Einzelschritte mit dem Streamdeck und die Hintergründe stehen in den
+folgenden Unterpunkten.
+
+### Einzeltests (Streamdeck-Begriffe)
+
 **1. Hände (Roboter bleibt passiv, hängend/schlaff)**
 
 Hand-GUIs öffnen, Hauptschalter der linken Hand aktivieren, per
@@ -181,11 +324,11 @@ exakt; die Marker folgen der Hand (Leader-Follower).
    fahren, dann `Strg+C` bzw. `docker compose stop`. Erwartung: Log
    „Programmende: Arme fahren langsam in die Onboard-Pose …" und „Arme an
    den Onboard-Regler uebergeben", kein Schwung.
-8. Optional **PS4-Controller für Arme + Hände** (Start mit `G1_PS4_ARMS=1`,
-   Startmenü: Ausstattung): Ablauf in
+8. Optional **PS4-/Xbox-Controller für Arme + Hände** (Start mit
+   `G1_PS4_ARMS=1`, Startmenü: Ausstattung): Ablauf in
    [43_ps4_controller.md](43_ps4_controller.md#echter-roboter). In diesem
-   Modus steuert der Controller **nicht** das Gehen; Schritt 5 unten (PS4-
-   Deadman) gibt es dann nicht.
+   Modus geht das Gehen über **L2 halten + Sticks** (`ps4_walk`), nicht über
+   den alten Deadman-Button 8 aus Schritt 5.
 
 Regelrate-Hinweis: Während ein Marker-Ziel aktiv verfolgt wird, kostet der
 IK-Solve ~20-30 ms/Zyklus — der Regel-Loop läuft dann effektiv mit
@@ -205,16 +348,20 @@ prüfen.
 
 **5. Gehen**
 
-Zuerst **PS4-Pfad** (physischer Deadman; nur ohne PS4-Arm-Modus, also
-`G1_PS4_ARMS=0`), dann Streamdeck:
+Zuerst über den **Controller** (physischer Totmann), dann über die GUI:
 
-1. Controller verbinden (Gerätename passt zu `JOYSTICK_NAME`, Log „Joystick
-   found"). Deadman (Button 8) halten + Stick bewegt den Roboter; loslassen
-   stoppt.
-2. Streamdeck **WALK** klicken (nur nach START BALANCING möglich), dann den
-   virtuellen Joystick vorsichtig ziehen.
+1. Controller verbinden. **Mit `G1_PS4_ARMS=1`** (Controller für Arme +
+   Hände): **L2 halten** (Xbox: LT) + linker Stick geht, rechter Stick dreht; L2
+   loslassen stoppt sofort. L2 wirkt nur, wenn der G1 schon in Walk steht
+   ([43_ps4_controller.md](43_ps4_controller.md#gehen-mit-l2)).
+   **Mit `G1_PS4_ARMS=0`** (alter Weg, nur PS4): Gerätename passt zu
+   `JOYSTICK_NAME`, Log „Joystick found"; Deadman (Button 8) halten + Stick
+   bewegt den Roboter, loslassen stoppt.
+2. Demo-GUI **GEHEN** (nur wenn die Startleiste Walk zeigt) bzw. Streamdeck
+   **WALK** (nur nach START BALANCING), dann den virtuellen Joystick
+   vorsichtig ziehen.
 3. **Deadman-Test (Pflicht):** Während der Roboter geht, das
-   Streamdeck-Fenster schließen. Erwartung: Roboter stoppt von selbst
+   GUI-Fenster schließen. Erwartung: Roboter stoppt von selbst
    innerhalb ≤ 0,5 s und bleibt balanciert stehen. Läuft er weiter, ist das
    ein Fehler — sofort melden.
 4. Geh-Limits konservativ lassen (Default vx=0.4/vy=0.3/vyaw=0.4 m·rad/s,
@@ -242,11 +389,12 @@ Unitree-Fernbedienung, gesichert.
 
 | Situation | Richtige Reaktion |
 |---|---|
-| Sanft anhalten beim Gehen | **START BALANCING** (Roboter bleibt stehen) |
-| Arm fährt falsch, aber ruhig | **ENABLE MANIPULATION aus** (Arme fahren langsam in die Onboard-Pose, dann Übergabe) |
-| Ruckt/schwingt an den Armen, Kontakt mit Mensch/Objekt | **EMERGENCY STOP** (Arme/Hände sofort schlaff; Taille gehalten; Beine: StopMove, Onboard-Regler balanciert weiter) |
-| Hand fährt per PS4-Controller falsch | Stick loslassen bzw. **Kreuz** (Hand steht sofort, Roboter bleibt stehen). PS am Controller = NOT-HALT wie unten |
-| Echte Gefahr / Sturz droht | **Unitree-Fernbedienung** (übergeordnet, Damp dort) — Streamdeck-EMERGENCY dämpft die Beine nicht mehr von selbst (außer `G1_ESTOP_DAMP_LEGS=1`) |
+| Sanft anhalten beim Gehen | Joystick bzw. **L2 loslassen**; Streamdeck: **START BALANCING** (Roboter bleibt stehen) |
+| Arm fährt falsch, aber ruhig | **ENABLE MANIPULATION aus** bzw. Demo-GUI GREIFEN verlassen (Arme fahren langsam in die Onboard-Pose, dann Übergabe) |
+| Ruckt/schwingt an den Armen, Kontakt mit Mensch/Objekt | **NOT-HALT** (Demo-GUI) / **EMERGENCY STOP** (Streamdeck) / **PS** bzw. Xbox-Taste am Controller (Arme/Hände sofort schlaff; Taille gehalten; Beine: StopMove, Onboard-Regler balanciert weiter) |
+| Hand fährt per Controller falsch | Stick loslassen bzw. **Kreuz** / Xbox **A** (Hand steht sofort, Roboter bleibt stehen) |
+| G1 soll sofort ganz aus (Beine weich) | **Voll-Notaus am Controller: R1 + L1 + PS 2 s halten** (Xbox: RB + LB + Xbox-Taste) → ganzer G1 Damp, sackt in den Kran. Quittieren mit »Start« (bleibt in Damp), dann Startleiste Preparation → Walk. Siehe [43_ps4_controller.md](43_ps4_controller.md#voll-notaus-r1--l1--ps) |
+| Echte Gefahr / Sturz droht | **Unitree-Fernbedienung** (übergeordnet, Damp dort). Der normale NOT-HALT dämpft die Beine **nicht** (außer `G1_ESTOP_DAMP_LEGS=1`) |
 
 Was EMERGENCY STOP konkret bewirkt (Stand 2026-10-15): Arme werden
 drehmomentfrei und sacken gedämpft, ohne in eine Home-Pose zu springen (dazu
@@ -372,12 +520,22 @@ Seit 2026-10-19:
 | Log „REAL: … zu hart" | Ein Launchfile übergibt Sim-Gains; die Werte wurden begrenzt. Launchfile korrigieren. |
 | Roboter geht nach GUI-Absturz weiter | Darf nicht passieren (Deadman) — Log von `loco_client` prüfen, melden. |
 | RViz leer | `USE_RVIZ=true`? X11-Freigabe (`xhost +local:root`) gelaufen? |
+| `permission denied … docker.sock` | Benutzer nicht in der Gruppe `docker` oder nicht neu eingeloggt (Abschnitt 0). |
+| Erster Start hängt beim Bauen / Netzwerkfehler im Build | Image noch nicht gebaut und kein Internet über das Roboter-LAN. Mit Internet `make build-real` laufen lassen (Abschnitt 0). |
+| Startmenü zeigt beim Interface „keine IPv4“ | Feste IP fehlt oder ist verloren gegangen (nur mit `ip addr add` gesetzt, Kabel gezogen). `sudo nmcli con up g1-robot`, siehe B. |
+| Ping geht, `dds_check` bekommt nichts | Firewall (`sudo ufw status`), falsches Interface in der Auswahl (z. B. WLAN statt LAN), oder zwei Interfaces im 192.168.123.x-Netz. |
+| `ros2 topic list` im eigenen Terminal leer | Eigene Terminals im Container öffnen (`make shell-real`), nicht auf dem Host. Dort sind `ROS_DOMAIN_ID=1` und die Loopback-DDS-Config schon gesetzt. |
+| Startleiste: „keine Daten vom loco_client“ oder „Modus unbekannt“ | `loco_client` erreicht den G1 nicht (Interface/Kabel) oder die Loco-Firmware spricht einen anderen Dienst: `G1_LOCO_SERVICE=loco` für ai_sport bis 8.1, Default `sport` ab 8.2. |
+| »Walk« gesperrt „kein Bodenkontakt“ | Knie-Last unter `G1_KNEE_LOAD_MIN_NM` (10 Nm). Kran weiter lockern; die Info-Zeile zeigt die gemessenen Werte. |
+| L2 + Stick: G1 geht nicht, lange Vibration | G1 steht nicht in Walk → Startleiste »Walk«. Nach NOT-HALT erst mit »Start« quittieren. |
 
 ## Weiterführend
 
-`G1_ENABLE_LIDAR=1` (+ Compose-Profil `real-full`) schaltet Livox/Navigation
-zu — braucht das große Image und den MID360; siehe
-[50_navigation_anleitung.md](50_navigation_anleitung.md). `arm_sdk` parallel
+`G1_ENABLE_LIDAR=1` bzw. das Compose-Profil `real-full` (`make real-full`)
+schalten Livox/Navigation zu. Beides ist **experimentell und für die
+Demo nicht nötig**: es braucht das große Image (~45 min Build) und den
+MID360, und `real-full` startet noch den alten `bringup_launcher` statt
+`bringup_real`. Siehe [50_navigation_anleitung.md](50_navigation_anleitung.md). `arm_sdk` parallel
 zum Gehen funktioniert konstruktionsbedingt (Gewichts-Überblendung), für die
 ersten Geh-Tests aber die Arme deaktiviert lassen — der natürliche Armschwung
 der Unitree-Steuerung ist dafür besser geeignet.

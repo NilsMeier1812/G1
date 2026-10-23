@@ -35,11 +35,14 @@ Real läuft.
 ## Schnellstart
 
 ```bash
-git clone https://github.com/nilsmeier1812/g1simrepo.git
-cd g1simrepo/g1pilot
+git clone https://github.com/NilsMeier1812/G1.git
+cd G1/g1pilot
 make build-sim
 make sim
 ```
+
+Echter Roboter: Schritt für Schritt vom frischen PC bis zur Demo-GUI in
+[g1pilot/docs/70_echtroboter_anleitung.md](g1pilot/docs/70_echtroboter_anleitung.md).
 
 Ausführliche Installationsanleitung (Linux, Windows/WSL2, Voraussetzungen):
 [g1pilot/docs/01_installation.md](g1pilot/docs/01_installation.md).

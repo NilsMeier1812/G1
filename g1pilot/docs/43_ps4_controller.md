@@ -440,11 +440,14 @@ Mit dem Schalter gilt am echten Roboter:
   am G1 noch nicht geprüft — erster Test am Kran, erst kleine Winkel. Beim
   Drehen streichen die Hände durch den Raum (Hand 40 cm vor dem Körper →
   bei 45° rund 28 cm seitlich), dafür gibt es keine Kollisionsprüfung.
-- **PS = NOT-HALT = Damp:** der Roboter sackt zusammen. Nur drücken, wenn
-  das vertretbar ist (Gantry/hängend). Zum sanften Anhalten **Kreuz**
-  (Hand steht, Roboter bleibt stehen). Übergeordnet bleibt die
-  Unitree-Fernbedienung. Wer PS nur als Stopp will: `G1_PS4_PS_ESTOP=0`
-  (dann wirkt PS wie Kreuz).
+- **PS = NOT-HALT:** Arme und Hände werden sofort schlaff (sacken
+  gedämpft), die Taille bleibt gehalten, die Beine bekommen nur `StopMove`
+  und **kein Damp**: der G1 bleibt stehen (seit 2026-10-15, alter Stand mit
+  `G1_ESTOP_DAMP_LEGS=1`). Den ganzen G1 auf Damp setzt nur der
+  [Voll-Notaus](#voll-notaus-r1--l1--ps) (R1 + L1 + PS 2 s), dann sackt
+  er in den Kran. Zum sanften Anhalten der Hand **Kreuz** (Hand steht,
+  Roboter bleibt stehen). Übergeordnet bleibt die Unitree-Fernbedienung.
+  Wer PS nur als Stopp will: `G1_PS4_PS_ESTOP=0` (dann wirkt PS wie Kreuz).
 - LED-Farbe funktioniert real (Container `privileged`), in der Sim nicht.
 - Hände auf/zu nur mit Inspire-Händen (Ausstattung → Inspire-Hände).
 - **Seit 2026-10-13 auch real geändert** (siehe [Reaktionszeit](#reaktionszeit)):
