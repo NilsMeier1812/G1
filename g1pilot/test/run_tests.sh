@@ -30,7 +30,7 @@ case "${1:-}" in
   planer)     T="test_arm_planner test_arm_controller_real" ;;
   loco)       T="test_loco_client_real test_loco_client_ps4_walk test_ground_contact test_joy_mux test_waist_yaw
                  test_joystick_legacy test_status_line test_demo_gui_ground_precheck
-                 test_demo_gui_temperature" ;;
+                 test_demo_gui_temperature test_walk_diag" ;;
   controller) T="test_ps4_arm_teleop test_ps4_arm_teleop_node test_ps4_joystick test_ps4_walk
                  test_ps4_walk_node test_xbox_layout test_shared_state test_loco_client_ps4_walk
                  test_demo_gui_controller_sync test_arm_mirror test_waist_yaw test_demo_gui_waist" ;;

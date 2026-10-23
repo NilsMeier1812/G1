@@ -82,3 +82,6 @@ hardware/~$armAssembly.SLDASM
 
 *.FCBak
 
+
+# Geh-Diagnose (g1pilot.tools.walk_diag)
+diag_logs/
