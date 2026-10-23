@@ -1123,6 +1123,40 @@ def test_waist_yaw_turn_aborts_motion_and_blocks_goals(ac_module):
         _close(node)
 
 
+def test_waist_yaw_other_hand_stays_after_turn(ac_module):
+    """Bug Nils 2026-10-22: rechte Hand gewaehlt, Huefte ~30 deg gedreht,
+    danach ein Jog-Ziel nur fuer rechts -> die LINKE Hand fuhr zur Pose von vor
+    der Drehung zurueck (IK-Halteziel noch im alten Becken-Bezug). Jetzt:
+    nach dem Nachlauf neue Halteziele mit gedrehter Taille -> links bleibt."""
+    from geometry_msgs.msg import PoseStamped
+    _reset_robot()
+    node = _make_node(ac_module)
+    try:
+        node._arms_controlled_callback(_bool(True))
+        _run(node, 2.4)
+        assert node._weight_state == "on"
+        _turn(node, -1.0, 2.0)                                # ~30 deg rechts
+        assert math.degrees(node._wyaw.target - HOME_YAW) == pytest.approx(-30.0, abs=5.0)
+        _run(node, 2.5)                                       # Nachlauf
+        assert node._wyaw_settle_t0 is None and not node._waist_busy()
+        q_left = node._last_q_target[0:7].copy()
+        q_right = node._last_q_target[7:14].copy()
+        g = PoseStamped()
+        g.header.frame_id = "pelvis"
+        g.pose.position.x, g.pose.position.y, g.pose.position.z = 0.3, -0.25, 0.1
+        g.pose.orientation.w = 1.0
+        for _ in range(40):                                   # Jog-Strom rechts
+            node._right_goal_callback(g)
+            node.main_loop()
+            time.sleep(DT)
+        assert float(np.max(np.abs(node._last_q_target[7:14] - q_right))) > 0.01, \
+            "rechts folgt dem Ziel"
+        assert float(np.max(np.abs(node._last_q_target[0:7] - q_left))) < 1e-3, \
+            "linke Hand bleibt nach der Hueftdrehung stehen"
+    finally:
+        _close(node)
+
+
 def test_waist_yaw_home_waits_for_center(ac_module):
     _reset_robot()
     node = _make_node(ac_module)

@@ -54,6 +54,11 @@ from g1pilot.utils.common import (
     init_dds,
 )
 
+# Hueftdrehung: Nachlauf nach dem Drehen (Messung am Sollwert), siehe
+# _waist_settle_tick.
+WAIST_SETTLE_TOL = math.radians(1.0)
+WAIST_SETTLE_TIMEOUT_S = 1.5
+
 WORKSPACE = {
     "frame": 'pelvis',
     "left_arm": {
@@ -1844,6 +1849,9 @@ class ArmController(Node):
         self._wyaw_meas_tol = math.radians(float(gp("waist_yaw_center_tol_deg")) + 1.0)
         self._wyaw_t_last = None
         self._wyaw_moving_last = False
+        # Nach dem Drehen: Start des Nachlaufs (Messung holt den Sollwert ein);
+        # danach werden die IK-Halteziele neu auf die gedrehte Taille gesetzt.
+        self._wyaw_settle_t0 = None
         self._wyaw_state_t = 0.0
         self._wyaw_reason_logged = None
         # Aufgeschobene Aktion bis die Huefte in der Mitte ist:
@@ -1982,6 +1990,32 @@ class ArmController(Node):
         if self.arms_enabled and not self.walk_mode:
             self._align_ik_to_config(self._last_q_target[0:7], self._last_q_target[7:14])
 
+    def _waist_busy(self) -> bool:
+        """Huefte dreht, faehrt zur Mitte oder laeuft noch nach -> Hand-Ziele
+        und neue Fahrten warten (Arme halten ihre Gelenke)."""
+        return (self._wyaw_moving_last or self._wyaw_pending is not None
+                or self._wyaw_settle_t0 is not None)
+
+    def _waist_settle_tick(self, now: float) -> None:
+        """Nach dem Drehen: sobald die gemessene Taille am Sollwert steht (oder
+        nach WAIST_SETTLE_TIMEOUT_S), die IK-Halteziele auf die aktuelle
+        Gelenkstellung MIT gedrehter Taille setzen. Sonst stehen fuer die nicht
+        bewegte Hand noch Ziele von vor der Drehung (im Becken-Bezug) -- beim
+        naechsten Ziel der anderen Hand faehrt sie dorthin zurueck."""
+        t0 = self._wyaw_settle_t0
+        if t0 is None or self._wyaw_pending is not None:
+            return
+        wy, meas = self._wyaw, self._measured_yaw()
+        settled = (meas is not None and wy.target is not None
+                   and abs(meas - wy.target) <= WAIST_SETTLE_TOL)
+        if not settled and now - t0 < WAIST_SETTLE_TIMEOUT_S:
+            return
+        self._wyaw_settle_t0 = None
+        busy = (self.walk_mode or self.homing_active or self._planned_motion_active
+                or (self._planning_thread is not None and self._planning_thread.is_alive()))
+        if self._arms_held() and not busy:
+            self._align_ik_to_config(self._last_q_target[0:7], self._last_q_target[7:14])
+
     def _waist_yaw_tick(self) -> None:
         """Jeden main_loop-Takt: Sollwert weiterfahren, aufgeschobene Aktion
         ausloesen, Zustand melden."""
@@ -2008,8 +2042,12 @@ class ArmController(Node):
         moving = wy.moving(now)
         if moving and not self._wyaw_moving_last:
             self._waist_motion_start()
+            self._wyaw_settle_t0 = None
+        elif self._wyaw_moving_last and not moving:
+            self._wyaw_settle_t0 = now
         self._wyaw_moving_last = moving
         self._apply_waist_yaw_target()
+        self._waist_settle_tick(now)
         pend = self._wyaw_pending
         if pend is not None:
             timeout = float(self.get_parameter("waist_yaw_center_timeout_s").value)
@@ -2214,11 +2252,14 @@ class ArmController(Node):
             if hasattr(self.ik_solver, "clear_goals"):
                 self.ik_solver.clear_goals()
             self.ik_solver.set_current_configuration({"left": left_q.copy(), "right": right_q.copy()})
+            # FK mit der GEMESSENEN Taille (real), wie die IK-Hauptschleife und
+            # /g1pilot/hand_cmd_pose: mit Taille 0 laegen die Halteziele bei
+            # gedrehter Huefte um den Hueftwinkel daneben.
+            full = self._full_config_with_arms(np.concatenate((left_q, right_q)))
             q_full = pin.neutral(self.ik_solver.model)
-            for i, arm_i in enumerate(LEFT_JOINT_INDICES_LIST):
-                q_full[self.ik_solver._name_to_q_index[self.ik_solver._ros_joint_names[arm_i]]] = left_q[i]
-            for i, arm_i in enumerate(RIGHT_JOINT_INDICES_LIST):
-                q_full[self.ik_solver._name_to_q_index[self.ik_solver._ros_joint_names[arm_i]]] = right_q[i]
+            for jid_idx, ros_name in enumerate(self.ik_solver._ros_joint_names):
+                if ros_name in self.ik_solver._name_to_q_index:
+                    q_full[self.ik_solver._name_to_q_index[ros_name]] = float(full[jid_idx])
             pin.forwardKinematics(self.ik_solver.model, self.ik_solver.data, q_full)
             pin.updateFramePlacements(self.ik_solver.model, self.ik_solver.data)
             T_left  = self.ik_solver.data.oMf[self.ik_solver._fid_left]
@@ -2570,7 +2611,7 @@ class ArmController(Node):
             return "Homing laeuft."
         if self.walk_mode:
             return "WALK aktiv -- Arme haengen in der Lauf-Pose."
-        if self._wyaw_moving_last or self._wyaw_pending is not None:
+        if self._waist_busy():
             return "Huefte dreht gerade."
         if self._planning_thread is not None and self._planning_thread.is_alive():
             return "Es laeuft bereits eine Planung."
@@ -3031,7 +3072,7 @@ class ArmController(Node):
                                              reason="Homing laeuft")
             return
 
-        if self._wyaw_moving_last or self._wyaw_pending is not None:
+        if self._waist_busy():
             # Huefte dreht: Arme halten ihre Gelenkstellung (drehen mit).
             self._publish_marker_goal_status('right', msg.header.stamp, "ignored",
                                              reason="Huefte dreht")
@@ -3069,7 +3110,8 @@ class ArmController(Node):
                 except Exception:
                     self._last_q_target = np.concatenate((self.home_left, self.home_right)).copy()
 
-            self._goal_left_filt  = None
+            # Nur die EIGENE Seite neu beginnen: die andere behaelt ihr Halteziel
+            # (_ik_side_held -> Gelenke exakt), sonst zieht der Nullraum-Term sie weg.
             self._goal_right_filt = None
 
             self.ik_solver.set_current_configuration({
@@ -3113,7 +3155,7 @@ class ArmController(Node):
                                              reason="Homing laeuft")
             return
 
-        if self._wyaw_moving_last or self._wyaw_pending is not None:
+        if self._waist_busy():
             # Huefte dreht: Arme halten ihre Gelenkstellung (drehen mit).
             self._publish_marker_goal_status('left', msg.header.stamp, "ignored",
                                              reason="Huefte dreht")
@@ -3151,8 +3193,9 @@ class ArmController(Node):
                 except Exception:
                     self._last_q_target = np.concatenate((self.home_left, self.home_right)).copy()
 
+            # Nur die EIGENE Seite neu beginnen: die andere behaelt ihr Halteziel
+            # (_ik_side_held -> Gelenke exakt), sonst zieht der Nullraum-Term sie weg.
             self._goal_left_filt  = None
-            self._goal_right_filt = None
 
             self.ik_solver.set_current_configuration({
                 "left":  self._last_q_target[0:7].copy(),
