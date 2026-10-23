@@ -97,22 +97,28 @@ WSL2-NAT nicht zuverlässig. Keine GPU nötig.
 | `192.168.123.222` | eigener PC (selbst vergeben, Konvention; jede freie `.x` geht) |
 
 1. G1 einschalten, per Ethernet-Kabel mit dem PC verbinden.
-2. Interface-Namen finden: `ip -br link` (z. B. `enp3s0`, `enx…` bei
-   USB-Adaptern, `eth0`; `lo`, `wl…`/WLAN und `docker0` ignorieren). Das
-   richtige Interface ist das, das beim Einstecken des Kabels auf `UP`
-   springt.
+2. Interface-Namen finden: `ip -br link`. Gesucht ist das kabelgebundene
+   Interface: `enp…`/`eno…`/`eth0`, `enx…` bei USB-Adaptern. `lo`,
+   `wl…` (WLAN) und `docker0` ignorieren. Das richtige Interface springt beim
+   Einstecken des Kabels auf `UP`. Den Namen einmal in eine Variable legen
+   (Beispiel `enp0s31f6`, **eigenen Namen eintragen**, ohne spitze Klammern):
+   ```bash
+   NIC=enp0s31f6
+   ```
+   Alle folgenden Befehle nutzen `$NIC` und lassen sich so direkt kopieren
+   (im selben Terminal bleiben, sonst `NIC=…` neu setzen).
 3. Statische IP **dauerhaft** über NetworkManager vergeben. Kein Gateway und
    kein DNS eintragen, sonst versucht der PC, über das Roboter-LAN ins
    Internet zu gehen. Das WLAN bleibt fürs Internet nutzbar.
    ```bash
-   sudo nmcli con add type ethernet ifname <NIC> con-name g1-robot \
-        ipv4.method manual ipv4.addresses 192.168.123.222/24 \
-        ipv4.never-default yes ipv6.method disabled
+   sudo nmcli con add type ethernet ifname "$NIC" con-name g1-robot ipv4.method manual ipv4.addresses 192.168.123.222/24 ipv4.never-default yes ipv6.method disabled
    sudo nmcli con up g1-robot
-   ip -br addr show <NIC>      # muss 192.168.123.222/24 zeigen
+   ip -br addr show "$NIC"
    ```
+   Die letzte Zeile muss `192.168.123.222/24` zeigen. Gibt es `g1-robot`
+   schon (z. B. mit falschem Interface), erst `sudo nmcli con delete g1-robot`.
    Nur zum schnellen Ausprobieren geht auch
-   `sudo ip addr add 192.168.123.222/24 dev <NIC> && sudo ip link set <NIC> up`.
+   `sudo ip addr add 192.168.123.222/24 dev "$NIC" && sudo ip link set "$NIC" up`.
    Diese Adresse überlebt aber kein Abziehen des Kabels und keinen Neustart,
    und NetworkManager kann sie wieder entfernen.
 4. Erreichbarkeit prüfen:
@@ -125,7 +131,7 @@ WSL2-NAT nicht zuverlässig. Keine GPU nötig.
    Ohne Ping zum Roboter hat nichts Weiteres Sinn. Erst Kabel, IP und
    Interface prüfen, dann weitermachen.
 5. Firewall beachten: `sudo ufw status`. Ist sie aktiv, den DDS-UDP-Verkehr
-   auf dem Roboter-Interface erlauben (`sudo ufw allow in on <NIC>`).
+   auf dem Roboter-Interface erlauben (`sudo ufw allow in on "$NIC"`).
 
 Die Interface-Auswahl im Startmenü markiert die NIC mit
 `192.168.123.x`-Adresse automatisch als Vorschlag und warnt, wenn das
@@ -170,10 +176,10 @@ Ohne grafisches Menü (kein `python3-tk`, SSH): `./start.sh --menu` fragt
 dasselbe im Terminal ab und verlangt zum Schluss die Eingabe `REAL`. Ganz
 ohne Rückfragen:
 ```bash
-G1_MODE=real ROBOT_INTERFACE=<NIC> G1_GUI=demo G1_INSPIRE_HANDS=1 \
+G1_MODE=real ROBOT_INTERFACE=$NIC G1_GUI=demo G1_INSPIRE_HANDS=1 \
   G1_PS4_ARMS=1 G1_REAL_CONFIRM=1 ./start.sh --yes
 ```
-`make real ROBOT_INTERFACE=<NIC>` geht auch, nimmt aber die Compose-Defaults
+`make real ROBOT_INTERFACE=$NIC` geht auch, nimmt aber die Compose-Defaults
 (u. a. Streamdeck statt Demo-GUI, ohne Hände), solange die Variablen nicht
 gesetzt sind.
 
@@ -510,7 +516,7 @@ Seit 2026-10-19:
 |---|---|
 | `dds_check`: kein `lowstate` | Falsches `ROBOT_INTERFACE`; PC nicht im 192.168.123.x-Netz; Kabel. |
 | „create domain error" im Log | `ROS_DOMAIN_ID` == Unitree-Domain (muss auf real 1 vs. 0 sein — Compose setzt das automatisch; eigene Terminals ebenfalls auf `ROS_DOMAIN_ID=1` setzen). |
-| Hand „NICHT VERBUNDEN" | IP/Port prüfen (`nc -zv <ip> 6000`); Hand mit Strom versorgt? |
+| Hand „NICHT VERBUNDEN" | IP/Port prüfen (`nc -zv 192.168.123.210 6000` bzw. `.211`); Hand mit Strom versorgt? |
 | „No joystick found" | `/dev/input` gemountet (Compose-Profil `real` braucht `privileged: true`)? Gerätename weicht ab → `JOYSTICK_NAME` setzen. Geräte anzeigen: `python3 -c "import evdev;[print(p, evdev.InputDevice(p).name) for p in evdev.list_devices()]"` |
 | WALK-Klick ohne Wirkung | Demo-GUI: G1 erst über die Startleiste (Damp → Preparation → Walk) oder die App auf Walk stellen. Streamdeck: erst START → START BALANCING. |
 | »Walk« abgelehnt „Füße ohne Last" | G1 hängt noch straff am Kran (FSM-Mode ≠ 0): Kran lockern, bis die Füße tragen, dann erneut. |
