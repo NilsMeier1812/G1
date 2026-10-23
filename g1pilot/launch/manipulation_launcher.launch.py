@@ -63,9 +63,9 @@ def generate_launch_description():
         # E-Stop: Taille gehalten lassen (nur Arme/Haende schlaff). false = alt.
         DeclareLaunchArgument("estop_waist_hold", default_value="true"),
         # Hueftdrehung per Controller/GUI (waist_yaw.py): Bereich um die Mitte.
-        # Real per bringup_real ueber G1_WAIST_YAW_LIMIT_DEG (Default 45).
+        # Real per bringup_real ueber G1_WAIST_YAW_LIMIT_DEG (Default 105).
         DeclareLaunchArgument("waist_yaw_control", default_value="true"),
-        DeclareLaunchArgument("waist_yaw_limit_deg", default_value="45.0"),
+        DeclareLaunchArgument("waist_yaw_limit_deg", default_value="105.0"),
         # arm_sdk-Gewichts-Rampe (0->1 beim Enable, 1->0 beim Disable). Auf dem
         # echten G1 Pflicht fuer eine weiche Uebergabe; die Sim setzt 0.0
         # (= sofort umschalten, bisheriges Verhalten).

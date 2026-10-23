@@ -1197,7 +1197,7 @@ def test_waist_yaw_sim_publishes_target_for_loco_sim(ac_module):
 
 def test_bringup_real_limits_waist_yaw():
     src = open(os.path.join(PKG, "launch", "bringup_real.launch.py")).read()
-    assert "'waist_yaw_limit_deg': os.environ.get('G1_WAIST_YAW_LIMIT_DEG', '45.0')" in src
+    assert "'waist_yaw_limit_deg': os.environ.get('G1_WAIST_YAW_LIMIT_DEG', '105.0')" in src
 
 
 def test_mirror_command_real(ac_module):
