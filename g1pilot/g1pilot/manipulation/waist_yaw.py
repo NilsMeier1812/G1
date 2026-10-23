@@ -58,7 +58,7 @@ def rotate_twist_yaw(lin, ang, yaw):
 
 
 class WaistYaw:
-    def __init__(self, limit: float = math.radians(45.0),
+    def __init__(self, limit: float = math.radians(105.0),
                  max_rate: float = math.radians(15.0),
                  center_rate: float = math.radians(15.0),
                  rate_timeout_s: float = 0.3,

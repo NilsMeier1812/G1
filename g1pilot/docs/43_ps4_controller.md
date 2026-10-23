@@ -165,7 +165,7 @@ Oberkörper ein Stück nach links oder rechts (nur die Taille, Gelenk
 - Solange R2 gehalten wird, bewegen Sticks, Steuerkreuz, Dreieck und L1/R1
   **nicht** die Arme (auch kein Spiegeln). Kreis/Viereck (Hände), Kreuz (Stopp, hält auch die
   Hüfte bis der Stick zurück ist), Options und PS wirken weiter.
-- **Bereich:** Sim und echter G1 **±45°** um die Mitte
+- **Bereich:** Sim und echter G1 **±105°** um die Mitte
   (`G1_WAIST_YAW_LIMIT_DEG`). Mitte = Stellung, die der Onboard-Regler beim
   Übernehmen der Arme hielt (Sim: 0).
 - **Die Arme drehen mit:** sie halten ihre Gelenkstellung, die Hände bleiben
@@ -186,7 +186,7 @@ Oberkörper ein Stück nach links oder rechts (nur die Taille, Gelenk
 | **Grundstellung** (Share 1 s) | erst Mitte, dann die geplante Fahrt |
 | **Arme abgeben** (DISABLE, real) | erst Mitte, dann Rückfahrt + Gewicht 1→0 — sonst risse der Onboard-Regler die Taille selbst zurück |
 
-Dauert das länger als 6 s (`waist_yaw_center_timeout_s`), geht es mit
+Dauert das länger als 10 s (`waist_yaw_center_timeout_s`), geht es mit
 Warnung trotzdem weiter.
 
 **NOT-HALT:** die Hüfte bleibt stehen, wo sie ist (wie bisher gehalten),
@@ -436,10 +436,10 @@ Mit dem Schalter gilt am echten Roboter:
 - **Langsamer:** Start-Tempo Langsam (5 cm/s), mit R1 höchstens Normal
   (15 cm/s). Der arm_controller begrenzt real zusätzlich auf 0,25 m/s.
 - **Hüfte drehen (R2 halten):** nur mit übernommenen Armen, höchstens
-  **±45°** (`G1_WAIST_YAW_LIMIT_DEG`). Die Taillen-Gains (kp 150 / kd 4) sind
+  **±105°** (`G1_WAIST_YAW_LIMIT_DEG`). Die Taillen-Gains (kp 150 / kd 4) sind
   am G1 noch nicht geprüft — erster Test am Kran, erst kleine Winkel. Beim
   Drehen streichen die Hände durch den Raum (Hand 40 cm vor dem Körper →
-  bei 45° rund 28 cm seitlich), dafür gibt es keine Kollisionsprüfung.
+  bei 105° rund 63 cm weit, bis seitlich hinter den Körper), dafür gibt es keine Kollisionsprüfung.
 - **PS = NOT-HALT:** Arme und Hände werden sofort schlaff (sacken
   gedämpft), die Taille bleibt gehalten, die Beine bekommen nur `StopMove`
   und **kein Damp**: der G1 bleibt stehen (seit 2026-10-15, alter Stand mit
@@ -797,10 +797,10 @@ Mitte-Fahrt) und publiziert `/g1pilot/waist/state` (JSON, 10 Hz:
 | Parameter `arm_controller` | Default | Bedeutung |
 |---|---|---|
 | `waist_yaw_control` | `true` | Hüftdrehung an/aus |
-| `waist_yaw_limit_deg` | 45 | Bereich um die Mitte |
+| `waist_yaw_limit_deg` | 105 | Bereich um die Mitte |
 | `waist_yaw_rate_deg` / `waist_yaw_center_rate_deg` | 15 / 15 | Tempo Stick / zur Mitte [°/s] |
 | `waist_yaw_center_tol_deg` | 2 | „in der Mitte“ |
-| `waist_yaw_center_timeout_s` | 6 | danach aufgeschobene Aktion trotzdem |
+| `waist_yaw_center_timeout_s` | 10 | danach aufgeschobene Aktion trotzdem |
 
 ### Tests
 
