@@ -103,7 +103,7 @@ bleibt stehen). Details und Sicherheitsablauf für echte Hardware:
 | Roboter reagiert nicht auf den Joystick | Ist WALK aktiv (nicht nur BALANCING)? Kommt der `loco_cmd_vel`-Stream regelmäßig an (Deadman-Timeout)? |
 | (Sim) Roboter macht im BALANCING bei Arm-Bewegung Schritte | Im Log von `loco_sim` steht dann „Schwerpunkt-Modell nicht geladen": Der `g1pilot-sim`-Container sieht das Robotermodell nicht (Mount in `docker-compose.yml`) oder Pinocchio ist älter als 3. Container mit `--build` neu bauen. |
 | Arme hängen seltsam beim Loslaufen | Echter Roboter: normal für kurze Zeit, die Arme werden erst in eine definierte Lauf-Pose gebracht, bevor der Lauf-Regler startet. In der Sim bleiben die Arme frei und behalten ihre Stellung. |
-| Echter G1 driftet beim Gehen zu einer Seite | Ursachen und Testplan: `/mnt/project-files/analysen/linksdrall_gehen_g1.md`. Messen mit der Geh-Diagnose (unten). |
+| Echter G1 driftet beim Gehen zu einer Seite | Ursachen und Testplan: `/mnt/project-files/analysen/linksdrall_gehen_g1.md`. Messen mit der Geh-Diagnose (unten). Taille gerade halten bzw. dem Onboard-Regler geben: `G1_WAIST_MODE=zero` / `onboard` (Doku 70, Abschnitt Taille). |
 
 ## Geh-Diagnose am echten G1 (`walk_diag`)
 

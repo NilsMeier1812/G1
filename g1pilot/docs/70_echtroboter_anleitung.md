@@ -231,6 +231,32 @@ keine Hand „nicht verbunden“ zeigen.
   Stellung, ≤ 0,3 rad/s zurück). Grund: Real-Test 2026-10-15 im Walk-Modus —
   schlaffe Taille + balancierender Walker = Oberkörper kippt, G1 rennt los. Gesperrte Taille
   (23/29 DoF locked): Parameter `waist_joints` auf `[12]`.
+- **Taillen-Modus (Test Linksdrall, seit 2026-10-27):** Env `G1_WAIST_MODE`
+  (Parameter `waist_mode`), Default `hold` = Verhalten wie oben (Ziel =
+  Stellung beim `ENABLE`, also eingefroren, auch wenn der Oberkörper dabei ein
+  paar Grad schief hängt).
+  - `zero`: beim `ENABLE` fährt die Taille langsam (≤ `waist_max_vel`,
+    0,3 rad/s) auf Yaw/Roll/Pitch = 0 und wird dort gehalten, Mitte der
+    Hüftdrehung = 0. Steht eine Achse beim `ENABLE` mehr als 0,3 rad (17°)
+    daneben, bleibt sie, wo sie ist (Warnung im Log).
+  - `onboard`: wie `zero`, aber **beim Gehen** (Startleiste/Controller GEHEN)
+    werden die Taillen-Sollwerte des Onboard-Reglers aus `rt/lowcmd`
+    (q/kp/kd/tau, kp ≤ 250, kd ≤ 6) in 0,5 s eingeblendet; zurück im Stand
+    oder beim NOT-HALT wieder das eigene Halteziel (NOT-HALT: genau an der
+    letzten Stellung, kein Ruck). Durchgereicht wird erst, wenn `rt/lowcmd`
+    mehrere Takte lang **andere** Werte zeigt als unser eigenes Kommando
+    (sonst wäre es nur unser Echo, falls der G1 dort das schon gemischte
+    Kommando zeigt). Ohne frische Daten oder bei Echo bleibt die Taille auf 0 —
+    das Log sagt dann „Taille beim Gehen NICHT beim Onboard-Regler: …“.
+    Ungeprüft am G1: ob `rt/lowcmd` außerhalb des Roboters überhaupt sichtbar
+    ist.
+  - Log bei jedem `ENABLE`: „Taille beim ENABLE: Yaw/Roll/Pitch … deg -> Ziel
+    … deg (Modus …)“ — damit sieht man auch im Modus `hold`, wie schief die
+    Taille übernommen wurde.
+
+  ```bash
+  G1_WAIST_MODE=zero ./start.sh      # bzw. onboard; dann wie gewohnt Echter Roboter
+  ```
 - **Zurückgeben ohne Schwung (`DISABLE`):** die Arme fahren erst geplant und
   langsam in die beim `ENABLE` gemerkte Onboard-Pose; erst dort rampt das
   Gewicht 1→0. Die Überblendung hat also keinen Positionsunterschied mehr.

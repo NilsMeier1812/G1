@@ -34,7 +34,9 @@ from g1pilot.manipulation.arm_geometry import ArmGeometry, Environment, HAND_LIN
 from g1pilot.manipulation.arm_planner_process import PlannerProcess
 from g1pilot.manipulation.ik_servo_process import IkServoProcess
 from g1pilot.manipulation.arm_planner import DEFAULTS as PLANNER_DEFAULTS
-from g1pilot.manipulation.waist_hold import WaistHold
+from g1pilot.manipulation.waist_hold import (
+    WaistHold, WaistPassthrough, enable_target, parse_waist_mode,
+)
 from g1pilot.manipulation.waist_yaw import (
     WaistYaw, WAIST_RATE_TOPIC, WAIST_CENTER_TOPIC, WAIST_STATE_TOPIC, YAW_JOINT,
 )
@@ -242,6 +244,13 @@ class ArmController(Node):
         self.declare_parameter("waist_max_vel", 0.3)
         self.declare_parameter("waist_engage_s", 1.5)
         self.declare_parameter("waist_gravity_comp", True)
+        #   waist_mode (Linksdrall-Analyse, Nils 2026-10-27; Env G1_WAIST_MODE):
+        #   hold = Ziel ist die Taillenstellung beim ENABLE (alt, eingefroren),
+        #   zero = beim ENABLE langsam auf 0 (Oberkoerper gerade),
+        #   onboard = wie zero, beim GEHEN reicht der arm_controller die
+        #   Taillen-Sollwerte des Onboard-Reglers (rt/lowcmd) durch; ohne
+        #   brauchbare Daten Rueckfall auf 0. Siehe waist_hold.py.
+        self.declare_parameter("waist_mode", "hold")
         # Hueftdrehung (Taillen-Yaw per Controller/GUI, waist_yaw.py; Nils
         # 2026-10-21). Sollwert haelt real WaistHold (nur mit uebernommenen
         # Armen, Gewicht 1), in der Sim loco_sim im Stand (/g1pilot/waist/state).
@@ -1140,6 +1149,9 @@ class ArmController(Node):
         """Taillen-Haltung anlegen (nur real, s. Parameter waist_hold)."""
         self._waist = None
         self._waist_t_last = None
+        self._waist_mode = "hold"
+        self._waist_pass = None
+        self._waist_pass_note = None
         if not self.use_robot or is_sim_mode() or not bool(self.get_parameter("waist_hold").value):
             if self.use_robot and not is_sim_mode():
                 self.get_logger().warn("waist_hold=false: Taille ist bei arm_sdk-Gewicht > 0 "
@@ -1152,8 +1164,61 @@ class ArmController(Node):
                                 engage_s=max(0.0, float(self.get_parameter("waist_engage_s").value)))
         cur = self.get_current_motor_q()
         self._waist.set_target([cur[j] for j in joints])
+        self._waist_mode = parse_waist_mode(self.get_parameter("waist_mode").value)
         self.get_logger().info(f"Taille {joints} wird bei arm_sdk-Gewicht > 0 gehalten "
-                               f"(kp={self.kp_waist:.0f}, kd={self.kd_waist:.1f}).")
+                               f"(kp={self.kp_waist:.0f}, kd={self.kd_waist:.1f}, "
+                               f"Modus {self._waist_mode}).")
+        if self._waist_mode == "onboard":
+            self._waist_pass = WaistPassthrough(
+                n=len(joints), kp_max=self.REAL_MAX_GAINS["kp_waist"],
+                kd_max=self.REAL_MAX_GAINS["kd_waist"], tau_max=self.WAIST_TAU_LIMIT)
+            threading.Thread(target=self._read_onboard_waist_cmd, daemon=True,
+                             name="waist_lowcmd").start()
+
+    def _read_onboard_waist_cmd(self) -> None:
+        """Lese-Thread (Modus onboard): Taillen-Sollwerte des Onboard-Reglers
+        aus rt/lowcmd. Ohne Listener (Read im 100-Hz-Takt) und erst, wenn das
+        Topic einen Schreiber hat -- Read() ohne Daten schreibt bei jedem
+        Timeout eine Zeile ins Log."""
+        try:
+            from unitree_sdk2py.core.channel import ChannelFactory
+            from cyclonedds.builtin import BuiltinDataReader, BuiltinTopicDcpsPublication
+            dp = ChannelFactory()._ChannelFactory__participant
+            pubs = BuiltinDataReader(dp, BuiltinTopicDcpsPublication)
+            sub = ChannelSubscriber("rt/lowcmd", LowCmd_)
+            sub.Init()
+        except Exception as e:
+            self.get_logger().warn(f"Taille onboard: rt/lowcmd nicht lesbar ({e}) -- "
+                                   "beim Gehen bleibt die Taille auf 0.")
+            return
+        joints = list(self._waist.joints)
+        seen = False
+        t_check = 0.0
+        while rclpy.ok():
+            now = time.monotonic()
+            if not seen and now >= t_check:
+                t_check = now + 2.0
+                try:
+                    seen = any(getattr(p, "topic_name", "") == "rt/lowcmd"
+                               for p in pubs.take(N=500))
+                except Exception:
+                    seen = False
+                if seen:
+                    self.get_logger().info("Taille onboard: rt/lowcmd hat einen Schreiber "
+                                           "-- Sollwerte werden mitgelesen.")
+                else:
+                    time.sleep(0.5)
+                    continue
+            msg = sub.Read(0.2)
+            if msg is not None:
+                try:
+                    mc = [msg.motor_cmd[j] for j in joints]
+                    self._waist_pass.feed([m.q for m in mc], [m.kp for m in mc],
+                                          [m.kd for m in mc], [m.tau for m in mc],
+                                          time.monotonic())
+                except Exception:
+                    pass
+            time.sleep(0.01)
 
     def _measured_waist_q(self) -> np.ndarray:
         cur = self.get_current_motor_q()
@@ -1187,14 +1252,46 @@ class ArmController(Node):
         meas = self._measured_waist_q()
         q, kp, kd = self._waist.step(dt, meas)
         tau = self._waist_gravity_tau(q14_ff, q) * self._waist.scale
+        n = len(self._waist.joints)
+        kp, kd = np.full(n, float(kp)), np.full(n, float(kd))
+        if self._waist_pass is not None:
+            q, kp, kd, tau = self._waist_passthrough(dt, now, (q, kp, kd, tau))
         for k, j in enumerate(self._waist.joints):
             mc = self.msg.motor_cmd[j]
             mc.mode = 1
             mc.q = float(q[k])
             mc.dq = 0.0
-            mc.kp = float(kp)
-            mc.kd = float(kd)
+            mc.kp = float(kp[k])
+            mc.kd = float(kd[k])
             mc.tau = float(tau[k])
+
+    def _waist_passthrough(self, dt, now, hold):
+        """Modus onboard: beim GEHEN die Taillen-Sollwerte des Onboard-Reglers
+        einblenden (alpha 0->1 in 0.5 s), sonst bzw. ohne gueltige Daten das
+        Halteziel. NOT-HALT (passiv) beendet es sofort."""
+        wp = self._waist_pass
+        if self._waist.passive:
+            wp.alpha = 0.0
+        want = bool(self._legs_walk and not self.estop_active and not self._waist.passive
+                    and self._weight_state == "on")
+        onboard = wp.step(dt, want, now)
+        out = wp.blend(hold, onboard)
+        wp.note_sent(out[0], out[1])
+        note = ("an" if wp.alpha >= 1.0 else None) if want else "aus"
+        if want and wp.alpha <= 0.0:
+            note = wp.reason(now) or None
+        if note is not None and note != self._waist_pass_note:
+            self._waist_pass_note = note
+            if note == "an":
+                self.get_logger().info("Taille: Onboard-Regler fuehrt sie beim Gehen "
+                                       "(rt/lowcmd durchgereicht).")
+            elif note == "aus":
+                self.get_logger().info("Taille: wieder eigenes Halteziel "
+                                       f"({', '.join(f'{v:+.1f}' for v in np.degrees(self._waist.target))} deg).")
+            else:
+                self.get_logger().warn(f"Taille beim Gehen NICHT beim Onboard-Regler: {note} "
+                                       "-- bleibt auf dem Halteziel.")
+        return out
 
     def _measured_arm_q(self) -> np.ndarray:
         """Gemessene Armstellung (7 links + 7 rechts)."""
@@ -1218,8 +1315,20 @@ class ArmController(Node):
         if getattr(self, "_waist", None) is not None:
             try:
                 qw = self._measured_waist_q()
-                self._waist.set_target(qw)
-                self._waist.q_cmd = self._waist.target.copy()
+                note = ""
+                if why == "ENABLE":
+                    tgt, note = enable_target(self._waist_mode, qw)
+                else:
+                    tgt = qw           # E-Stop: dort halten, wo sie steht
+                self._waist.set_target(tgt)
+                # Kommando startet an der Messung: zur 0 (Modus zero/onboard)
+                # faehrt WaistHold mit waist_max_vel, kein Sprung.
+                self._waist.q_cmd = self._waist.clip(qw)
+                self.get_logger().info(
+                    f"Taille beim {why}: Yaw/Roll/Pitch "
+                    f"{', '.join(f'{v:+.1f}' for v in np.degrees(qw))} deg -> Ziel "
+                    f"{', '.join(f'{v:+.1f}' for v in np.degrees(self._waist.target))} deg "
+                    f"(Modus {self._waist_mode}{'; ' + note if note else ''}).")
                 k = self._waist_yaw_k()
                 if k is not None:
                     # Mitte der Hueftdrehung = Yaw, den der Onboard-Regler hielt.
@@ -1768,6 +1877,13 @@ class ArmController(Node):
         # Hueftdrehung: sofort stehen bleiben, KEIN automatisches Zurueckdrehen.
         self._waist_cancel_pending("NOT-HALT")
         self._legs_walk = False
+        wp = getattr(self, "_waist_pass", None)
+        if wp is not None and wp.alpha > 0.0 and self._waist.q_cmd is not None:
+            # Onboard-Taille war eingeblendet: genau dort halten (kein Ruck zur 0).
+            q_now = np.array([self.msg.motor_cmd[j].q for j in self._waist.joints])
+            self._waist.target = self._waist.clip(q_now)
+            self._waist.q_cmd = self._waist.target.copy()
+            wp.alpha = 0.0
         k = self._waist_yaw_k()
         if k is not None and not is_sim_mode() and self._waist.q_cmd is not None:
             self._wyaw.reset(float(self._waist.q_cmd[k]))

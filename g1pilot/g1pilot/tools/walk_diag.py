@@ -515,7 +515,7 @@ def record(args):
             "start": stamp, "note": args.note,
             "env": {k: os.environ.get(k) for k in (
                 "G1_WALK_FSM_ID", "G1_WALK_PARK_ARMS", "G1_WAIST_HOLD", "G1_WAIST_KP",
-                "G1_WAIST_KD", "G1_MAX_VX", "G1_MAX_VY", "G1_MAX_VYAW", "G1_CONTROLLER")}}
+                "G1_WAIST_KD", "G1_WAIST_MODE", "G1_MAX_VX", "G1_MAX_VY", "G1_MAX_VYAW", "G1_CONTROLLER")}}
     with open(base + ".json", "w") as fh:
         json.dump(meta, fh, indent=2)
     cols = columns()
