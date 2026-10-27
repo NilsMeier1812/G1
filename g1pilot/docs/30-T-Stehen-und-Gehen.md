@@ -1,7 +1,7 @@
-# Locomotion — Technik
+# Stehen und Gehen — Technik
 
 Richtet sich an: Entwickler, die den Stand-/Lauf-Regler ändern oder tunen
-wollen. Für die Bedienung siehe [30_loco_anleitung.md](30_loco_anleitung.md).
+wollen. Für die Bedienung siehe [30-A-Stehen-und-Gehen.md](30-A-Stehen-und-Gehen.md).
 
 ## Beteiligte Dateien
 
@@ -17,6 +17,8 @@ wollen. Für die Bedienung siehe [30_loco_anleitung.md](30_loco_anleitung.md).
 | `g1pilot/policies/agile_velocity_height_g1/` | Alternative: NVIDIA WBC-AGILE „Velocity-Height-G1-History-v0" (Apache-2.0), gleichmäßiger Gang, Arme frei; fängt mit `agile_velocity_g1` ab |
 | `g1pilot/test_agile_walk_sim.py` | Headless-MuJoCo-Test von Laufen, Stehen und Übergaben (ohne ROS) |
 | `g1pilot/test/test_walk_policy.py` | Unit-Tests: Obs-Layout, ONNX = Original, Übergabe-Logik, Schwerpunkt-Modell, Kipp-Erkennung |
+| `g1pilot/test/test_loco_client_real.py`, `test_loco_client_ps4_walk.py`, `test_ground_contact.py`, `test_loco_sim_health.py` | loco_client gegen einen Fake-G1 (Startleiste, NOT-HALT, Voll-Notaus, Walk 501), Gehen per Controller, Bodenkontakt, loco_sim-Zustand |
+| `g1pilot/navigation/ground_contact.py` | Bodenkontakt aus der Knie-Last (`rt/lowstate`), real vor »Walk« |
 | `unitree_mujoco/simulate_python/unitree_sdk2py_bridge.py` | Mischt Bein-/Taillen-Kommandos (`rt/lowcmd`) mit Arm-Kommandos (`rt/arm_sdk`); stellt den Roboter bei START BALANCING in die von `loco_sim` kommandierte Stand-Pose |
 
 ## Warum zwei völlig verschiedene Implementierungen?
@@ -68,7 +70,7 @@ Ordnername unter `policies/`):
 | `agile_velocity_height_g1` | gleichmäßig, trifft das Tempo, bis 1 m/s | frei |
 
 Ob die Arme beim Laufen geparkt werden (`walk_park_arms` der Manipulation,
-siehe [11_arm_manipulation_technik.md](11_arm_manipulation_technik.md)), leitet
+siehe [20-T-Arm-Manipulation.md](20-T-Arm-Manipulation.md)), leitet
 `bringup_sim.launch.py` aus der gewählten Policy ab
 (`walk_policy.policy_needs_arm_pose()`, liest nur die `deploy.yaml`): an bei
 `g1_wholebody`, aus bei den AGILE-Policies. Welche Logik eine Policy braucht,
@@ -334,7 +336,7 @@ Live änderbar via `ros2 param set /loco_sim <name> <wert>`.
   `G1_PUSH_TAP_S`; die Sim kappt Schübe bei `SIM_PUSH_FORCE_CAP_N` (3000 N).
 - **GRASP BOX** (`/g1pilot/grasp_box`) — schaltet eine greifbare Testkugel
   in der Handfläche an/aus (Inspire-Hände, siehe
-  [61_inspire_haende_technik.md](61_inspire_haende_technik.md)).
+  [22-T-Inspire-Haende.md](22-T-Inspire-Haende.md)).
 
 ## `loco_client` (echter Roboter)
 
@@ -342,13 +344,28 @@ Dünner ROS-Node um `unitree_sdk2py.g1.loco.g1_loco_client.LocoClient`. Bildet
 dieselben Streamdeck-Topics wie `loco_sim` auf die Unitree-High-Level-RPCs
 ab:
 
-| Topic | RPC |
+| Topic | RPC / Wirkung |
 |---|---|
-| `/g1pilot/start` | `SetFsmId(4)` (Standby); nach E-Stop ohne Damp nur Latch lösen (Modus bleibt) |
+| `/g1pilot/start` | quittiert einen NOT-HALT; aus Damp/Zero Torque `SetFsmId(4)` (Preparation), steht der G1 schon (4/500/501), wird nichts umgeschaltet |
+| `/g1pilot/loco_request` (`damp` / `preparation` / `walk`) | Startleiste der Demo-GUI bzw. Handy: `damp` → `SetFsmId(1)` immer; `preparation` → FSM 4 nur aus Damp oder Walk; `walk` → nur aus Preparation, nur mit Bodenkontakt, `BalanceStand` + `Start()` und dann `start_fsm_id` (Default **501** „Walk mit Taille“, `G1_WALK_FSM_ID`); steht er schon in einem anderen Walk-Modus, nur Umschalten |
 | `/g1pilot/start_balancing` | `entering_balancing()` — Höhenrampe + `BalanceStand(1)` + `Start()` |
-| `/g1pilot/start_walking` + `/g1pilot/loco_cmd_vel` | übernimmt Walk-Zustand der App oder stellt aus FSM 4 auf Walk um; dann `SetVelocity(vx, vy, vyaw, move_duration_s)` in `_cmd_vel_tick` (20 Hz) |
-| `/g1pilot/emergency_stop` | `StopMove` (immer), `Damp()` nur mit `estop_damp_legs`; eigene Callback-Gruppe, wartet max. 0,5 s auf den RPC-Lock |
-| (Timer `state_sync_hz`) | liest die Onboard-FSM-ID, gleicht `balanced`/`walk_enabled` ab |
+| `/g1pilot/start_walking` + `/g1pilot/loco_cmd_vel` | übernimmt den Walk-Zustand (500/501) oder stellt aus FSM 4 auf Walk um; dann `SetVelocity(vx, vy, vyaw, move_duration_s)` in `_cmd_vel_tick` (20 Hz) |
+| `/g1pilot/ps4/walk_cmd` | Gehen per Controller (L2 gehalten): `Move()` nur, wenn der G1 schon im Walk steht, hat Vorrang vor `loco_cmd_vel`; Timeout → `StopMove` |
+| `/g1pilot/joy` | alter Joystick-Modus (`joystick_callback`, Deadman Button 8) |
+| `/g1pilot/emergency_stop` | `StopMove` (immer), `Damp()` nur mit `estop_damp_legs` (`G1_ESTOP_DAMP_LEGS`, Default aus); eigene Callback-Gruppe, wartet max. 0,5 s auf den RPC-Lock |
+| `/g1pilot/full_emergency_stop` | Voll-Notaus: `Damp()` (FSM 1) sofort, unabhängig von `estop_damp_legs`, danach `StopMove` |
+| `/g1pilot/waist/state` | `Move()` nur mit 0, solange die Hüfte nicht in der Mitte ist (`walk_ok`), siehe [24-T-Hueftdrehung.md](24-T-Hueftdrehung.md) |
+| (Timer `state_sync_hz`) | liest die Onboard-FSM-ID und den FSM-Mode, gleicht `balanced`/`walk_enabled` ab |
+| → `/g1pilot/onboard_state` (latched JSON) | `fsm`, `name`, `fsm_mode`, `walk`, `walk_fsm`, `balanced`, `estop`, `full_estop`, `ground`, `ground_why`, `rpc_err`, `note`, `robot` — Anzeige in Demo-GUI und Handy |
+
+**Bodenkontakt vor »Walk«** (`ground_contact.py`, seit 2026-10-21): Der
+FSM-Mode (`GetFsmMode`) ist am Kran auch frei hängend 0 und taugt nicht als
+Bodenkontakt-Signal. Stattdessen pollt `loco_client` `rt/lowstate` ohne
+dauerhaften Listener (`lowstate_poll_hz`, 10 Hz) und wertet die Last an den
+Kniemotoren aus: über `knee_load_min_nm` (10 Nm, `G1_KNEE_LOAD_MIN_NM`) gilt
+der Fuß als belastet. Parameter `ground_check` (`G1_GROUND_CHECK`):
+`knee_load` (Default) oder `off`. Die Demo-GUI zeigt das Ergebnis schon vor
+dem Klick an »Walk« an.
 
 Wichtige Sicherheitsmechanismen:
 
@@ -359,9 +376,11 @@ Wichtige Sicherheitsmechanismen:
   balanciert, nicht gestoppt, `WALK` aktiv und der `loco_cmd_vel`-Stream
   frisch ist (`cmd_vel_timeout`, Default 0.5 s). Fällt eine Bedingung weg,
   wird genau einmal `StopMove()` gesendet.
-- **PS4-Controller-Pfad** (`joystick_callback`): physischer Deadman-Button
-  (Index 8) hat Vorrang vor dem Streamdeck-`loco_cmd_vel`-Pfad, solange
-  gedrückt.
+- **Controller-Pfade:** `/g1pilot/ps4/walk_cmd` (L2 gehalten) bzw. im alten
+  Joystick-Modus der Deadman-Button (Index 8) haben Vorrang vor dem
+  `loco_cmd_vel`-Pfad der GUIs, solange gedrückt. `ps4/walk_cmd` wirkt nur im
+  Walk-Modus und läuft ohne NOT-HALT.
+
 - `damp_on_init=False`: der Node greift beim Start nicht von sich aus in
   den Roboterzustand ein — ein bereits stehender G1 würde bei `Damp()`
   sofort zusammensacken.
@@ -374,7 +393,7 @@ Wichtige Sicherheitsmechanismen:
 übernehmen unverändert `rt/lowcmd`; die Arme werden mit dem in
 `rt/arm_sdk`-`motor_cmd[29].q` transportierten Gewicht zwischen
 `rt/lowcmd`-Fallback (0) und `rt/arm_sdk`-Kommando (1) überblendet. Details
-zum DDS-Merge in [02_architektur.md](02_architektur.md).
+zum DDS-Merge in [02-T-Architektur.md](02-T-Architektur.md).
 
 ## Testergebnisse (Headless-MuJoCo)
 
@@ -443,3 +462,6 @@ schon; mit Inspire-Händen hält der PD sie ohne Abfangen).
   Handpose beim Laufen um einige Zentimeter mit dem Oberkörper.
 - `USE_JOYSTICK=0` ist zwingend, solange kein Gamepad im Container hängt —
   sonst stirbt der Sim-Thread.
+- **Echter G1 zieht beim Gehen nach links** (FSM 501, beobachtet
+  2026-10-23). Ursache offen (Hypothesen: Taille/Arme über `arm_sdk`,
+  Schwerpunkt, IMU, Kalibrierung); Testplan steht in den Projekt-Analysen.

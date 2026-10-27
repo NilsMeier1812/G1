@@ -7,7 +7,7 @@ Ohne Qt und ohne Bluetooth -- der Transport (ble_server.py) ruft
 handle_line() aus seinem Thread, die Demo-GUI (link.py) ruft tick() und
 publish_status() aus dem Qt-Thread. Alles hinter einem Lock.
 
-Regeln (docs/44_handy_bedienung.md):
+Regeln (docs/12-A-Handy.md):
   * Nur gekoppelte Geraete. Kopplung nur, solange die PC-GUI einen Code zeigt.
   * EINE Sitzung gleichzeitig. Ein anderes Geraet kommt erst dran, wenn die
     alte Sitzung verfallen ist (SESSION_TIMEOUT_S ohne gueltige Nachricht).

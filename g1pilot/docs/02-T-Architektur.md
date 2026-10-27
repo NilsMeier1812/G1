@@ -1,8 +1,9 @@
-# Architektur
+# Architektur — Technik
 
 Richtet sich an: Entwickler, die sich einen Überblick verschaffen wollen,
 bevor sie an einer bestimmten Stelle etwas ändern. Für die Details der
-einzelnen Subsysteme siehe die jeweiligen `*_technik.md`-Dokumente.
+einzelnen Subsysteme siehe die jeweiligen `*-T-*.md`-Dokumente
+(Übersicht in [README.md](README.md)).
 
 ## Gesamtbild
 
@@ -16,19 +17,24 @@ Freiheitsgrade (Beine, Taille, zwei 7-DOF-Arme).
 .
 ├── g1pilot/                     ROS-2-Package + Docker/Compose/Makefile (Hauptprojekt)
 │   ├── g1pilot/
-│   │   ├── state/                Roboterzustand -> /joint_states, /tf, IMU
-│   │   ├── manipulation/         IK, Arm-Regelung, Positionsspeicher, Arm-API, Hände
-│   │   ├── navigation/           Locomotion (Sim), Loco-Client (Real), autonome Navigation
-│   │   ├── teleoperation/        Streamdeck-GUI, Joystick, Joy-Mux
-│   │   └── utils/                IK-Solver, Joint-Tabellen, gemeinsame Hilfsfunktionen
+│   │   ├── state/                Roboterzustand -> /joint_states, /tf, IMU, Temperaturen
+│   │   ├── manipulation/         IK, Arm-Regelung, Planer, Positionsspeicher, Arm-API, Hüfte, Hände
+│   │   ├── navigation/           Locomotion (Sim), Loco-Client (Real), Bodenkontakt, autonome Navigation
+│   │   ├── teleoperation/        Demo-GUI, Streamdeck, PS4/Xbox-Controller, Handy (phone/), Abläufe
+│   │   ├── tools/                Diagnose- und Sim-Werkzeuge (dds_check, sim_*), Beispiel-Abläufe
+│   │   └── utils/                IK-Solver, Joint-Tabellen, Temperaturen, Fenster-Stil, Hilfsfunktionen
 │   ├── launch/                   ROS-2-Launchdateien (Sim-/Real-Bringup + Bausteine)
-│   ├── docker/, docker-compose.yml   Container-Definitionen
+│   ├── docker/, docker-compose*.yml  Container-Definitionen, Shutdown-Watcher
 │   ├── policies/                 RL-Lauf-Policies (ONNX) + deploy.yaml: g1_wholebody (Standard), agile_velocity_g1, agile_velocity_height_g1
+│   ├── data/arm_poses.json       gespeicherte Posen und Abläufe (versioniert)
+│   ├── test/                     Unit- und Integrationstests (run_tests.sh)
+│   ├── start.sh, g1_gui.py       Startmenü (Text / grafisch)
 │   └── docs/                     diese Dokumentation
 ├── unitree_mujoco/               MuJoCo-Simulation (Unitree-Original, angepasst)
 │   └── simulate_python/
-│       ├── unitree_mujoco.py        Sim-Loop + Viewer
-│       └── unitree_sdk2py_bridge.py DDS <-> MuJoCo, Befehls-Merge
+│   │   ├── unitree_mujoco.py        Sim-Loop + Viewer
+│   │   └── unitree_sdk2py_bridge.py DDS <-> MuJoCo, Befehls-Merge
+│   └── scene_editor/             Umgebungs-Editor und -Builder (eigener Code)
 ├── unitree_ros2/                 Unitree-ROS-2-Abhängigkeiten
 └── unitree_sdk2_python/          Unitree-SDK (Python-Bindings für die DDS-Nachrichten)
 ```
@@ -40,7 +46,7 @@ Zwei Docker-Container, beide mit `network_mode: host`:
 ```
 ┌─ HOST (network_mode: host) ────────────────────────────────────────────┐
 │                                                                        │
-│  Container: g1_mujoco_sim              Container: g1pilot_sim         │
+│  Service: mujoco-sim                   Service: g1pilot-sim            │
 │  ┌──────────────────────────┐          ┌────────────────────────────┐│
 │  │ MuJoCo-Physik (1 kHz)    │          │ ROS 2 Humble               ││
 │  │ unitree_sdk2py_bridge     │          │  robot_state · arm_ctrl    ││
@@ -53,8 +59,10 @@ Zwei Docker-Container, beide mit `network_mode: host`:
 ```
 
 Auf dem echten Roboter entfällt der `mujoco-sim`-Container; stattdessen
-spricht der `g1pilot`-Container über das physische Netzwerkinterface direkt
-mit dem G1-Onboard-Rechner.
+spricht der Container `g1pilot-real` (bzw. `g1pilot-real-full` mit
+LiDAR/Navigation) über das physische Netzwerkinterface direkt mit dem
+G1-Onboard-Rechner. Die Inspire-Hände hängen real per Modbus TCP am selben
+Netz (`192.168.123.210`/`.211`).
 
 ## Zwei Kommunikationsebenen
 
@@ -151,14 +159,31 @@ Auf dem echten Roboter übernimmt dieselbe Logik die G1-Firmware.
 | `dijkstra_planner`, `nav2point`, `create_map` | `navigation/*.py` | autonome Punkt-zu-Punkt-Navigation |
 | `scene_bridge` | `navigation/scene_bridge.py` | Umgebungsobjekte (Sim) → `/scene_markers` |
 | `sim_localization` | `navigation/sim_localization.py` | Sim-Ersatz für MOLA-Lokalisierung |
-| `joystick`, `joy_mux` | `teleoperation/*.py` | Physischer Controller, Auto/Manuell-Mux |
-| `ui_interface` | `teleoperation/ui_interface.py` | Streamdeck-GUI (Hauptbedienoberfläche) |
+| `joy_to_cmdvel` | `navigation/joy_to_cmdvel.py` | Sim: `/g1pilot/joy` → `/g1pilot/loco_cmd_vel` (Navigation) |
+| `mola_fixed` | `navigation/fix_mola_odometry.py` | Real: Orientierungs-Fix der MOLA-Odometrie |
+| `demo_gui` | `teleoperation/demo_gui.py` | Demo-GUI (Standard-Oberfläche, inkl. Handy-Gateway) |
+| `ui_interface` | `teleoperation/ui_interface.py` | Streamdeck-GUI (alle Einzelfunktionen) |
+| `ps4_joystick`, `ps4_arm_teleop`, `ps4_walk` | `teleoperation/ps4_*.py` | PS4-/Xbox-Controller: Eingabe, Arme/Hände/Hüfte, Gehen mit L2 |
+| `joystick`, `joy_mux` | `teleoperation/*.py` | alter Joystick-Modus, Auto/Manuell-Mux |
+| `dds_check`, `sim_dds_check` | `tools/sim_dds_check.py` | Verbindungstest zur Unitree-DDS (real bzw. Sim) |
+| `sim_arm_wiggle`, `sim_goal_probe`, `sim_arm_monitor`, `sim_leg_hold` | `tools/sim_*.py` | Sim-Diagnose |
+
+Werkzeuge außerhalb des Node-Graphen: [61-A-Werkzeuge.md](61-A-Werkzeuge.md).
 
 ## Weiterführend
 
-- [11_arm_manipulation_technik.md](11_arm_manipulation_technik.md) — IK, Planer, Sicherheitsgates
-- [21_arm_api_technik.md](21_arm_api_technik.md) — HTTP-Brücke
-- [31_loco_technik.md](31_loco_technik.md) — Stehen/Laufen in Sim und Real
-- [41_teleoperation_technik.md](41_teleoperation_technik.md) — Streamdeck/Joystick
-- [51_navigation_technik.md](51_navigation_technik.md) — autonome Navigation
-- [61_inspire_haende_technik.md](61_inspire_haende_technik.md) — Hand-Bridge
+- [04-T-Umgebungsvariablen.md](04-T-Umgebungsvariablen.md) — alle `G1_*`-Schalter
+- [10-T-Demo-GUI.md](10-T-Demo-GUI.md) — Demo-GUI, Topics
+- [11-T-Controller.md](11-T-Controller.md) — PS4/Xbox-Controller
+- [12-T-Handy.md](12-T-Handy.md) — Handy-Gateway (Bluetooth LE)
+- [13-T-Streamdeck.md](13-T-Streamdeck.md) — Streamdeck, alter Joystick, Joy-Mux
+- [20-T-Arm-Manipulation.md](20-T-Arm-Manipulation.md) — IK, Planer, Sicherheitsgates
+- [21-T-Arm-API.md](21-T-Arm-API.md) — HTTP-Brücke
+- [22-T-Inspire-Haende.md](22-T-Inspire-Haende.md) — Hand-Bridge
+- [23-T-Posen-und-Ablaeufe.md](23-T-Posen-und-Ablaeufe.md) — Positionsspeicher, Abläufe
+- [24-T-Hueftdrehung.md](24-T-Hueftdrehung.md) — Hüftdrehung, Taille halten
+- [30-T-Stehen-und-Gehen.md](30-T-Stehen-und-Gehen.md) — Stehen/Laufen in Sim und Real
+- [31-T-Navigation.md](31-T-Navigation.md) — autonome Navigation
+- [40-T-Simulation.md](40-T-Simulation.md) — MuJoCo, Bridge, Umgebungen
+- [51-T-Notaus.md](51-T-Notaus.md) — Halt-Wege im Code
+- [60-A-Tests.md](60-A-Tests.md) — Testsuite

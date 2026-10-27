@@ -1,4 +1,4 @@
-"""Handy-Bedienung der Demo-GUI ueber Bluetooth LE (siehe docs/44_handy_bedienung.md).
+"""Handy-Bedienung der Demo-GUI ueber Bluetooth LE (siehe docs/12-A-Handy.md).
 
 protocol.py  : Kennungen, Rahmen, Schluessel/HMAC (ohne Abhaengigkeiten)
 gateway.py   : Kopplung, Sitzung, Rechte, Herzschlag, Steuerhoheit (ohne Qt/BLE)

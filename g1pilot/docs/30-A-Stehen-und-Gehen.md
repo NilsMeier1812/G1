@@ -1,13 +1,14 @@
-# Locomotion (Stehen/Laufen) — Anleitung
+# Stehen und Gehen — Anleitung
 
 Richtet sich an: Anwender, die den G1 in der Simulation oder auf echter
 Hardware stehen und laufen lassen wollen. Für die interne Funktionsweise
-siehe [31_loco_technik.md](31_loco_technik.md).
+siehe [30-T-Stehen-und-Gehen.md](30-T-Stehen-und-Gehen.md).
 
 ## Überblick
 
 Die Locomotion (Beine + Taille) ist eine kleine Zustandsmaschine mit vier
-Zuständen, gesteuert über den Streamdeck oder ROS-Topics. In der Simulation
+Zuständen, gesteuert über die Demo-GUI (Kacheln GEHEN / GREIFEN), den
+Controller (L2 / R2), den Streamdeck oder ROS-Topics. In der Simulation
 übernimmt der Node `loco_sim` die Rolle des Unitree-Onboard-Reglers (den es
 in MuJoCo nicht gibt); auf dem echten Roboter läuft weiterhin Unitrees
 eigener Onboard-Regler, angesprochen über `loco_client`.
@@ -15,9 +16,14 @@ eigener Onboard-Regler, angesprochen über `loco_client`.
 | Zustand | Was passiert | Auslöser |
 |---|---|---|
 | **HOLD** | Standby: steifer Stand, Basis gehalten | Start / `/g1pilot/start` |
-| **BALANCE** (Sim: STAND) | Modellbasierter Stand am Platz, Oberkörper frei bewegbar | **START BALANCING** / `/g1pilot/start_balancing` |
-| **RUN** (Sim: WALK) | Lauf-Regler; Geschwindigkeit per Joystick | **WALK** + `/g1pilot/loco_cmd_vel` |
-| **DAMP** | Notaus: alle Motoren weich | **EMERGENCY** / `/g1pilot/emergency_stop` |
+| **BALANCE** (Sim: STAND) | Modellbasierter Stand am Platz, Oberkörper frei bewegbar | Demo-GUI **GREIFEN**, Controller **R2**, Streamdeck **START BALANCING** / `/g1pilot/start_balancing` |
+| **RUN** (Sim: WALK) | Lauf-Regler; Geschwindigkeit per Knopf/Stick | Demo-GUI **GEHEN**, Controller **L2**, Streamdeck **WALK** + `/g1pilot/loco_cmd_vel` |
+| **DAMP** | Sim: Notaus, alle Motoren weich | NOT-HALT / `/g1pilot/emergency_stop` |
+
+Am **echten G1** heißen die Onboard-Zustände wie in der Unitree-App: Damp
+(FSM 1), Preparation (FSM 4) und Walk (FSM 500/501). Dorthin schaltet die
+**Startleiste** der Demo-GUI (*Start | Damp | Preparation | Walk*), Ablauf am
+Kran in [50-A-Echter-Roboter.md](50-A-Echter-Roboter.md).
 
 ## Bedienung
 
@@ -29,8 +35,9 @@ eigener Onboard-Regler, angesprochen über `loco_client`.
    wenn er wirklich kippt (z. B. nach einem Stoß, ein Fuß hebt ab), fängt er
    sich mit ein paar Schritten und steht danach wieder still. Er steht in der
    leicht gebeugten Haltung des Lauf-Reglers, damit er ohne Satz loslaufen kann.
-2. **WALK** → der Bildschirm-Joystick (bzw. echter Controller auf real) gibt
-   Vorwärts/Seitwärts/Drehen vor.
+2. **WALK** → der Bildschirm-Joystick bzw. die Pfeiltasten der Demo-GUI
+   (Tempo Langsam/Normal) oder der Controller mit **gehaltenem L2** geben
+   Vorwärts/Seitwärts/Drehen vor ([11-A-Controller.md › Gehen mit L2](11-A-Controller.md#gehen-mit-l2)).
 3. Joystick loslassen → der Roboter bremst ab und bleibt stehen. In der Sim
    steht dann die Lauf-Policy am Platz und macht kleine Ausgleichsschritte.
    Für den stationären Stand mit geplanten Füßen **START BALANCING** drücken:
@@ -68,7 +75,7 @@ G1_WALK_POLICY=agile_velocity_height_g1 ./start.sh --yes   # gleichmäßiger AGI
 
 Ob die Arme beim Laufen geparkt werden, stellt der Sim-Start passend zur
 Policy ein. Im Stand hält bei allen dreien derselbe Stand-Regler die Füße fest.
-Vergleichswerte stehen in [31_loco_technik.md](31_loco_technik.md#gangbild).
+Vergleichswerte stehen in [30-T-Stehen-und-Gehen.md](30-T-Stehen-und-Gehen.md#gangbild).
 
 ## Sim ↔ Real
 
@@ -78,21 +85,28 @@ Vergleichswerte stehen in [31_loco_technik.md](31_loco_technik.md#gangbild).
 | Node-Start | automatisch mit `bringup_sim.launch.py` | automatisch mit `bringup_real.launch.py` |
 | Steuertopics | identisch | identisch |
 
-Der Streamdeck verhält sich in beiden Modi identisch — dieselben Buttons,
-dieselben Topics.
+Demo-GUI und Streamdeck verhalten sich in beiden Modi gleich — dieselben
+Knöpfe, dieselben Topics. Nur real gibt es die Startleiste und die
+Bodenkontakt-Prüfung vor »Walk«; nur in der Sim die Wahl der Lauf-Policy.
 
 **Wichtig:** `loco_sim` ist ein **reiner Sim-Stellvertreter**. Auf dem
 echten G1 übernimmt ausschließlich Unitrees Onboard-Regler das
 Stehen/Laufen; für Details zur echten Hardware siehe
-[70_echtroboter_anleitung.md](70_echtroboter_anleitung.md).
+[50-A-Echter-Roboter.md](50-A-Echter-Roboter.md).
 
 ## Notaus
 
-**EMERGENCY STOP** versetzt die Beine sofort in `Damp()` — alle Motoren
-werden weich, der Roboter sackt kontrolliert zusammen. Für sanftes Anhalten
-im laufenden Betrieb stattdessen **START BALANCING** drücken (der Roboter
-bleibt stehen). Details und Sicherheitsablauf für echte Hardware:
-[70_echtroboter_anleitung.md](70_echtroboter_anleitung.md).
+**NOT-HALT** (Demo-GUI, EMERGENCY STOP, Controller-PS, Handy):
+
+- **Sim:** `loco_sim` geht in DAMP, der ganze Roboter wird weich.
+- **Echter G1:** die Beine bekommen nur `StopMove`, **kein** `Damp()`; der
+  Onboard-Regler balanciert weiter (seit 2026-10-15). Den ganzen G1 in Damp
+  setzt nur der **Voll-Notaus** (Controller R1 + L1 + PS 2 s halten) oder die
+  Startleiste *Damp*.
+
+Für sanftes Anhalten im laufenden Betrieb Stick bzw. Knopf loslassen oder
+GREIFEN wählen (der Roboter bleibt stehen). Übersicht aller Halt-Wege:
+[51-A-Notaus.md](51-A-Notaus.md).
 
 ## Fehlerbehebung
 
@@ -102,4 +116,6 @@ bleibt stehen). Details und Sicherheitsablauf für echte Hardware:
 | Roboter fällt beim Eintritt in BALANCE | (Sim) Prüfen, ob `USE_JOYSTICK=0` gesetzt ist, sofern kein Gamepad im Container hängt. |
 | Roboter reagiert nicht auf den Joystick | Ist WALK aktiv (nicht nur BALANCING)? Kommt der `loco_cmd_vel`-Stream regelmäßig an (Deadman-Timeout)? |
 | (Sim) Roboter macht im BALANCING bei Arm-Bewegung Schritte | Im Log von `loco_sim` steht dann „Schwerpunkt-Modell nicht geladen": Der `g1pilot-sim`-Container sieht das Robotermodell nicht (Mount in `docker-compose.yml`) oder Pinocchio ist älter als 3. Container mit `--build` neu bauen. |
-| Arme hängen seltsam beim Loslaufen | Echter Roboter: normal für kurze Zeit, die Arme werden erst in eine definierte Lauf-Pose gebracht, bevor der Lauf-Regler startet. In der Sim bleiben die Arme frei und behalten ihre Stellung. |
+| Arme fahren beim Loslaufen in die Lauf-Pose | Sim mit der Standard-Policy `g1_wholebody` (oder real mit `G1_WALK_PARK_ARMS=true`): gewollt. Mit AGILE-Policy (Sim) bzw. real seit 2026-10-19 bleiben die Arme in ihrer Pose. |
+| Real: »Walk« gesperrt „kein Bodenkontakt“ | Füße tragen zu wenig Last (Knie-Last unter 10 Nm) → Kran weiter lockern, siehe [50-A-Echter-Roboter.md](50-A-Echter-Roboter.md#fehlerbehebung). |
+| Real: GEHEN per L2 tut nichts, lange Vibration | G1 steht nicht im Walk-Modus → erst Startleiste »Walk«. |

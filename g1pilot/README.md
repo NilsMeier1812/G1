@@ -46,7 +46,7 @@ Hinweise:
   `rm -rf .venv && ./setup.sh`.
 - **WSL2 + VPN (z. B. eduVPN):** Kommt WSL nicht ins Internet (`apt` hängt
   bei `Ign:`, `curl` läuft in einen Timeout), Mirrored Networking aktivieren.
-  Anleitung: [WSL2-Netzwerk](docs/01_installation.md#wsl2-netzwerk-vpn-uni-wlan-roboter).
+  Anleitung: [WSL2-Netzwerk](docs/01-A-Installation.md#wsl2-netzwerk-vpn-uni-wlan-roboter).
 - Für GPU-Betrieb zusätzlich das NVIDIA Container Toolkit installieren
   (siehe `docker-compose.nvidia.yml` / `docker-compose.gpu.yml`).
 
@@ -59,7 +59,7 @@ make sim
 ```
 
 Details, Voraussetzungen und Windows/WSL2-Anleitung:
-[docs/01_installation.md](docs/01_installation.md).
+[docs/01-A-Installation.md](docs/01-A-Installation.md).
 
 Alltäglicher Einstieg ist `./start.sh` — öffnet ein grafisches Startmenü
 (Simulation / Echter Roboter / Umgebungen), von
@@ -78,18 +78,23 @@ dem aus auch die gesamte Dokumentation erreichbar ist.
 | `loco_client` | `g1pilot/navigation/loco_client.py` | Unitree-Onboard-Locomotion (echter Roboter) |
 | `dijkstra_planner`, `nav2point`, `create_map` | `g1pilot/navigation/*.py` | autonome Punkt-zu-Punkt-Navigation |
 | `scene_bridge` | `g1pilot/navigation/scene_bridge.py` | Umgebungsobjekte (Sim) → `/scene_markers` |
-| `joystick`, `joy_mux` | `g1pilot/teleoperation/*.py` | physischer Controller, Auto/Manuell-Mux |
+| `joystick`, `joy_mux` | `g1pilot/teleoperation/*.py` | alter Joystick-Modus (ohne PS4-Schalter), Auto/Manuell-Mux |
 | `ui_interface` | `g1pilot/teleoperation/ui_interface.py` | Streamdeck-Bedienoberfläche |
+| `demo_gui` | `g1pilot/teleoperation/demo_gui.py` | Demo-GUI (Standard-Oberfläche), Handy-Gateway |
+| `ps4_joystick`, `ps4_arm_teleop`, `ps4_walk` | `g1pilot/teleoperation/ps4_*.py` | PS4-/Xbox-Controller: Arme, Hände, Hüfte, Gehen, Notaus |
+| `mola_fixed` | `g1pilot/navigation/fix_mola_odometry.py` | MOLA-Odometrie korrigieren (real, LiDAR) |
+| `sim_localization`, `joy_to_cmdvel` | `g1pilot/navigation/*.py` | Navigation in der Sim |
+| `dds_check`, `sim_dds_check`, `sim_*` | `g1pilot/tools/*.py` | Diagnose, siehe [docs/61-A-Werkzeuge.md](docs/61-A-Werkzeuge.md) |
 
 Ausführliche Beschreibung jedes Bereichs in den jeweiligen
-`docs/*_technik.md`-Dokumenten (siehe [docs/README.md](docs/README.md)).
+`docs/*-T-*.md`-Dokumenten (siehe [docs/README.md](docs/README.md)).
 
 ## Konfiguration
 
 Zentrale Einstellungen liegen in `config/config.yaml`. Der Sim/Real-Umschalter
 läuft über die Umgebungsvariable `G1_SIM_MODE` (siehe
 `g1pilot/utils/common.py` und
-[docs/02_architektur.md](docs/02_architektur.md)):
+[docs/02-T-Architektur.md](docs/02-T-Architektur.md)):
 
 | Modus | `G1_SIM_MODE` | Unitree-DDS-Domain | `ROS_DOMAIN_ID` | Interface | Entry Point |
 |---|---|---|---|---|---|
@@ -119,7 +124,7 @@ ROBOT_INTERFACE=<iface> docker compose --profile real-full up
 ```
 
 **Vor dem ersten Start auf echter Hardware:**
-[docs/70_echtroboter_anleitung.md](docs/70_echtroboter_anleitung.md) lesen
+[docs/50-A-Echter-Roboter.md](docs/50-A-Echter-Roboter.md) lesen
 (Sicherheitscheckliste + Ablauf).
 
 Einzelne Bausteine lassen sich auch getrennt starten, z. B.:

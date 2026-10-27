@@ -34,7 +34,7 @@ JOG_TF = {"left": "left_hand_point_contact", "right": "right_hand_point_contact"
 # ungleich lang. Der RViz-Marker hatte das nie -- der arm_controller faehrt
 # dort die KOMMANDIERTE Hand exakt aufs Ziel. Preis: die echte Hand laeuft
 # nach dem Loslassen um ihren Schleppfehler nach (in der Sim gemessen, siehe
-# docs/43_ps4_controller.md). Fehlt das Topic, laeuft die Fahrt an TF.
+# docs/11-A-Controller.md). Fehlt das Topic, laeuft die Fahrt an TF.
 JOG_CMD_TOPIC = "/g1pilot/hand_cmd_pose/{side}"
 # Aelter -> die kommandierte Pose gilt als unbekannt (arm_controller laeuft
 # nicht / WALK). Nicht zu knapp: in einer ueberlasteten Sim kommt das Topic

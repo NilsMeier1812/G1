@@ -546,7 +546,7 @@ def test_start_in_preparation_sends_nothing(lc_module):
 
 @pytest.mark.parametrize("fsm", [0, 1])
 def test_start_from_damp_still_goes_to_standby(lc_module, fsm):
-    """Unveraendert (Gantry-Ablauf aus docs/70): START aus Damp -> FSM 4."""
+    """Unveraendert (Gantry-Ablauf aus docs/50-A-Echter-Roboter.md): START aus Damp -> FSM 4."""
     node, robot = _make(lc_module)
     try:
         robot.fsm = fsm

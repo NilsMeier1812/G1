@@ -1,4 +1,4 @@
-# Installation & Ersteinrichtung
+# Installation & Ersteinrichtung — Anleitung
 
 Richtet sich an: alle Anwender. Ziel: von einem frischen Rechner zu einer
 laufenden Simulation.
@@ -16,7 +16,7 @@ Zwei Betriebsarten:
 - **Simulation** — MuJoCo-Physik statt echtem Roboter, läuft auf jedem
   halbwegs aktuellen Rechner, keine GPU nötig.
 - **Echter Roboter** — siehe zusätzlich
-  [70_echtroboter_anleitung.md](70_echtroboter_anleitung.md), bevor der Stack
+  [50-A-Echter-Roboter.md](50-A-Echter-Roboter.md), bevor der Stack
   gegen Hardware gestartet wird.
 
 ## Voraussetzungen
@@ -92,7 +92,7 @@ make build-sim         # baut g1pilot-sim:v1.1.0 + g1pilot-mujoco:v1.0
 Für den **echten Roboter** stattdessen bzw. zusätzlich `make build-real`
 (~10 min, Image `g1pilot-real:v1.2.0`). Der komplette Ablauf vom frischen PC
 bis zur Demo-GUI am G1 steht in
-[70_echtroboter_anleitung.md](70_echtroboter_anleitung.md#kurzfassung-frischer-pc--demo-gui-am-echten-g1).
+[50-A-Echter-Roboter.md](50-A-Echter-Roboter.md#kurzfassung-frischer-pc--demo-gui-am-echten-g1).
 
 **5b. Umgebungs-Builder / Scene-Editor einrichten** (einmalig, braucht
 Internet für PyPI)
@@ -137,7 +137,7 @@ make sim               # baut bei Bedarf nach und startet den Stack
 Beim ersten `make sim` wird zusätzlich `xhost +local:docker` gesetzt, damit
 die Container auf das Display zugreifen dürfen. Erscheinen das MuJoCo-Fenster
 und der Streamdeck, steht die Umgebung. Der Roboter steht dabei zunächst nur
-— siehe [30_loco_anleitung.md](30_loco_anleitung.md) für die Bedienung.
+— siehe [30-A-Stehen-und-Gehen.md](30-A-Stehen-und-Gehen.md) für die Bedienung.
 
 ## Windows (WSL2)
 
@@ -254,7 +254,7 @@ Set-NetFirewallHyperVVMSetting -Name '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -D
 ```
 
 (Für den Echtbetrieb bleibt trotzdem ein nativer Linux-PC empfohlen, siehe
-[70_echtroboter_anleitung.md](70_echtroboter_anleitung.md).)
+[50-A-Echter-Roboter.md](50-A-Echter-Roboter.md).)
 
 **Wenn Mirrored Mode nicht hilft:**
 
@@ -279,71 +279,16 @@ Set-NetFirewallHyperVVMSetting -Name '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -D
 
 ## Starten im Alltag
 
-Der einfachste Einstieg ist `./start.sh`. Ohne Argumente öffnet sich ein
-grafisches Startmenü (`g1_gui.py`, Tkinter): drei Karten — *Simulation*,
-*Echter Roboter*, *Umgebungen*. Alles läuft in einem Fenster; Menü,
-Optionsseiten und Log-Ansicht werden ausgetauscht.
-
-Die Optionsseiten von Simulation und echtem Roboter sind gleich aufgebaut:
-
-| Abschnitt | Simulation | Echter Roboter |
-|---|---|---|
-| Umgebung / Verbindung | Szene aus `scene_editor/scenes/` | Netzwerk-Interface (prüft auf 192.168.123.x) |
-| Bedienoberfläche | Demo-GUI (Default) oder Streamdeck | Demo-GUI (Default) oder Streamdeck |
-| Ausstattung | Inspire-Hände (Default an), Navigation, RViz (bei Navigation Pflicht) | Inspire-Hände + IPs, RViz |
-| Geh-Limits | — | vorwärts / seitlich / drehen |
-| Erweitert (eingeklappt) | Sim-Tempo, Images neu bauen | Modbus-Port, Gamepad-Name, LiDAR (experimentell), Images neu bauen |
-
-Die Hand-Oberflächen im Browser werden nur beim Streamdeck angeboten; die
-Demo-GUI hat die Handsteuerung eingebaut. Die letzte Auswahl merkt sich das
-Startmenü in `~/.config/g1pilot/launcher.json` (nicht die
-Sicherheitsbestätigung und nicht „Images neu bauen“).
-Startet man einen Stack, erscheint dessen Docker-Ausgabe live im Fenster mit
-einem Stop-Button. Über *‹ Menü* geht man zurück, ohne den Stack zu beenden —
-er taucht unter *Laufende Prozesse* wieder auf. Fehlt Tkinter oder ein
-Display, fällt `start.sh` automatisch auf ein klassisches Text-Menü zurück
-(erzwingbar mit `--menu` oder `G1_NO_GUI=1`).
-
 ```bash
 ./start.sh            # grafisches Startmenü (Standard)
 ./start.sh --menu     # klassisches Text-Menü
-# Nicht-interaktiv (Sim, Defaults/Env-Overrides):
-USE_RVIZ=true ./start.sh --yes
-# Nicht-interaktiv (Real, erfordert explizite Bestätigung):
-G1_MODE=real ROBOT_INTERFACE=enp3s0 G1_REAL_CONFIRM=1 ./start.sh --yes
+make sim              # ohne Menü, Simulation mit Defaults
 ```
 
-Alternativ direkt über `make` bzw. `docker compose`:
-
-| Befehl | Wirkung |
-|---|---|
-| `make sim` | Stack im Vordergrund starten (Ctrl-C stoppt) |
-| `make sim-bg` | Stack im Hintergrund |
-| `make real ROBOT_INTERFACE=<nic>` | Echten Roboter starten (schlank: Arme + Hände + Loco) |
-| `make real-full ROBOT_INTERFACE=<nic>` | Echten Roboter mit Livox/MOLA/Navigation starten |
-| `make stop` | Stack stoppen |
-| `make logs` / `make status` | Logs folgen / Container-Status |
-| `make shell-sim` / `make shell-mujoco` / `make shell-real` | Shell im jeweiligen Container |
-| `make clean` | Container + Images entfernen |
-
-Jedes `make sim`/`make real`/`make real-full` baut das benötigte Image bei
-Bedarf automatisch nach — ein separater `make build-*`-Aufruf ist nur nötig,
-um das Bauen vom Starten zu trennen (z. B. um vorab zu bauen, ohne den Stack
-gleich hochzufahren). Intern ist `make` nur ein dünner Wrapper um
-`docker compose --profile <sim|real|real-full>` auf der einen
-`docker-compose.yml` — es gibt bewusst keine separaten
-`docker-compose.*.yaml`-Dateien mehr.
-
-```bash
-# Simulation: MuJoCo-G1 + g1pilot (robot_state, Arme, RViz, Teleop)
-G1_SIM_MODE=true docker compose --profile sim up
-
-# Echter Roboter (schlank: Arme + Hände + Unitree-Loco-Controller)
-ROBOT_INTERFACE=<iface> docker compose --profile real up
-
-# Echter Roboter mit Livox/MOLA/Navigation (großes Image, MID360 nötig)
-ROBOT_INTERFACE=<iface> docker compose --profile real-full up
-```
+Das Startmenü (Simulation, Echter Roboter, Umgebungen, Dokumentation), alle
+Optionen, der Text-Modus und die `make`-/`docker compose`-Befehle stehen in
+[03-A-Startmenue.md](03-A-Startmenue.md). Alle Umgebungsvariablen:
+[04-T-Umgebungsvariablen.md](04-T-Umgebungsvariablen.md).
 
 ## Nach dem Start: Dokumentation
 
@@ -365,4 +310,5 @@ erreichbar, sowie aus dem grafischen Startmenü über den Menüpunkt
 | Greif-Objekte fliegen weg, ständig `[scene-reset]` | `trimesh`/`vhacdx` fehlen im `scene_editor/.venv` → Schritt 5b. |
 | Sim läuft mit sehr wenigen FPS, Log zeigt `[gpu] WARNUNG: MuJoCo rendert auf der CPU (llvmpipe)` | Container hat keinen GPU-Zugriff. Häufigster Grund: NVIDIA-Karte ohne NVIDIA Container Toolkit. `make gpu-check` zeigt Ursache und Installationsbefehle; danach `sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker` und Sim neu starten. |
 | `make sim` baut jedes Mal neu | Normal, sofern sich Quellcode/Dockerfile geändert haben; Docker cached unveränderte Layer. |
-| Fenster öffnen sich, aber der Roboter reagiert auf nichts | Zunächst normal — siehe [30_loco_anleitung.md](30_loco_anleitung.md), der Roboter startet bewusst nicht automatisch. |
+| Sim: Fenster öffnen sich, aber die Arme reagieren nicht | Der Auto-Start in GREIFEN wartet, bis arm_controller und loco_sim bereit sind (langsamer Rechner: einige Sekunden). Sonst in der Demo-GUI GREIFEN antippen, siehe [40-A-Simulation.md](40-A-Simulation.md#fehlerbehebung). |
+| Real: Fenster öffnen sich, der Roboter reagiert auf nichts | Gewollt: am echten G1 gibt es keinen Auto-Start. Erst »Start« in der Startleiste, siehe [50-A-Echter-Roboter.md](50-A-Echter-Roboter.md). |

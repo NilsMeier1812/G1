@@ -3,7 +3,7 @@
 Richtet sich an: Anwender, die aus einem **eigenen, unabhängigen Projekt**
 heraus Zielposen an den G1-Arm schicken wollen — ohne ROS 2, ohne den
 gesamten g1pilot-Stack zu verstehen. Für die interne Funktionsweise siehe
-[21_arm_api_technik.md](21_arm_api_technik.md).
+[21-T-Arm-API.md](21-T-Arm-API.md).
 
 ## Überblick
 
@@ -11,7 +11,7 @@ gesamten g1pilot-Stack zu verstehen. Für die interne Funktionsweise siehe
 neben `arm_controller` und übersetzt gewöhnliche HTTP-POST-Requests in
 Arm-Kommandos. Nichts wird gespeichert — jedes Kommando wird sofort
 ausgeführt (für Speichern siehe den `/arm/save`-Endpunkt oder direkt den
-[Positionsspeicher](10_arm_manipulation_anleitung.md)). Es gelten exakt
+[Positionsspeicher](20-A-Arm-Manipulation.md)). Es gelten exakt
 dieselben Sicherheitsgates wie beim Streamdeck (E-Stop, ENABLE MANIPULATION,
 Kollision, Limits) — die Brücke kann sie nicht umgehen.
 
@@ -23,7 +23,7 @@ Docker, dank `network_mode: host`), reicht `http://localhost:8770`.
 
 - Der g1pilot-Stack läuft (Simulation oder echter Roboter).
 - Manipulation ist aktiviert (`ENABLE MANIPULATION`, siehe
-  [10_arm_manipulation_anleitung.md](10_arm_manipulation_anleitung.md)) —
+  [20-A-Arm-Manipulation.md](20-A-Arm-Manipulation.md)) —
   ohne das lehnt die API jedes Bewegungskommando ab.
 
 ## Schnellstart mit dem mitgelieferten CLI
@@ -97,7 +97,7 @@ Request kehrt zurück, sobald das Kommando angenommen oder abgelehnt wurde
 
 Bewegt nichts — schreibt die aktuelle Stellung in dieselbe Datei, die auch
 der Streamdeck-Speichern-Dialog nutzt (siehe
-[10_arm_manipulation_anleitung.md](10_arm_manipulation_anleitung.md)).
+[20-A-Arm-Manipulation.md](20-A-Arm-Manipulation.md)).
 `components`: `left_arm`, `right_arm`, `left_hand`, `right_hand`, oder die
 Kurzformen `arms`, `hands`, `all`.
 

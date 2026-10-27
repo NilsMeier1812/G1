@@ -2,13 +2,14 @@
 
 Richtet sich an: Entwickler, die den Navigations-Stack ändern oder erweitern
 wollen. Für die Bedienung siehe
-[50_navigation_anleitung.md](50_navigation_anleitung.md).
+[31-A-Navigation.md](31-A-Navigation.md).
 
 ## Beteiligte Dateien
 
 | Datei | Rolle |
 |---|---|
 | `g1pilot/navigation/scene_bridge.py` | Umgebungsobjekte (Sim, per UDP) → `/scene_markers` |
+| `g1pilot/navigation/scene_markers.py` | gemeinsame Logik des Weltmodells `/scene_markers` (Objektarten, Stationen `station_<Name>`, AABB) für Nav, IK-Kollision und Demo-GUI |
 | `g1pilot/navigation/create_map.py` | `/scene_markers` → 2D-Belegungskarte `/map` |
 | `g1pilot/navigation/dijkstra_planner.py` | globaler Pfadplaner |
 | `g1pilot/navigation/nav2point.py` | Pure-Pursuit-Waypoint-Follower |
@@ -69,7 +70,7 @@ der MuJoCo-Container hat kein ROS; beide Container laufen mit
 - RViz zeigt es direkt an.
 - `create_map` rastert daraus die 2D-Karte.
 - `arm_controller`/`ik_solver` speisen daraus die Umgebungskollision
-  (siehe [11_arm_manipulation_technik.md](11_arm_manipulation_technik.md)).
+  (siehe [20-T-Arm-Manipulation.md](20-T-Arm-Manipulation.md)).
 
 ### `create_map`
 
@@ -144,7 +145,7 @@ Fortschritt meldet der Node als `std_msgs/String` auf `/g1pilot/nav_status`
 `dijkstra_planner` publiziert bei Fehlschlag (keine Pose, Start/Ziel
 blockiert, kein kollisionsfreier Weg) einen **leeren Pfad**. `nav2point` hält
 dann an, statt dem vorherigen Pfad weiter zu folgen. Die Demo-GUI nutzt
-`nav_status` für die AUTO-NAV-Anzeige (siehe `42_demo_gui_konzept.md`).
+`nav_status` für die AUTO-NAV-Anzeige (siehe `10-A-Demo-GUI.md`).
 
 ### `sim_localization` (nur Sim) / MOLA + `mola_fixed` (nur Real)
 
@@ -159,7 +160,7 @@ das vom Stack erwartete Frame.
 
 ### `joy_mux` / `joy_to_cmdvel`
 
-Siehe [41_teleoperation_technik.md](41_teleoperation_technik.md). Auf real
+Siehe [13-T-Streamdeck.md](13-T-Streamdeck.md). Auf real
 liest `loco_client` `/g1pilot/joy` direkt; in der Simulation liest
 `loco_sim` keinen `Joy`, daher übersetzt `joy_to_cmdvel` das (bereits durch
 `joy_mux`/`auto_enable` gegatete) `/g1pilot/joy` in `/g1pilot/loco_cmd_vel`

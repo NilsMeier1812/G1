@@ -216,7 +216,7 @@ def walk_tile_hint(state, age_s):
     return "gesperrt · G1 nicht im Walk"
 
 
-# Belegung (wie ps4_arm_teleop / docs/43_ps4_controller.md).
+# Belegung (wie ps4_arm_teleop / docs/11-A-Controller.md).
 PS4_HELP = (
     ("Steuerkreuz ◀ / ▶", "Hand LINKS / RECHTS auswählen"),
     ("Steuerkreuz ▲ / ▼", "BEIDE Hände / BEIDE gespiegelt"),

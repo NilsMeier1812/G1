@@ -2,19 +2,27 @@
 
 Richtet sich an: Anwender, die die Inspire-RH56DFTP-2-Hände in Simulation
 oder auf echter Hardware nutzen wollen. Für die interne Funktionsweise siehe
-[61_inspire_haende_technik.md](61_inspire_haende_technik.md).
+[22-T-Inspire-Haende.md](22-T-Inspire-Haende.md).
 
 ## Überblick
 
 Jede Hand hat 6 steuerbare Freiheitsgrade (Kleiner, Ring-, Mittel-,
 Zeigefinger, Daumen-Beugung, Daumen-Rotation) und liefert Kraft- sowie
-Tastsinn-Rückmeldung. Zwei HTML-Oberflächen dienen der Bedienung:
+Tastsinn-Rückmeldung. Bedient werden die Hände über:
 
-- **Controller** (Port 8766) — Winkel/Kraft/Geschwindigkeit je Finger
-  einstellen, Hand öffnen/schließen.
-- **Viewer** (Port 8765) — Kraft- und Tastsinn-Heatmap anzeigen.
+- **Demo-GUI** (Normalfall): GREIFEN → Seite **HÄNDE** — ganze Hand
+  öffnen/schließen, je Finger ein Soll-Schieber mit Ist-Öffnung und Kraft,
+  Kraftzonen-Heatmap, unter *Erweitert* Griffkraft (Sanft 300 g / Mittel
+  800 g / Fest 1500 g) und Tempo. Details: [10-A-Demo-GUI.md](10-A-Demo-GUI.md).
+- **Controller:** Kreis = öffnen, Viereck = schließen (gewählte Hand),
+  siehe [11-A-Controller.md](11-A-Controller.md).
+- **Handy:** Hände öffnen/schließen, siehe [12-A-Handy.md](12-A-Handy.md).
+- **Zwei HTML-Oberflächen der Hand-Bridge** (vor allem mit dem Streamdeck):
+  **Controller** (Port 8766) — Winkel/Kraft/Geschwindigkeit je Finger
+  einstellen, Hand öffnen/schließen; **Viewer** (Port 8765) — Kraft- und
+  Tastsinn-Heatmap.
 
-Beide GUIs sind in Simulation und auf echter Hardware identisch.
+Alle Wege sind in Simulation und auf echter Hardware identisch.
 
 ## Aktivieren
 
@@ -54,8 +62,8 @@ ros2 topic pub --once /g1pilot/hand_action/right std_msgs/msg/String "{data: 'op
 ros2 topic pub --once /g1pilot/hand_action/right std_msgs/msg/String "{data: 'close'}"
 ```
 
-**Handstellungen speichern:** Über den Positionsspeicher — siehe
-[10_arm_manipulation_anleitung.md](10_arm_manipulation_anleitung.md).
+**Handstellungen speichern:** Über den Positionsspeicher (Komponenten
+linke/rechte Hand) — siehe [23-A-Posen-und-Ablaeufe.md](23-A-Posen-und-Ablaeufe.md).
 
 ## In der Simulation: greifbare Testkugel
 

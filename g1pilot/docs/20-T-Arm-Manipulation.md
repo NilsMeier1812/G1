@@ -2,8 +2,8 @@
 
 Richtet sich an: Entwickler, die an der Armregelung, IK oder dem
 Positionsspeicher etwas ändern wollen. Für die Bedienung siehe
-[10_arm_manipulation_anleitung.md](10_arm_manipulation_anleitung.md), für die
-HTTP-Brücke siehe [21_arm_api_technik.md](21_arm_api_technik.md).
+[20-A-Arm-Manipulation.md](20-A-Arm-Manipulation.md), für die
+HTTP-Brücke siehe [21-T-Arm-API.md](21-T-Arm-API.md).
 
 ## Beteiligte Dateien
 
@@ -14,7 +14,9 @@ HTTP-Brücke siehe [21_arm_api_technik.md](21_arm_api_technik.md).
 | `g1pilot/manipulation/arm_geometry.py` | Kugelmodell der Arme, Abstandsfunktion zu Objekten (Planer + Laufzeit-Gate) |
 | `g1pilot/manipulation/arm_planner.py` | Eigener Bahnplaner (Optimierung mit ortsabhängigem Abstand, RRT-Rückfall, Zeitparametrierung) |
 | `g1pilot/manipulation/arm_planner_process.py` | Planer als eigener Prozess (Zeitlimit, Abbruch, Neustart) |
-| `g1pilot/manipulation/pose_store.py` | Dateibasierte Ablage gespeicherter Posen |
+| `g1pilot/manipulation/pose_store.py` | Dateibasierte Ablage gespeicherter Posen, Abläufe, relative Bewegungen ([23-T-Posen-und-Ablaeufe.md](23-T-Posen-und-Ablaeufe.md)) |
+| `g1pilot/manipulation/ik_servo_process.py` | Marker-/Jog-IK im eigenen Prozess (`ik_async`) |
+| `g1pilot/manipulation/waist_yaw.py`, `waist_hold.py` | Hüftdrehung und Taille halten ([24-T-Hueftdrehung.md](24-T-Hueftdrehung.md)) |
 | `g1pilot/manipulation/arm_command.py` | Wire-Format der Live-Pose-Schnittstelle (gemeinsam mit `arm_api.py`) |
 | `g1pilot/manipulation/interactive_marker.py` | RViz-Marker, Leader-Follower-Verhalten; im WALK ausgeblendet (`hide_in_walk`, Sim: sichtbar), bei BALANCING an der Hand-TF neu erzeugt |
 | `g1pilot/utils/joints_names.py` | Gelenk-Indizes, -Limits, -Namen (einzige Quelle der Wahrheit) |
@@ -36,7 +38,7 @@ Der Node hält mehrere unabhängige, aber interagierende Zustände:
 - `_arm_slack` — Arme drehmomentfrei/gedämpft gehalten, ohne die Kontrolle
   an den Onboard-Regler zurückzugeben (siehe unten, „E-Stop").
 - `homing_active` / `homing_reached` — Fahrt zur Home-Pose.
-- `walk_mode` — während `WALK` (siehe [31_loco_technik.md](31_loco_technik.md))
+- `walk_mode` — während `WALK` (siehe [30-T-Stehen-und-Gehen.md](30-T-Stehen-und-Gehen.md))
   hält der Controller die Arme in einer definierten Lauf-Pose. Nur mit
   `walk_park_arms=true` (Node-Standard). Real setzt `bringup_real` es aus
   `G1_WALK_PARK_ARMS` (Default `false`, Nils 2026-10-19): die Arme bleiben beim
@@ -265,43 +267,8 @@ den Latch (`estop_active`); die Arme bleiben schlaff, bis
 
 ### `pose_store.py`
 
-Dateiformat Version 3 (seit 2026-10-22, Abläufe):
-
-```json
-{"version": 3,
- "categories": ["Allgemein", "Greifen"],
- "poses": {"<name>": {"category": "...", "left_arm": [...], "saved_at": 0.0}},
- "moves": {"<bewegung>": {"dx": 0.0, "dy": 0.0, "dz": 0.05, "sides": ["left", "right"]}},
- "sequences": {"<ablauf>": {"steps": [{"pose": "<name>", "wait_s": 0.0},
-                                      {"move": "<bewegung>", "wait_s": 0.0}]}}}
-```
-
-Ein Ablauf (`sequences`) verweist nur auf Posennamen bzw. relative
-Bewegungen; dieselbe Pose kann in mehreren Abläufen stehen. Eine **relative
-Bewegung** (`moves`, z. B. „Box anheben“ = 5 cm hoch) verschiebt die Hände
-von dort, wo sie gerade sind: Meter im Oberkörper-Bezug (`dx` vor, `dy`
-links, `dz` hoch; mit dem Taillen-Yaw gedreht wie der Jog), je Achse höchstens
-±0,30 m, Orientierung bleibt. Die Demo-GUI rechnet daraus ein Ziel (aktuelle
-kommandierte Hand, sonst TF `hand_point_contact`, plus Verschiebung) und
-schickt es als `/g1pilot/arm_command` `type=pose` -- geplant, mit Kollisionsschutz
-und denselben Statusmeldungen wie ein Pose-Anfahren. Ist die Hand unbekannt,
-bricht der Ablauf sofort ab. `wait_s` = Pause nach dem Schritt (nur „Am
-Stück“, 0…600 s). Fehlt `sequences` (Version 2), werden die Abläufe aus den
-Kategorien `Ablauf <Name>` abgeleitet (Posen nach Namen sortiert) und beim
-nächsten Schreiben fest übernommen. `save()` in eine Kategorie
-`Ablauf <X>` hängt die Pose zusätzlich hinten an Ablauf `<X>` an (nicht
-doppelt). Ausgeführt werden Abläufe von der Demo-GUI
-(`teleoperation/sequence_runner.py`: am Stück / Schritt für Schritt,
-`/g1pilot/sequence/next` = Weiter, `/g1pilot/sequence/state` = Stand,
-latched JSON); der arm_controller sieht davon nur einzelne
-`/g1pilot/pose_store/goto` bzw. `arm_command`.
-
-Speicherbare Komponenten: `left_arm`, `right_arm`, `left_hand`, `right_hand`
-(`COMPONENTS`-Tupel). Speicherpfad-Priorität: `G1_POSE_STORE`-Env-Variable
-> `<repo>/data/arm_poses.json` (bind-gemountet, überlebt Container-Neustarts)
-> `~/.g1pilot/` (Host-Betrieb ohne Mount). Schreiben ist atomar
-(`write-tmp-then-rename`), Version-1-Dateien (flaches Format ohne
-Kategorien) und Version 2 (ohne Abläufe) werden transparent migriert.
+Dateiformat (Version 3 mit Abläufen und relativen Bewegungen),
+Speicherpfade und Migration: [23-T-Posen-und-Ablaeufe.md](23-T-Posen-und-Ablaeufe.md).
 
 ## `G1IKSolver` (`utils/ik_solver.py`)
 
@@ -443,7 +410,7 @@ Bahn:
 | `shutdown_return_s` | Rückfahrzeit beim Programmende (2,5 s) |
 | `arm_accel_limit` | Gelenkbeschleunigung [rad/s²], 0 = aus (real über Launch 3,0, `G1_ARM_ACCEL_LIMIT`) |
 | `max_tracking_error` | max. Abstand Soll–Messung [rad], 0 = aus (real 0,3, `G1_ARM_MAX_TRACKING_ERROR`) |
-| `arm_api_*` | Parameter der HTTP-Brücke, siehe [21_arm_api_technik.md](21_arm_api_technik.md) |
+| `arm_api_*` | Parameter der HTTP-Brücke, siehe [21-T-Arm-API.md](21-T-Arm-API.md) |
 
 ## Bekannte Einschränkungen
 

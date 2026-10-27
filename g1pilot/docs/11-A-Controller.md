@@ -1,4 +1,4 @@
-# PS4-Controller für den Oberkörper (Arme + Hände) und Gehen
+# Controller (PS4/Xbox) — Anleitung
 
 Ein PS4-Controller (DualShock 4) steuert die Hände des G1: Position und
 Drehung beider Hände, Hände auf/zu, Grundstellung, Stopp und NOT-HALT.
@@ -51,13 +51,13 @@ Am echten Roboter erst in der GUI starten, siehe unten.
 | Kreuz | **Stopp**: Hand hält sofort an, eine laufende geplante Bewegung (Grundstellung, Ablauf) wird abgebrochen |
 | Options | **Controller sperren / entsperren** (zum Ablegen). Gesperrt lösen L2/R2, Sticks und alle Tasten nichts aus; nur **PS (NOT-HALT)** und **R1 + L1 + PS (Voll-Notaus)** wirken weiter. LED fast aus (dunkelgrau), lange Vibration beim Sperren, kurze beim Entsperren, gesperrt vibriert jede andere Taste kurz und leicht. Siehe [Controller sperren](#controller-sperren-options) |
 | Share **1 s halten** | Grundstellung (Arme neben den Körper, geplant um Hindernisse herum) |
-| PS | **NOT-HALT** (wie in den GUIs: Arme schlaff, Roboter gedämpft — real sackt er zusammen) |
+| PS | **NOT-HALT** (wie in den GUIs: Arme schlaff, Hände aus; real Taille gehalten und Beine nur StopMove, der G1 bleibt stehen; siehe [51-A-Notaus.md](51-A-Notaus.md)) |
 | **Steuerkreuz ← / → + Kreuz 2 s halten** | **ARM SPIEGELN**: der Arm der gedrückten Seite fährt geplant (Planer + Kollisionsschutz) in die exakt gespiegelte Pose des anderen Arms — z. B. rechten Arm hinstellen, dann ← + Kreuz halten: der linke Arm spiegelt ihn. Controller vibriert während des Haltens, vorzeitig loslassen bricht ab. Siehe [Arm spiegeln](#arm-spiegeln-steuerkreuz--kreuz) |
 | **R1 + L1 + PS 2 s halten** | **VOLL-NOTAUS**: ganzer G1 in Damp, auch die Beine. Controller vibriert während des Haltens, vorzeitig loslassen bricht ab. Siehe [Voll-Notaus](#voll-notaus-r1--l1--ps) |
 | **L2 drücken** | Modus **GEHEN** (LED blau wie die GUI-Kachel GEHEN): Arm-Tasten und Sticks gesperrt, bis R2; L1/R1 = Geh-Tempo |
 | **L2 halten** | **Gehen** (Totmann): Sticks, L1/R1 und Steuerkreuz ▲/▼ gehören dem Gehen, siehe [Gehen mit L2](#gehen-mit-l2) |
 | **R2 drücken** | Modus **GREIFEN**: Arme übernehmen, Arm-Steuerung wieder frei. Schon im GREIFEN, Arme aber abgegeben (z. B. nach NOT-HALT): R2 übernimmt sie wieder (Sim: + stehen) |
-| **R2 halten + rechter Stick ←/→** | **HÜFTE drehen** (Oberkörper links/rechts, LED weiß), Arme drehen mit. Siehe [Hüfte drehen](#hüfte-drehen-r2-halten) |
+| **R2 halten + rechter Stick ←/→** | **HÜFTE drehen** (Oberkörper links/rechts, LED weiß), Arme drehen mit. Siehe [Hüfte drehen](24-A-Hueftdrehung.md) |
 | **R2 halten + R3** | Hüfte sanft zurück zur Mitte |
 | **L3** (linken Stick drücken) | **Ablauf weiter**: wartet ein Ablauf „Schritt für Schritt“ der Demo-GUI auf Bestätigung, fährt er den nächsten Schritt an (wie *Weiter ▶*). Der Controller vibriert zweimal kurz, sobald ein Ablauf wartet, und kurz beim Weiter. Sonst ohne Wirkung. Lief beim Drücken ein Jog (Stick ausgelenkt), hält die Hand genau einmal an, danach kommt kein Hand-Ziel mehr. **Solange der Schritt fährt, sind beide Sticks gesperrt** (Anzeige „ABLAUF fährt (Sticks gesperrt, Kreuz = Stopp)“), sonst bräche ein versehentlich bewegter Stick die Fahrt mit „manueller Vorrang“ ab; Kreuz = Stopp geht immer. Wartet der Ablauf wieder, darf man nachkorrigieren. Nicht bei gehaltenem L2/R2 und nicht im GEHEN |
 | Touchpad | frei (Reserve) |
@@ -70,7 +70,7 @@ Loslassen = Hand steht. Die Hand läuft dem Stick höchstens ein kleines Stück
 voraus (wie in der Demo-GUI); kommt der Arm nicht weiter (Gelenkgrenze,
 Kollisions-Gate vor Körper/Tisch), wandert das Ziel nicht davon. Wie schnell
 die Hand reagiert und wie weit sie nachläuft, hängt vom Regeltakt des
-arm_controllers ab, siehe [Reaktionszeit](#reaktionszeit).
+arm_controllers ab, siehe [Reaktionszeit](11-T-Controller.md#reaktionszeit).
 
 **Rückmeldung**, welche Hand aktiv ist:
 - Controller-LED in der Farbe der Auswahl (siehe Tabelle), rot bei NOT-HALT,
@@ -149,53 +149,12 @@ was auf einer Seite gewählt wird, zeigt die andere sofort.
 
 ## Hüfte drehen (R2 halten)
 
-Seit 2026-10-21. Steht der G1 schräg vor dem Tisch, dreht man den
-Oberkörper ein Stück nach links oder rechts (nur die Taille, Gelenk
-`waist_yaw`), statt neu anzulaufen.
-
-- **R2 gedrückt halten** (im Modus GREIFEN) **+ rechter Stick links/rechts**:
-  Hüfte dreht, proportional zum Ausschlag, höchstens **15 °/s**. Stick
-  links = nach links drehen (aus Sicht des Roboters). LED weiß, Demo-GUI
-  „HÜFTE – rechter Stick ◀/▶ dreht, R3 = Mitte“.
-- **R2 loslassen** = Hüfte steht sofort (Totmann wie L2 beim Gehen; bleibt
-  der Strom aus, z. B. Funkabriss, hält der arm_controller nach 0,3 s an).
-- **R2 halten + R3** (rechten Stick drücken): Hüfte fährt sanft zur Mitte.
-  Die Demo-GUI hat dafür den Knopf **Hüfte Mitte** und zeigt den Stand
-  („Hüfte 12° links“).
-- Solange R2 gehalten wird, bewegen Sticks, Steuerkreuz, Dreieck und L1/R1
-  **nicht** die Arme (auch kein Spiegeln). Kreis/Viereck (Hände), Kreuz (Stopp, hält auch die
-  Hüfte bis der Stick zurück ist), Options (Sperre) und PS wirken weiter.
-- **Bereich:** Sim und echter G1 **±105°** um die Mitte
-  (`G1_WAIST_YAW_LIMIT_DEG`). Mitte = Stellung, die der Onboard-Regler beim
-  Übernehmen der Arme hielt (Sim: 0).
-- **Die Arme drehen mit:** sie halten ihre Gelenkstellung, die Hände bleiben
-  also vor der Brust. Eine laufende geplante Fahrt (Grundstellung, Pose,
-  Spiegeln) endet beim Drehen; Hand-Ziele und neue Fahrten werden
-  abgelehnt, solange die Hüfte dreht.
-- **Danach joggt man im Oberkörper-Bezug:** „vor“ = Richtung Brust, also zum
-  Tisch hin (Controller und Demo-GUI). Bei Hüfte in der Mitte ändert sich
-  nichts. (`jog_torso_frame=false` = Becken wie früher.)
-- Aus GEHEN heraus wechselt R2 zuerst nach GREIFEN; die Hüfte dreht erst,
-  wenn die Arme übernommen sind (real nach der Gewichtsrampe).
-
-**Automatisch zurück zur Mitte** (sanft, 15 °/s), bevor:
-
-| Aktion | Verhalten |
-|---|---|
-| **GEHEN** (L2, Kachel, Streamdeck) | erst Mitte, dann `walk_ready`; Sim: `loco_sim` wartet darauf (auch mit AGILE), real: `loco_client` sendet `Move()` nur mit 0, bis die Hüfte in der Mitte ist |
-| **Grundstellung** (Share 1 s) | erst Mitte, dann die geplante Fahrt |
-| **Arme abgeben** (DISABLE, real) | erst Mitte, dann Rückfahrt + Gewicht 1→0 — sonst risse der Onboard-Regler die Taille selbst zurück |
-
-Dauert das länger als 10 s (`waist_yaw_center_timeout_s`), geht es mit
-Warnung trotzdem weiter.
-
-**NOT-HALT:** die Hüfte bleibt stehen, wo sie ist (wie bisher gehalten),
-nichts dreht von allein zurück — auch nicht nach START. Zur Mitte dann mit
-R2 + R3 oder dem GUI-Knopf. **Voll-Notaus:** Taille schlaff (wie bisher);
-nach START wird sie an der dann gemessenen Stellung gehalten.
-
-Abschalten: `G1_WAIST_YAW=0` (real) bzw. Parameter `waist_yaw_control:=false`
-(arm_controller) / `waist_yaw:=false` (ps4_arm_teleop).
+**R2 gedrückt halten + rechter Stick links/rechts** dreht den Oberkörper
+(Gelenk `waist_yaw`), **R2 halten + R3** fährt die Hüfte sanft zur Mitte.
+R2 loslassen = Hüfte steht sofort. Solange R2 gehalten wird, bewegen Sticks,
+Steuerkreuz, Dreieck und L1/R1 nicht die Arme. Bereich, automatische
+Rückkehr zur Mitte vor GEHEN/Grundstellung/Arme abgeben, Verhalten bei
+NOT-HALT und Abschalten: [24-A-Hueftdrehung.md](24-A-Hueftdrehung.md).
 
 ## Gehen mit L2
 
@@ -433,7 +392,7 @@ Log beim Verbinden: `Xbox-Controller verbunden: Xbox Wireless Controller …
 
 **Erster Test mit dem Xbox-Controller** (vor dem Roboter, Sim reicht):
 `ros2 topic echo /g1pilot/ps4/joy` — jede Taste einmal drücken und prüfen,
-dass sie am richtigen Index ankommt (Tabelle [Feste Belegung](#feste-belegung-g1pilotps4joy));
+dass sie am richtigen Index ankommt (Tabelle [Feste Belegung](11-T-Controller.md#feste-belegung-g1pilotps4joy));
 **Xbox-Taste → `buttons[10]` = 1**, LT ganz durchgedrückt → `axes[4]` ≈ 1.
 Kommt die Xbox-Taste nicht an: `G1_XBOX_PS_BUTTON=view`. Danach am Roboter
 dieselben Schritte wie unter [Echter Roboter](#echter-roboter) mit den
@@ -446,7 +405,7 @@ Xbox-Tasten.
 
 ## Echter Roboter
 
-Vorher [70_echtroboter_anleitung.md](70_echtroboter_anleitung.md) lesen.
+Vorher [50-A-Echter-Roboter.md](50-A-Echter-Roboter.md) lesen.
 Mit dem Schalter gilt am echten Roboter:
 
 - **Gehen nur mit L2 gehalten** (siehe [Gehen mit L2](#gehen-mit-l2)):
@@ -475,7 +434,7 @@ Mit dem Schalter gilt am echten Roboter:
   Wer PS nur als Stopp will: `G1_PS4_PS_ESTOP=0` (dann wirkt PS wie Kreuz).
 - LED-Farbe funktioniert real (Container `privileged`), in der Sim nicht.
 - Hände auf/zu nur mit Inspire-Händen (Ausstattung → Inspire-Hände).
-- **Seit 2026-10-13 auch real geändert** (siehe [Reaktionszeit](#reaktionszeit)):
+- **Seit 2026-10-13 auch real geändert** (siehe [Reaktionszeit](11-T-Controller.md#reaktionszeit)):
   arm_controller liest LowState nicht mehr blockierend im Takt, nimmt nur
   das neueste Hand-Ziel, Halte-Ziel wird 1 s wiederholt, Vorlauf nur
   entlang der Bewegung. Das gilt für Controller, Demo-GUI und Marker
@@ -514,7 +473,7 @@ Ablauf:
 | `G1_PS4_SPEED` | `Langsam` | Start-Tempo |
 | `G1_PS4_MAX_SPEED` | `Normal` | höchstes Tempo per R1 |
 | `G1_PS4_PS_ESTOP` | `1` | `0` = PS nur Stopp (wie Kreuz) statt NOT-HALT |
-| `G1_JOG_REFERENCE` | `command` | Bezug der Controller-/GUI-Jogs, `tf` = alter Stand (siehe [Präzise Achsen](#präzise-achsen-2026-10-21)) |
+| `G1_JOG_REFERENCE` | `command` | Bezug der Controller-/GUI-Jogs, `tf` = alter Stand (siehe [Präzise Achsen](11-T-Controller.md#präzise-achsen-2026-10-21)) |
 | `G1_PS4_WALK` | `1` | `0` = kein Gehen per Controller (L2 ohne Wirkung) |
 | `G1_PS4_WALK_SPEED` | `Langsam` | Start-Geh-Tempo |
 | `G1_PS4_WALK_MAX_SPEED` | `Schnell` | höchstes Geh-Tempo per R1 bzw. L2 + ▲ (Schnell = volle `G1_MAX_VX/VY/VYAW`) |
@@ -545,331 +504,8 @@ Ablauf:
 | Log: „Kein PS4-Controller gefunden … Warte“ | Controller nicht gekoppelt oder Container ohne `/dev/input` (über start.sh starten bzw. `COMPOSE_FILE=…:docker-compose.ps4.yml`). |
 | LED/Kugel zeigt die Auswahl, aber die Hand bewegt sich nicht | Arme nicht übernommen → **R2** drücken (oder GUI: GREIFEN / ENABLE MANIPULATION). Im Gehen-Modus hängen die Arme in der Lauf-Pose. Real nach NOT-HALT: erst »Start«, dann R2. LED fast aus + GUI „GESPERRT“ → Controller per Options gesperrt, Options drücken. |
 | Hand bleibt an einer Stelle hängen | Kollisions-Gate (Log: „Kollisions-Gate …“) oder Reichweite erreicht → in eine andere Richtung bewegen. |
-| Sim: Hand reagiert spürbar verzögert / fährt nach dem Loslassen weiter | PC ausgelastet → arm_controller regelt nur mit 10–15 Hz. RViz und Navigation abschalten (`USE_RVIZ=false G1_ENABLE_NAV=0`), Last mit `top` prüfen. Siehe [Reaktionszeit](#reaktionszeit). |
+| Sim: Hand reagiert spürbar verzögert / fährt nach dem Loslassen weiter | PC ausgelastet → arm_controller regelt nur mit 10–15 Hz. RViz und Navigation abschalten (`USE_RVIZ=false G1_ENABLE_NAV=0`), Last mit `top` prüfen. Siehe [Reaktionszeit](11-T-Controller.md#reaktionszeit). |
 | Nach PS reagiert nichts mehr | NOT-HALT aktiv → in der GUI quittieren (Sim: Modus wählen, Real: Start). |
 | L2 + Stick: G1 geht nicht, lange Vibration | G1 steht nicht im Walk-Modus → Startleiste »Walk« (Real) bzw. GEHEN (Sim). Nach NOT-HALT erst quittieren. |
-| Steuerkreuz + Kreuz 2 s: lange starke Vibration, Arm fährt nicht | arm_controller hat das Spiegeln abgelehnt (Grund im Log / `/g1pilot/arm_command/status`): meist Arme nicht übernommen (**Options**), NOT-HALT oder die Spiegelpose kollidiert (z. B. Hände würden sich vor dem Bauch treffen). |
+| Steuerkreuz + Kreuz 2 s: lange starke Vibration, Arm fährt nicht | arm_controller hat das Spiegeln abgelehnt (Grund im Log / `/g1pilot/arm_command/status`): meist Arme nicht übernommen (**R2**), NOT-HALT oder die Spiegelpose kollidiert (z. B. Hände würden sich vor dem Bauch treffen). |
 | L2 + Stick: G1 geht nicht, keine Vibration | L2 war beim Start/Verbinden schon gedrückt → einmal loslassen. Oder `G1_PS4_WALK=0`. |
-
----
-
-## Technik
-
-### Dateien
-
-| Datei | Inhalt |
-|---|---|
-| `g1pilot/teleoperation/ps4_joystick.py` | Node `ps4_joystick`: evdev → `/g1pilot/ps4/joy` in fester Belegung, PS4/Xbox erkennen, Wiederverbinden, LED (sysfs) + Vibration (Force-Feedback) aus `/g1pilot/ps4/feedback`, Lebendprüfung (PS4: Sensor-Teilgerät, Xbox: HID-Rohstrom) |
-| `g1pilot/teleoperation/ps4_layout.py` | feste Belegung (Indizes) und evdev-Code-Zuordnung, PS4 (`Ps4State`) und Xbox (`XboxState`, drei Treiber-Varianten), ohne ROS/evdev testbar |
-| `g1pilot/teleoperation/ps4_arm_teleop.py` | `ArmTeleopLogic` (reine Bedienlogik) + Node `ps4_arm_teleop`; `walk_deadman`: pausiert bei gehaltenem L2; `trigger_modes`: L2/R2 = GEHEN/GREIFEN |
-| `g1pilot/teleoperation/ps4_walk.py` | `WalkLogic` (reine Bedienlogik) + Node `ps4_walk`: L2-Deadman → `/g1pilot/ps4/walk_cmd` (Twist, normiert), `/g1pilot/ps4/walk_status` |
-| `navigation/loco_client.py` | `/g1pilot/ps4/walk_cmd` → `Move()` nur im Walk-Modus, ohne E-Stop; Timeout → StopMove; Vorrang vor `loco_cmd_vel` |
-| `navigation/loco_sim.py` | Sim: `/g1pilot/ps4/walk_cmd` wie `loco_cmd_vel`, mit Vorrang (die GUIs senden dort dauernd 0) |
-| `g1pilot/teleoperation/hand_jog.py` | Jog-Rechnung (Ziel = Hand + Geschwindigkeit, Vorlauf entlang der Bewegung begrenzt), Halte-Ziel (`hold_pose`, `HoldStreamer`), gemeinsam mit der Demo-GUI |
-| `launch/teleoperation_launcher.launch.py` | Argument `ps4_arms` (Default `false`): startet `ps4_joystick` + `ps4_arm_teleop` statt `joystick`; `ps4_speed`, `ps4_max_speed`, `ps4_options_balancing`, `ps4_ps_estop`; `ps4_walk` (Default `true`) startet zusätzlich `ps4_walk`, `ps4_walk_speed`, `ps4_walk_max_speed` |
-| `launch/bringup_sim.launch.py` | setzt `ps4_arms` aus `G1_PS4_ARMS` (Sim-Defaults) |
-| `launch/bringup_real.launch.py` | setzt `ps4_arms` aus `G1_PS4_ARMS` mit Real-Werten (Langsam/max Normal, Options ohne `start_balancing`) |
-| `teleoperation/demo_gui.py`, `teleoperation/ui_interface.py` | zeigen einen NOT-HALT von außen (PS-Taste) an; Demo-GUI folgt dem gemeinsamen Zustand (Kacheln, Hand-Auswahl, Tempo) |
-| `g1pilot/teleoperation/shared_state.py` | gemeinsamer Bedienzustand GUI ↔ Controller (`/g1pilot/teleop_state`, latched JSON, Zeitstempel je Feld) |
-| `g1pilot/teleoperation/status_line.py` | Texte der Startleiste (Onboard-Modus) und Controller-Zustand (Typ, Belegung) |
-| `docker-compose.ps4.yml` | `/dev/input` + `device_cgroup_rules: c 13:* rmw` für `g1pilot-sim` |
-| `test/test_ps4_arm_teleop.py`, `test/test_ps4_joystick.py` | Unit-Tests (Belegung, Logik, Jog, simuliertes evdev-Gerät inkl. hängender Funkverbindung; Xbox per USB/Bluetooth, Auswahl, Consumer-Control, HID-Lebendprüfung) |
-| `test/test_xbox_layout.py` | Xbox ohne ROS: Erkennung, drei Treiber-Varianten, Zuordnung nach Position, View-Ersatz, Gehen mit LT, NOT-HALT, Voll-Notaus RB + LB + Xbox |
-| `test/test_ps4_walk.py`, `test/test_loco_client_ps4_walk.py`, `test/test_ps4_walk_node.py` | Gehen: Deadman, Tempo, NOT-HALT, Abriss, Arme pausieren; loco_client nur im Walk-Modus, Timeout, Vorrang; Node mit simuliertem Joy |
-| `test/test_ps4_arm_teleop_node.py` | Node mit Real-Einstellungen gegen simuliertes Joy + TF (R2 = Arme, Options-Sperre, Tempo, NOT-HALT von außen, kein Laufbefehl) |
-| `test/test_gui_external_estop.py` | Demo-GUI + Streamdeck folgen einem NOT-HALT von außen (Sim und Real, offscreen) |
-| `test/test_demo_gui_jog_hold.py` | Demo-GUI »Hand bewegen«: Halte-Ziel beim Loslassen (auf der Linie, 1 s wiederholt, Grundstellung löscht es) |
-| `test/test_shared_state.py`, `test/test_demo_gui_controller_sync.py` | gemeinsamer Zustand: neuester gewinnt, Echo/alte Stände ignoriert; Demo-GUI folgt Controller (Kacheln, Auswahl, Tempo) ohne etwas zu senden, Sim und Real offscreen |
-| `test_ps4_arm_sim.py` | Ende-zu-Ende-Test gegen die laufende Sim (simulierte Joy-Eingabe) |
-
-### Datenfluss
-
-```
-DualShock 4 ──evdev──> ps4_joystick ──/g1pilot/ps4/joy (Joy, feste Belegung)──> ps4_arm_teleop
-                            ^                                                        │
-                            └──── /g1pilot/ps4/feedback (LED, Vibration) ────────────┤
-                                                                                     ├─> /g1pilot/hand_goal/<side>   (PoseStamped, pelvis)
-                                                                                     ├─> /g1pilot/hand_action/<side> ("open"/"close")
-                                                                                     ├─> /g1pilot/arms/enabled (+ /g1pilot/start_balancing nur Sim) (R2)
-                                                                                     ├─> /g1pilot/arms/home (Share, Impuls)
-                                                                                     ├─> /g1pilot/pose_store/cancel (Kreuz)
-                                                                                     ├─<> /g1pilot/arm_command (+ /status) (Steuerkreuz + Kreuz 2 s: Arm spiegeln)
-                                                                                     ├─> /g1pilot/emergency_stop (PS)
-                                                                                     ├─> /g1pilot/ps4/status (JSON, latched)
-                                                                                     ├─<>  /g1pilot/teleop_state (JSON, latched; mit Demo-GUI + ps4_walk)
-                                                                                     └─> /g1pilot/ps4/markers (RViz)
-                       /g1pilot/ps4/joy ──> ps4_walk (L2 gehalten) ──/g1pilot/ps4/walk_cmd──> loco_client (real, Move) / loco_sim (Sim)
-```
-
-Bewusst **nicht** über `joy_mux`/`/g1pilot/joy`: dort hängen `joy_to_cmdvel`
-(Sim, mit Navigation) und `loco_client` (real) — die Sticks würden sonst den
-Roboter auch beim Bewegen der Hände laufen lassen. Gehen hat ein eigenes
-Topic, das nur bei gehaltenem L2 gesendet wird. Der alte `joystick`-Node startet im PS4-Modus nicht,
-weil er denselben Controller lesen würde.
-
-Eingänge außer dem Joy: `/g1pilot/emergency_stop` (NOT-HALT aus der GUI →
-Controller sperren), `/g1pilot/start` (Quittung → freigeben) und
-`/g1pilot/teleop_state` (Auswahl/Tempo/Modus aus der Demo-GUI).
-`ps4_joystick` meldet zusätzlich `/g1pilot/ps4/device` (latched,
-`{"kind": "ps4"|"xbox"|null, "name": …}`) für die Anzeige.
-
-### Feste Belegung (`/g1pilot/ps4/joy`)
-
-Achsen wie beim ROS-Paket `joy`: links = +1, oben = +1; Trigger 0…1.
-
-| Index | Achse | Index | Taste |
-|---|---|---|---|
-| 0 | linker Stick X | 0–3 | Kreuz, Kreis, Dreieck, Viereck |
-| 1 | linker Stick Y | 4–7 | L1, R1, L2, R2 |
-| 2 | rechter Stick X | 8–10 | Share, Options, PS |
-| 3 | rechter Stick Y | 11–12 | L3, R3 |
-| 4–5 | L2, R2 (0…1) | 13–16 | Steuerkreuz oben, unten, links, rechts |
-| 6–7 | Steuerkreuz X, Y | | |
-
-Die evdev-Codes sind die des Linux-Treibers (hid-sony ab Kernel 4.10,
-hid-playstation). Der Xbox-Controller landet nach Position in derselben
-Belegung (A = Index 0 usw., Xbox-Taste = 10, LT/RT = Achsen 4/5);
-`header.frame_id` ist `ps4` bzw. `xbox`. Der alte `joystick`-Node nummeriert dagegen in
-Geräte-Reihenfolge — für eine Tastenbelegung zu wackelig.
-
-### Sicherheit
-
-- Totzone 0.12 (mit Neuskalierung) + Expo 0.4 → kein Kriechen, feinfühlig um die Mitte.
-- Kein Joy länger als 0.5 s (`joy_timeout_s`) → Hand hält an. `ps4_joystick`
-  publiziert ohne Verbindung **nichts** (kein eingefrorener Wert).
-- Hängende Funkverbindung (Bluetooth friert ein, der Kernel meldet die
-  Trennung erst nach Sekunden): `ps4_joystick` überwacht das Teilgerät
-  „… Motion Sensors“ desselben Controllers (gleiche phys/uniq), das mit
-  jedem Funkbericht Ereignisse liefert. Kommen länger als 0,3 s
-  (`stall_timeout_s`) keine Daten, publiziert es nichts mehr → nach
-  `joy_timeout_s` hält die Hand. Ohne zuordenbares Sensor-Teilgerät gibt es
-  keine Lebendprüfung (Log-Hinweis beim Verbinden).
-- TF-Lücke beim Loslassen: Halte-Ziel aus der Hand-Pose des letzten Takts
-  (statt nichts zu senden und den Vorlauf abfahren zu lassen).
-- Abgewählte Hand hält sofort an (Ziel = echte Hand).
-- Loslassen / Abwählen / Abriss: Halte-Ziel (Hand stoppt entlang der
-  Bewegungsrichtung) wird 1 s lang wiederholt (`JOG_HOLD_S`), sonst führe der
-  arm_controller wegen seiner Ziel-Glättung noch den Vorlauf ab.
-- Grundstellung nur nach 1 s Halten von Share.
-- NOT-HALT (PS oder GUI) sperrt den Controller bis zur Quittung (`/g1pilot/start`).
-- Real: R2 ohne Walk-Modus ohne `start_balancing`, Tempo höchstens Normal.
-- Options sperrt den Controller (Ablegen); PS-NOT-HALT und Voll-Notaus wirken auch gesperrt.
-- Alle Ziele laufen durch den arm_controller (IK, Kollisions-Gate, EE-Tempo-Limit).
-
-### Reaktionszeit
-
-Kette: Stick → `ps4_arm_teleop` (30 Hz) → `/g1pilot/hand_goal/<side>` →
-arm_controller (Ziel-Filter pro Nachricht, IK, Ziel-/Gelenk-Glättung pro
-Regeltakt, Tempo-Limits, Kollisions-Gate) → `rt/arm_sdk`. Das Ziel läuft
-der Hand höchstens `max(4 cm, Tempo × 0,5 s)` voraus — begrenzt **entlang**
-der Bewegungsrichtung; quer dazu bleibt es auf seiner Linie, damit eine
-Querabweichung der Hand (IK-Restfehler) nicht ins Ziel übernommen wird.
-
-Behoben (2026-10-13), nachdem die Hand in der Sim erst 1–2 s nach dem Stick
-losfuhr und nach dem Loslassen 2–3 cm / 1,5–1,8 s weiterlief:
-
-| Ursache | Wirkt | Änderung |
-|---|---|---|
-| `main_loop` las LowState zusätzlich **blockierend** (wartete auf die nächste Nachricht) | Sim + real (real ~2 ms/Takt) | entfernt, der LowState-Thread reicht |
-| Ziel-Queue Tiefe 10, bedient einmal pro Takt → bis 0,8 s alte Ziele | Sim, real nur bei Takt < 30 Hz | Tiefe 1 (neuestes Ziel) |
-| Halte-Ziel beim Loslassen nur **einmal** gesendet, Ziel-Filter (0,25 pro Nachricht) zog nur 25 % zurück | Sim + real | Halte-Ziel 1 s wiederholen |
-| Glättung pro Takt, Sim-Takt nur 10–15 Hz | nur Sim | `smoothing_ref_hz` = 50 (zeitbasiert), real aus |
-| Ziel übernahm die Querdrift der Hand (Vorlauf-Kugel um die Hand) | Sim + real | Vorlauf nur entlang der Bewegung |
-
-Gemessen in der Sim (Cloud-PC, 4 Kerne, Last ~10, Regeltakt 12–16 Hz),
-Stick 2 s voll: Hand > 5 mm nach **0,4–0,7 s** (vorher 1,2–2,1 s);
-Nachlauf bei Langsam 0–1,5 cm, bei Normal ~3 cm bei 11 cm/s (≈ 0,3 s
-Fahrt); steht 0–1 s nach dem Loslassen (vorher 1,5–1,8 s). Real
-(30–50 Hz Regeltakt) wird es schneller sein; offline (IK allein, 40 Hz)
-fährt das Kommando nach ~0,2 s 5 mm.
-
-### Nebenachsen halten (2026-10-14)
-
-Beim Verfahren kippte die Hand nach oben und wanderte quer. Ursache: jedes
-neue Jog-Ziel startete an der **gemessenen** Hand (TF). Gemessen und
-kommandiert unterscheiden sich um einen bleibenden Regelfehler (Sim ~3°
-Kippen + ~1 cm); der Arm übernahm ihn bei jeder Fahrt erneut (Ratsche). Die
-IK selbst hält die Orientierung (offline < 1°).
-
-Jetzt startet ein neues Ziel an der **kommandierten** Hand: der arm_controller
-sendet sie auf `/g1pilot/hand_cmd_pose/<side>` (FK der Soll-Gelenke, mit
-EE-Offsets, ≤ 30 Hz, erst nach der Auto-Kalibrierung der Seite). Vorlauf und
-Anhalten bleiben an der gemessenen Hand (Vorlauf relativ zur kommandierten
-Hand machte die Fahrt unruhiger und lief nach). Fehlt das Topic, gilt TF wie
-bisher. Parameter `jog_reference`: `command` (Sim-Default) | `tf`
-(Real-Default, bis zum ersten Test am Roboter), live umschaltbar; die
-Demo-GUI folgt dem Sim-/Real-Modus.
-
-Sim (ohne Inspire-Hände, 5 Startposen × 6 Richtungen, je 10 cm, Normal),
-vorher → nachher: Kippen nach der Fahrt Median 3,1° → 0,6°, Querversatz
-0,9 → 0,4 cm; 8× Tippen vor/zurück: Kippen 15° → 0,4°, Rückkehrfehler
-7,4 → 4,5 cm. Grenzen: Richtung Körpermitte und am Rand der Reichweite
-kippt die Hand in beiden Varianten während der Fahrt kurz bis ~10°
-(Gelenkgrenzen/Kollisions-Gate). Messskript: `jog_axis_probe_sim.py`.
-
-### Präzise Achsen (2026-10-21)
-
-Rückmeldung Nils: am Controller kommt fast nie die gewollte Bewegung raus
-(hoch/runter dreht die Hand mit, nach innen drehen sich die Hände,
-gespiegelte Fahrten aus derselben Lage enden verschieden), der RViz-Marker
-fährt dagegen sauber in einer Achse.
-
-Befund:
-
-- Die IK-Kette selbst (Ziel-Filter, Servo-IK, Tempo-Grenzen) ist sauber:
-  offline (nur Kinematik) hält sie bei Fahrten in jeder Achse die Orientierung
-  auf < 0,1° und die Nebenachsen auf < 0,3 cm, links und rechts exakt
-  gespiegelt.
-- Der Unterschied ist der **Bezug**. Der Marker gibt ein Ziel vor, der
-  arm_controller bringt die *kommandierte* Hand genau dorthin. Der Jog bezog
-  sich real (`jog_reference=tf`) auf die *gemessene* Hand: jede Fahrt
-  startete dort, Vorlauf und Anhalten hingen daran. Durchhang und Reibung der
-  echten Arme wurden so bei jeder Fahrt als neue Soll-Lage übernommen (die
-  Hand kippt Fahrt für Fahrt weiter), und das Fahrtende hing am
-  Schleppfehler des jeweiligen Arms (links ≠ rechts). In der Sim war seit
-  2026-10-14 nur der Start umgestellt.
-- Ein Daumen drückt den Stick nie exakt gerade: 10–15° schräg gaben trotz
-  Totzone 3–5 % des Tempos in der Nebenachse.
-
-Änderung:
-
-- `jog_reference=command` (Default Sim **und Real**, Env `G1_JOG_REFERENCE`):
-  Start, Vorlauf und Anhalten an der kommandierten Hand
-  (`/g1pilot/hand_cmd_pose`), wie beim Marker. Die Quelle wird je Fahrt
-  festgelegt; fehlt die kommandierte Pose (vor der ersten Auto-Kalibrierung,
-  arm_controller aus), läuft die Fahrt an TF. `start` = Stand 2026-10-14,
-  `tf` = alter Real-Stand (Rückfall ohne Neubau: `G1_JOG_REFERENCE=tf` bzw.
-  `ros2 param set /ps4_arm_teleop jog_reference tf`). Die Demo-GUI
-  (»Hand bewegen«) nutzt dieselbe Logik.
-- Linker Stick rastet auf die Achse ein (`axis_snap_deg` = 20): bis 20°
-  daneben zählt nur die Hauptrichtung, VERSCHIEBEN wie DREHEN. Echte
-  Diagonalen gehen weiter.
-- Folge: nach dem Loslassen läuft die echte Hand um ihren Schleppfehler
-  nach (sie fährt dahin, wo der Sollwert schon ist), statt dort zu stehen,
-  wo sie gerade war. Real ist das bei den kleinen Real-Gains nur wenige mm.
-
-Messungen:
-
-| Prüfung | `tf` (alter Real-Stand) | `start` (alter Sim-Stand) | `command` (neu) |
-|---|---|---|---|
-| Real-Pfad ohne Hardware¹: 8× tippen hoch/runter, Kippen / Rückkehrfehler | 49° / 28 cm | 2,7° / 0,1 cm | 0,9° / 0,3 cm |
-| Real-Pfad¹: 5 Fahrten gespiegelt, Abweichung vom Spiegelbild (gemessen) / Drehung | 8,0 cm / 46° | 3,8 cm / 3,5° | 0,7 cm / 3,1° (kommandiert 0,06 cm / < 1°) |
-| MuJoCo-Sim², 18 Fahrten: Kippen nach der Fahrt (Median) / Querversatz | 3,0° / 1,0 cm | 0,5° / 0,1 cm | 1,0° / 0,2 cm |
-| MuJoCo-Sim²: 8× tippen vor/zurück, Kippen / Rückkehrfehler (Median) | 11,7° / 5,8 cm | 0,2° / 2,4 cm | 0,4° / 2,2 cm |
-| MuJoCo-Sim²: gespiegelt, 14 Fahrten, Abweichung vom Spiegelbild / Drehung (Median) | 1,2 cm / 3,5° | – | 0,2 cm / 0,6° |
-
-¹ Echter arm_controller (Real-Modus) gegen den Fake-G1 aus
-`test_arm_controller_real` mit bleibendem Regelfehler (Durchhang bis
-0,09 rad je Gelenk) und Haftreibung, links stärker als rechts
-(`test/test_jog_reference_real.py`). Modell, nicht der echte Roboter.
-² Ohne Inspire-Hände, Cloud-PC mit 4 Kernen unter Volllast (Load 12–16):
-einzelne Fahrten kamen in 1 s kaum vom Fleck, Ausreißer bis 9 cm quer in
-beiden Varianten; die Mediane sind belastbarer als die Maxima. Messskript
-`jog_axis_probe_sim.py [--mirror] [--reference command|start|tf]`.
-
-In der Sim liegen `start` und `command` gleichauf (dort sind gemessene und
-kommandierte Hand fast deckungsgleich); entscheidend ist der echte Roboter
-mit Reibung, dort trennt erst `command` die beiden Arme sauber.
-
-Grenze: in der **Grundstellung** (Arme hängen neben dem Körper) steht die
-Hand bei 97 % der Reichweite, genau an der Reichweiten-Klemme der IK.
-»Runter« und »außen« sind dort kaum möglich, die Hand weicht entlang der
-Kugel um die Schulter aus (offline bis 1,8 cm quer). Erst ein Stück nach
-vorn/oben fahren, dann fein positionieren. Das gilt für den Marker genauso.
-
-### Parameter `ps4_arm_teleop`
-
-| Parameter | Default | Bedeutung |
-|---|---|---|
-| `joy_topic` | `/g1pilot/ps4/joy` | Eingang |
-| `rate_hz` | 30 | Takt der Hand-Ziele |
-| `deadzone` / `expo` | 0.12 / 0.4 | Stick-Kennlinie |
-| `speed` | `Normal` (Real `Langsam`) | Start-Tempo |
-| `max_speed` | `Schnell` (Real `Normal`) | höchstes Tempo per R1 |
-| `ps_estop` | `true` | PS = NOT-HALT; `false` = PS wirkt wie Kreuz |
-| `home_hold_s` | 1.0 | Share-Haltezeit für Grundstellung |
-| `full_estop_hold_s` | 2.0 | Haltezeit R1 + L1 + PS für den Voll-Notaus; `0` = aus |
-| `mirror_hold_s` | 2.0 | Haltezeit Steuerkreuz ←/→ + Kreuz für Arm spiegeln; `0` = aus |
-| `walk_deadman` | `false` (Launch: `ps4_walk`) | gehaltenes L2 pausiert die Arm-Steuerung |
-| `trigger_modes` | `false` (Launch: `ps4_walk`) | L2 drücken = Modus GEHEN (Arme gesperrt), R2 = GREIFEN |
-| `modes_need_onboard_walk` | Sim `false`, Real `true` | start_walking/start_balancing nur, wenn der G1 laut `/g1pilot/onboard_state` im Walk steht |
-| `joy_timeout_s` | 0.5 | Abriss-Erkennung |
-| `options_starts_balancing` | `true` (Real `false`) | R2 „Arme übernehmen“ (ohne Moduswechsel, z. B. nach NOT-HALT) sendet zusätzlich `start_balancing` (Name aus der Zeit, als Options das machte) |
-| `jog_reference` | `command` (Env `G1_JOG_REFERENCE`) | Bezug der Jog-Ziele: `command` = Start, Vorlauf und Anhalten an der kommandierten Hand (`/g1pilot/hand_cmd_pose`, wie der RViz-Marker), `start` = nur der Start dort (Stand 2026-10-14), `tf` = alles an der gemessenen Hand (alter Real-Stand) |
-| `axis_snap_deg` | 20 | Achsen-Einrasten des linken Sticks; 0 = aus |
-| `waist_yaw` | `true` | R2 halten + rechter Stick = Hüfte drehen, R2 + R3 = Mitte (nur mit `trigger_modes`) |
-| `jog_torso_frame` | `true` | Jog-Richtungen um den gemessenen Taillen-Yaw drehen (Oberkörper-Bezug) |
-
-### Hüftdrehung (Technik)
-
-`ps4_arm_teleop` → `/g1pilot/waist/yaw_rate` (`Float32`, −1..1, + = links,
-~30 Hz solange R2 gehalten; beim Loslassen einmal 0) und
-`/g1pilot/waist/center` (`Bool`). Der **arm_controller** führt den Sollwert
-(`manipulation/waist_yaw.py`: Rate × 15 °/s, Bereich, 0,3 s Totmann,
-Mitte-Fahrt) und publiziert `/g1pilot/waist/state` (JSON, 10 Hz:
-`available`, `reason`, `yaw_rad`, `target_rad`, `offset_deg`,
-`meas_offset_deg`, `limit_deg`, `moving`, `centering`, `pending`, `walk_ok`).
-
-- **Real:** Sollwert → `WaistHold.target[yaw]` (rt/arm_sdk, Rampe max.
-  0,3 rad/s wie bisher). Nur mit Gewicht 1 und gehaltener Taille.
-- **Sim:** `loco_sim` setzt `target_rad` im Stand (HOLD/STAND, Rampe
-  0,5 rad/s); die Lauf-Policy führt die Taille selbst. Ohne frischen
-  Zustand fährt es langsam auf 0.
-- `loco_client` sperrt `Move()` (sendet 0), solange `walk_ok` false ist
-  (Zustand jünger als 1 s; ohne arm_controller wie bisher).
-- GEHEN / Grundstellung / DISABLE werden aufgeschoben, bis Sollwert und
-  Messung in der Mitte sind (±2° / ±3°).
-
-| Parameter `arm_controller` | Default | Bedeutung |
-|---|---|---|
-| `waist_yaw_control` | `true` | Hüftdrehung an/aus |
-| `waist_yaw_limit_deg` | 105 | Bereich um die Mitte |
-| `waist_yaw_rate_deg` / `waist_yaw_center_rate_deg` | 15 / 15 | Tempo Stick / zur Mitte [°/s] |
-| `waist_yaw_center_tol_deg` | 2 | „in der Mitte“ |
-| `waist_yaw_center_timeout_s` | 10 | danach aufgeschobene Aktion trotzdem |
-
-### Tests
-
-```bash
-# Unit-Tests (ohne Controller/Roboter; die ROS-/GUI-Tests brauchen rclpy/PyQt6 -> im Container)
-python3 -m pytest -q test/test_ps4_arm_teleop.py test/test_ps4_joystick.py test/test_xbox_layout.py \
-    test/test_ps4_arm_teleop_node.py test/test_gui_external_estop.py \
-    test/test_demo_gui_jog_hold.py test/test_arm_mirror.py
-
-# Ende-zu-Ende gegen die laufende Sim (G1_PS4_ARMS=1, Controller nicht nötig)
-docker exec -it g1pilot-g1pilot-sim-1 bash -c \
-  "source /ros2_ws/install/setup.bash && python3 /ros2_ws/src/g1pilot/test_ps4_arm_sim.py"
-```
-
-Der Sim-Test stellt das Tempo auf Normal, fährt jede Prüfung aus derselben
-Ausgangslage (Grundstellung, dann beide Hände schräg nach vorn-oben, mit
-Abstand zur Reichweitengrenze) und misst per TF: Richtung je Stick, nur die
-gewählte Hand bewegt sich, Drehen ohne Versatz, Spiegeln, Hände auf/zu
-(Finger-Gelenke), Abriss, Share/Kreuz, NOT-HALT — und dass dabei kein
-Laufbefehl entsteht und die Basis stehen bleibt. Nach einem Abriss darf nur
-noch das Halte-Ziel kommen (gleiche Pose, höchstens 0,5 s + `JOG_HOLD_S`).
-Am Ende steht der Roboter
-im NOT-HALT (`--no-estop` lässt das aus).
-
-### Bekannte Einschränkungen
-
-- Real ist nur ohne Roboter getestet (Launch-Konfiguration, Node mit
-  simuliertem Joy/TF, GUIs offscreen). Der erste Lauf am Roboter folgt dem
-  Ablauf unter [Echter Roboter](#echter-roboter).
-- Options ist seit 2026-10-27 die Sperre (vorher „Arme übernehmen“, das
-  macht jetzt R2). Die Sperre gilt nur im Speicher von ps4_arm_teleop: nach
-  einem Neustart des Nodes ist der Controller entsperrt.
-- Nach einem NOT-HALT hat die GUI keinen Modus mehr, der Controller behält
-  seinen letzten (z. B. GEHEN mit Arm-Sperre, wie bisher). Beim nächsten
-  Modus-Wechsel auf einer der beiden Seiten sind sie wieder gleich.
-- Der Streamdeck (`ui_interface`) nimmt am gemeinsamen Zustand nicht teil;
-  der Controller folgt seinen Modus-Knöpfen wie bisher über die Topics.
-- `g1pilot-real-full` (LiDAR-Profil) startet ein anderes Bringup ohne den
-  Schalter.
-- LED im Sim-Container nicht setzbar (sysfs read-only), siehe oben.
-- Reaktionszeit in der Sim hängt an der PC-Last (siehe
-  [Reaktionszeit](#reaktionszeit)); real ist sie nur offline abgeschätzt.
-- Der IK-Solver lässt posenabhängig 0,5–3 cm Restfehler (Nullraum-Haltung,
-  Reichweiten-Klemme); weit vorn/außen knickt eine gerade Fahrt ab, die Hand
-  bleibt dann 1–3 cm neben der Linie stehen. Betrifft Marker und Demo-GUI
-  genauso, siehe [11_arm_manipulation_technik.md](11_arm_manipulation_technik.md).

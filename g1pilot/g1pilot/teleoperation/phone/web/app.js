@@ -1,5 +1,5 @@
 // G1 Handy: Bedienung der Demo-GUI ueber Bluetooth LE (Web Bluetooth, Chrome/Android).
-// Sicherheit: siehe docs/44_handy_bedienung.md. Kurz:
+// Sicherheit: siehe docs/12-A-Handy.md. Kurz:
 //  * Geraete-Schluessel aus dem Kopplungscode (nie gesendet), jede Nachricht
 //    signiert + Zaehler; der PC prueft Rolle, Steuerhoheit und Statusbezug.
 //  * Herzschlag 5 Hz nur bei sichtbarer Seite; Seite weg -> Bedienung abgeben.

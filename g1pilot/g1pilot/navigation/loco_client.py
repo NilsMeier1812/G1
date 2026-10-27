@@ -164,7 +164,7 @@ class G1LocoClient(Node):
         # SetBalanceMode beim Umschalten auf Walk (entering_balancing). Laut
         # Unitree-SDK: 0 = BalanceStand (steht still), 1 = ContinuousGait (tritt
         # dauernd auf der Stelle). 1 ist der alte g1pilot-Wert -- auf Hardware
-        # pruefen (docs/70_echtroboter_anleitung.md), dann ggf. 0.
+        # pruefen (docs/50-A-Echter-Roboter.md), dann ggf. 0.
         self.declare_parameter('balance_mode', 1)
         # Preparation -> Walk: false (Default, 2026-10-16) = direkt BalanceStand +
         # Start() wie die Handy-App, nur mit belasteten Fuessen (FSM-Mode 0).

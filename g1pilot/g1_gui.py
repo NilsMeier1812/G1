@@ -75,24 +75,51 @@ SCENE_VENV = SCENE_DIR / ".venv" / "bin" / "python"
 # Uebersicht: docs/README.md. Jedes Thema hat eine Anleitung (Anwender) und
 # ein Technik-Dokument (Entwickler) -- siehe g1pilot/docs/.
 DOCS_DIR = HERE / "docs"
+# Menue »Dokumentation«: Reihenfolge wie docs/README.md (GT-X-Name.md),
+# None = Trennlinie zwischen den Gruppen.
 DOCS = [
     ("Dokumentation — Uebersicht", DOCS_DIR / "README.md"),
     ("README (G1Pilot)", HERE / "README.md"),
-    ("Installation & Ersteinrichtung", DOCS_DIR / "01_installation.md"),
-    ("Architektur (Entwickler)", DOCS_DIR / "02_architektur.md"),
-    ("Arm-Manipulation — Anleitung", DOCS_DIR / "10_arm_manipulation_anleitung.md"),
-    ("Arm-Manipulation — Technik", DOCS_DIR / "11_arm_manipulation_technik.md"),
-    ("Arm-API — Anleitung", DOCS_DIR / "20_arm_api_anleitung.md"),
-    ("Arm-API — Technik", DOCS_DIR / "21_arm_api_technik.md"),
-    ("Locomotion — Anleitung", DOCS_DIR / "30_loco_anleitung.md"),
-    ("Locomotion — Technik", DOCS_DIR / "31_loco_technik.md"),
-    ("Teleoperation — Anleitung", DOCS_DIR / "40_teleoperation_anleitung.md"),
-    ("Teleoperation — Technik", DOCS_DIR / "41_teleoperation_technik.md"),
-    ("Navigation — Anleitung", DOCS_DIR / "50_navigation_anleitung.md"),
-    ("Navigation — Technik", DOCS_DIR / "51_navigation_technik.md"),
-    ("Inspire-FTP-Haende — Anleitung", DOCS_DIR / "60_inspire_haende_anleitung.md"),
-    ("Inspire-FTP-Haende — Technik", DOCS_DIR / "61_inspire_haende_technik.md"),
-    ("Echter Roboter — Sicherheit & Ablauf", DOCS_DIR / "70_echtroboter_anleitung.md"),
+    None,
+    ("01 Installation", DOCS_DIR / "01-A-Installation.md"),
+    ("02 Architektur (Technik)", DOCS_DIR / "02-T-Architektur.md"),
+    ("03 Startmenue", DOCS_DIR / "03-A-Startmenue.md"),
+    ("04 Umgebungsvariablen (Technik)", DOCS_DIR / "04-T-Umgebungsvariablen.md"),
+    None,
+    ("10 Demo-GUI — Anleitung", DOCS_DIR / "10-A-Demo-GUI.md"),
+    ("10 Demo-GUI — Technik", DOCS_DIR / "10-T-Demo-GUI.md"),
+    ("11 Controller — Anleitung", DOCS_DIR / "11-A-Controller.md"),
+    ("11 Controller — Technik", DOCS_DIR / "11-T-Controller.md"),
+    ("12 Handy — Anleitung", DOCS_DIR / "12-A-Handy.md"),
+    ("12 Handy — Technik", DOCS_DIR / "12-T-Handy.md"),
+    ("13 Streamdeck — Anleitung", DOCS_DIR / "13-A-Streamdeck.md"),
+    ("13 Streamdeck — Technik", DOCS_DIR / "13-T-Streamdeck.md"),
+    None,
+    ("20 Arm-Manipulation — Anleitung", DOCS_DIR / "20-A-Arm-Manipulation.md"),
+    ("20 Arm-Manipulation — Technik", DOCS_DIR / "20-T-Arm-Manipulation.md"),
+    ("21 Arm-API — Anleitung", DOCS_DIR / "21-A-Arm-API.md"),
+    ("21 Arm-API — Technik", DOCS_DIR / "21-T-Arm-API.md"),
+    ("22 Inspire-Haende — Anleitung", DOCS_DIR / "22-A-Inspire-Haende.md"),
+    ("22 Inspire-Haende — Technik", DOCS_DIR / "22-T-Inspire-Haende.md"),
+    ("23 Posen und Ablaeufe — Anleitung", DOCS_DIR / "23-A-Posen-und-Ablaeufe.md"),
+    ("23 Posen und Ablaeufe — Technik", DOCS_DIR / "23-T-Posen-und-Ablaeufe.md"),
+    ("24 Hueftdrehung — Anleitung", DOCS_DIR / "24-A-Hueftdrehung.md"),
+    ("24 Hueftdrehung — Technik", DOCS_DIR / "24-T-Hueftdrehung.md"),
+    None,
+    ("30 Stehen und Gehen — Anleitung", DOCS_DIR / "30-A-Stehen-und-Gehen.md"),
+    ("30 Stehen und Gehen — Technik", DOCS_DIR / "30-T-Stehen-und-Gehen.md"),
+    ("31 Navigation — Anleitung", DOCS_DIR / "31-A-Navigation.md"),
+    ("31 Navigation — Technik", DOCS_DIR / "31-T-Navigation.md"),
+    None,
+    ("40 Simulation — Anleitung", DOCS_DIR / "40-A-Simulation.md"),
+    ("40 Simulation — Technik", DOCS_DIR / "40-T-Simulation.md"),
+    None,
+    ("50 Echter Roboter — Sicherheit & Ablauf", DOCS_DIR / "50-A-Echter-Roboter.md"),
+    ("51 Notaus — Anleitung", DOCS_DIR / "51-A-Notaus.md"),
+    ("51 Notaus — Technik", DOCS_DIR / "51-T-Notaus.md"),
+    None,
+    ("60 Tests", DOCS_DIR / "60-A-Tests.md"),
+    ("61 Werkzeuge", DOCS_DIR / "61-A-Werkzeuge.md"),
 ]
 
 # ── Farb-/Stilkonstanten ────────────────────────────────────────────────
@@ -808,7 +835,7 @@ class SimFrame(tk.Frame):
         s = section(b, "Lauf-Policy")
         choice_rows(s, self.v_policy, WALK_POLICY_CHOICES, width=20)
         hint(s, "Stehen ist bei allen gleich (Füße bleiben stehen, Schritte nur beim "
-                "Kippen). Vergleich: docs/31_loco_technik.md, Abschnitt „Gangbild“.")
+                "Kippen). Vergleich: docs/30-T-Stehen-und-Gehen.md, Abschnitt „Gangbild“.")
 
         # 4) Ausstattung
         s = section(b, "Ausstattung")
@@ -820,9 +847,9 @@ class SimFrame(tk.Frame):
         toggle_row(s, "Navigation", self.v_nav,
                    "Planer + Stationen / AUTO NAV in der Demo-GUI")
         toggle_row(s, "PS4-Controller", self.v_ps4,
-                   "PS4 oder Xbox: Arme + Hände, Gehen mit L2/LT; Belegung: docs/43_ps4_controller.md")
+                   "PS4 oder Xbox: Arme + Hände, Gehen mit L2/LT; Belegung: docs/11-A-Controller.md")
         toggle_row(s, "Handy-Zugang (Bluetooth)", self.v_phone,
-                   "nur Demo-GUI; Kopplung über 📱 in der GUI, docs/44_handy_bedienung.md")
+                   "nur Demo-GUI; Kopplung über 📱 in der GUI, docs/12-A-Handy.md")
         self._rviz_row = toggle_row(s, "RViz", self.v_rviz,
                                     "Zusatzfenster mit TF/Markern; MuJoCo-Fenster kommt immer")
         for v in (self.v_hands, self.v_gui, self.v_nav):
@@ -976,7 +1003,7 @@ class RealFrame(tk.Frame):
         toggle_row(s, "PS4-Controller für Arme + Hände", self.v_ps4,
                    "PS4 oder Xbox; aus = Gehen mit Deadman (bisher, nur PS4)")
         toggle_row(s, "Handy-Zugang (Bluetooth)", self.v_phone,
-                   "nur Demo-GUI; Ansicht, NOT-HALT, Quittieren, Startleiste (docs/44_handy_bedienung.md)")
+                   "nur Demo-GUI; Ansicht, NOT-HALT, Quittieren, Startleiste (docs/12-A-Handy.md)")
         for v in (self.v_hands, self.v_gui):
             v.trace_add("write", lambda *_: self._sync())
 
@@ -1010,7 +1037,7 @@ class RealFrame(tk.Frame):
                        "Bedienoberfläche gestartet wird (Demo-GUI: »Start« in der Startleiste,\n"
                        "Streamdeck: START). NOT-HALT: Arme schlaff, Beine bleiben stehen.\n"
                        "Voll-Notaus (Controller R1+L1+PS 2 s) = Damp = sackt in den Kran.\n"
-                       "Checkliste vorher: g1pilot/docs/70_echtroboter_anleitung.md"),
+                       "Checkliste vorher: g1pilot/docs/50-A-Echter-Roboter.md"),
                  bg="#3a2326", fg=FG, justify="left",
                  font=("TkDefaultFont", 9)).pack(anchor="w", padx=12, pady=(2, 6))
         tk.Checkbutton(gate,
@@ -1286,7 +1313,11 @@ class MenuFrame(tk.Frame):
                                  relief="flat", padx=12, pady=6)
         docmenu = tk.Menu(docs_btn, tearoff=0, bg=CARD, fg=FG,
                           activebackground=ACCENT, activeforeground="white")
-        for label, path in DOCS:
+        for entry in DOCS:
+            if entry is None:
+                docmenu.add_separator()
+                continue
+            label, path = entry
             docmenu.add_command(label=label, command=lambda p=path: open_path(p))
         docs_btn["menu"] = docmenu
         docs_btn.pack(side="left", padx=8)

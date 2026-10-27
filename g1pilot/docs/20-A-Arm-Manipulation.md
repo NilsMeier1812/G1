@@ -1,30 +1,42 @@
 # Arm-Manipulation — Anleitung
 
-Richtet sich an: Anwender, die die Arme des G1 über RViz oder den Streamdeck
-bedienen wollen. Für Entwickler siehe
-[11_arm_manipulation_technik.md](11_arm_manipulation_technik.md). Für die
+Richtet sich an: Anwender, die die Arme des G1 über RViz, die Demo-GUI, den
+Controller oder den Streamdeck bedienen wollen. Für Entwickler siehe
+[20-T-Arm-Manipulation.md](20-T-Arm-Manipulation.md). Für die
 HTTP-Schnittstelle für externe Projekte siehe
-[20_arm_api_anleitung.md](20_arm_api_anleitung.md).
+[21-A-Arm-API.md](21-A-Arm-API.md).
 
 ## Überblick
 
 Die Arme des G1 (je 7 Freiheitsgrade: Schulter Pitch/Roll/Yaw, Ellbogen,
 Handgelenk Roll/Pitch/Yaw) werden unabhängig von den Beinen gesteuert. Die
-Zielpose kommt entweder von einem interaktiven Marker in RViz oder aus dem
+Zielpose kommt von einem interaktiven Marker in RViz, aus »Hand bewegen« in
+der Demo-GUI, vom Controller (PS4/Xbox), über die Arm-API oder aus dem
 Positionsspeicher; ein inverser Kinematik-Löser (IK) rechnet daraus
-Gelenkwinkel, ein Regler fährt sie sicher an.
+Gelenkwinkel, der `arm_controller` fährt sie sicher an. Alle Wege laufen
+durch dieselben Sicherheitsprüfungen.
+
+| Weg | Wo beschrieben |
+|---|---|
+| RViz-Marker, Kommandozeile | hier |
+| Demo-GUI: GREIFEN → Arme, »Hand bewegen«, Grundstellung, Sichere Pose | [10-A-Demo-GUI.md](10-A-Demo-GUI.md) |
+| Controller: Sticks, Hand-Auswahl, Arm spiegeln | [11-A-Controller.md](11-A-Controller.md) |
+| Posen speichern/anfahren, Abläufe, relative Bewegungen | [23-A-Posen-und-Ablaeufe.md](23-A-Posen-und-Ablaeufe.md) |
+| Oberkörper drehen (Hüfte) | [24-A-Hueftdrehung.md](24-A-Hueftdrehung.md) |
+| Externe Programme (HTTP/JSON) | [21-A-Arm-API.md](21-A-Arm-API.md) |
 
 ## Voraussetzungen
 
 - Stack läuft (Simulation oder echter Roboter, siehe
-  [01_installation.md](01_installation.md)).
+  [01-A-Installation.md](01-A-Installation.md)).
 - RViz ist gestartet (Sim: optional über `USE_RVIZ`; Real: standardmäßig an).
 
 ## Bedienung
 
 **1. Manipulation aktivieren**
 
-Am Streamdeck: Button **ENABLE MANIPULATION**. Alternativ per Kommandozeile:
+Demo-GUI: Kachel **GREIFEN**. Controller: **R2**. Streamdeck: Button
+**ENABLE MANIPULATION**. Alternativ per Kommandozeile:
 
 ```bash
 ros2 topic pub --once /g1pilot/arms/enabled std_msgs/msg/Bool "{data: true}"
@@ -90,7 +102,9 @@ Gehen halten.
 
 Der Positionsspeicher merkt sich beliebige Kombinationen aus linkem Arm,
 rechtem Arm, linker Hand, rechter Hand unter einem Namen, gruppiert in
-Kategorien ("Ordner").
+Kategorien ("Ordner"). Hier die Streamdeck-Knöpfe; Abläufe, relative
+Bewegungen und die Bedienung in Demo-GUI und Handy stehen in
+[23-A-Posen-und-Ablaeufe.md](23-A-Posen-und-Ablaeufe.md).
 
 - **POSE SPEICHERN** öffnet einen Dialog: Name, Kategorie (mit Button
   „Kategorie anlegen"), und vier Häkchen für die zu speichernden
@@ -124,7 +138,7 @@ Container gebunden gemountet) und übersteht damit Container-Neustarts.
 
 `OPEN LEFT/RIGHT HAND` und `CLOSE LEFT/RIGHT HAND` öffnen/schließen die
 Inspire-FTP-Hände, sofern eingerichtet — siehe
-[60_inspire_haende_anleitung.md](60_inspire_haende_anleitung.md).
+[22-A-Inspire-Haende.md](22-A-Inspire-Haende.md).
 
 ## Sicherheitsverhalten (was der Anwender wissen sollte)
 
@@ -137,9 +151,10 @@ Inspire-FTP-Hände, sofern eingerichtet — siehe
 - **Geschwindigkeitslimits:** Kartesisch 0,25 m/s an Hand und Ellbogen
   (Industriewert für Betrieb mit Personen im Schutzraum), zusätzlich
   1,5 rad/s je Gelenk.
-- **Notaus:** `EMERGENCY STOP` macht die Arme sofort drehmomentfrei
-  (gedämpft, kein Sprung in eine Home-Pose) — Details in
-  [70_echtroboter_anleitung.md](70_echtroboter_anleitung.md).
+- **Notaus:** NOT-HALT (Demo-GUI, `EMERGENCY STOP`, Controller-PS, Handy)
+  macht die Arme sofort drehmomentfrei (gedämpft, kein Sprung in eine
+  Home-Pose) — Details in [51-A-Notaus.md](51-A-Notaus.md) und
+  [50-A-Echter-Roboter.md](50-A-Echter-Roboter.md).
 - **Marker hat immer Vorrang:** Wird während einer laufenden geplanten
   Bewegung (Positionsspeicher) ein Marker angefasst, bricht die Planung
   sofort ab.

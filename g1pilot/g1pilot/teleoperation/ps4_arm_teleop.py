@@ -30,7 +30,7 @@ KEIN Laufen: der Node publiziert nichts an loco_cmd_vel / joy_mux. Rueckmeldung:
                          (Hand-Auswahl, Tempo, Modus; shared_state.py) --
                          publiziert eigene Wechsel, uebernimmt die der GUI
 
-Belegung (Details: g1pilot/docs/43_ps4_controller.md):
+Belegung (Details: g1pilot/docs/11-A-Controller.md):
   Steuerkreuz  links/rechts/oben/unten = linke / rechte / beide / beide gespiegelt
   Dreieck      Umschalten VERSCHIEBEN <-> DREHEN (kurze Vibration nur beim
                Wechsel zu VERSCHIEBEN -- so ohne GUI unterscheidbar)

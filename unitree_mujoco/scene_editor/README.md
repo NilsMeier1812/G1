@@ -32,7 +32,7 @@ Generator sie beim Kombinieren automatisch raus.)
 
 ### Hindernis vs. Greif-Objekt (fuer Nav/IK)
 
-Objekte werden nach RViz uebertragen (siehe `g1pilot/docs/51_navigation_technik.md`) und dort
+Objekte werden nach RViz uebertragen (siehe `g1pilot/docs/31-T-Navigation.md`) und dort
 in zwei Klassen unterschieden — **Hindernis** (der Arm weicht aus) und
 **Greif-Objekt** (die Hand darf ran, das Objekt bewegt sich beim Anfassen mit).
 Klassifikation per **Namenskonvention**: benennst du ein Objekt mit dem
@@ -106,7 +106,7 @@ Außerdem `python3-venv`. Ohne das Paket
 bricht `python3 -m venv` mit `No module named 'ensurepip'` ab und
 hinterlässt ein `.venv` ohne `pip`. `setup.sh` lädt die Pakete von PyPI,
 braucht also Internet (unter WSL2 mit VPN siehe
-[WSL2-Netzwerk](../../g1pilot/docs/01_installation.md#wsl2-netzwerk-vpn-uni-wlan-roboter)).
+[WSL2-Netzwerk](../../g1pilot/docs/01-A-Installation.md#wsl2-netzwerk-vpn-uni-wlan-roboter)).
 
 ```bash
 sudo apt install -y python3-venv

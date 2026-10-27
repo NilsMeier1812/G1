@@ -181,7 +181,7 @@ if [ "$G1_MODE" = "real" ]; then
 
   # ── R3c) Wofuer der PS4-Controller? ───────────────────────────────────
   #   Gehen = bisheriger Weg (joystick -> loco_client, Deadman Button 8).
-  #   Arme + Haende = ps4_arm_teleop, KEIN Laufen (docs/43_ps4_controller.md).
+  #   Arme + Haende = ps4_arm_teleop, KEIN Laufen (docs/11-A-Controller.md).
   ask_menu "R3c) PS4-Controller steuert …" 1 "${G1_PS4_ARMS:-}" \
     "Gehen          — wie bisher (Deadman + Sticks -> loco_client)|0" \
     "Arme + Haende  — Steuerkreuz waehlt die Hand, KEIN Laufen|1"
@@ -216,7 +216,7 @@ if [ "$G1_MODE" = "real" ]; then
   echo -e "   ${DIM}Bedienoberflaeche gestartet wird (Demo-GUI: 'Start' in der Startleiste, Streamdeck: START).${R}"
   echo -e "   ${Y}NOT-HALT / E-STOP: Arme schlaff, Beine bleiben stehen (kein Damp).${R}"
   echo -e "   ${Y}Voll-Notaus (Controller R1+L1+PS 2 s) = Damp = Roboter sackt in den Kran (sichern!).${R}"
-  echo -e "   ${DIM}Checkliste vor dem ersten Lauf: g1pilot/docs/70_echtroboter_anleitung.md${R}"
+  echo -e "   ${DIM}Checkliste vor dem ersten Lauf: g1pilot/docs/50-A-Echter-Roboter.md${R}"
   echo
   if [ "$ASSUME_YES" = "1" ]; then
     if [ "${G1_REAL_CONFIRM:-0}" != "1" ]; then
@@ -268,7 +268,7 @@ else
   ask_hand_browser 3b
 
   # ── 3c) PS4-Controller fuer den Oberkoerper (Arme + Haende, kein Laufen) ─
-  #   Siehe docs/43_ps4_controller.md. Braucht /dev/input auf dem Host.
+  #   Siehe docs/11-A-Controller.md. Braucht /dev/input auf dem Host.
   ask_menu "3c) PS4-Controller fuer Arme + Haende? (kein Laufen)" 2 "${G1_PS4_ARMS:-}" \
     "Ja   — Controller steuert Haende (Steuerkreuz waehlt die Hand)|1" \
     "Nein — ohne Controller|0"

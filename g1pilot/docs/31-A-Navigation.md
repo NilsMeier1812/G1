@@ -2,7 +2,7 @@
 
 Richtet sich an: Anwender, die den G1 autonom von Punkt zu Punkt fahren
 lassen wollen. Für die interne Funktionsweise siehe
-[51_navigation_technik.md](51_navigation_technik.md).
+[31-T-Navigation.md](31-T-Navigation.md).
 
 ## Überblick
 
@@ -34,8 +34,9 @@ ros2 topic pub --once /g1pilot/start_balancing std_msgs/msg/Bool "{data: true}"
 ros2 topic pub --once /g1pilot/start_walking   std_msgs/msg/Bool "{data: true}"   # nur Sim nötig
 ```
 
-Oder am Streamdeck: START BALANCING, dann (in der Sim) WALK. Erst danach
-reagiert der Roboter auf Geschwindigkeitskommandos.
+Demo-GUI: Kachel **GEHEN** (dort sitzen AUTO NAV und die Stations-Knöpfe).
+Streamdeck: START BALANCING, dann (in der Sim) WALK. Erst danach reagiert
+der Roboter auf Geschwindigkeitskommandos.
 
 **2. Ziel setzen**
 
@@ -53,8 +54,10 @@ ros2 topic pub --once /g1pilot/goal geometry_msgs/msg/PoseStamped \
 
 **3. Autonomie scharfschalten**
 
-Am Streamdeck: Button **AUTO NAV** (erscheint automatisch, sobald der
-Nav-Stack läuft). Per Kommandozeile:
+Demo-GUI: im Modus GEHEN der Knopf **AUTO NAV** (Zustände *aus* → *AN,
+wartet auf Ziel* → *läuft …* → *AN, Ziel erreicht*; Knopf und Pfeile sind
+währenddessen gesperrt). Streamdeck: Button **AUTO NAV** (erscheint
+automatisch, sobald der Nav-Stack läuft). Per Kommandozeile:
 
 ```bash
 ros2 topic pub --once /g1pilot/auto_enable std_msgs/msg/Bool "{data: true}"
@@ -62,12 +65,27 @@ ros2 topic pub --once /g1pilot/auto_enable std_msgs/msg/Bool "{data: true}"
 
 Der Roboter folgt jetzt dem Pfad und stoppt selbstständig am Ziel.
 
+**Feste Ziele: Stationen (Demo-GUI).** Jedes Objekt `station_<Name>` der
+geladenen Umgebung wird in GEHEN ein Knopf **Zur Station <Name>**. Ein Klick
+setzt das Ziel und schaltet AUTO NAV ein; beim Ankommen geht AUTO NAV von
+selbst wieder aus und der Status meldet „Angekommen an Station …“. Ohne Weg
+(oder ohne Pfad nach 5 s) geht AUTO NAV ebenfalls aus. Stationen legt man im
+Umgebungs-Editor an ([40-A-Simulation.md](40-A-Simulation.md#umgebungen)).
+
 **4. Abschalten / anhalten**
 
-**AUTO NAV** erneut klicken — der Roboter stoppt sofort. Sanftes
-Not-Anhalten wie immer: START BALANCING. Harter Notaus: EMERGENCY STOP.
+**AUTO NAV** erneut klicken — der Roboter stoppt sofort. Beim Wechsel zu
+GREIFEN und bei NOT-HALT geht AUTO NAV automatisch aus. Sanftes Anhalten wie
+immer: GREIFEN bzw. START BALANCING. Harter Halt: NOT-HALT
+([51-A-Notaus.md](51-A-Notaus.md)).
 
 ## Echter Roboter (Stand 2026-10-15, Code-Prüfung, nicht an Hardware getestet)
+
+> **Achtung:** Eine Analyse vom 2026-10-22 (Projekt-Analysen,
+> `lidar_autonav_real_g1.md`) kam zum Ergebnis, dass der Real-Pfad so noch
+> nicht läuft: im schlanken Real-Image fehlt der Livox-Treiber, MOLA wurde
+> nicht gestartet und es gibt einen TF-Konflikt. Vor einem Versuch am
+> Roboter erst diese Punkte klären.
 
 - **Pflicht: Pose-Quelle.** Planer (`dijkstra_planner`) und Folger (`nav2point`)
   brauchen `/lidar_odometry/pose_fixed`. Auf dem echten G1 liefert die nur die
@@ -92,8 +110,8 @@ Not-Anhalten wie immer: START BALANCING. Harter Notaus: EMERGENCY STOP.
 
 - **Hindernisvermeidung nur für die geladene Umgebung, nicht spontan.** In
   der Simulation rastert die Karte die Objekte der geladenen Umgebung
-  (siehe [61_inspire_haende_technik.md](61_inspire_haende_technik.md) für
-  verwandte Szenen-Konzepte bzw. die Architektur-Doku für die Szenen-Brücke)
+  (Szenen-Brücke, siehe [31-T-Navigation.md](31-T-Navigation.md#scene_bridge-nur-sim)
+  und [40-A-Simulation.md](40-A-Simulation.md#umgebungen))
   — spontane Hindernisse (Menschen, verschobene Objekte) werden **nicht**
   erkannt, es gibt keine Live-Perzeption. Auf echter Hardware ohne
   entsprechendes Setup bleibt die Karte leer. Nur in freier, kontrollierter
