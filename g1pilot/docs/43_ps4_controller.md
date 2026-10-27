@@ -49,7 +49,7 @@ Am echten Roboter erst in der GUI starten, siehe unten.
 | Kreis | gewählte Hand(e) **öffnen** |
 | Viereck | gewählte Hand(e) **schließen** |
 | Kreuz | **Stopp**: Hand hält sofort an, eine laufende geplante Bewegung (Grundstellung, Ablauf) wird abgebrochen |
-| Options | **Controller sperren / entsperren** (zum Ablegen). Gesperrt lösen L2/R2, Sticks und alle Tasten nichts aus; nur **PS (NOT-HALT)** und **R1 + L1 + PS (Voll-Notaus)** wirken weiter. LED fast aus (dunkelgrau), lange Vibration beim Sperren, kurze beim Entsperren. Siehe [Controller sperren](#controller-sperren-options) |
+| Options | **Controller sperren / entsperren** (zum Ablegen). Gesperrt lösen L2/R2, Sticks und alle Tasten nichts aus; nur **PS (NOT-HALT)** und **R1 + L1 + PS (Voll-Notaus)** wirken weiter. LED fast aus (dunkelgrau), lange Vibration beim Sperren, kurze beim Entsperren, gesperrt vibriert jede andere Taste kurz und leicht. Siehe [Controller sperren](#controller-sperren-options) |
 | Share **1 s halten** | Grundstellung (Arme neben den Körper, geplant um Hindernisse herum) |
 | PS | **NOT-HALT** (wie in den GUIs: Arme schlaff, Roboter gedämpft — real sackt er zusammen) |
 | **Steuerkreuz ← / → + Kreuz 2 s halten** | **ARM SPIEGELN**: der Arm der gedrückten Seite fährt geplant (Planer + Kollisionsschutz) in die exakt gespiegelte Pose des anderen Arms — z. B. rechten Arm hinstellen, dann ← + Kreuz halten: der linke Arm spiegelt ihn. Controller vibriert während des Haltens, vorzeitig loslassen bricht ab. Siehe [Arm spiegeln](#arm-spiegeln-steuerkreuz--kreuz) |
@@ -230,7 +230,8 @@ Trigger beim Hinlegen (L2 = GEHEN/laufen, R2 = GREIFEN/Hüfte).
 - **Gesperrt wirkt nur noch:** PS (**NOT-HALT**), R1 + L1 + PS 2 s
   (**Voll-Notaus**) und Options (entsperren). L2/R2, Sticks, Steuerkreuz,
   Kreuz, Kreis/Viereck, Dreieck, L1/R1, L3 und Share tun nichts — auch das
-  Gehen (`ps4_walk`) nicht.
+  Gehen (`ps4_walk`) nicht. Jeder solche Tastendruck (auch L2/R2) vibriert
+  kurz und leicht — so merkt man, dass der Controller gesperrt ist.
 - Beim Sperren hält eine laufende Hand-Bewegung sofort an, Hüfte und Gehen
   stoppen. Eine geplante Fahrt aus der GUI (Pose, Ablauf) läuft weiter.
   Modus, Hand-Auswahl und Tempo bleiben, wie sie sind.

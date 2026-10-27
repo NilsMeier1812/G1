@@ -664,6 +664,8 @@ def test_options_lock_blocks_triggers_keeps_ps_estop(rig):
     st["axes"][L.L2_AXIS] = st["axes"][L.R2_AXIS] = st["axes"][L.LY] = 0.0
     time.sleep(0.3)
     assert {k: len(g[k]) for k in n} == n and _walk_bools(g) == []
+    taps = [json.loads(m.data).get("rumble") for _, m in g["feedback"][n_fb:]]
+    assert sum(1 for r in taps if r and r.get("ms") == 80 and r["weak"] == 0.3) >= 2
     assert rig.status().get("robot_mode") == "grasp"
     # Entsperren, dann wirkt der Controller wieder
     rig.press(L.OPTIONS)

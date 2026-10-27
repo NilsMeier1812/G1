@@ -204,14 +204,16 @@ def test_lock_blocks_everything_but_estop_and_options():
     assert ("hold", ("left", "right")) in out and out[-1] == ("lock", True)
     assert lg.locked and lg.color() == COLORS["locked"]
     assert "GESPERRT" in lg.label() and lg.status()["locked"] is True
-    # Ablegen: L2/R2, Sticks und alle Tasten loesen nichts aus
-    assert trig(lg, 0.2, L2_AXIS=1.0, R2_AXIS=1.0, LY=1.0, RX=1.0) == []
+    # Ablegen: L2/R2, Sticks und alle Tasten loesen nichts aus -- nur eine
+    # leichte Vibration je Druck
+    assert trig(lg, 0.2, L2_AXIS=1.0, R2_AXIS=1.0, LY=1.0, RX=1.0) == [("locked_tap",)]
+    assert trig(lg, 0.21, L2_AXIS=1.0, R2_AXIS=1.0, LY=1.0, RX=1.0) == []   # gehalten
     assert lg.robot_mode == "grasp" and not lg.waist_mode
     assert lg.twist(joy(LY=1.0)[0]) == {} and lg.waist_rate(joy(RX=1.0)[0]) is None
     trig(lg, 0.25)
     for i, btn in enumerate((L.CIRCLE, L.SQUARE, L.CROSS, L.TRIANGLE, L.DPAD_LEFT,
                              L.L1, L.R1, L.L3, L.SHARE)):
-        assert press(lg, btn, 0.3 + i * 0.1) == [], btn
+        assert press(lg, btn, 0.3 + i * 0.1) == [("locked_tap",)], btn
     a, b = joy([L.SHARE])
     lg.update(a, b, 2.0)
     assert lg.update(a, b, 4.0) == []                # kein Grundstellungs-Halten

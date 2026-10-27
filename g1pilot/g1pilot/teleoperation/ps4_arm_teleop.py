@@ -44,7 +44,8 @@ Belegung (Details: g1pilot/docs/43_ps4_controller.md):
                versehentlich gedrueckter L2/R2 nichts aus). Gesperrt wirken
                nur noch PS (NOT-HALT), R1 + L1 + PS (Voll-Notaus) und Options
                selbst; LED fast aus (dunkelgrau), lange Vibration beim
-               Sperren, kurze beim Entsperren. Nach dem Entsperren erst Sticks
+               Sperren, kurze beim Entsperren, jede andere Taste (auch
+               L2/R2) vibriert gesperrt kurz und leicht. Nach dem Entsperren erst Sticks
                in die Mitte und L2 einmal los, bevor sie wieder wirken.
                (Bis 2026-10: Arme uebernehmen -- das macht jetzt R2.)
   Share (1 s halten)  Grundstellung
@@ -167,7 +168,7 @@ class ArmTeleopLogic:
 
     update(axes, buttons, now) -> Liste von Befehlen (Tupel), z.B.
       ("hand", side, "open"|"close"), ("enable",), ("home",), ("cancel",),
-      ("estop",), ("hold", sides), ("changed",), ("lock", bool),
+      ("estop",), ("hold", sides), ("changed",), ("lock", bool), ("locked_tap",),
       ("full_arm",), ("full_abort",), ("full_estop",)   -- Voll-Notaus
       ("mirror_arm", side), ("mirror_abort",), ("mirror", side)  -- Spiegeln
       ("seq_next",)                                          -- Ablauf weiter (L3)
@@ -541,6 +542,10 @@ class ArmTeleopLogic:
         if rise[L.OPTIONS]:
             return out + self.set_locked(not self.locked)
         if self.locked:
+            # Jede andere Taste (auch L2/R2) vibriert leicht: "gesperrt".
+            if any(rise[i] for i in range(L.NUM_BUTTONS)
+                   if i not in (L.OPTIONS, L.PS)) or any(trig_rise.values()):
+                out.append(("locked_tap",))
             return out
         if self.estop:
             # bis zur Quittung in der GUI: nichts bewegen
@@ -1039,6 +1044,9 @@ def main(args=None):
                 self.get_logger().info("R2: Arme uebernommen"
                                        + (" (Greifen-Modus)." if self.options_balancing else "."))
                 self._send_feedback(rumble_ms=150)
+            elif kind == "locked_tap":
+                # Gesperrt: kurze, leichte Vibration als Rueckmeldung.
+                self._send_feedback(rumble_ms=80, strong=0.0, weak=0.3)
             elif kind == "lock":
                 if cmd[1]:
                     self.get_logger().warn(
