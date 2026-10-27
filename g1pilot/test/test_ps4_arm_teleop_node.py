@@ -6,7 +6,8 @@ Ohne Roboter und ohne Controller: der Test spielt sensor_msgs/Joy ein, stellt
 die Hand-Frames per statischer TF bereit und prueft die Topics, die der Node
 an arm_controller / loco_client / Inspire-Bridge schickt:
 
-  - Options uebernimmt nur die Arme (KEIN start_balancing -> Beine unberuehrt),
+  - R2 uebernimmt nur die Arme (KEIN start_balancing -> Beine unberuehrt),
+  - Options sperrt den Controller (nur PS-Notaus wirkt), erneut = entsperrt,
   - Tempo startet Langsam, R1 endet bei Normal, Ziel-Vorlauf begrenzt,
   - NOT-HALT von aussen (GUI) sperrt den Controller (LED rot), START gibt frei,
   - PS sendet den NOT-HALT, Kreis/Viereck die Hand-Befehle,
@@ -194,11 +195,11 @@ def test_real_settings_end_to_end(rig):
     st = rig.status()
     assert st["speed"] == "Langsam" and st["selection"] == "right" and not st["estop"]
 
-    # Options: nur Arme uebernehmen, Beine unberuehrt
-    rig.press(L.OPTIONS)
+    # R2 (ohne trigger_modes): nur Arme uebernehmen, Beine unberuehrt
+    rig.press(L.R2)
     assert wait_for(lambda: any(m.data for _, m in g["enabled"]))
     time.sleep(0.3)
-    assert g["balance"] == [], "Options darf auf real kein start_balancing senden"
+    assert g["balance"] == [], "R2 darf auf real kein start_balancing senden"
 
     # Linker Stick vor -> rechte Hand-Ziele laufen +x, Vorlauf begrenzt (4 cm)
     t0 = time.monotonic()
@@ -636,3 +637,43 @@ def test_stick_during_sequence_motion_sends_no_goal(rig):
     rig.state["axes"][L.LY] = 0.6
     assert wait_for(lambda: goals_since(rig, "right", t1), 2.0)
     rig.state["axes"][L.LY] = 0.0
+
+
+# ── Options = Controller sperren (Ablegen) ───────────────────────────────
+@pytest.mark.parametrize("rig", [MODES], indirect=True)
+def test_options_lock_blocks_triggers_keeps_ps_estop(rig):
+    g, st = rig.got, rig.state
+    rig.onboard(501)
+    time.sleep(0.3)
+    rig.press(L.R2)                                     # GREIFEN
+    assert wait_for(lambda: rig.status().get("robot_mode") == "grasp", 2.0)
+    n_fb = len(g["feedback"])
+    rig.press(L.OPTIONS)
+    assert wait_for(lambda: rig.status().get("locked") is True, 2.0)
+    assert "GESPERRT" in rig.status()["label"]
+    time.sleep(0.2)
+    fbs = [json.loads(m.data) for _, m in g["feedback"][n_fb:]]
+    assert fbs[-1]["rgb"] == [40, 40, 40]
+    assert any((f.get("rumble") or {}).get("ms") == 400 for f in fbs)
+    # Ablegen: L2, R2, Stick, Kreis -> nichts
+    n = {k: len(g[k]) for k in ("goal_right", "enabled", "balance", "hand_right")}
+    st["axes"][L.L2_AXIS] = st["axes"][L.R2_AXIS] = 1.0
+    st["axes"][L.LY] = 1.0
+    time.sleep(0.5)
+    rig.press(L.CIRCLE)
+    st["axes"][L.L2_AXIS] = st["axes"][L.R2_AXIS] = st["axes"][L.LY] = 0.0
+    time.sleep(0.3)
+    assert {k: len(g[k]) for k in n} == n and _walk_bools(g) == []
+    assert rig.status().get("robot_mode") == "grasp"
+    # Entsperren, dann wirkt der Controller wieder
+    rig.press(L.OPTIONS)
+    assert wait_for(lambda: rig.status().get("locked") is False, 2.0)
+    rig.press(L.CIRCLE)
+    assert wait_for(lambda: len(g["hand_right"]) == n["hand_right"] + 1, 2.0)
+    # Gesperrt: PS = NOT-HALT wirkt weiter
+    rig.press(L.OPTIONS)
+    assert wait_for(lambda: rig.status().get("locked") is True, 2.0)
+    n_estop = len(g["estop"])
+    rig.press(L.PS)
+    assert wait_for(lambda: len(g["estop"]) > n_estop, 2.0)
+    assert rig.status().get("estop") is True

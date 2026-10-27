@@ -230,3 +230,26 @@ def test_arm_speed_untouched_while_l2_held():
     arm.update(*joy(), 0.4)
     arm.update(*joy(buttons=(L.R1,)), 0.5)
     assert arm.speed == "Schnell"
+
+
+# ── Sperre per Options (ps4_arm_teleop -> /g1pilot/ps4/status "locked") ──
+def test_lock_stops_walking_and_blocks_l2_and_speed():
+    w = WalkLogic()
+    assert armed(w, LY=1.0) == [("start",)]
+    assert w.set_locked(True) == [("stop",)] and w.command(joy(l2=1.0, LY=1.0)[0]) is None
+    assert w.status()["locked"] is True
+    w.walk_mode = True
+    assert w.update(*joy()) == [] and w.update(*joy(l2=1.0, LY=1.0)) == []
+    assert w.update(*joy(buttons=(L.R1,))) == [] and w.speed == "Langsam"
+    assert w.command(joy(l2=1.0, LY=1.0)[0]) is None
+    # PS wirkt auch gesperrt
+    assert ("estop",) in w.update(*joy(buttons=(L.PS,))) and w.estop
+
+
+def test_unlock_with_l2_held_needs_release_first():
+    w = WalkLogic()
+    w.set_locked(True)
+    w.update(*joy(l2=1.0))
+    assert w.set_locked(False) == []
+    assert w.update(*joy(l2=1.0, LY=1.0)) == [] and not w.active
+    assert armed(w) == [("start",)]

@@ -65,6 +65,7 @@ def rig():
         node.create_subscription(String, "/g1pilot/teleop_state",
                                  lambda m: got["shared"].append(json.loads(m.data)), latched)
         pub_shared = node.create_publisher(String, "/g1pilot/teleop_state", latched)
+        pub_ps4_status = node.create_publisher(String, "/g1pilot/ps4/status", latched)
         state.update({"axes": [0.0] * L.NUM_AXES, "buttons": [0] * L.NUM_BUTTONS,
                       "run": True})
 
@@ -94,6 +95,7 @@ def rig():
             {"source": "demo_gui", "fields": {"walk_speed": {"v": name, "t": time.time()}}})))
         r.gui_mode = lambda mode: pub_shared.publish(String(data=json.dumps(
             {"source": "demo_gui", "fields": {"mode": {"v": mode, "t": time.time()}}})))
+        r.lock = lambda on: pub_ps4_status.publish(String(data=json.dumps({"locked": on})))
         assert wait_for(lambda: got["status"], 15.0), "Node startet nicht"
         yield r
     finally:
@@ -258,3 +260,30 @@ def test_r1_l1_walk_speed_in_walk_mode_reaches_gui(rig):
     _tap(rig, L.R1)
     time.sleep(0.2)
     assert _own_walk_speed(g) == "Langsam"
+
+
+def test_walk_node_follows_options_lock(rig):
+    """ps4_arm_teleop meldet "locked" (Options) -> Gehen stoppt sofort, L2
+    wirkt nicht; nach dem Entsperren erst nach L2 los wieder."""
+    g = rig.got
+    rig.onboard(True)
+    rig.state["axes"][L.LY] = 1.0
+    rig.l2(1.0)
+    assert wait_for(lambda: g["cmd"] and g["cmd"][-1][1].linear.x > 0.3)
+    rig.lock(True)
+    assert wait_for(lambda: g["cmd"][-1][1].linear.x == 0.0, 1.0)
+    assert wait_for(lambda: g["status"][-1].get("locked") is True)
+    t0 = time.monotonic()
+    rig.l2(0.0)
+    time.sleep(0.2)
+    rig.l2(1.0)                                    # neu gedrueckt, aber gesperrt
+    time.sleep(0.5)
+    assert cmds_since(rig, t0) == []
+    rig.lock(False)                                # L2 noch gehalten
+    assert wait_for(lambda: g["status"][-1].get("locked") is False)
+    time.sleep(0.4)
+    assert cmds_since(rig, t0) == []
+    rig.l2(0.0)
+    time.sleep(0.2)
+    rig.l2(1.0)
+    assert wait_for(lambda: g["cmd"] and g["cmd"][-1][1].linear.x > 0.3)

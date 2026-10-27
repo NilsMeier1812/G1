@@ -288,7 +288,7 @@ def main():
     for _ in range(2):
         r.tap(L.L1)
     r.tap(L.R1)
-    r.tap(L.OPTIONS)
+    r.tap(L.R2)
     time.sleep(2.0)
     # Grundstellung (geplant), danach sind beide Arme frei vom Koerper
     p.cmd_states.clear()

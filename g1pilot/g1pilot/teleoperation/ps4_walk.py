@@ -24,6 +24,9 @@ Sicherheit: kommt kein Joy mehr (Funkabriss, Stall-Erkennung im
 ps4_joystick), sendet der Node einmal 0 und dann nichts mehr; loco_client
 stoppt zusaetzlich selbst, wenn der Strom ausbleibt (cmd_vel_timeout).
 NOT-HALT (PS bzw. von GUI/Streamdeck) sperrt das Gehen bis START.
+Controller per Options gesperrt (ps4_arm_teleop, Feld "locked" auf dem latched
+/g1pilot/ps4/status): kein Gehen, kein Geh-Tempo; nach dem Entsperren erst
+wieder nach einem "L2 los" (wie nach NOT-HALT).
 
 Rueckmeldung: /g1pilot/ps4/walk_status (JSON) + Vibration ueber
 /g1pilot/ps4/feedback (ohne LED-Farbe -- die LED gehoert ps4_arm_teleop).
@@ -91,6 +94,8 @@ class WalkLogic:
         # oder NOT-HALT laeuft der G1 nicht los, nur weil L2 noch gedrueckt ist.
         self._armed = False
         self._prev = [0] * L.NUM_BUTTONS
+        # Controller per Options gesperrt (ps4_arm_teleop): nichts ausser PS.
+        self.locked = False
 
     @property
     def speed(self):
@@ -107,7 +112,7 @@ class WalkLogic:
 
     def status(self):
         return {"active": self.active, "speed": self.speed, "estop": self.estop,
-                "max_speed": WALK_SPEED_ORDER[self.max_idx]}
+                "max_speed": WALK_SPEED_ORDER[self.max_idx], "locked": self.locked}
 
     def latch_estop(self):
         was = self.estop
@@ -120,6 +125,15 @@ class WalkLogic:
             self._armed = False
             return True
         return False
+
+    def set_locked(self, locked):
+        """Sperre von ps4_arm_teleop (Options). -> Ereignisse (("stop",) beim
+        Sperren mitten im Gehen). Entsperren macht erst nach "L2 los" scharf."""
+        locked = bool(locked)
+        if locked == self.locked:
+            return []
+        self.locked = locked
+        return self._deactivate()
 
     def release(self):
         """Joy-Strom weg: wie Deadman los."""
@@ -151,6 +165,8 @@ class WalkLogic:
             out += self.latch_estop()
             out.append(("estop",))
             return out
+        if self.locked:
+            return out + self._deactivate()
         held = deadman_held(axes, b)
         if not held:
             out += self._deactivate()
@@ -180,7 +196,7 @@ class WalkLogic:
     def command(self, axes):
         """Stick oben = vor (+x), links = links (+y), rechter Stick links =
         nach links drehen (+yaw). Werte normiert, mit Tempo-Stufe skaliert."""
-        if not self.active or self.estop:
+        if not self.active or self.estop or self.locked:
             return None
         a = list(axes) + [0.0] * max(0, L.NUM_AXES - len(axes))
         k = WALK_SPEED_SCALE[self.speed]
@@ -240,6 +256,8 @@ def main(args=None):
             self.shared.set("walk_speed", self.logic.speed)
             self.pub_shared = self.create_publisher(String, shared_state.TOPIC, latched)
             self.create_subscription(String, shared_state.TOPIC, self._on_shared, latched)
+            self.create_subscription(String, "/g1pilot/ps4/status", self._on_ps4_status,
+                                     latched)
             self.pub_shared.publish(String(data=self.shared.to_json()))
             self._publish_status()
             self.get_logger().info(
@@ -263,6 +281,20 @@ def main(args=None):
             if msg.data and self.logic.clear_estop():
                 self.get_logger().info("NOT-HALT quittiert -- Gehen wieder frei.")
                 self._publish_status()
+
+        def _on_ps4_status(self, msg):
+            """Sperre (Options) von ps4_arm_teleop uebernehmen."""
+            try:
+                locked = bool(json.loads(msg.data).get("locked"))
+            except (TypeError, ValueError, AttributeError):
+                return
+            if locked == self.logic.locked:
+                return
+            for ev in self.logic.set_locked(locked):
+                self._event(ev)
+            self.get_logger().info("Controller gesperrt -- kein Gehen." if locked else
+                                   "Controller entsperrt -- Gehen nach L2 los/neu.")
+            self._publish_status()
 
         def _on_shared(self, msg):
             ch = self.shared.merge(msg.data)
