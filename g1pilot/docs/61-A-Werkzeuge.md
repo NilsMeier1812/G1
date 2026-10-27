@@ -76,7 +76,7 @@ python3 tools/check_doc_links.py
 ```
 
 Prüft alle Markdown-Links im Repo (Datei und Anker, wie GitHub sie
-bildet) und alle Verweise `docs/<Name>.md` bzw. `NN-X-Name.md` in Code,
+bildet) und alle Verweise `docs/<Name>.md`, `NN-X-Name.md` bzw. `G-Name.md` in Code,
 Skripten und Launch-Dateien. Exit-Code 1 bei toten Zielen. Nach jedem
 Umbenennen oder Verschieben eines Abschnitts laufen lassen.
 

@@ -14,6 +14,10 @@ Dateien heißen `GT-X-Name.md`:
 | `X` | `A` = **Anleitung** für Anwender (starten, bedienen, Fehler beheben, kein Code-Wissen nötig), `T` = **Technik** für Entwickler (Dateien, Topics, Parameter, Datenfluss, Tests) |
 | `Name` | Thema, ohne Umlaute und Leerzeichen |
 
+Zu jeder Gruppe gibt es ein Übersichtsdokument `G-Name.md` (nur die
+Gruppenziffer) mit einer Kurzfassung je Thema und den Links, z. B.
+[1-Bedienung.md](1-Bedienung.md) mit allen Bedienwegen.
+
 Ein Thema hat in beiden Dokumenten dieselbe Nummer und denselben Namen
 (`11-A-Controller.md` / `11-T-Controller.md`). Nicht jedes Thema braucht
 beide. Neue Themen bekommen die nächste freie Nummer ihrer Gruppe; nach
@@ -21,6 +25,8 @@ jedem Umbenennen `python3 tools/check_doc_links.py` laufen lassen
 ([61-A-Werkzeuge.md](61-A-Werkzeuge.md#doku-links-prüfen)).
 
 ## 0 · Einstieg
+
+Übersicht: [0-Einstieg.md](0-Einstieg.md)
 
 | Thema | Anleitung | Technik |
 |---|---|---|
@@ -31,6 +37,8 @@ jedem Umbenennen `python3 tools/check_doc_links.py` laufen lassen
 
 ## 1 · Bedienung
 
+Übersicht: [1-Bedienung.md](1-Bedienung.md)
+
 | Thema | Anleitung | Technik |
 |---|---|---|
 | Demo-GUI (Standard-Oberfläche) | [10-A-Demo-GUI.md](10-A-Demo-GUI.md) | [10-T-Demo-GUI.md](10-T-Demo-GUI.md) |
@@ -39,6 +47,8 @@ jedem Umbenennen `python3 tools/check_doc_links.py` laufen lassen
 | Streamdeck und alter Joystick-Modus | [13-A-Streamdeck.md](13-A-Streamdeck.md) | [13-T-Streamdeck.md](13-T-Streamdeck.md) |
 
 ## 2 · Arme und Hände
+
+Übersicht: [2-Arme-und-Haende.md](2-Arme-und-Haende.md)
 
 | Thema | Anleitung | Technik |
 |---|---|---|
@@ -50,12 +60,16 @@ jedem Umbenennen `python3 tools/check_doc_links.py` laufen lassen
 
 ## 3 · Fortbewegung
 
+Übersicht: [3-Fortbewegung.md](3-Fortbewegung.md)
+
 | Thema | Anleitung | Technik |
 |---|---|---|
 | Stehen und Gehen (Sim-Policy, Unitree-Loco) | [30-A-Stehen-und-Gehen.md](30-A-Stehen-und-Gehen.md) | [30-T-Stehen-und-Gehen.md](30-T-Stehen-und-Gehen.md) |
 | Navigation (AUTO NAV, Stationen) | [31-A-Navigation.md](31-A-Navigation.md) | [31-T-Navigation.md](31-T-Navigation.md) |
 
 ## 4 · Simulation
+
+Übersicht: [4-Simulation.md](4-Simulation.md)
 
 | Thema | Anleitung | Technik |
 |---|---|---|
@@ -65,12 +79,16 @@ Umgebungen bauen: [`unitree_mujoco/scene_editor/README.md`](../../unitree_mujoco
 
 ## 5 · Echter Roboter
 
+Übersicht: [5-Echter-Roboter.md](5-Echter-Roboter.md)
+
 | Thema | Anleitung | Technik |
 |---|---|---|
 | Echter Roboter (Sicherheit und Ablauf) | [50-A-Echter-Roboter.md](50-A-Echter-Roboter.md) | |
 | Notaus (alle Halt-Wege) | [51-A-Notaus.md](51-A-Notaus.md) | [51-T-Notaus.md](51-T-Notaus.md) |
 
 ## 6 · Entwicklung
+
+Übersicht: [6-Entwicklung.md](6-Entwicklung.md)
 
 | Thema | Anleitung | Technik |
 |---|---|---|

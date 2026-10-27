@@ -64,13 +64,13 @@ gibt es eine **Anleitung** (`-A-`) für Anwender und meist ein
 
 | Gruppe | Themen |
 |---|---|
-| 0 Einstieg | [Installation](g1pilot/docs/01-A-Installation.md), [Architektur](g1pilot/docs/02-T-Architektur.md), [Startmenü](g1pilot/docs/03-A-Startmenue.md), [Umgebungsvariablen](g1pilot/docs/04-T-Umgebungsvariablen.md) |
-| 1 Bedienung | [Demo-GUI](g1pilot/docs/10-A-Demo-GUI.md), [Controller](g1pilot/docs/11-A-Controller.md), [Handy](g1pilot/docs/12-A-Handy.md), [Streamdeck](g1pilot/docs/13-A-Streamdeck.md) |
-| 2 Arme und Hände | [Arm-Manipulation](g1pilot/docs/20-A-Arm-Manipulation.md), [Arm-API](g1pilot/docs/21-A-Arm-API.md), [Inspire-Hände](g1pilot/docs/22-A-Inspire-Haende.md), [Posen und Abläufe](g1pilot/docs/23-A-Posen-und-Ablaeufe.md), [Hüftdrehung](g1pilot/docs/24-A-Hueftdrehung.md) |
-| 3 Fortbewegung | [Stehen und Gehen](g1pilot/docs/30-A-Stehen-und-Gehen.md), [Navigation](g1pilot/docs/31-A-Navigation.md) |
-| 4 Simulation | [Simulation](g1pilot/docs/40-A-Simulation.md) |
-| 5 Echter Roboter | [Echter Roboter](g1pilot/docs/50-A-Echter-Roboter.md), [Notaus](g1pilot/docs/51-A-Notaus.md) |
-| 6 Entwicklung | [Tests](g1pilot/docs/60-A-Tests.md), [Werkzeuge](g1pilot/docs/61-A-Werkzeuge.md) |
+| [0 Einstieg](g1pilot/docs/0-Einstieg.md) | [Installation](g1pilot/docs/01-A-Installation.md), [Architektur](g1pilot/docs/02-T-Architektur.md), [Startmenü](g1pilot/docs/03-A-Startmenue.md), [Umgebungsvariablen](g1pilot/docs/04-T-Umgebungsvariablen.md) |
+| [1 Bedienung](g1pilot/docs/1-Bedienung.md) | [Demo-GUI](g1pilot/docs/10-A-Demo-GUI.md), [Controller](g1pilot/docs/11-A-Controller.md), [Handy](g1pilot/docs/12-A-Handy.md), [Streamdeck](g1pilot/docs/13-A-Streamdeck.md) |
+| [2 Arme und Hände](g1pilot/docs/2-Arme-und-Haende.md) | [Arm-Manipulation](g1pilot/docs/20-A-Arm-Manipulation.md), [Arm-API](g1pilot/docs/21-A-Arm-API.md), [Inspire-Hände](g1pilot/docs/22-A-Inspire-Haende.md), [Posen und Abläufe](g1pilot/docs/23-A-Posen-und-Ablaeufe.md), [Hüftdrehung](g1pilot/docs/24-A-Hueftdrehung.md) |
+| [3 Fortbewegung](g1pilot/docs/3-Fortbewegung.md) | [Stehen und Gehen](g1pilot/docs/30-A-Stehen-und-Gehen.md), [Navigation](g1pilot/docs/31-A-Navigation.md) |
+| [4 Simulation](g1pilot/docs/4-Simulation.md) | [Simulation](g1pilot/docs/40-A-Simulation.md) |
+| [5 Echter Roboter](g1pilot/docs/5-Echter-Roboter.md) | [Echter Roboter](g1pilot/docs/50-A-Echter-Roboter.md), [Notaus](g1pilot/docs/51-A-Notaus.md) |
+| [6 Entwicklung](g1pilot/docs/6-Entwicklung.md) | [Tests](g1pilot/docs/60-A-Tests.md), [Werkzeuge](g1pilot/docs/61-A-Werkzeuge.md) |
 
 Verlinkt sind die Anleitungen; das Technik-Dokument zum selben Thema hat
 dieselbe Nummer mit `-T-` statt `-A-`. Namensschema und vollständige

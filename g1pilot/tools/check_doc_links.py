@@ -18,7 +18,7 @@ SKIP = ("unitree_sdk2_python/", "unitree_ros2/", "reference/", ".git/")
 SKIP_MUJOCO_EXCEPT = "unitree_mujoco/scene_editor/"
 LINK = re.compile(r"(?<!!)\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)|!\[[^\]]*\]\(([^)\s]+)\)")
 # docs/<alter oder neuer Name>.md sowie nackte neue Namen (z. B. in g1_gui.py: DOCS_DIR / "11-A-Controller.md")
-CODE_REF = re.compile(r"(?:docs/([0-9][0-9A-Za-z_\-]*\.md)|\b([0-9]{2}-[AT]-[A-Za-z0-9\-]+\.md))(#[\w\-]+)?")
+CODE_REF = re.compile(r"(?:docs/([0-9][0-9A-Za-z_\-]*\.md)|\b([0-9]{2}-[AT]-[A-Za-z0-9\-]+\.md|[0-9]-[A-Z][A-Za-z0-9\-]+\.md))(#[\w\-]+)?")
 CODE_SUFFIX = {".py", ".sh", ".js", ".yml", ".yaml", ".html", ".txt", ".cfg", ""}
 
 
