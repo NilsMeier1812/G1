@@ -126,6 +126,9 @@ def generate_launch_description():
                 'waist_hold': os.environ.get('G1_WAIST_HOLD', 'true'),
                 'kp_waist': os.environ.get('G1_WAIST_KP', '150.0'),
                 'kd_waist': os.environ.get('G1_WAIST_KD', '4.0'),
+                # Taillen-Ziel beim Uebernehmen: hold (Stellung beim ENABLE, alt),
+                # zero (gerade auf 0), onboard (0, beim Gehen Onboard-Taille).
+                'waist_mode': os.environ.get('G1_WAIST_MODE', 'hold'),
                 # E-Stop laesst die Taille gehalten (Real-Test 2026-10-15).
                 'estop_waist_hold': os.environ.get('G1_ESTOP_WAIST_HOLD', 'true'),
                 # Hueftdrehung (R2 halten + rechter Stick): real zuerst nur +-15 deg

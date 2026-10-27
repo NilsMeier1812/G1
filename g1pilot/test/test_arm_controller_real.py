@@ -1337,3 +1337,112 @@ def test_enable_after_estop_still_takes_measured_pose(ac_module):
         assert float(np.max(np.abs(node._last_q_target - ROBOT.measured()))) < 1e-6
     finally:
         _close(node)
+
+
+# ── Taillen-Modus zero / onboard (Linksdrall-Test, Nils 2026-10-27) ─────────
+def test_waist_mode_zero_straightens_slowly(ac_module):
+    """waist_mode=zero: beim ENABLE faehrt die Taille aus der Onboard-Stellung
+    (leicht schief) langsam auf 0 -- erstes Kommando = Messung (kein Sprung),
+    Hueftdrehung-Mitte = 0."""
+    _reset_robot()
+    node = _make_node(ac_module, waist_mode="zero", waist_max_vel=0.3)
+    try:
+        node._arms_controlled_callback(_bool(True))
+        assert np.allclose(node._waist.target, 0.0)
+        assert node._wyaw.home == 0.0
+        _run(node, 0.05)
+        first = ROBOT.waist_writes[0][1]
+        assert float(np.max(np.abs(first - ONBOARD_WAIST))) < 0.3 * 0.1, "kein Sprung"
+        _run(node, 2.6)
+        assert node._weight_state == "on"
+        assert np.allclose(ROBOT.waist_writes[-1][1], 0.0, atol=1e-9)
+        assert float(np.max(np.abs(ROBOT.waist()))) < 0.01
+    finally:
+        _close(node)
+
+
+def test_waist_mode_hold_is_default_unchanged(ac_module):
+    _reset_robot()
+    node = _make_node(ac_module)
+    try:
+        assert node._waist_mode == "hold" and node._waist_pass is None
+        node._arms_controlled_callback(_bool(True))
+        assert np.allclose(node._waist.target, ONBOARD_WAIST, atol=1e-9)
+    finally:
+        _close(node)
+
+
+def _feed_policy(node, q, kp=200.0):
+    node._waist_pass.feed(q, [kp] * 3, [5.0] * 3, [0.0] * 3, time.monotonic())
+
+
+def test_waist_mode_onboard_passes_policy_waist_while_walking(ac_module):
+    """waist_mode=onboard: im Stand 0; beim Gehen (start_walking) werden die
+    Onboard-Sollwerte aus rt/lowcmd eingeblendet; BALANCING -> zurueck auf 0."""
+    _reset_robot()
+    node = _make_node(ac_module, waist_mode="onboard")
+    try:
+        assert node._waist_pass is not None
+        node._arms_controlled_callback(_bool(True))
+        _run(node, 2.6)
+        assert np.allclose(ROBOT.waist_writes[-1][1], 0.0, atol=1e-9)
+        pol = np.array([0.01, 0.06, -0.02])
+        node._on_walk_mode(_bool(True))
+        t_end = time.monotonic() + 1.0
+        while time.monotonic() < t_end:
+            _feed_policy(node, pol)
+            _run(node, 0.02)
+        w, q, kp, kd = ROBOT.waist_writes[-1]
+        assert w == 1.0 and np.allclose(q, pol, atol=1e-6) and np.allclose(kp, 200.0)
+        node._on_balance_mode(_bool(True))
+        _run(node, 0.8)
+        assert np.allclose(ROBOT.waist_writes[-1][1], 0.0, atol=1e-9)
+        assert np.allclose(ROBOT.waist_writes[-1][2], 150.0)
+    finally:
+        _close(node)
+
+
+def test_waist_mode_onboard_without_lowcmd_stays_zero(ac_module):
+    """Kein rt/lowcmd (oder nur unser eigenes Echo): beim Gehen bleibt die
+    Taille auf dem Halteziel 0."""
+    _reset_robot()
+    node = _make_node(ac_module, waist_mode="onboard")
+    try:
+        node._arms_controlled_callback(_bool(True))
+        _run(node, 2.6)
+        node._on_walk_mode(_bool(True))
+        _run(node, 0.8)
+        assert node._waist_pass.alpha == 0.0
+        assert np.allclose(ROBOT.waist_writes[-1][1], 0.0, atol=1e-9)
+        # Echo: rt/lowcmd zeigt genau unser Kommando -> wird erkannt, nicht genommen
+        for _ in range(10):
+            _feed_policy(node, [0.0, 0.0, 0.0], kp=150.0)
+            _run(node, 0.01)
+        assert node._waist_pass.echo
+        _run(node, 0.6)
+        assert node._waist_pass.alpha == 0.0
+    finally:
+        _close(node)
+
+
+def test_waist_mode_onboard_estop_freezes_where_it_is(ac_module):
+    """NOT-HALT waehrend die Onboard-Taille eingeblendet ist: Taille bleibt an
+    der zuletzt kommandierten Stellung (kein Ruck zur 0), gehalten."""
+    _reset_robot()
+    node = _make_node(ac_module, waist_mode="onboard")
+    try:
+        node._arms_controlled_callback(_bool(True))
+        _run(node, 2.6)
+        pol = np.array([0.0, 0.05, 0.02])
+        node._on_walk_mode(_bool(True))
+        t_end = time.monotonic() + 0.8
+        while time.monotonic() < t_end:
+            _feed_policy(node, pol)
+            _run(node, 0.02)
+        node._on_emergency_stop(_bool(True))
+        _run(node, 0.5)
+        w, q, kp, kd = ROBOT.waist_writes[-1]
+        assert np.allclose(q, pol, atol=1e-6), "Taille springt nicht zur 0"
+        assert float(np.min(kp)) > 0.0 and not node._waist.passive
+    finally:
+        _close(node)
