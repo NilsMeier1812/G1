@@ -217,8 +217,8 @@ def main():
             and p.status.get("speed") == "Normal",
             p.status.get("label"))
 
-    print("1) Options: Greifen-Modus / Arme uebernehmen", flush=True)
-    r.tap(L.OPTIONS)
+    print("1) R2: Greifen-Modus / Arme uebernehmen", flush=True)
+    r.tap(L.R2)
     r.sleep(2.0)
 
     def start_pose(sel_btn):

@@ -40,8 +40,14 @@ Belegung (Details: g1pilot/docs/43_ps4_controller.md):
                im GEHEN bzw. mit gehaltenem L2: Geh-Tempo (ps4_walk)
   Kreis / Viereck  Hand oeffnen / schliessen (ausgewaehlte Hand/Haende)
   Kreuz        Stopp: Hand haelt sofort an, geplante Bewegung abbrechen
-  Options      Arme uebernehmen (Sim: + Greifen-Modus/stehen, siehe
-               options_starts_balancing -- real aus)
+  Options      Controller SPERREN / ENTSPERREN (zum Ablegen: dann loest ein
+               versehentlich gedrueckter L2/R2 nichts aus). Gesperrt wirken
+               nur noch PS (NOT-HALT), R1 + L1 + PS (Voll-Notaus) und Options
+               selbst; LED fast aus (dunkelgrau), lange Vibration beim
+               Sperren, kurze beim Entsperren, jede andere Taste (auch
+               L2/R2) vibriert gesperrt kurz und leicht. Nach dem Entsperren erst Sticks
+               in die Mitte und L2 einmal los, bevor sie wieder wirken.
+               (Bis 2026-10: Arme uebernehmen -- das macht jetzt R2.)
   Share (1 s halten)  Grundstellung
   L3 (linken Stick druecken)  Ablauf »Schritt für Schritt«: naechster Schritt
                (wie »Weiter ▶« in der Demo-GUI). Kurze Vibration, sobald ein
@@ -67,10 +73,13 @@ Belegung (Details: g1pilot/docs/43_ps4_controller.md):
                nicht; die Arme halten ihre Gelenkstellung und drehen mit.
                Jog-Richtungen gelten danach im Oberkoerper-Bezug.
   L2 druecken  Modus GEHEN, R2 druecken = Modus GREIFEN (trigger_modes), wie die
-               Kacheln der Demo-GUI. Im GEHEN laeuft der G1 nur, solange L2
+               Kacheln der Demo-GUI. R2 im GREIFEN mit abgegebenen Armen
+               (z. B. nach NOT-HALT, /g1pilot/arms/state False) = Arme
+               uebernehmen (Sim: + stehen, options_starts_balancing); ohne
+               trigger_modes macht R2 nur das. Im GEHEN laeuft der G1 nur, solange L2
                gehalten wird; losgelassen bleibt GEHEN, die Arm-Tasten und
                Sticks sind dann gesperrt (LED blau wie die Kachel GEHEN)
-               bis R2/Options.
+               bis R2.
                Real nur, wenn der G1 schon im Walk-Modus steht -- der
                Controller stellt die Beine nie selbst auf.
 """
@@ -116,6 +125,7 @@ COLORS = {
     # am Controller gesperrt. (Bis 2026-10 orange -- das ist dort GREIFEN.)
     "walk":   (30, 136, 229),
     "waist":  (255, 255, 255),  # weiss: R2 gehalten = Huefte drehen
+    "locked": (40, 40, 40),     # fast aus: Controller per Options gesperrt
 }
 TURN_DIM = 0.35   # DREHEN: LED gedimmt (gleiche Farbe), Verschieben = voll
 
@@ -158,7 +168,7 @@ class ArmTeleopLogic:
 
     update(axes, buttons, now) -> Liste von Befehlen (Tupel), z.B.
       ("hand", side, "open"|"close"), ("enable",), ("home",), ("cancel",),
-      ("estop",), ("hold", sides), ("changed",),
+      ("estop",), ("hold", sides), ("changed",), ("lock", bool), ("locked_tap",),
       ("full_arm",), ("full_abort",), ("full_estop",)   -- Voll-Notaus
       ("mirror_arm", side), ("mirror_abort",), ("mirror", side)  -- Spiegeln
       ("seq_next",)                                          -- Ablauf weiter (L3)
@@ -238,6 +248,16 @@ class ArmTeleopLogic:
         self.seq_busy = False
         self._share_since = None
         self._home_sent = False
+        # Options = Controller gesperrt (zum Ablegen): nur PS/Voll-Notaus und
+        # Options selbst wirken. Nur im Speicher -- Node-Neustart = entsperrt.
+        self.locked = False
+        # Nach dem Entsperren mit noch gehaltenem R2: Huefte erst nach einem
+        # "R2 los" (wie ps4_walk beim L2).
+        self._r2_block = False
+        # /g1pilot/arms/state des arm_controllers (None = unbekannt): R2 im
+        # GREIFEN uebernimmt die Arme nur, wenn sie abgegeben sind (ENABLE
+        # bricht geplante Fahrten ab, also nicht bei jedem Hueft-Druck).
+        self.arms_enabled = None
 
     # ── Zustand ─────────────────────────────────────────────────────────
     @property
@@ -257,7 +277,8 @@ class ArmTeleopLogic:
     def waist_mode(self):
         """R2 gehalten im GREIFEN: der rechte Stick dreht die Huefte."""
         return (self.waist_yaw and self.trigger_modes and self.robot_mode == "grasp"
-                and self._trig_held[L.R2] and not self.estop and not self.walking)
+                and self._trig_held[L.R2] and not self.estop and not self.walking
+                and not self.locked and not self._r2_block)
 
     def waist_rate(self, axes):
         """-> Hueft-Drehrate -1..1 (+ = links, Stick links), solange R2
@@ -300,6 +321,8 @@ class ArmTeleopLogic:
     def color(self):
         if self.estop or self.full_estop:
             return COLORS["estop"]
+        if self.locked:
+            return COLORS["locked"]
         if self.arms_locked:
             return COLORS["walk"]
         if self.waist_mode:
@@ -314,6 +337,8 @@ class ArmTeleopLogic:
             return "PS4 · VOLL-NOTAUS (G1 in Damp, mit START quittieren)"
         if self.estop:
             return "PS4 · NOT-HALT (in GUI quittieren)"
+        if self.locked:
+            return "PS4 · GESPERRT (Options = entsperren, PS-Notaus aktiv)"
         if self.arms_locked:
             return "PS4 · GEHEN (L2 halten = laufen, R2 = Greifen)"
         if self.waist_mode:
@@ -331,6 +356,7 @@ class ArmTeleopLogic:
                 "mirror_arming": self._mir_side if self.mirror_arming else None,
                 "robot_mode": self.robot_mode,
                 "arms_locked": self.arms_locked, "waist_mode": self.waist_mode,
+                "locked": self.locked,
                 "seq_busy": self.seq_busy, "label": self.label()}
 
     def clear_estop(self):
@@ -440,6 +466,33 @@ class ArmTeleopLogic:
             return out + [("hold", ("left", "right")), ("mirror", side)]
         return out
 
+    # ── Sperre (Options) ────────────────────────────────────────────────
+    def set_locked(self, locked):
+        """Controller sperren/entsperren. -> Befehle wie update() oder [].
+        Sperren haelt laufende Hand-Jogs an (nur die -- eine geplante Fahrt
+        der GUI laeuft weiter), beendet Huefte und Spiegeln-Halten."""
+        locked = bool(locked)
+        if locked == self.locked:
+            return []
+        self.locked = locked
+        out = []
+        if locked:
+            out += self._abort_mirror_cmds()
+            out.append(("hold", ("left", "right")))
+            if self._waist_was:
+                self._waist_was = False
+                out.append(("waist", "end"))
+            self.walking = False
+            self._share_since = None
+            self._home_sent = False
+        else:
+            # Ein beim Ablegen ausgelenkter Stick / gedrueckter R2 wirkt
+            # nicht sofort.
+            self._stick_block = True
+            self._r2_block = self._trig_held[L.R2]
+        out.append(("lock", locked))
+        return out
+
     # ── Eingabe ─────────────────────────────────────────────────────────
     def update(self, axes, buttons, now):
         b = list(buttons) + [0] * max(0, L.NUM_BUTTONS - len(buttons))
@@ -450,6 +503,8 @@ class ArmTeleopLogic:
         if not b[L.L1] and not b[L.R1]:
             self._speed_undo = None
         trig_rise = self._trigger_edges(axes, b)
+        if not self._trig_held[L.R2]:
+            self._r2_block = False
         out = self._update_full(axes, b, now)
         if ("full_arm",) in out and self._speed_undo is not None:
             # L1/R1 vor PS gedrueckt: deren Tempo-Schritt gehoerte zum Notaus.
@@ -479,6 +534,19 @@ class ArmTeleopLogic:
                 self.estop = True
                 out.append(("changed",))
             return out
+        # Options = sperren/entsperren. PS und Voll-Notaus (oben) wirken auch
+        # gesperrt; die L2/R2-Flanken laufen oben weiter mit, ein beim
+        # Entsperren noch gedrueckter Trigger schaltet also keinen Modus.
+        # Die Options-Nachricht selbst bewirkt sonst nichts (ein im selben
+        # Moment gedrueckter Trigger zaehlt dann als schon gehalten).
+        if rise[L.OPTIONS]:
+            return out + self.set_locked(not self.locked)
+        if self.locked:
+            # Jede andere Taste (auch L2/R2) vibriert leicht: "gesperrt".
+            if any(rise[i] for i in range(L.NUM_BUTTONS)
+                   if i not in (L.OPTIONS, L.PS)) or any(trig_rise.values()):
+                out.append(("locked_tap",))
+            return out
         if self.estop:
             # bis zur Quittung in der GUI: nichts bewegen
             return out + self._abort_mirror_cmds()
@@ -490,6 +558,12 @@ class ArmTeleopLogic:
             elif trig_rise[L.R2] and self.robot_mode != "grasp":
                 self.robot_mode = "grasp"
                 out += [("mode", "grasp"), ("changed",)]
+            elif trig_rise[L.R2] and self.arms_enabled is not True:
+                # Schon GREIFEN, Arme aber abgegeben (z. B. nach NOT-HALT):
+                # R2 uebernimmt sie wieder (frueher Options).
+                out.append(("enable",))
+        elif trig_rise[L.R2] and self.arms_enabled is not True:
+            out.append(("enable",))
         self.walking = self.walk_deadman and deadman_held(axes, b)
         if self.arms_locked or self.walking:
             # GEHEN / L2 gehalten: Steuerkreuz gehoert dem Gehen, kein Spiegeln.
@@ -507,7 +581,7 @@ class ArmTeleopLogic:
             out += self._abort_mirror_cmds()     # Steuerkreuz gehoert nicht den Armen
             # R2 gehalten: Sticks/Steuerkreuz/Dreieck/Tempo gehoeren nicht den
             # Armen (Share/Grundstellung auch nicht). R3 = Mitte, Kreuz =
-            # Stopp (auch die Huefte); Haende und Options wirken weiter.
+            # Stopp (auch die Huefte); Haende wirken weiter.
             if rise[L.R3]:
                 out.append(("waist_center",))
             if rise[L.CROSS]:
@@ -517,19 +591,14 @@ class ArmTeleopLogic:
                 out.extend(("hand", s, "open") for s in self.sides)
             if rise[L.SQUARE]:
                 out.extend(("hand", s, "close") for s in self.sides)
-            if rise[L.OPTIONS]:
-                out.append(("enable",))
             self._share_since = None
             self._home_sent = False
             return out
         if self.arms_locked:
-            # GEHEN: nur Kreuz (Stopp) und Options (Arme uebernehmen -> GREIFEN).
+            # GEHEN: nur Kreuz (Stopp); zurueck zu GREIFEN mit R2 (oben).
             self._share_since = None
             if rise[L.CROSS] or (rise[L.PS] and not self.ps_estop):
                 out += [("hold", ("left", "right")), ("cancel",)]
-            if rise[L.OPTIONS]:
-                self.robot_mode = "grasp"
-                out += [("enable",), ("changed",)]
             return out
         # Auswahl der Hand / Haende (Steuerkreuz; mit L2 = Geh-Tempo)
         for btn, sel in (() if self.walking else DPAD_SELECTION):
@@ -566,8 +635,6 @@ class ArmTeleopLogic:
         if rise[L.CROSS] or (rise[L.PS] and not self.ps_estop):
             out.append(("hold", ("left", "right")))
             out.append(("cancel",))
-        if rise[L.OPTIONS]:
-            out.append(("enable",))
         if rise[L.L3] and not self.walking:
             self._stick_block = True
             out.append(("seq_next",))
@@ -604,7 +671,8 @@ class ArmTeleopLogic:
 
     def twist(self, axes):
         """-> {side: ((vx, vy, vz) m/s, (wx, wy, wz) rad/s)} im JOG_FRAME."""
-        if self.estop or self.arms_locked or self.waist_mode or self.seq_busy or (
+        if (self.estop or self.locked or self.arms_locked or self.waist_mode
+                or self.seq_busy) or (
                 self.walk_deadman and (self.walking or deadman_held(axes, ()))):
             return {}
         a = list(axes) + [0.0] * max(0, L.NUM_AXES - len(axes))
@@ -681,7 +749,7 @@ def main(args=None):
             # Bleibt der Joy-Stream laenger aus (Funkabriss, Akku leer), haelt
             # die Hand an -- der ps4_joystick publiziert nur bei Verbindung.
             self.declare_parameter("joy_timeout_s", 0.5)
-            # Options = Greifen-Modus: zusaetzlich start_balancing senden (wie die
+            # R2 = Arme uebernehmen (frueher Options): zusaetzlich start_balancing senden (wie die
             # Kachel GREIFEN der Demo-GUI). false -> nur Arme uebernehmen.
             # Real: false -- der Controller aendert den Zustand der Beine nie
             # (Aufstehen/Balancing bleibt eine Aktion in GUI/Streamdeck).
@@ -784,6 +852,8 @@ def main(args=None):
             self.create_subscription(String, "/g1pilot/onboard_state", self._on_onboard, latched)
             self.create_subscription(String, "/g1pilot/arm_command/status",
                                      self._on_cmd_status, 10)
+            # Arme uebernommen? (arm_controller, latched) -> R2 im GREIFEN.
+            self.create_subscription(Bool, "/g1pilot/arms/state", self._on_arms_state, latched)
             # Ablauf (Demo-GUI): L3 = Weiter; vibrieren, sobald er wartet.
             self.pub_seq_next = self.create_publisher(Bool, sr.NEXT_TOPIC, 10)
             self.seq_waiting = False
@@ -800,7 +870,7 @@ def main(args=None):
                 f"{f'{self.logic.full_hold_s:.1f} s = VOLL-NOTAUS' if self.logic.full_hold_s > 0 else 'aus'}"
                 f", Steuerkreuz+Kreuz "
                 f"{f'{self.logic.mirror_hold_s:.1f} s = Spiegeln' if self.logic.mirror_hold_s > 0 else 'aus'}"
-                f", Options"
+                f", Options = sperren, R2 Arme"
                 f"{' + start_balancing' if self.options_balancing else ' = nur Arme'})")
 
         # ── Eingaenge ──────────────────────────────────────────────────
@@ -864,6 +934,9 @@ def main(args=None):
         def _on_mode_topic(self, mode, msg):
             if msg.data and self.logic.trigger_modes and self.logic.set_robot_mode(mode):
                 self._changed()
+
+        def _on_arms_state(self, msg):
+            self.logic.arms_enabled = bool(msg.data)
 
         def _on_waist_state(self, msg):
             st = parse_state(msg.data)
@@ -968,9 +1041,24 @@ def main(args=None):
                 if self.options_balancing:
                     self.pub_balance.publish(Bool(data=True))
                 self.pub_enable.publish(Bool(data=True))
-                self.get_logger().info("Options: Arme uebernommen"
+                self.get_logger().info("R2: Arme uebernommen"
                                        + (" (Greifen-Modus)." if self.options_balancing else "."))
                 self._send_feedback(rumble_ms=150)
+            elif kind == "locked_tap":
+                # Gesperrt: kurze, leichte Vibration als Rueckmeldung.
+                self._send_feedback(rumble_ms=80, strong=0.0, weak=0.3)
+            elif kind == "lock":
+                if cmd[1]:
+                    self.get_logger().warn(
+                        "Options: Controller GESPERRT (nur PS-Notaus und R1 + L1 + PS "
+                        "wirken; Options = entsperren).")
+                    self._send_feedback(rumble_ms=400, strong=0.8, weak=0.0)
+                else:
+                    self.get_logger().info("Options: Controller entsperrt -- "
+                                           + self.logic.label())
+                    self._send_feedback(rumble_ms=100, strong=0.0, weak=0.6)
+                self._publish_status()
+                self._publish_markers()
             elif kind == "mode":
                 legs_ok = not self.need_onboard_walk or self._onboard_walk()
                 if cmd[1] == "walk":

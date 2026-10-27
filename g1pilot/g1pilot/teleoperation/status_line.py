@@ -11,7 +11,8 @@ Zwei Anzeigen, beide nur lesend:
   * PS4-/Xbox-Controller (ps4_arm_teleop -> /g1pilot/ps4/status, ps4_walk ->
     /g1pilot/ps4/walk_status, ps4_joystick -> /g1pilot/ps4/device): welche
     Hand (links/rechts/beide/gespiegelt), Verschieben/Drehen, Tempo, Gehen mit
-    L2 (Totmann) samt Geh-Tempo, Arm-Sperre im GEHEN, NOT-HALT, Verbindung und
+    L2 (Totmann) samt Geh-Tempo, Arm-Sperre im GEHEN, Sperre per Options,
+    NOT-HALT, Verbindung und
     welcher Controller. Klick auf die Anzeige zeigt die Belegung (PS4_HELP).
 """
 import json
@@ -130,6 +131,9 @@ def ps4_text(status, age_s, sim=False, walk=None, device=None):
         return f"{c}: NOT-HALT – gesperrt bis {how}", RED
     if not status.get("connected"):
         return f"{c}: nicht verbunden", GREY
+    if status.get("locked"):
+        btn = "Menu" if c == "Xbox" else "Options"
+        return f"{c}: GESPERRT – {btn} entsperrt (PS-Notaus wirkt weiter)", GREY
     walk = walk or {}
     if walk.get("active") and not walk.get("estop"):
         if walk.get("walk_ready") is False:
@@ -222,13 +226,13 @@ PS4_HELP = (
     ("L1 / R1", "Tempo langsamer / schneller"),
     ("Kreis / Viereck", "Hand öffnen / schließen"),
     ("Kreuz", "STOPP: Hand hält sofort an, Bewegung abbrechen"),
-    ("Options", "Arme übernehmen"),
+    ("Options", "Controller sperren / entsperren (zum Ablegen; PS und Voll-Notaus wirken weiter)"),
     ("Share (1 s halten)", "Grundstellung"),
     ("L3 (linken Stick drücken)", "Ablauf »Schritt für Schritt«: nächster Schritt (Weiter ▶)"),
     ("L2 drücken", "Modus GEHEN (Arm-Tasten gesperrt, LED blau)"),
     ("L2 halten", "GEHEN: linker Stick vor/seitlich, rechter Stick drehen, "
                   "▲/▼ Geh-Tempo (nur im Walk-Modus)"),
-    ("R2 drücken", "Modus GREIFEN (Arme übernehmen)"),
+    ("R2 drücken", "Modus GREIFEN (Arme übernehmen – auch nach NOT-HALT)"),
     ("R2 halten + rechter Stick ◀/▶", "HÜFTE drehen (Oberkörper links/rechts, Arme drehen mit)"),
     ("R2 halten + R3", "Hüfte zurück zur Mitte"),
     ("PS", "NOT-HALT"),

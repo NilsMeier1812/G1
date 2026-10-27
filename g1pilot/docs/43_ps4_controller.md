@@ -28,7 +28,7 @@ gehabt das Gehen (Deadman, `loco_client`).
 
 Den Controller per Bluetooth koppeln oder per USB anstecken — vor oder nach
 dem Start, auch ein kurzer Funkabriss ist kein Problem (er verbindet sich
-selbst neu). In der Sim zuerst **Options** drücken: der Roboter steht und
+selbst neu). In der Sim zuerst **R2** drücken: der Roboter steht und
 die Arme gehören dem Controller (wie die Kachel GREIFEN in der Demo-GUI).
 Am echten Roboter erst in der GUI starten, siehe unten.
 
@@ -49,14 +49,14 @@ Am echten Roboter erst in der GUI starten, siehe unten.
 | Kreis | gewählte Hand(e) **öffnen** |
 | Viereck | gewählte Hand(e) **schließen** |
 | Kreuz | **Stopp**: Hand hält sofort an, eine laufende geplante Bewegung (Grundstellung, Ablauf) wird abgebrochen |
-| Options | **Arme übernehmen**. Sim zusätzlich Greifen-Modus (stehen), wie die Kachel GREIFEN; Real nur die Arme |
+| Options | **Controller sperren / entsperren** (zum Ablegen). Gesperrt lösen L2/R2, Sticks und alle Tasten nichts aus; nur **PS (NOT-HALT)** und **R1 + L1 + PS (Voll-Notaus)** wirken weiter. LED fast aus (dunkelgrau), lange Vibration beim Sperren, kurze beim Entsperren, gesperrt vibriert jede andere Taste kurz und leicht. Siehe [Controller sperren](#controller-sperren-options) |
 | Share **1 s halten** | Grundstellung (Arme neben den Körper, geplant um Hindernisse herum) |
 | PS | **NOT-HALT** (wie in den GUIs: Arme schlaff, Roboter gedämpft — real sackt er zusammen) |
 | **Steuerkreuz ← / → + Kreuz 2 s halten** | **ARM SPIEGELN**: der Arm der gedrückten Seite fährt geplant (Planer + Kollisionsschutz) in die exakt gespiegelte Pose des anderen Arms — z. B. rechten Arm hinstellen, dann ← + Kreuz halten: der linke Arm spiegelt ihn. Controller vibriert während des Haltens, vorzeitig loslassen bricht ab. Siehe [Arm spiegeln](#arm-spiegeln-steuerkreuz--kreuz) |
 | **R1 + L1 + PS 2 s halten** | **VOLL-NOTAUS**: ganzer G1 in Damp, auch die Beine. Controller vibriert während des Haltens, vorzeitig loslassen bricht ab. Siehe [Voll-Notaus](#voll-notaus-r1--l1--ps) |
-| **L2 drücken** | Modus **GEHEN** (LED blau wie die GUI-Kachel GEHEN): Arm-Tasten und Sticks gesperrt, bis R2/Options; L1/R1 = Geh-Tempo |
+| **L2 drücken** | Modus **GEHEN** (LED blau wie die GUI-Kachel GEHEN): Arm-Tasten und Sticks gesperrt, bis R2; L1/R1 = Geh-Tempo |
 | **L2 halten** | **Gehen** (Totmann): Sticks, L1/R1 und Steuerkreuz ▲/▼ gehören dem Gehen, siehe [Gehen mit L2](#gehen-mit-l2) |
-| **R2 drücken** | Modus **GREIFEN**: Arme übernehmen (wie Options), Arm-Steuerung wieder frei |
+| **R2 drücken** | Modus **GREIFEN**: Arme übernehmen, Arm-Steuerung wieder frei. Schon im GREIFEN, Arme aber abgegeben (z. B. nach NOT-HALT): R2 übernimmt sie wieder (Sim: + stehen) |
 | **R2 halten + rechter Stick ←/→** | **HÜFTE drehen** (Oberkörper links/rechts, LED weiß), Arme drehen mit. Siehe [Hüfte drehen](#hüfte-drehen-r2-halten) |
 | **R2 halten + R3** | Hüfte sanft zurück zur Mitte |
 | **L3** (linken Stick drücken) | **Ablauf weiter**: wartet ein Ablauf „Schritt für Schritt“ der Demo-GUI auf Bestätigung, fährt er den nächsten Schritt an (wie *Weiter ▶*). Der Controller vibriert zweimal kurz, sobald ein Ablauf wartet, und kurz beim Weiter. Sonst ohne Wirkung. Lief beim Drücken ein Jog (Stick ausgelenkt), hält die Hand genau einmal an, danach kommt kein Hand-Ziel mehr. **Solange der Schritt fährt, sind beide Sticks gesperrt** (Anzeige „ABLAUF fährt (Sticks gesperrt, Kreuz = Stopp)“), sonst bräche ein versehentlich bewegter Stick die Fahrt mit „manueller Vorrang“ ab; Kreuz = Stopp geht immer. Wartet der Ablauf wieder, darf man nachkorrigieren. Nicht bei gehaltenem L2/R2 und nicht im GEHEN |
@@ -93,8 +93,8 @@ GEHEN und GREIFEN der Demo-GUI:
   Steuerkreuz, Dreieck, L1/R1, Kreis/Viereck und Share wirken dann **nicht**
   auf die Arme (LED blau, Demo-GUI „PS4: GEHEN – L2 halten = laufen“).
   Es wirken nur Kreuz (Stopp), PS (NOT-HALT), der Voll-Notaus, L2 (laufen),
-  L1/R1 (Geh-Tempo) und R2/Options (zurück zu GREIFEN).
-- **R2 drücken** → Modus **GREIFEN**: Arme übernehmen (wie Options) und
+  L1/R1 (Geh-Tempo) und R2 (zurück zu GREIFEN).
+- **R2 drücken** → Modus **GREIFEN**: Arme übernehmen und
   `/g1pilot/start_balancing` (Gehen aus, Roboter steht). Die Arm-Steuerung
   ist wieder frei.
 - Wählt man GEHEN/GREIFEN in der Demo-GUI oder am Streamdeck, folgt der
@@ -119,7 +119,7 @@ was auf einer Seite gewählt wird, zeigt die andere sofort.
 
 | Was | am Controller | in der Demo-GUI |
 |---|---|---|
-| Modus GEHEN / GREIFEN | L2 / R2 (im GEHEN auch Options) | Kacheln GEHEN / GREIFEN |
+| Modus GEHEN / GREIFEN | L2 / R2 | Kacheln GEHEN / GREIFEN |
 | Hand-Auswahl | Steuerkreuz ◀ ▶ ▲ ▼ | GREIFEN → Hand bewegen: Links / Rechts / Beide / **Gespiegelt** |
 | Tempo »Hand bewegen« | L1 / R1 | Tempo Langsam / Normal / Schnell |
 | Geh-Tempo | im GEHEN L1 / R1 (auch L2 halten + ▲ / ▼) | GEHEN → Tempo Langsam / Normal (Schnell nur Anzeige) |
@@ -164,7 +164,7 @@ Oberkörper ein Stück nach links oder rechts (nur die Taille, Gelenk
   („Hüfte 12° links“).
 - Solange R2 gehalten wird, bewegen Sticks, Steuerkreuz, Dreieck und L1/R1
   **nicht** die Arme (auch kein Spiegeln). Kreis/Viereck (Hände), Kreuz (Stopp, hält auch die
-  Hüfte bis der Stick zurück ist), Options und PS wirken weiter.
+  Hüfte bis der Stick zurück ist), Options (Sperre) und PS wirken weiter.
 - **Bereich:** Sim und echter G1 **±105°** um die Mitte
   (`G1_WAIST_YAW_LIMIT_DEG`). Mitte = Stellung, die der Onboard-Regler beim
   Übernehmen der Arme hielt (Sim: 0).
@@ -221,6 +221,31 @@ Abschalten: `G1_WAIST_YAW=0` (real) bzw. Parameter `waist_yaw_control:=false`
   ohne Befehl, und jedes `Move()` gilt am Roboter nur 1 s.
 - Abschalten: `G1_PS4_WALK=0` (L2 wieder ohne Wirkung).
 
+## Controller sperren (Options)
+
+Zum **Ablegen** des Controllers: **Options** (Xbox: **Menu**) drücken sperrt
+ihn, nochmal Options entsperrt. Gedacht gegen versehentlich gedrückte
+Trigger beim Hinlegen (L2 = GEHEN/laufen, R2 = GREIFEN/Hüfte).
+
+- **Gesperrt wirkt nur noch:** PS (**NOT-HALT**), R1 + L1 + PS 2 s
+  (**Voll-Notaus**) und Options (entsperren). L2/R2, Sticks, Steuerkreuz,
+  Kreuz, Kreis/Viereck, Dreieck, L1/R1, L3 und Share tun nichts — auch das
+  Gehen (`ps4_walk`) nicht. Jeder solche Tastendruck (auch L2/R2) vibriert
+  kurz und leicht — so merkt man, dass der Controller gesperrt ist.
+- Beim Sperren hält eine laufende Hand-Bewegung sofort an, Hüfte und Gehen
+  stoppen. Eine geplante Fahrt aus der GUI (Pose, Ablauf) läuft weiter.
+  Modus, Hand-Auswahl und Tempo bleiben, wie sie sind.
+- **Anzeige:** LED fast aus (dunkelgrau), beim Sperren eine lange kräftige
+  Vibration, beim Entsperren eine kurze leichte. Demo-GUI-Infozeile:
+  „PS4: GESPERRT – Options entsperrt (PS-Notaus wirkt weiter)“. NOT-HALT
+  hat Vorrang (LED rot).
+- **Nach dem Entsperren** wirken ein noch ausgelenkter Stick erst, wenn er
+  einmal in der Mitte war, und ein noch gedrückter L2 (Gehen) bzw. R2 (Hüfte)
+  erst nach Loslassen und neuem Drücken.
+- Technik: `ps4_arm_teleop` führt die Sperre und meldet sie im Feld
+  `locked` auf `/g1pilot/ps4/status` (latched); `ps4_walk` folgt diesem Feld.
+  Nach einem Neustart von `ps4_arm_teleop` ist der Controller entsperrt.
+
 ## NOT-HALT und Quittieren
 
 PS löst den NOT-HALT aus — derselbe wie der Knopf in Demo-GUI und Streamdeck.
@@ -262,7 +287,7 @@ das Tempo; sobald PS dazukommt, wird dieser Tempo-Schritt zurückgenommen.
 anders als nach einem normalen NOT-HALT schaltet der G1 danach **nicht** von
 selbst nach Preparation, er bleibt in Damp. Aufstehen ausdrücklich über die
 Startleiste der Demo-GUI: **Preparation** (am Kran), dann **Walk**; danach
-Arme wieder mit Options/ENABLE übernehmen.
+Arme wieder mit R2/ENABLE übernehmen.
 
 Abschalten: Parameter `full_estop_hold_s:=0` am `ps4_arm_teleop`.
 In der Sim wirkt der Voll-Notaus wie der NOT-HALT (loco_sim dämpft dort ohnehin
@@ -312,7 +337,7 @@ bleibt gültig. Bei verdrehter Taille gilt die Spiegelung zum Oberkörper
 Taille gerade. Die Finger (Inspire-Hände) werden nicht mitgespiegelt.
 
 **Sicherheit:** gefahren wird nur, wenn der arm_controller die Arme schon
-führt (Options/ENABLE) — das Spiegeln aktiviert sie nie selbst, auch nicht in
+führt (R2/ENABLE) — das Spiegeln aktiviert sie nie selbst, auch nicht in
 der Sim. Gesperrt im NOT-HALT, im Modus GEHEN und mit gehaltenem L2
 (Steuerkreuz gehört dann dem Gehen). Der Voll-Notaus (R1 + L1 + PS) hat
 Vorrang und bricht ein laufendes Halten ab.
@@ -344,7 +369,7 @@ vorgesehen.
 | **R2 halten + rechter Stick ←/→** | **RT halten + rechter Stick ←/→** | **Hüfte drehen** |
 | **R2 halten + R3** | **RT halten + R3** (rechten Stick drücken) | Hüfte zur Mitte |
 | Share 1 s | **View** 1 s (linke kleine Taste) | Grundstellung |
-| Options | **Menu** (rechte kleine Taste) | Arme übernehmen |
+| Options | **Menu** (rechte kleine Taste) | Controller sperren / entsperren |
 | PS | **Xbox-Taste** | **NOT-HALT** (Oberkörper) |
 | R1 + L1 + PS 2 s | **RB + LB + Xbox-Taste 2 s** | **VOLL-NOTAUS**, Controller vibriert beim Halten |
 | Steuerkreuz ←/→ + Kreuz 2 s | **Steuerkreuz ←/→ + A 2 s** | **Arm spiegeln** (nicht Xbox-X: das ist Viereck = Hand schließen) |
@@ -429,8 +454,8 @@ Mit dem Schalter gilt am echten Roboter:
   Dauer, 20 Hz erneuert). Der alte `joystick`-Node startet nicht. Gehen über
   die GUI (Demo-GUI GEHEN, Streamdeck WALK) geht weiter; solange L2 gehalten
   wird, hat der Controller Vorrang.
-- **Der Controller ändert nie den Zustand der Beine.** Options übernimmt nur
-  die Arme, kein Aufstehen/Balancing; L2 geht nur, wenn der G1 schon im
+- **Der Controller ändert nie den Zustand der Beine.** R2 übernimmt real ohne
+  Walk-Modus nur die Arme, kein Aufstehen/Balancing; L2 geht nur, wenn der G1 schon im
   Walk-Modus steht. Starten und Stehen bleiben in der GUI.
   Einzige Ausnahme ist PS (NOT-HALT).
 - **Langsamer:** Start-Tempo Langsam (5 cm/s), mit R1 höchstens Normal
@@ -461,15 +486,15 @@ Mit dem Schalter gilt am echten Roboter:
 Ablauf:
 
 1. Start wie gewohnt; Log zeigt `PS4-Arm-Steuerung bereit … (max. Normal,
-   PS=NOT-HALT, Options = nur Arme)` und `PS4-Controller: Daten kommen an`.
+   PS=NOT-HALT, …, Options = sperren, R2 Arme = nur Arme)` und `PS4-Controller: Daten kommen an`.
 2. In der GUI **Start** (Startleiste), dann **GREIFEN** (Demo-GUI) bzw. START →
    START BALANCING → ENABLE MANIPULATION (Streamdeck). Für die ersten Tests
-   den Roboter hängend lassen und nur ENABLE MANIPULATION bzw. **Options**.
+   den Roboter hängend lassen und nur ENABLE MANIPULATION bzw. **R2**.
 3. Steuerkreuz → Hand wählen (LED-Farbe prüfen), Stick **wenig** auslenken.
    Erwartung: Hand fährt langsam, steht beim Loslassen.
 4. **Kreuz** testen (Hand steht sofort), dann Kreis/Viereck (Hände).
 5. **NOT-HALT-Test nur hängend:** PS. Erwartung wie beim GUI-Knopf (Arme
-   schlaff, kein Sprung). Danach Start → Options (bzw. ENABLE
+   schlaff, kein Sprung). Danach Start → R2 (bzw. ENABLE
    MANIPULATION) übernimmt die Arme wieder ruckfrei.
 6. **Abriss-Test:** Stick halten und dabei USB-Kabel ziehen bzw. Bluetooth
    am PC trennen (`bluetoothctl disconnect …`). Nicht PS lange drücken —
@@ -518,7 +543,7 @@ Ablauf:
 | Xbox: NOT-HALT per Xbox-Taste tut nichts | Taste wird abgefangen (Steam/Desktop) → `G1_XBOX_PS_BUTTON=view`, siehe [Xbox-Controller](#xbox-controller). |
 | Xbox: Tasten/Sticks vertauscht | `ros2 topic echo /g1pilot/ps4/joy` prüfen; X/Y vertauscht → `xbox_swap_xy:=true`; sonst Controller-Firmware aktualisieren (Xbox-Zubehör-App) oder `xpadneo` nehmen. |
 | Log: „Kein PS4-Controller gefunden … Warte“ | Controller nicht gekoppelt oder Container ohne `/dev/input` (über start.sh starten bzw. `COMPOSE_FILE=…:docker-compose.ps4.yml`). |
-| LED/Kugel zeigt die Auswahl, aber die Hand bewegt sich nicht | Arme nicht übernommen → **Options** drücken (oder GUI: GREIFEN / ENABLE MANIPULATION). Im Gehen-Modus hängen die Arme in der Lauf-Pose. Real nach NOT-HALT: erst »Start«, dann Options. |
+| LED/Kugel zeigt die Auswahl, aber die Hand bewegt sich nicht | Arme nicht übernommen → **R2** drücken (oder GUI: GREIFEN / ENABLE MANIPULATION). Im Gehen-Modus hängen die Arme in der Lauf-Pose. Real nach NOT-HALT: erst »Start«, dann R2. LED fast aus + GUI „GESPERRT“ → Controller per Options gesperrt, Options drücken. |
 | Hand bleibt an einer Stelle hängen | Kollisions-Gate (Log: „Kollisions-Gate …“) oder Reichweite erreicht → in eine andere Richtung bewegen. |
 | Sim: Hand reagiert spürbar verzögert / fährt nach dem Loslassen weiter | PC ausgelastet → arm_controller regelt nur mit 10–15 Hz. RViz und Navigation abschalten (`USE_RVIZ=false G1_ENABLE_NAV=0`), Last mit `top` prüfen. Siehe [Reaktionszeit](#reaktionszeit). |
 | Nach PS reagiert nichts mehr | NOT-HALT aktiv → in der GUI quittieren (Sim: Modus wählen, Real: Start). |
@@ -551,7 +576,7 @@ Ablauf:
 | `test/test_ps4_arm_teleop.py`, `test/test_ps4_joystick.py` | Unit-Tests (Belegung, Logik, Jog, simuliertes evdev-Gerät inkl. hängender Funkverbindung; Xbox per USB/Bluetooth, Auswahl, Consumer-Control, HID-Lebendprüfung) |
 | `test/test_xbox_layout.py` | Xbox ohne ROS: Erkennung, drei Treiber-Varianten, Zuordnung nach Position, View-Ersatz, Gehen mit LT, NOT-HALT, Voll-Notaus RB + LB + Xbox |
 | `test/test_ps4_walk.py`, `test/test_loco_client_ps4_walk.py`, `test/test_ps4_walk_node.py` | Gehen: Deadman, Tempo, NOT-HALT, Abriss, Arme pausieren; loco_client nur im Walk-Modus, Timeout, Vorrang; Node mit simuliertem Joy |
-| `test/test_ps4_arm_teleop_node.py` | Node mit Real-Einstellungen gegen simuliertes Joy + TF (Options, Tempo, NOT-HALT von außen, kein Laufbefehl) |
+| `test/test_ps4_arm_teleop_node.py` | Node mit Real-Einstellungen gegen simuliertes Joy + TF (R2 = Arme, Options-Sperre, Tempo, NOT-HALT von außen, kein Laufbefehl) |
 | `test/test_gui_external_estop.py` | Demo-GUI + Streamdeck folgen einem NOT-HALT von außen (Sim und Real, offscreen) |
 | `test/test_demo_gui_jog_hold.py` | Demo-GUI »Hand bewegen«: Halte-Ziel beim Loslassen (auf der Linie, 1 s wiederholt, Grundstellung löscht es) |
 | `test/test_shared_state.py`, `test/test_demo_gui_controller_sync.py` | gemeinsamer Zustand: neuester gewinnt, Echo/alte Stände ignoriert; Demo-GUI folgt Controller (Kacheln, Auswahl, Tempo) ohne etwas zu senden, Sim und Real offscreen |
@@ -565,7 +590,7 @@ DualShock 4 ──evdev──> ps4_joystick ──/g1pilot/ps4/joy (Joy, feste B
                             └──── /g1pilot/ps4/feedback (LED, Vibration) ────────────┤
                                                                                      ├─> /g1pilot/hand_goal/<side>   (PoseStamped, pelvis)
                                                                                      ├─> /g1pilot/hand_action/<side> ("open"/"close")
-                                                                                     ├─> /g1pilot/arms/enabled (+ /g1pilot/start_balancing nur Sim) (Options)
+                                                                                     ├─> /g1pilot/arms/enabled (+ /g1pilot/start_balancing nur Sim) (R2)
                                                                                      ├─> /g1pilot/arms/home (Share, Impuls)
                                                                                      ├─> /g1pilot/pose_store/cancel (Kreuz)
                                                                                      ├─<> /g1pilot/arm_command (+ /status) (Steuerkreuz + Kreuz 2 s: Arm spiegeln)
@@ -627,7 +652,8 @@ Geräte-Reihenfolge — für eine Tastenbelegung zu wackelig.
   arm_controller wegen seiner Ziel-Glättung noch den Vorlauf ab.
 - Grundstellung nur nach 1 s Halten von Share.
 - NOT-HALT (PS oder GUI) sperrt den Controller bis zur Quittung (`/g1pilot/start`).
-- Real: Options ohne `start_balancing`, Tempo höchstens Normal.
+- Real: R2 ohne Walk-Modus ohne `start_balancing`, Tempo höchstens Normal.
+- Options sperrt den Controller (Ablegen); PS-NOT-HALT und Voll-Notaus wirken auch gesperrt.
 - Alle Ziele laufen durch den arm_controller (IK, Kollisions-Gate, EE-Tempo-Limit).
 
 ### Reaktionszeit
@@ -768,7 +794,7 @@ vorn/oben fahren, dann fein positionieren. Das gilt für den Marker genauso.
 | `trigger_modes` | `false` (Launch: `ps4_walk`) | L2 drücken = Modus GEHEN (Arme gesperrt), R2 = GREIFEN |
 | `modes_need_onboard_walk` | Sim `false`, Real `true` | start_walking/start_balancing nur, wenn der G1 laut `/g1pilot/onboard_state` im Walk steht |
 | `joy_timeout_s` | 0.5 | Abriss-Erkennung |
-| `options_starts_balancing` | `true` (Real `false`) | Options sendet zusätzlich `start_balancing` |
+| `options_starts_balancing` | `true` (Real `false`) | R2 „Arme übernehmen“ (ohne Moduswechsel, z. B. nach NOT-HALT) sendet zusätzlich `start_balancing` (Name aus der Zeit, als Options das machte) |
 | `jog_reference` | `command` (Env `G1_JOG_REFERENCE`) | Bezug der Jog-Ziele: `command` = Start, Vorlauf und Anhalten an der kommandierten Hand (`/g1pilot/hand_cmd_pose`, wie der RViz-Marker), `start` = nur der Start dort (Stand 2026-10-14), `tf` = alles an der gemessenen Hand (alter Real-Stand) |
 | `axis_snap_deg` | 20 | Achsen-Einrasten des linken Sticks; 0 = aus |
 | `waist_yaw` | `true` | R2 halten + rechter Stick = Hüfte drehen, R2 + R3 = Mitte (nur mit `trigger_modes`) |
@@ -830,9 +856,9 @@ im NOT-HALT (`--no-estop` lässt das aus).
 - Real ist nur ohne Roboter getestet (Launch-Konfiguration, Node mit
   simuliertem Joy/TF, GUIs offscreen). Der erste Lauf am Roboter folgt dem
   Ablauf unter [Echter Roboter](#echter-roboter).
-- Options ↔ Demo-GUI: im GEHEN schaltet Options wie R2 auf GREIFEN, die
-  Kachel folgt. Ohne gewählten Modus (nach Start oder NOT-HALT) übernimmt
-  Options nur die Arme, die Kachel bleibt dann, wie sie ist.
+- Options ist seit 2026-10-27 die Sperre (vorher „Arme übernehmen“, das
+  macht jetzt R2). Die Sperre gilt nur im Speicher von ps4_arm_teleop: nach
+  einem Neustart des Nodes ist der Controller entsperrt.
 - Nach einem NOT-HALT hat die GUI keinen Modus mehr, der Controller behält
   seinen letzten (z. B. GEHEN mit Arm-Sperre, wie bisher). Beim nächsten
   Modus-Wechsel auf einer der beiden Seiten sind sie wieder gleich.

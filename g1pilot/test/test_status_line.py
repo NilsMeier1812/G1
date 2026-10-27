@@ -203,3 +203,14 @@ def test_ground_from_knee_load_field():
     nm = dict(hang, ground_why="Knie-Last nicht messbar (keine rt/lowstate)")
     assert not sl.start_buttons(nm, 0.1)["walk"][0]
     assert "nicht messbar" in sl.onboard_text(nm, 0.1)[0]
+
+
+def test_ps4_text_locked():
+    st = {"connected": True, "locked": True, "selection": "right"}
+    text, color = sl.ps4_text(st, 0.1)
+    assert "GESPERRT" in text and "Options" in text and color == sl.GREY
+    text, _ = sl.ps4_text(st, 0.1, device={"kind": "xbox"})
+    assert text.startswith("Xbox") and "Menu" in text
+    # NOT-HALT hat Vorrang vor der Sperre
+    assert "NOT-HALT" in sl.ps4_text(dict(st, estop=True), 0.1)[0]
+    assert "sperren" in dict(sl.ps4_help())["Options"]

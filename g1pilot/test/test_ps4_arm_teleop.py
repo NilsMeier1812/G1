@@ -179,9 +179,101 @@ def test_cross_stops_and_cancels():
     assert ("hold", ("left", "right")) in out and ("cancel",) in out
 
 
-def test_options_enables():
+def test_options_no_longer_enables_but_locks():
     lg = ArmTeleopLogic()
-    assert press(lg, L.OPTIONS) == [("enable",)]
+    out = press(lg, L.OPTIONS)
+    assert ("enable",) not in out and ("lock", True) in out and lg.locked
+
+
+def test_r2_enables_without_trigger_modes_only_if_arms_released():
+    lg = ArmTeleopLogic()
+    assert ("enable",) in press(lg, L.R2)            # arms/state unbekannt
+    lg.arms_enabled = True
+    assert ("enable",) not in press(lg, L.R2, 1.0)   # schon uebernommen
+    lg.arms_enabled = False                          # z. B. nach NOT-HALT
+    assert ("enable",) in press(lg, L.R2, 2.0)
+
+
+# ── Sperre per Options (Controller ablegen) ──────────────────────────────
+def test_lock_blocks_everything_but_estop_and_options():
+    lg = ArmTeleopLogic(walk_deadman=True, trigger_modes=True, waist_yaw=True)
+    trig(lg, 0.0, R2_AXIS=1.0)
+    trig(lg, 0.05)
+    assert lg.robot_mode == "grasp"
+    out = press(lg, L.OPTIONS, 0.1)
+    assert ("hold", ("left", "right")) in out and out[-1] == ("lock", True)
+    assert lg.locked and lg.color() == COLORS["locked"]
+    assert "GESPERRT" in lg.label() and lg.status()["locked"] is True
+    # Ablegen: L2/R2, Sticks und alle Tasten loesen nichts aus -- nur eine
+    # leichte Vibration je Druck
+    assert trig(lg, 0.2, L2_AXIS=1.0, R2_AXIS=1.0, LY=1.0, RX=1.0) == [("locked_tap",)]
+    assert trig(lg, 0.21, L2_AXIS=1.0, R2_AXIS=1.0, LY=1.0, RX=1.0) == []   # gehalten
+    assert lg.robot_mode == "grasp" and not lg.waist_mode
+    assert lg.twist(joy(LY=1.0)[0]) == {} and lg.waist_rate(joy(RX=1.0)[0]) is None
+    trig(lg, 0.25)
+    for i, btn in enumerate((L.CIRCLE, L.SQUARE, L.CROSS, L.TRIANGLE, L.DPAD_LEFT,
+                             L.L1, L.R1, L.L3, L.SHARE)):
+        assert press(lg, btn, 0.3 + i * 0.1) == [("locked_tap",)], btn
+    a, b = joy([L.SHARE])
+    lg.update(a, b, 2.0)
+    assert lg.update(a, b, 4.0) == []                # kein Grundstellungs-Halten
+    lg.update(*joy(), 4.1)
+    assert lg.selection == "right" and lg.speed == "Normal" and lg.mode == "move"
+    # PS = NOT-HALT wirkt auch gesperrt
+    out = press(lg, L.PS, 5.0)
+    assert ("estop",) in out and lg.estop and lg.locked
+
+
+def test_full_estop_works_while_locked():
+    lg = ArmTeleopLogic(full_estop_hold_s=2.0)
+    press(lg, L.OPTIONS)
+    a, b = joy([L.R1, L.L1, L.PS])
+    t, out = 1.0, []
+    while t < 3.2:
+        out += lg.update(a, b, t)
+        t += 0.1
+    assert ("full_estop",) in out and lg.full_estop
+    assert lg.speed == "Normal"                      # L1/R1 aenderten nichts
+
+
+def test_unlock_needs_sticks_centered_and_trigger_released():
+    lg = ArmTeleopLogic(walk_deadman=True, trigger_modes=True, waist_yaw=True)
+    trig(lg, 0.0, R2_AXIS=1.0)
+    trig(lg, 0.05)
+    press(lg, L.OPTIONS, 0.1)
+    # beim Entsperren: Stick ausgelenkt, L2 und R2 noch gedrueckt
+    a, b = joy([L.OPTIONS], L2_AXIS=1.0, R2_AXIS=1.0, LY=1.0)
+    out = lg.update(a, b, 1.0)
+    assert ("lock", False) in out and not lg.locked
+    assert ("mode", "walk") not in out                # keine L2-Flanke
+    a, b = joy(L2_AXIS=1.0, R2_AXIS=1.0, LY=1.0, RX=1.0)
+    lg.update(a, b, 1.05)
+    assert not lg.waist_mode and lg.waist_rate(a) is None   # R2 erst los
+    a, b = joy(LY=1.0)
+    lg.update(a, b, 1.1)
+    assert lg.twist(a) == {}                          # Stick erst in die Mitte
+    a, b = joy()
+    lg.update(a, b, 1.2)
+    assert lg.twist(a) == {}                          # Mitte gesehen (Node-Tick)
+    a, b = joy(LY=1.0)
+    lg.update(a, b, 1.3)
+    assert lg.twist(a)                                # jetzt wieder frei
+    assert ("mode", "walk") in trig(lg, 1.4, L2_AXIS=1.0)   # neue Flanke
+
+
+def test_lock_ends_waist_mode_and_estop_lock_combo():
+    lg = ArmTeleopLogic(walk_deadman=True, trigger_modes=True, waist_yaw=True)
+    trig(lg, 0.0, R2_AXIS=1.0)
+    trig(lg, 0.05)
+    trig(lg, 0.1, R2_AXIS=1.0)
+    assert lg.waist_mode
+    out = trig(lg, 0.2, [L.OPTIONS], R2_AXIS=1.0)
+    assert ("waist", "end") in out and not lg.waist_mode
+    # NOT-HALT und Sperre gleichzeitig: Options schaltet die Sperre trotzdem
+    lg.latch_estop()
+    trig(lg, 0.3)
+    assert ("lock", False) in press(lg, L.OPTIONS, 0.4)
+    assert lg.color() == COLORS["estop"]
 
 
 def test_share_must_be_held_for_home():
@@ -892,12 +984,25 @@ def test_trigger_hysteresis_and_buttons():
     assert ("mode", "walk") in trig(lg, 0.6, [L.L2])          # L2 als Taste
 
 
-def test_options_unlocks_walk_mode():
+def test_options_no_longer_leaves_walk_mode():
     lg = ArmTeleopLogic(walk_deadman=True, trigger_modes=True)
     trig(lg, 0.0, L2_AXIS=1.0)
     trig(lg, 0.1)
     out = press(lg, L.OPTIONS, 1.0)
-    assert ("enable",) in out and not lg.arms_locked
+    assert ("enable",) not in out and lg.robot_mode == "walk" and lg.locked
+    press(lg, L.OPTIONS, 1.1)
+    assert ("mode", "grasp") in trig(lg, 1.2, R2_AXIS=1.0)
+
+
+def test_r2_in_grasp_reenables_released_arms():
+    lg = ArmTeleopLogic(walk_deadman=True, trigger_modes=True)
+    trig(lg, 0.0, R2_AXIS=1.0)
+    trig(lg, 0.05)
+    lg.arms_enabled = True
+    assert trig(lg, 0.1, R2_AXIS=1.0) == []           # Hueft-Druck: kein ENABLE
+    trig(lg, 0.15)
+    lg.arms_enabled = False                           # NOT-HALT gab die Arme ab
+    assert trig(lg, 0.2, R2_AXIS=1.0) == [("enable",)]
 
 
 def test_external_mode_follows_gui_and_estop_blocks_switch():
