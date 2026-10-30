@@ -9,7 +9,11 @@ Launch-Bedingungen in launch/). Das Skript prueft sie gegen den Code:
   * jedes Topic-Literal aus einem create_publisher/create_subscription-Aufruf
     im Code muss hier eingetragen sein (sonst Warnung + Exit-Code 1).
 
-Aufruf (braucht Graphviz `dot`, nur zum Zeichnen; --check geht ohne):
+Gezeichnet wird ohne Graphviz mit einem eigenen Layout: feste Spalten (Eingaben
+links, Roboter/Sim rechts, Topics dazwischen) und rechtwinklige Linien. Pillow
+misst die Textbreiten, falls vorhanden, sonst wird geschaetzt.
+
+Aufruf:
 
     python3 tools/ros_graph.py            # pruefen + SVGs schreiben
     python3 tools/ros_graph.py --check    # nur pruefen
@@ -20,8 +24,6 @@ Beschreibung und Lesehilfe: docs/05-T-Nodes-und-Topics.md
 import argparse
 import pathlib
 import re
-import shutil
-import subprocess
 import sys
 
 PKG = pathlib.Path(__file__).resolve().parents[1]
@@ -274,7 +276,7 @@ def check():
     return problems
 
 
-# ── Zeichnen ────────────────────────────────────────────────────────────────
+# ── Zeichnen: eigenes Layout (Spalten, rechtwinklige Linien) ───────────────
 
 def _esc(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -287,17 +289,6 @@ def _split(ref):
 
 def _node_scope(nid):
     return NODES[nid][2]
-
-
-def _edge_attrs(scope):
-    if scope in SCOPE_COLOR:
-        style = "dashed" if scope == "demo" else "solid"
-        return f'color="{SCOPE_COLOR[scope]}", style={style}, penwidth=1.1'
-    return 'color="#4a4a4a", penwidth=0.9'
-
-
-def _tid(name):
-    return "t_" + re.sub(r"[^A-Za-z0-9]", "_", name)
 
 
 # Externe Eingaenge, die in jeder Ansicht mit ihrem Ziel-Node erscheinen.
@@ -343,126 +334,522 @@ VIEWS = {
 }
 
 
-SPLINES = "spline"
+# Stufe (Spalte) je Node: links Eingaben, rechts Roboter und Simulation. Eine
+# Ansicht nutzt nur die Stufen ihrer Nodes, Topics stehen zwischen den Stufen
+# (rechts neben dem Publisher oder links vor dem Subscriber, je nachdem, wo
+# weniger Linien rueckwaerts laufen).
+TIER = {
+    "phone": 0, "http": 0, "joystick": 0, "ps4_joystick": 0, "mola": 0,
+    "gui": 1, "ps4_arm_teleop": 1, "arm_api": 1, "scene_bridge": 1,
+    "robot_state": 1, "sim_localization": 1, "mola_fixed": 1,
+    "ps4_walk": 2, "interactive_marker": 2, "create_map": 2,
+    "dijkstra": 3, "nav2point": 4, "joy_mux": 5, "joy_to_cmdvel": 6,
+    "arm_controller": 6, "loco_sim": 7, "loco_client": 7,
+    "inspire": 8, "rsp": 8,
+    "mujoco": 9, "g1": 9, "hands_hw": 9,
+}
+
+FONT = "DejaVu Sans, Verdana, Arial, sans-serif"
+EDGE_COLOR = "#4a4a4a"
+PAD_X, PAD_Y = 10, 5          # Innenabstand der Kaesten
+PORT = 9                      # Mindestabstand der Anschluesse an einer Kante
+V_GAP = 14                    # Abstand der Kaesten in einer Spalte
+LANE = 10                     # Abstand paralleler senkrechter Linien
+MIN_GAP = 46                  # Mindestbreite zwischen zwei Spalten
+TRACK = 9                     # Abstand der Umweg-Linien oben/unten
+SEP = 8                       # Mindestabstand waagerechter Linien
 
 
-def build_dot(title, topics, dense=False):
-    """DOT fuer eine Ansicht: nur `topics` und die daran haengenden Nodes."""
-    out = [
-        "digraph g1pilot {",
-        f'  graph [rankdir=LR, splines={SPLINES}, '
-        'nodesep=0.22, ranksep=1.1, '
-        'fontname="DejaVu Sans", bgcolor="white", pad=0.4, '
-        f'label=<<b>g1pilot — {_esc(title)}</b>  '
-        '<font point-size="11">(ROS-Nodes und Topics, aus dem Code ermittelt '
-        'mit tools/ros_graph.py)</font>>, labelloc=t, labeljust=l, fontsize=20];',
-        '  node [fontname="DejaVu Sans", fontsize=10, margin="0.10,0.04"];',
-        '  edge [arrowsize=0.55, arrowhead=vee];',
-    ]
+def _text_width():
+    """Textbreite in px; mit Pillow genau, sonst geschaetzt."""
+    try:
+        from PIL import ImageFont
+        reg = ImageFont.truetype("DejaVuSans.ttf", 100)
+        bold = ImageFont.truetype("DejaVuSans-Bold.ttf", 100)
+        return lambda t, size, b=False: (bold if b else reg).getlength(t) * size / 100.0
+    except Exception:
+        return lambda t, size, b=False: len(t) * size * (0.68 if b else 0.62)
+
+
+TEXT_W = _text_width()
+
+
+class Box:
+    def __init__(self, bid, kind, lines, style):
+        self.id, self.kind, self.lines, self.style = bid, kind, lines, style
+        self.w = max(TEXT_W(t, s, b) for t, s, b, _ in lines) + 2 * PAD_X
+        self.text_h = sum(s * 1.3 for _, s, _, _ in lines) + 2 * PAD_Y
+        self.h = self.text_h
+        self.col = 0
+        self.y = 0.0
+        self.x = 0.0
+        self.ports = {"L": [], "R": []}   # Trunk-Schluessel je Seite
+        self.port_y = {}                  # (Seite, Schluessel) -> y
+
+    @property
+    def cy(self):
+        return self.y + self.h / 2
+
+
+def _node_box(nid):
+    label, cat, scope, extra = NODES[nid]
+    _, fill, border = CATS[cat]
+    lines = [(label, 12, True, "#1e1e1e")]
+    if scope in SCOPE_TAG:
+        lines.append((SCOPE_TAG[scope].upper(), 9, True, SCOPE_COLOR[scope]))
+    if extra:
+        lines.append((extra, 9, False, "#555555"))
+    style = dict(fill=fill, stroke=border, dashed=scope in ("sim", "real"),
+                 ext=cat == "ext")
+    return Box(nid, "node", lines, style)
+
+
+def _topic_box(name):
+    typ, _, _, kind = TOPICS[name]
+    lines = []
+    if kind == "dds":
+        lines.append(("Unitree-DDS", 8, False, "#777777"))
+    lines += [(name, 10, False, "#1e1e1e"), (typ, 10, True, "#1e1e1e")]
+    style = dict(fill="#f2f2f2" if kind == "dds" else "#ffffff", stroke="#666666",
+                 dashed=False, ext=False)
+    return Box(_tid(name), "topic", lines, style)
+
+
+def _tid(name):
+    return "t_" + re.sub(r"[^A-Za-z0-9]", "_", name)
+
+
+class Edge:
+    def __init__(self, a, b, scope, both=False, label=None):
+        self.a, self.b, self.scope, self.both, self.label = a, b, scope, both, label
+        self.kind = None      # "adj" | "long" | "back"
+        self.trunks = []      # [(Schluessel, Luecke)]
+        self.track = None     # y der waagerechten Linie (long/back)
+        self.back_key = None
+
+
+def _collect(topics):
+    boxes, edges = {}, []
     used = set()
     for name in topics:
         _, pubs, subs, _ = TOPICS[name]
         used.update(_split(r)[0] for r in pubs + subs)
-    links = [l for l in LINKS if l[0] in used and l[1] in used
-             or l[0] in EXT_INPUTS and l[1] in used]
-    for a, b, _, _ in links:
-        used.update((a, b))
-    # Nodes
-    for nid, (label, cat, scope, extra) in NODES.items():
-        if nid not in used:
-            continue
-        _, fill, border = CATS[cat]
-        rows = [f'<b>{_esc(label)}</b>']
-        if scope in SCOPE_TAG:
-            rows.append(f'<font point-size="8" color="{SCOPE_COLOR[scope]}">'
-                        f'<b>{SCOPE_TAG[scope].upper()}</b></font>')
-        if extra:
-            rows.append(f'<font point-size="8" color="#555555">{_esc(extra)}</font>')
-        shape = "box3d" if cat == "ext" else "box"
-        style = "filled" if cat == "ext" else "rounded,filled"
-        if scope in ("sim", "real"):
-            style += ",dashed"
-        out.append(f'  {nid} [shape={shape}, style="{style}", fillcolor="{fill}", '
-                   f'color="{border}", penwidth=1.6, fontsize=11, '
-                   f'label=<{"<br/>".join(rows)}>];')
-    # Topics
-    for name in topics:
-        typ, _, _, kind = TOPICS[name]
-        fill = "#f2f2f2" if kind == "dds" else "white"
-        tag = '<font point-size="7" color="#777777">Unitree-DDS</font><br/>' \
-            if kind == "dds" else ""
-        out.append(f'  {_tid(name)} [shape=box, style=filled, fillcolor="{fill}", '
-                   f'color="#666666", penwidth=0.8, fontsize=9, '
-                   f'label=<{tag}{_esc(name)}<br/><b>{_esc(typ)}</b>>];')
-    # Kanten
+    for a, b, _, _ in LINKS:
+        if (a in used and b in used) or (a in EXT_INPUTS and b in used):
+            used.update((a, b))
+    for nid in NODES:
+        if nid in used:
+            boxes[nid] = _node_box(nid)
     for name in topics:
         _, pubs, subs, _ = TOPICS[name]
         t = _tid(name)
+        boxes[t] = _topic_box(name)
         both = {_split(r)[0] for r in pubs} & {_split(r)[0] for r in subs}
         for ref in pubs:
             n, scope = _split(ref)
-            if scope == "both":
-                scope = _node_scope(n)
-            if n in both:
-                out.append(f"  {n} -> {t} [dir=both, {_edge_attrs(scope)}];")
-            else:
-                out.append(f"  {n} -> {t} [{_edge_attrs(scope)}];")
+            edges.append(Edge(n, t, scope if scope != "both" else NODES[n][2], n in both))
         for ref in subs:
             n, scope = _split(ref)
-            if n in both:
+            if n not in both:
+                edges.append(Edge(t, n, scope if scope != "both" else NODES[n][2]))
+    for a, b, label, scope in LINKS:
+        if a in boxes and b in boxes:
+            edges.append(Edge(a, b, scope if scope != "both" else "x", label=label))
+    return boxes, edges
+
+
+def _edge_cost(ca, cb):
+    """Kosten einer Kante zwischen zwei Spalten: rueckwaerts teuer, lang etwas."""
+    if cb > ca:
+        return cb - ca - 1
+    return 12 + (ca - cb)
+
+
+def _topic_col(name, col):
+    """Spalte eines Topics bei gegebenen Node-Spalten (gerade Zahlen)."""
+    _, pubs, subs, _ = TOPICS[name]
+    both = {_split(r)[0] for r in pubs} & {_split(r)[0] for r in subs}
+    pc = [col[_split(r)[0]] for r in pubs if _split(r)[0] not in both]
+    sc = [col[_split(r)[0]] for r in subs if _split(r)[0] not in both]
+    bc = [col[n] for n in both]
+    cands = {c + d for c in pc + bc for d in (1, -1)} | {c - 1 for c in sc}
+    best = None
+    for c in sorted(cands, reverse=True):
+        cost = (sum(_edge_cost(p, c) for p in pc) + sum(_edge_cost(c, x) for x in sc)
+                + sum(_edge_cost(min(c, x), max(c, x)) for x in bc))
+        if best is None or cost < best[0]:
+            best = (cost, c)
+    return best
+
+
+def _assign_columns(boxes, edges, topics):
+    """Stufen der Nodes so waehlen, dass moeglichst wenig Linien rueckwaerts laufen.
+
+    Start ist TIER; Eingaben (Stufe 0) bleiben links, Roboter/Sim (Stufe 9)
+    rechts, die uebrigen Nodes werden so lange einzeln verschoben, wie das die
+    Summe der Kantenkosten senkt.
+    """
+    nodes = [b for b in boxes if b in NODES]
+    tier = {n: TIER[n] for n in nodes}
+    links = [(e.a, e.b) for e in edges if e.a in NODES and e.b in NODES]
+
+    def total(t):
+        col = {n: 2 * v for n, v in t.items()}
+        cost = sum(_topic_col(name, col)[0] for name in topics)
+        return cost + sum(_edge_cost(col[a], col[b]) for a, b in links)
+
+    best = total(tier)
+    movable = [n for n in nodes if TIER[n] not in (0, 9)]
+    for _ in range(6):
+        improved = False
+        for n in movable:
+            for v in range(1, 9):
+                if v == tier[n]:
+                    continue
+                old = tier[n]
+                tier[n] = v
+                c = total(tier)
+                if c < best - 1e-9:
+                    best, improved = c, True
+                else:
+                    tier[n] = old
+        if not improved:
+            break
+    col = {n: 2 * v for n, v in tier.items()}
+    for name in topics:
+        col[_tid(name)] = _topic_col(name, col)[1]
+    used = sorted(set(col.values()))
+    remap = {c: i for i, c in enumerate(used)}
+    for b, c in col.items():
+        boxes[b].col = remap[c]
+    return len(used)
+
+
+def _plan_edges(boxes, edges):
+    """Trunks (senkrechte Sammellinien) je Kante festlegen, Anschluesse zaehlen."""
+    fan_s, fan_d = {}, {}
+    for e in edges:
+        # Doppelpfeile immer von links nach rechts fuehren
+        if e.both and boxes[e.a].col > boxes[e.b].col:
+            e.a, e.b = e.b, e.a
+        ca, cb = boxes[e.a].col, boxes[e.b].col
+        e.kind = "adj" if cb == ca + 1 else ("long" if cb > ca else "back")
+        if e.kind == "adj" and not e.both:
+            fan_s[e.a] = fan_s.get(e.a, 0) + 1
+            fan_d[e.b] = fan_d.get(e.b, 0) + 1
+    for i, e in enumerate(edges):
+        ca, cb = boxes[e.a].col, boxes[e.b].col
+        ks, kd = ("s", e.a), ("d", e.b)
+        if e.both or e.label:
+            ks, kd = ("es", i), ("ed", i)
+        if e.kind == "adj":
+            k = ks if (e.both or e.label or fan_s.get(e.a, 0) >= fan_d.get(e.b, 0)) else kd
+            e.trunks = [(k, ca)]
+            src_port, dst_port = k, k
+        else:
+            e.trunks = [(ks, ca), (kd, cb - 1)]
+            src_port, dst_port = ks, kd
+        if src_port not in boxes[e.a].ports["R"]:
+            boxes[e.a].ports["R"].append(src_port)
+        if dst_port not in boxes[e.b].ports["L"]:
+            boxes[e.b].ports["L"].append(dst_port)
+        e.src_port, e.dst_port = src_port, dst_port
+    for bx in boxes.values():
+        n = max(len(bx.ports["L"]), len(bx.ports["R"]))
+        bx.h = max(bx.text_h, (n + 1) * PORT)
+
+
+def _place_rows(boxes, edges, ncols):
+    cols = [[] for _ in range(ncols)]
+    for bx in boxes.values():
+        cols[bx.col].append(bx)
+    nb = {b: [] for b in boxes}
+    for e in edges:
+        nb[e.a].append(e.b)
+        nb[e.b].append(e.a)
+
+    def stack(col_boxes, desired):
+        order = sorted(col_boxes, key=lambda b: desired[b.id])
+        y = -1e9
+        for b in order:
+            b.y = max(desired[b.id] - b.h / 2, y)
+            y = b.y + b.h + V_GAP
+        # Spalte so verschieben, dass sie im Mittel an ihren Wunschplaetzen sitzt
+        shift = sum(desired[b.id] - b.cy for b in order) / len(order)
+        for b in order:
+            b.y += shift
+
+    for c in cols:
+        y = 0.0
+        for b in c:
+            b.y = y
+            y += b.h + V_GAP
+    order = list(range(ncols))
+    for sweep in range(24):
+        for ci in (order if sweep % 2 == 0 else order[::-1]):
+            desired = {}
+            for b in cols[ci]:
+                ys = [boxes[n].cy for n in nb[b.id] if boxes[n].col != ci]
+                desired[b.id] = sum(ys) / len(ys) if ys else b.cy
+            stack(cols[ci], desired)
+    top = min(b.y for b in boxes.values())
+    for b in boxes.values():
+        b.y -= top
+    return cols
+
+
+def _free_y(y0, ca, cb, cols, hsegs, ylimits):
+    """Freie Hoehe fuer eine waagerechte Linie ueber die Spalten ca+1..cb-1."""
+    blocked = [(b.y - 5, b.y + b.h + 5) for c in range(ca + 1, cb) for b in cols[c]]
+    lo, hi = ylimits
+    for k in range(0, 400):
+        for y in ((y0,) if k == 0 else (y0 + k * SEP, y0 - k * SEP)):
+            if not lo <= y <= hi:
                 continue
-            if scope == "both":
-                scope = _node_scope(n)
-            out.append(f"  {t} -> {n} [{_edge_attrs(scope)}];")
-    for a, b, label, scope in links:
-        if scope == "both":
-            scope = "x"
-        out.append(f'  {a} -> {b} [label=<<font point-size="8">{label}</font>>, '
-                   f'{_edge_attrs(scope)}];')
-    # Hardware/Sim ganz rechts, Legende ganz links
-    hw = [n for n in ("mujoco", "g1", "hands_hw") if n in used]
-    if hw:
-        out.append("  { rank=sink; " + "; ".join(hw) + "; }")
-    out.append("  { rank=source; legend; }")
-    out.append(_legend())
-    out.append("}")
-    return "\n".join(out)
+            if any(a <= y <= b for a, b in blocked):
+                continue
+            if any(abs(y - hy) < SEP and not (c1 < ca or c0 > cb) for hy, c0, c1 in hsegs):
+                continue
+            return y
+    return y0
 
 
-def render(dot, path):
-    svg = subprocess.run(["dot", "-Tsvg"], input=dot.encode(), check=True,
-                         capture_output=True).stdout
-    pathlib.Path(path).write_bytes(svg)
-    print("geschrieben:", path)
+def _route(boxes, edges, cols):
+    ymax = max(b.y + b.h for b in boxes.values())
+    mid = ymax / 2
+    # Anschluss-Reihenfolge: nach der Hoehe der Gegenstelle
+    trunk_ends = {}
+    for e in edges:
+        for k, _ in e.trunks:
+            trunk_ends.setdefault(k, []).extend([boxes[e.a].cy, boxes[e.b].cy])
+    for bx in boxes.values():
+        for side in ("L", "R"):
+            ks = sorted(bx.ports[side], key=lambda k: sum(trunk_ends[k]) / len(trunk_ends[k]))
+            n = len(ks)
+            for i, k in enumerate(ks):
+                bx.port_y[(side, k)] = bx.y + (i + 1) * bx.h / (n + 1)
+    # Waagerechte Linien fuer lange Kanten (frei durch die Zwischenspalten)
+    hsegs = []
+    for e in edges:
+        if e.kind != "long":
+            continue
+        a, b = boxes[e.a], boxes[e.b]
+        ya, yb = a.port_y[("R", e.src_port)], b.port_y[("L", e.dst_port)]
+        e.track = _free_y(yb, a.col, b.col, cols, hsegs, (-60, ymax + 60))
+        if abs(e.track - yb) > 1 and abs(ya - yb) > 1:
+            alt = _free_y(ya, a.col, b.col, cols, hsegs, (-60, ymax + 60))
+            if abs(alt - ya) < abs(e.track - yb):
+                e.track = alt
+        hsegs.append((e.track, a.col, b.col))
+    # Rueckwaerts-Kanten: Umweg oben oder unten, eine Spur je Quelle und Seite
+    groups = {}
+    for e in edges:
+        if e.kind != "back":
+            continue
+        a, b = boxes[e.a], boxes[e.b]
+        side = "top" if (a.cy + b.cy) / 2 < mid else "bottom"
+        key = ("back", e.a, side, e.both or bool(e.label), id(e) if e.both else 0)
+        g = groups.setdefault(key, {"side": side, "lo": b.col - 1, "hi": a.col, "edges": []})
+        g["lo"] = min(g["lo"], b.col - 1)
+        g["hi"] = max(g["hi"], a.col)
+        g["edges"].append(e)
+    lanes = {"top": [], "bottom": []}
+    for key, g in sorted(groups.items(), key=lambda kv: kv[1]["hi"] - kv[1]["lo"]):
+        used = lanes[g["side"]]
+        lane = 0
+        while any(l == lane and not (hi < g["lo"] or lo > g["hi"]) for l, lo, hi in used):
+            lane += 1
+        used.append((lane, g["lo"], g["hi"]))
+        y = (-24 - lane * TRACK) if g["side"] == "top" else (ymax + 24 + lane * TRACK)
+        for e in g["edges"]:
+            e.track = y
+    # Trunk-Spannen (fuer die Spuren in den Luecken)
+    spans = {}
+    for e in edges:
+        a, b = boxes[e.a], boxes[e.b]
+        ya, yb = a.port_y[("R", e.src_port)], b.port_y[("L", e.dst_port)]
+        if e.kind == "adj":
+            (k, g), = e.trunks
+            spans.setdefault((k, g), []).extend([ya, yb])
+        else:
+            (ks, gs), (kd, gd) = e.trunks
+            spans.setdefault((ks, gs), []).extend([ya, e.track])
+            spans.setdefault((kd, gd), []).extend([e.track, yb])
+    # Spuren je Luecke (Intervall-Faerbung)
+    gap_lanes, lane_of = {}, {}
+    for (k, g), ys in sorted(spans.items(), key=lambda kv: (kv[0][1], min(kv[1]))):
+        lo, hi = min(ys), max(ys)
+        used = gap_lanes.setdefault(g, [])
+        lane = 0
+        while any(l == lane and not (h + 4 < lo or l0 - 4 > hi) for l, l0, h in used):
+            lane += 1
+        used.append((lane, lo, hi))
+        lane_of[(k, g)] = lane
+    return gap_lanes, lane_of
 
 
-def _legend():
-    rows = ['<tr><td colspan="2" align="left"><b>Legende</b></td></tr>']
+def _layout_x(cols, gap_lanes, x0, min_gap):
+    widths = [max(b.w for b in c) for c in cols]
+    nl = lambda g: 1 + max([l for l, _, _ in gap_lanes.get(g, [])], default=-1)  # noqa: E731
+    gap_w = {g: max(MIN_GAP, min_gap.get(g, 0), (nl(g) + 1) * LANE)
+             for g in range(-1, len(cols))}
+    gap_x = {}
+    x = x0
+    gap_x[-1] = x
+    x += gap_w[-1] if gap_lanes.get(-1) else 0
+    for i, c in enumerate(cols):
+        for b in c:
+            b.x = x + (widths[i] - b.w) / 2
+        x += widths[i]
+        gap_x[i] = x
+        x += gap_w[i]
+    return gap_x, x
+
+
+def _svg_text(x, y, t, size, bold, color, anchor="middle"):
+    w = ' font-weight="bold"' if bold else ""
+    return (f'<text x="{x:.1f}" y="{y:.1f}" font-size="{size}"{w} fill="{color}" '
+            f'text-anchor="{anchor}">{_esc(t)}</text>')
+
+
+def _svg_box(b):
+    s = b.style
+    out = []
+    dash = ' stroke-dasharray="5 3"' if s["dashed"] else ""
+    if s["ext"]:
+        out.append(f'<rect x="{b.x + 4:.1f}" y="{b.y - 4:.1f}" width="{b.w:.1f}" '
+                   f'height="{b.h:.1f}" fill="#c8c8c8" stroke="{s["stroke"]}"/>')
+        out.append(f'<rect x="{b.x:.1f}" y="{b.y:.1f}" width="{b.w:.1f}" height="{b.h:.1f}" '
+                   f'fill="{s["fill"]}" stroke="{s["stroke"]}" stroke-width="1.4"{dash}/>')
+    elif b.kind == "node":
+        out.append(f'<rect x="{b.x:.1f}" y="{b.y:.1f}" width="{b.w:.1f}" height="{b.h:.1f}" '
+                   f'rx="7" fill="{s["fill"]}" stroke="{s["stroke"]}" stroke-width="1.6"{dash}/>')
+    else:
+        out.append(f'<rect x="{b.x:.1f}" y="{b.y:.1f}" width="{b.w:.1f}" height="{b.h:.1f}" '
+                   f'fill="{s["fill"]}" stroke="{s["stroke"]}" stroke-width="0.9"/>')
+    th = sum(sz * 1.3 for _, sz, _, _ in b.lines)
+    y = b.cy - th / 2
+    for t, sz, bold, color in b.lines:
+        y += sz * 1.3
+        out.append(_svg_text(b.x + b.w / 2, y - sz * 0.3, t, sz, bold, color))
+    return out
+
+
+def _edge_style(scope):
+    color = SCOPE_COLOR.get(scope, EDGE_COLOR)
+    dash = ' stroke-dasharray="6 3"' if scope == "demo" else ""
+    width = 1.3 if scope in SCOPE_COLOR else 1.1
+    return color, f'stroke="{color}" stroke-width="{width}"{dash}'
+
+
+def _arrow(x, y, direction, color):
+    d = 7 if direction == "right" else -7
+    return (f'<path d="M{x - d:.1f},{y - 3.5:.1f} L{x:.1f},{y:.1f} L{x - d:.1f},{y + 3.5:.1f} z" '
+            f'fill="{color}"/>')
+
+
+def _svg_edges(boxes, edges, gap_x, lane_of):
+    out = []
+    order = {"demo": 0, "sim": 1, "real": 2}
+    for e in sorted(edges, key=lambda e: order.get(e.scope, 3)):
+        a, b = boxes[e.a], boxes[e.b]
+        ya, yb = a.port_y[("R", e.src_port)], b.port_y[("L", e.dst_port)]
+        xs = [gap_x[g] + (lane_of[(k, g)] + 1) * LANE for k, g in e.trunks]
+        xa, xb = a.x + a.w, b.x
+        if e.kind == "adj":
+            pts = [(xa, ya), (xs[0], ya), (xs[0], yb), (xb, yb)]
+        else:
+            pts = [(xa, ya), (xs[0], ya), (xs[0], e.track), (xs[1], e.track),
+                   (xs[1], yb), (xb, yb)]
+        color, attrs = _edge_style(e.scope)
+        d = " ".join(f"{'M' if i == 0 else 'L'}{x:.1f},{y:.1f}" for i, (x, y) in enumerate(pts))
+        out.append(f'<path d="{d}" fill="none" {attrs} stroke-linejoin="round"/>')
+        out.append(_arrow(xb, yb, "right", color))
+        if e.both:
+            out.append(_arrow(xa, ya, "left", color))
+        if e.label:
+            segs = [(pts[i], pts[i + 1]) for i in range(len(pts) - 1)
+                    if abs(pts[i][1] - pts[i + 1][1]) < 0.5]
+            (x0, y0), (x1, _) = segs[-1] if e.kind == "adj" else max(
+                segs, key=lambda s: abs(s[1][0] - s[0][0]))
+            out.append(_svg_text((x0 + x1) / 2, y0 - 4, e.label, 9, False, color))
+    return out
+
+
+def _svg_legend(x, y):
+    out, rows = [], []
     for _, (label, fill, border) in CATS.items():
-        rows.append(f'<tr><td bgcolor="{fill}" border="1" color="{border}" '
-                    f'width="34" height="16"></td><td align="left">{label} Nodes</td></tr>')
+        rows.append(("box", fill, border, f"{label} Nodes"))
     rows += [
-        '<tr><td border="1" bgcolor="white" width="34">/topic<br/><b>Typ</b></td>'
-        '<td align="left">ROS-2-Topic: Name und Nachrichtentyp</td></tr>',
-        '<tr><td border="1" bgcolor="#f2f2f2" width="34">rt/…</td>'
-        '<td align="left">Unitree-DDS-Kanal (unitree_sdk2py, kein ROS)</td></tr>',
-        '<tr><td><font color="#4a4a4a"><b>——▶</b></font></td>'
-        '<td align="left">Publisher → Topic → Subscriber (Sim und Real)</td></tr>',
-        f'<tr><td><font color="{SCOPE_COLOR["sim"]}"><b>——▶</b></font></td>'
-        '<td align="left">nur Simulation (Node gestrichelt umrandet: läuft nur in Sim)</td></tr>',
-        f'<tr><td><font color="{SCOPE_COLOR["real"]}"><b>——▶</b></font></td>'
-        '<td align="left">nur echter Roboter (Node gestrichelt: läuft nur real)</td></tr>',
-        f'<tr><td><font color="{SCOPE_COLOR["demo"]}"><b>- - ▶</b></font></td>'
-        '<td align="left">nur Demo-GUI (nicht Streamdeck-GUI)</td></tr>',
-        '<tr><td><b>◀——▶</b></td>'
-        '<td align="left">Node publiziert und abonniert dasselbe Topic</td></tr>',
-        '<tr><td colspan="2" align="left"><font point-size="8" color="#555555">'
-        'Topics ohne Subscriber: Anzeige in RViz. {left,right} = zwei Topics je Seite.'
-        '</font></td></tr>',
+        ("topic", "#ffffff", "#666666", "ROS-2-Topic: Name und Nachrichtentyp"),
+        ("topic", "#f2f2f2", "#666666", "Unitree-DDS-Kanal (unitree_sdk2py, kein ROS)"),
+        ("line", "x", "", "Publisher → Topic → Subscriber (Sim und Real)"),
+        ("line", "sim", "", "nur Simulation (Node gestrichelt: läuft nur in Sim)"),
+        ("line", "real", "", "nur echter Roboter (Node gestrichelt: läuft nur real)"),
+        ("line", "demo", "", "nur Demo-GUI (nicht Streamdeck-GUI)"),
+        ("both", "x", "", "Node publiziert und abonniert dasselbe Topic"),
     ]
-    return ('  legend [shape=plaintext, fontsize=10, label=<<table border="1" '
-            'color="#999999" cellborder="0" cellspacing="3" cellpadding="3" '
-            f'bgcolor="#fbfbfb">{"".join(rows)}</table>>];')
+    w, rh = 360, 22
+    h = 34 + rh * len(rows) + 26
+    out.append(f'<rect x="{x}" y="{y}" width="{w}" height="{h}" fill="#fbfbfb" '
+               f'stroke="#999999"/>')
+    out.append(_svg_text(x + 12, y + 22, "Legende", 12, True, "#1e1e1e", "start"))
+    yy = y + 34
+    for kind, a, bcol, text in rows:
+        cy = yy + rh / 2
+        if kind == "box":
+            out.append(f'<rect x="{x + 12}" y="{cy - 8}" width="44" height="16" rx="4" '
+                       f'fill="{a}" stroke="{bcol}" stroke-width="1.4"/>')
+        elif kind == "topic":
+            out.append(f'<rect x="{x + 12}" y="{cy - 8}" width="44" height="16" '
+                       f'fill="{a}" stroke="{bcol}"/>')
+        else:
+            color, attrs = _edge_style(a)
+            out.append(f'<path d="M{x + 12},{cy} L{x + 56},{cy}" {attrs}/>')
+            out.append(_arrow(x + 56, cy, "right", color))
+            if kind == "both":
+                out.append(_arrow(x + 12, cy, "left", color))
+        out.append(_svg_text(x + 66, cy + 4, text, 10, False, "#1e1e1e", "start"))
+        yy += rh
+    out.append(_svg_text(x + 12, yy + 16, "Topics ohne Subscriber: Anzeige in RViz. "
+                         "{left,right} = zwei Topics.", 9, False, "#555555", "start"))
+    return out, w, h
+
+
+def build_svg(title, topics):
+    """SVG fuer eine Ansicht: nur `topics` und die daran haengenden Nodes."""
+    boxes, edges = _collect(topics)
+    ncols = _assign_columns(boxes, edges, topics)
+    _plan_edges(boxes, edges)
+    cols = _place_rows(boxes, edges, ncols)
+    gap_lanes, lane_of = _route(boxes, edges, cols)
+    legend, lw, lh = _svg_legend(0, 0)
+    min_gap = {}
+    for e in edges:
+        if e.label:
+            g = e.trunks[0][1]
+            min_gap[g] = max(min_gap.get(g, 0), TEXT_W(e.label, 9) + 4 * LANE)
+    gap_x, width = _layout_x(cols, gap_lanes, lw + 30, min_gap)
+    ys = [b.y for b in boxes.values()] + [e.track for e in edges if e.track is not None]
+    ye = [b.y + b.h for b in boxes.values()] + [e.track for e in edges if e.track is not None]
+    top, bottom = min(ys) - 20, max(max(ye), lh) + 20
+    head = 56
+    body = _svg_edges(boxes, edges, gap_x, lane_of)
+    for b in boxes.values():
+        body += _svg_box(b)
+    w, h = width + 20, bottom - top + head
+    oy = head - top
+    return "\n".join([
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{w:.0f}" height="{h:.0f}" '
+        f'viewBox="0 0 {w:.0f} {h:.0f}" font-family="{FONT}">',
+        f'<rect width="{w:.0f}" height="{h:.0f}" fill="#ffffff"/>',
+        _svg_text(20, 34, f"g1pilot — {title}", 20, True, "#1e1e1e", "start"),
+        _svg_text(20 + TEXT_W(f"g1pilot — {title}", 20, True) + 14, 34,
+                  "ROS-Nodes und Topics, aus dem Code ermittelt mit tools/ros_graph.py",
+                  11, False, "#555555", "start"),
+        f'<g transform="translate(20,{oy + max(0, top):.1f})">', *legend, "</g>",
+        f'<g transform="translate(20,{oy:.1f})">', *body, "</g>",
+        "</svg>", ""])
 
 
 def main():
@@ -484,14 +871,13 @@ def main():
     if args.check:
         return 1 if problems else 0
 
-    if not shutil.which("dot"):
-        print("Graphviz 'dot' fehlt (apt install graphviz)", file=sys.stderr)
-        return 2
     out_dir = pathlib.Path(args.out_dir)
-    for key, (title, topics) in VIEWS.items():
-        render(build_dot(title, topics), out_dir / f"ros_graph_{key}.svg")
-    render(build_dot("Gesamtbild (alle Topics)", list(TOPICS), dense=True),
-           out_dir / "ros_graph_gesamt.svg")
+    views = dict(VIEWS)
+    views["gesamt"] = ("Gesamtbild (alle Topics)", list(TOPICS))
+    for key, (title, topics) in views.items():
+        path = out_dir / f"ros_graph_{key}.svg"
+        path.write_text(build_svg(title, topics), encoding="utf-8")
+        print("geschrieben:", path)
     return 1 if problems else 0
 
 

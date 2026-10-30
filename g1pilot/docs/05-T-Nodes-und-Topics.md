@@ -105,10 +105,17 @@ Nach jeder Änderung an Publishern oder Subscribern:
 
 ```bash
 python3 tools/ros_graph.py --check   # nur prüfen, braucht nichts außer Python
-python3 tools/ros_graph.py           # prüfen + SVGs nach docs/images/ (braucht Graphviz: apt install graphviz)
+python3 tools/ros_graph.py           # prüfen + SVGs nach docs/images/ schreiben
 ```
 
-Die Tabellen `NODES`, `TOPICS` und `VIEWS` oben im Skript sind von Hand
+Das Skript zeichnet ohne Graphviz mit einem eigenen Layout: Jeder Node hat
+eine Stufe (`TIER`, Eingaben links, Roboter und Sim rechts). Je Ansicht
+verschiebt das Skript die Nodes so, dass möglichst wenige Linien rückwärts
+laufen, setzt jedes Topic zwischen Publisher und Subscriber und zieht alle
+Linien rechtwinklig. Rückmeldungen nach links laufen als Umweg über oder unter
+dem Bild.
+
+Die Tabellen `NODES`, `TOPICS`, `TIER` und `VIEWS` oben im Skript sind von Hand
 gepflegt. `--check` vergleicht sie mit dem Code: jedes eingetragene Topic
 muss im Code stehen, und jedes Topic aus einem `create_publisher`- oder
 `create_subscription`-Aufruf (auch über Konstanten wie `WAIST_STATE_TOPIC`)
