@@ -51,8 +51,7 @@ NODES = {
     "ps4_arm_teleop": ("ps4_arm_teleop", "teleop", "both", "G1_PS4_ARMS=1"),
     "ps4_walk":       ("ps4_walk", "teleop", "both", "G1_PS4_ARMS=1 + G1_PS4_WALK"),
     "joy_mux":        ("joy_mux", "teleop", "both", ""),
-    "gui":            ("ui_interface | demo_gui", "gui", "both",
-                       "G1_GUI=streamdeck | demo"),
+    "gui":            ("demo_gui", "gui", "both", ""),
     "robot_state":    ("robot_state", "state", "both", ""),
     "arm_controller": ("arm_controller", "manip", "both", ""),
     "interactive_marker": ("interactive_marker", "manip", "both", ""),
@@ -64,16 +63,12 @@ NODES = {
     "create_map":     ("create_map", "nav", "sim", "G1_ENABLE_NAV=1"),
     "sim_localization": ("sim_localization", "nav", "sim", "G1_ENABLE_NAV=1"),
     "joy_to_cmdvel":  ("joy_to_cmdvel", "nav", "sim", "G1_ENABLE_NAV=1"),
-    "mola_fixed":     ("mola_fixed", "nav", "real", "G1_ENABLE_LIDAR=1"),
-    "dijkstra":       ("dijkstra_planner", "nav", "both",
-                       "Sim: G1_ENABLE_NAV, Real: G1_ENABLE_LIDAR"),
-    "nav2point":      ("nav2point", "nav", "both",
-                       "Sim: G1_ENABLE_NAV, Real: G1_ENABLE_LIDAR"),
+    "dijkstra":       ("dijkstra_planner", "nav", "sim", "G1_ENABLE_NAV=1"),
+    "nav2point":      ("nav2point", "nav", "sim", "G1_ENABLE_NAV=1"),
     # Extern
     "mujoco":   ("MuJoCo-Simulation", "ext", "sim", "unitree_sdk2py_bridge"),
     "g1":       ("G1 onboard (Unitree)", "ext", "real", "Motoren, Loco-Dienst"),
     "hands_hw": ("Inspire-Haende", "ext", "real", "Modbus TCP"),
-    "mola":     ("Livox MID360 + MOLA", "ext", "real", "LiDAR-Odometrie"),
     "rsp":      ("robot_state_publisher", "ext", "both", "URDF -> /tf"),
     "phone":    ("Handy (Browser)", "ext", "both", "Web Bluetooth -> Demo-GUI"),
     "http":     ("HTTP-Client", "ext", "both", "Skripte, Fremdprogramme"),
@@ -81,7 +76,7 @@ NODES = {
 
 # Topics: name -> (Typ, Publisher, Subscriber, Art)
 #   Publisher/Subscriber: Liste von Node-ids; Suffix ":sim"/":real" = Kante gilt
-#   nur dort, ":demo" = nur in der Demo-GUI (nicht im Streamdeck).
+#   nur dort.
 #   Art: "ros" | "dds" (Unitree-DDS, kein ROS-Topic)
 #   {left,right} steht fuer zwei Topics mit gleichem Aufbau.
 TOPICS = {
@@ -105,15 +100,15 @@ TOPICS = {
     "/g1pilot/joy": ("Joy", ["joy_mux"], ["loco_client:real", "joy_to_cmdvel:sim"], "ros"),
     "/g1pilot/ps4/joy": ("Joy", ["ps4_joystick"], ["ps4_arm_teleop", "ps4_walk"], "ros"),
     "/g1pilot/ps4/feedback": ("String", ["ps4_arm_teleop", "ps4_walk"], ["ps4_joystick"], "ros"),
-    "/g1pilot/ps4/device": ("String", ["ps4_joystick"], ["gui:demo"], "ros"),
-    "/g1pilot/ps4/status": ("String", ["ps4_arm_teleop"], ["ps4_walk", "gui:demo"], "ros"),
-    "/g1pilot/ps4/walk_status": ("String", ["ps4_walk"], ["gui:demo"], "ros"),
+    "/g1pilot/ps4/device": ("String", ["ps4_joystick"], ["gui"], "ros"),
+    "/g1pilot/ps4/status": ("String", ["ps4_arm_teleop"], ["ps4_walk", "gui"], "ros"),
+    "/g1pilot/ps4/walk_status": ("String", ["ps4_walk"], ["gui"], "ros"),
     "/g1pilot/ps4/walk_cmd": ("Twist", ["ps4_walk"], ["loco_sim:sim", "loco_client:real"], "ros"),
     "/g1pilot/ps4/markers": ("MarkerArray", ["ps4_arm_teleop"], [], "ros"),
-    "/g1pilot/teleop_state": ("String", ["gui:demo", "ps4_arm_teleop", "ps4_walk"],
-                              ["gui:demo", "ps4_arm_teleop", "ps4_walk"], "ros"),
-    "/g1pilot/sequence/next": ("Bool", ["ps4_arm_teleop"], ["gui:demo"], "ros"),
-    "/g1pilot/sequence/state": ("String", ["gui:demo"], ["ps4_arm_teleop"], "ros"),
+    "/g1pilot/teleop_state": ("String", ["gui", "ps4_arm_teleop", "ps4_walk"],
+                              ["gui", "ps4_arm_teleop", "ps4_walk"], "ros"),
+    "/g1pilot/sequence/next": ("Bool", ["ps4_arm_teleop"], ["gui"], "ros"),
+    "/g1pilot/sequence/state": ("String", ["gui"], ["ps4_arm_teleop"], "ros"),
     # ── Modus / Notaus ──
     "/g1pilot/start": ("Bool", ["gui"],
                        ["arm_controller", "loco_sim:sim", "loco_client:real",
@@ -131,9 +126,9 @@ TOPICS = {
                                      ["arm_controller", "loco_client:real"], "ros"),
     "/g1pilot/loco_cmd_vel": ("Twist", ["gui", "joy_to_cmdvel:sim"],
                               ["loco_sim:sim", "loco_client:real"], "ros"),
-    "/g1pilot/loco_request": ("String", ["gui:demo"], ["loco_client:real"], "ros"),
+    "/g1pilot/loco_request": ("String", ["gui"], ["loco_client:real"], "ros"),
     "/g1pilot/onboard_state": ("String", ["loco_client:real"],
-                               ["ps4_walk", "ps4_arm_teleop", "gui:demo"], "ros"),
+                               ["ps4_walk", "ps4_arm_teleop", "gui"], "ros"),
     "/g1pilot/loco_state": ("String", ["loco_sim:sim"], ["ps4_walk", "gui"], "ros"),
     # ── Arme ──
     "/g1pilot/arms/enabled": ("Bool", ["gui", "ps4_arm_teleop", "loco_sim:sim",
@@ -141,30 +136,30 @@ TOPICS = {
     "/g1pilot/arms/home": ("Bool", ["gui", "ps4_arm_teleop", "loco_client:real"],
                            ["arm_controller"], "ros"),
     "/g1pilot/arms/state": ("Bool", ["arm_controller"], ["ps4_arm_teleop", "gui"], "ros"),
-    "/g1pilot/arms/walk_ready": ("Bool", ["arm_controller"], ["loco_sim:sim", "gui:demo"], "ros"),
+    "/g1pilot/arms/walk_ready": ("Bool", ["arm_controller"], ["loco_sim:sim", "gui"], "ros"),
     "/g1pilot/hand_goal/{left,right}": ("PoseStamped",
-                                        ["interactive_marker", "ps4_arm_teleop", "gui:demo"],
+                                        ["interactive_marker", "ps4_arm_teleop", "gui"],
                                         ["arm_controller"], "ros"),
     "/g1pilot/hand_goal_status": ("String", ["arm_controller"], ["interactive_marker"], "ros"),
     "/g1pilot/marker_follow_ee": ("Bool", ["gui"], ["interactive_marker"], "ros"),
     "/g1pilot/hand_cmd_pose/{left,right}": ("PoseStamped", ["arm_controller"],
-                                            ["ps4_arm_teleop", "gui:demo"], "ros"),
-    "/g1pilot/arm_command": ("String (JSON)", ["arm_api", "ps4_arm_teleop", "gui:demo"],
+                                            ["ps4_arm_teleop", "gui"], "ros"),
+    "/g1pilot/arm_command": ("String (JSON)", ["arm_api", "ps4_arm_teleop", "gui"],
                              ["arm_controller"], "ros"),
     "/g1pilot/arm_command/cancel": ("Bool", ["arm_api"], ["arm_controller"], "ros"),
     "/g1pilot/arm_command/status": ("String (JSON)", ["arm_controller"],
-                                    ["arm_api", "ps4_arm_teleop", "gui:demo"], "ros"),
+                                    ["arm_api", "ps4_arm_teleop", "gui"], "ros"),
     "/g1pilot/pose_store/save": ("String", ["gui", "arm_api"], ["arm_controller"], "ros"),
     "/g1pilot/pose_store/save/status": ("String (JSON)", ["arm_controller"],
-                                        ["arm_api", "gui:demo"], "ros"),
+                                        ["arm_api", "gui"], "ros"),
     "/g1pilot/pose_store/goto": ("String", ["gui"], ["arm_controller"], "ros"),
     "/g1pilot/pose_store/cancel": ("Bool", ["gui", "ps4_arm_teleop"],
-                                   ["arm_controller", "gui:demo"], "ros"),
+                                   ["arm_controller", "gui"], "ros"),
     "/g1pilot/waist/yaw_rate": ("Float32", ["ps4_arm_teleop"], ["arm_controller"], "ros"),
-    "/g1pilot/waist/center": ("Bool", ["ps4_arm_teleop", "gui:demo"], ["arm_controller"], "ros"),
+    "/g1pilot/waist/center": ("Bool", ["ps4_arm_teleop", "gui"], ["arm_controller"], "ros"),
     "/g1pilot/waist/state": ("String (JSON)", ["arm_controller"],
                              ["loco_sim:sim", "loco_client:real", "ps4_arm_teleop",
-                              "gui:demo"], "ros"),
+                              "gui"], "ros"),
     "/g1pilot/workspace/{left,right}": ("Marker", ["arm_controller"], [], "ros"),
     # ── Haende ──
     "/g1pilot/hand_action/{left,right}": ("String", ["gui", "ps4_arm_teleop",
@@ -173,17 +168,17 @@ TOPICS = {
                                          ["arm_controller"], "ros"),
     "/g1pilot/finger_goal/{left,right}": ("Float32MultiArray", ["arm_controller"],
                                           ["inspire"], "ros"),
-    "/g1pilot/hand_cmd": ("String (JSON)", ["gui:demo"], ["inspire"], "ros"),
-    "/g1pilot/hand_status": ("String (JSON)", ["inspire"], ["gui:demo"], "ros"),
+    "/g1pilot/hand_cmd": ("String (JSON)", ["gui"], ["inspire"], "ros"),
+    "/g1pilot/hand_status": ("String (JSON)", ["inspire"], ["gui"], "ros"),
     # ── Zustand ──
     "/joint_states": ("JointState", ["robot_state", "inspire"], ["arm_api", "rsp"], "ros"),
-    "/tf": ("TFMessage", ["robot_state", "rsp"], ["gui:demo"], "ros"),
+    "/tf": ("TFMessage", ["robot_state", "rsp"], ["gui"], "ros"),
     "/g1pilot/imu": ("Imu", ["robot_state"], [], "ros"),
     "/g1pilot/motor_state": ("MotorStateList", ["robot_state"], [], "ros"),
-    "/g1pilot/temperatures": ("String (JSON)", ["robot_state"], ["gui:demo"], "ros"),
+    "/g1pilot/temperatures": ("String (JSON)", ["robot_state"], ["gui"], "ros"),
     # ── Szene (Sim) ──
     "/scene_markers": ("MarkerArray", ["scene_bridge:sim"],
-                       ["arm_controller", "create_map:sim", "gui:demo"], "ros"),
+                       ["arm_controller", "create_map:sim", "gui"], "ros"),
     "/g1pilot/scene_reset": ("Bool", ["gui"], ["scene_bridge:sim"], "ros"),
     "/g1pilot/push": ("Bool", ["gui"], ["loco_sim:sim"], "ros"),
     "/g1pilot/push_charge": ("Float32", ["gui"], ["loco_sim:sim"], "ros"),
@@ -191,20 +186,19 @@ TOPICS = {
     "/g1pilot/catch_falls": ("Bool", ["gui"], [], "ros"),
     # ── Navigation ──
     "/map": ("OccupancyGrid", ["create_map:sim"], ["dijkstra"], "ros"),
-    "/g1pilot/goal": ("PoseStamped", ["gui:demo"], ["dijkstra", "nav2point"], "ros"),
+    "/g1pilot/goal": ("PoseStamped", ["gui"], ["dijkstra", "nav2point"], "ros"),
     "/g1pilot/path": ("Path", ["dijkstra"], ["nav2point", "joy_mux"], "ros"),
-    "/lidar_odometry/pose": ("Odometry", ["mola:real"], ["mola_fixed:real"], "ros"),
-    "/lidar_odometry/pose_fixed": ("Odometry", ["mola_fixed:real", "sim_localization:sim"],
+    "/lidar_odometry/pose_fixed": ("Odometry", ["sim_localization:sim"],
                                    ["nav2point", "dijkstra", "joy_mux"], "ros"),
     "/g1pilot/waypoint_marker": ("Marker", ["nav2point"], [], "ros"),
     "/g1pilot/goal_marker": ("Marker", ["nav2point"], [], "ros"),
-    "/g1pilot/nav_status": ("String", ["nav2point"], ["gui:demo"], "ros"),
+    "/g1pilot/nav_status": ("String", ["nav2point"], ["gui"], "ros"),
 }
 
 # Direkte Verbindungen ohne Topic: (von, nach, Beschriftung, Scope)
 LINKS = [
     ("inspire", "hands_hw", "Modbus TCP", "real"),
-    ("phone", "gui", "Bluetooth LE", "demo"),
+    ("phone", "gui", "Bluetooth LE", "both"),
     ("http", "arm_api", "HTTP JSON", "both"),
 ]
 
@@ -311,7 +305,7 @@ VIEWS = {
     "navigation": ("Navigation", [
         "/g1pilot/joy_manual", "/g1pilot/auto_enable", "/g1pilot/auto_joy",
         "/g1pilot/joy", "/g1pilot/loco_cmd_vel", "/map", "/g1pilot/goal",
-        "/g1pilot/path", "/lidar_odometry/pose", "/lidar_odometry/pose_fixed",
+        "/g1pilot/path", "/lidar_odometry/pose_fixed",
         "/g1pilot/waypoint_marker", "/g1pilot/goal_marker", "/g1pilot/nav_status",
         "/scene_markers", "/g1pilot/scene_reset", "rt/sportmodestate"]),
     "arme": ("Arme, Huefte und Haende", [
@@ -340,9 +334,9 @@ VIEWS = {
 # (rechts neben dem Publisher oder links vor dem Subscriber, je nachdem, wo
 # weniger Linien rueckwaerts laufen).
 TIER = {
-    "phone": 0, "http": 0, "joystick": 0, "ps4_joystick": 0, "mola": 0,
+    "phone": 0, "http": 0, "joystick": 0, "ps4_joystick": 0,
     "gui": 1, "ps4_arm_teleop": 1, "arm_api": 1, "scene_bridge": 1,
-    "robot_state": 1, "sim_localization": 1, "mola_fixed": 1,
+    "robot_state": 1, "sim_localization": 1,
     "ps4_walk": 2, "interactive_marker": 2, "create_map": 2,
     "dijkstra": 3, "nav2point": 4, "joy_mux": 5, "joy_to_cmdvel": 6,
     "arm_controller": 6, "loco_sim": 7, "loco_client": 7,
@@ -792,7 +786,6 @@ def _svg_legend(x, y):
         ("line", "x", "", "Publisher → Topic → Subscriber (Sim und Real)"),
         ("line", "sim", "", "nur Simulation (Node gestrichelt: läuft nur in Sim)"),
         ("line", "real", "", "nur echter Roboter (Node gestrichelt: läuft nur real)"),
-        ("line", "demo", "", "nur Demo-GUI (nicht Streamdeck-GUI)"),
         ("both", "x", "", "Node publiziert und abonniert dasselbe Topic"),
     ]
     w, rh = 360, 22
@@ -931,7 +924,6 @@ def _dio_legend(x, y):
         ("line", "x", "", "Publisher → Topic → Subscriber (Sim und Real)"),
         ("line", "sim", "", "nur Simulation (Node gestrichelt: läuft nur in Sim)"),
         ("line", "real", "", "nur echter Roboter (Node gestrichelt: läuft nur real)"),
-        ("line", "demo", "", "nur Demo-GUI (nicht Streamdeck-GUI)"),
         ("both", "x", "", "Node publiziert und abonniert dasselbe Topic"),
     ]
     rh, w = 22, 360

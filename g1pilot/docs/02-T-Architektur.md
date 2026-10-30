@@ -20,7 +20,7 @@ Freiheitsgrade (Beine, Taille, zwei 7-DOF-Arme).
 │   │   ├── state/                Roboterzustand -> /joint_states, /tf, IMU, Temperaturen
 │   │   ├── manipulation/         IK, Arm-Regelung, Planer, Positionsspeicher, Arm-API, Hüfte, Hände
 │   │   ├── navigation/           Locomotion (Sim), Loco-Client (Real), Bodenkontakt, autonome Navigation
-│   │   ├── teleoperation/        Demo-GUI, Streamdeck, PS4/Xbox-Controller, Handy (phone/), Abläufe
+│   │   ├── teleoperation/        Demo-GUI, PS4/Xbox-Controller, Handy (phone/), Abläufe
 │   │   ├── tools/                Diagnose- und Sim-Werkzeuge (dds_check, sim_*), Beispiel-Abläufe
 │   │   └── utils/                IK-Solver, Joint-Tabellen, Temperaturen, Fenster-Stil, Hilfsfunktionen
 │   ├── launch/                   ROS-2-Launchdateien (Sim-/Real-Bringup + Bausteine)
@@ -59,8 +59,7 @@ Zwei Docker-Container, beide mit `network_mode: host`:
 ```
 
 Auf dem echten Roboter entfällt der `mujoco-sim`-Container; stattdessen
-spricht der Container `g1pilot-real` (bzw. `g1pilot-real-full` mit
-LiDAR/Navigation) über das physische Netzwerkinterface direkt mit dem
+spricht der Container `g1pilot-real` über das physische Netzwerkinterface direkt mit dem
 G1-Onboard-Rechner. Die Inspire-Hände hängen real per Modbus TCP am selben
 Netz (`192.168.123.210`/`.211`).
 
@@ -112,8 +111,8 @@ def resolve_dds(interface):
 | DDS-Interface | `lo` (Loopback) | physisches Ethernet-NIC |
 | Locomotion | `loco_sim` (RL-Policy + PD-Balancer) | `loco_client` (Unitree-Onboard-High-Level) |
 | Start | `make sim` / `./start.sh` → Simulation | `make real ROBOT_INTERFACE=<nic>` / `./start.sh` → Echter Roboter |
-| Compose-Profil | `sim` | `real` / `real-full` |
-| Launch-Datei | `bringup_sim.launch.py` | `bringup_real.launch.py` / `bringup_launcher.launch.py` |
+| Compose-Profil | `sim` | `real` |
+| Launch-Datei | `bringup_sim.launch.py` | `bringup_real.launch.py` |
 
 Jeder Node, der die DDS-Verbindung öffnet, ruft dafür
 `g1pilot.utils.common.init_dds(interface, logger)` auf — das ist die
@@ -156,13 +155,11 @@ Auf dem echten Roboter übernimmt dieselbe Logik die G1-Firmware.
 | `inspire_hand` | `manipulation/inspire_ftp/bridge.py` | Inspire-FTP-Hand-Bridge (GUIs + DDS/Modbus) |
 | `loco_sim` | `navigation/loco_sim.py` | Sim-Stellvertreter für Stehen/Laufen (nur Sim) |
 | `loco_client` | `navigation/loco_client.py` | Unitree-Onboard-Locomotion ansprechen (nur Real) |
-| `dijkstra_planner`, `nav2point`, `create_map` | `navigation/*.py` | autonome Punkt-zu-Punkt-Navigation |
+| `dijkstra_planner`, `nav2point`, `create_map` | `navigation/*.py` | autonome Punkt-zu-Punkt-Navigation (nur Sim) |
 | `scene_bridge` | `navigation/scene_bridge.py` | Umgebungsobjekte (Sim) → `/scene_markers` |
-| `sim_localization` | `navigation/sim_localization.py` | Sim-Ersatz für MOLA-Lokalisierung |
+| `sim_localization` | `navigation/sim_localization.py` | Sim: Pose aus der MuJoCo-Ground-Truth |
 | `joy_to_cmdvel` | `navigation/joy_to_cmdvel.py` | Sim: `/g1pilot/joy` → `/g1pilot/loco_cmd_vel` (Navigation) |
-| `mola_fixed` | `navigation/fix_mola_odometry.py` | Real: Orientierungs-Fix der MOLA-Odometrie |
 | `demo_gui` | `teleoperation/demo_gui.py` | Demo-GUI (Standard-Oberfläche, inkl. Handy-Gateway) |
-| `ui_interface` | `teleoperation/ui_interface.py` | Streamdeck-GUI (alle Einzelfunktionen) |
 | `ps4_joystick`, `ps4_arm_teleop`, `ps4_walk` | `teleoperation/ps4_*.py` | PS4-/Xbox-Controller: Eingabe, Arme/Hände/Hüfte, Gehen mit L2 |
 | `joystick`, `joy_mux` | `teleoperation/*.py` | alter Joystick-Modus, Auto/Manuell-Mux |
 | `dds_check`, `sim_dds_check` | `tools/sim_dds_check.py` | Verbindungstest zur Unitree-DDS (real bzw. Sim) |
@@ -180,7 +177,7 @@ Werkzeuge außerhalb des Node-Graphen: [61-A-Werkzeuge.md](61-A-Werkzeuge.md).
 - [10-T-Demo-GUI.md](10-T-Demo-GUI.md) — Demo-GUI, Topics
 - [11-T-Controller.md](11-T-Controller.md) — PS4/Xbox-Controller
 - [12-T-Handy.md](12-T-Handy.md) — Handy-Gateway (Bluetooth LE)
-- [13-T-Streamdeck.md](13-T-Streamdeck.md) — Streamdeck, alter Joystick, Joy-Mux
+- [13-T-Alter-Joystick.md](13-T-Alter-Joystick.md) — alter Joystick, Joy-Mux
 - [20-T-Arm-Manipulation.md](20-T-Arm-Manipulation.md) — IK, Planer, Sicherheitsgates
 - [21-T-Arm-API.md](21-T-Arm-API.md) — HTTP-Brücke
 - [22-T-Inspire-Haende.md](22-T-Inspire-Haende.md) — Hand-Bridge

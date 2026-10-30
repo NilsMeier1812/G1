@@ -15,7 +15,7 @@ Die Diagramme sind aus dem Code ermittelt (`create_publisher`,
   Kategorie: Teleoperation (gelb), Bedien-GUI (lila), Navigation und
   Fortbewegung (grün), Manipulation (orange), Zustand (blau). Graue
   3D-Kästen sind Dinge außerhalb des g1pilot-Stacks (MuJoCo, der G1 selbst,
-  Inspire-Hände, MOLA, Handy, HTTP-Clients).
+  Inspire-Hände, Handy, HTTP-Clients).
 - **Weiße Kästen** sind ROS-2-Topics mit Name und Nachrichtentyp, **hellgraue**
   sind Unitree-DDS-Kanäle (`rt/...`, über `unitree_sdk2py`, kein ROS).
 - Pfeile laufen Publisher → Topic → Subscriber. Ein Doppelpfeil heißt: der
@@ -23,10 +23,6 @@ Die Diagramme sind aus dem Code ermittelt (`create_publisher`,
 - **Sim und Real:** blaue Pfeile gelten nur in der Simulation, rote nur am
   echten Roboter, schwarze in beiden. Nodes, die nur in einer Welt laufen,
   sind gestrichelt umrandet und mit NUR SIM bzw. NUR REAL markiert.
-- **Lila gestrichelt** heißt: nur die Demo-GUI (`G1_GUI=demo`) nutzt das
-  Topic, die Streamdeck-GUI nicht. Beide GUIs stehen als ein Kasten
-  `ui_interface | demo_gui`, weil immer nur eine läuft und die Demo-GUI
-  alle Topics der Streamdeck-GUI erbt (`DemoNode(StreamDeck)`).
 - `{left,right}` steht für zwei gleich aufgebaute Topics je Seite.
   Topics ohne Subscriber sind Anzeigen für RViz.
 
@@ -60,8 +56,8 @@ Arm-Befehle an den Roboter (`rt/arm_sdk`).
 ### Navigation
 
 Joy-Mux (manuell/automatisch), Planer, Pfadfolger, Karte und Lokalisierung.
-In der Sim ersetzen `sim_localization` und `create_map` die LiDAR-Kette
-MOLA → `mola_fixed` des echten Roboters.
+Läuft nur in der Simulation (`G1_ENABLE_NAV=1`); `sim_localization` liefert
+die Pose aus der MuJoCo-Ground-Truth.
 
 ![Navigation](images/ros_graph_navigation.svg)
 
@@ -82,7 +78,7 @@ Alle Topics in einem Bild, nur zum Nachschlagen per Suche im Browser:
 | Node | Sim | Real | Bedingung |
 |---|---|---|---|
 | `robot_state`, `arm_controller`, `interactive_marker`, `arm_api`, `joy_mux` | ja | ja | immer |
-| `ui_interface` bzw. `demo_gui` | ja | ja | `G1_GUI=streamdeck` / `demo` |
+| `demo_gui` | ja | ja | immer |
 | `joystick` | ja | ja | ohne `G1_PS4_ARMS` |
 | `ps4_joystick`, `ps4_arm_teleop` | ja | ja | `G1_PS4_ARMS=1` |
 | `ps4_walk` | ja | ja | `G1_PS4_ARMS=1` und `G1_PS4_WALK` (Default an) |
@@ -90,14 +86,15 @@ Alle Topics in einem Bild, nur zum Nachschlagen per Suche im Browser:
 | `loco_sim`, `scene_bridge` | ja | — | immer in Sim |
 | `sim_localization`, `create_map`, `joy_to_cmdvel` | ja | — | `G1_ENABLE_NAV=1` |
 | `loco_client` | — | ja | immer am echten Roboter |
-| `mola_fixed` (+ Livox, MOLA) | — | ja | `G1_ENABLE_LIDAR=1` |
-| `dijkstra_planner`, `nav2point` | ja | ja | Sim `G1_ENABLE_NAV=1`, Real `G1_ENABLE_LIDAR=1` |
+| `dijkstra_planner`, `nav2point` | ja | — | `G1_ENABLE_NAV=1` |
 
-Zwei Auffälligkeiten aus dem Code: Am echten Roboter startet `bringup_real`
-keinen Node, der `/map` publiziert (`create_map` läuft nur in der Sim), der
-`dijkstra_planner` hat dort also keine Karte aus dem g1pilot-Stack (siehe
-[31-T-Navigation.md](31-T-Navigation.md)). `/g1pilot/catch_falls` publiziert
-die Streamdeck-GUI, im Stack liest es derzeit kein Node.
+Auffälligkeit aus dem Code: `/g1pilot/catch_falls` hat einen Publisher in
+der Demo-GUI-Basis (`gui_base.GuiNode`, ohne Knopf), im Stack liest es derzeit
+kein Node.
+
+Hinweis: `images/ros_graph.drawio` wurde von Hand nachbearbeitet und zeigt
+noch die entfernten Nodes `ui_interface` und MOLA/`mola_fixed`; die SVGs oben
+sind aktuell.
 
 ## Von Hand bearbeiten (draw.io)
 

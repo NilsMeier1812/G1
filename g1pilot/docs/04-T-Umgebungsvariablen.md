@@ -21,7 +21,6 @@ G1_ESTOP_DAMP_LEGS=1 G1_MAX_VX=0.3 make real ROBOT_INTERFACE=enp3s0
 | `G1_MODE` | — | `sim` oder `real` für `start.sh --yes` | [03-A](03-A-Startmenue.md) |
 | `G1_REAL_CONFIRM` | `0` | `1` = Sicherheitshinweise bestätigt; ohne startet REAL mit `--yes` nicht | [03-A](03-A-Startmenue.md) |
 | `G1_NO_GUI` | `0` | `1` = Text-Menü statt Startmenü | [03-A](03-A-Startmenue.md) |
-| `G1_GUI` | `streamdeck` (Startmenü: `demo`) | Bedienoberfläche `demo` oder `streamdeck` | [10-A](10-A-Demo-GUI.md), [13-A](13-A-Streamdeck.md) |
 | `G1_GUI_FULLSCREEN` | `0` | Demo-GUI im Vollbild starten | [10-A](10-A-Demo-GUI.md) |
 | `G1_SIM_MODE` | `false` | `true` = Sim-Pfad (setzen `start.sh`/`make sim`) | [02-T](02-T-Architektur.md) |
 | `ROBOT_INTERFACE` | `eth0` | Netzwerkkarte zum echten G1 | [50-A](50-A-Echter-Roboter.md) |
@@ -75,8 +74,7 @@ G1_ESTOP_DAMP_LEGS=1 G1_MAX_VX=0.3 make real ROBOT_INTERFACE=enp3s0
 | `G1_LOCO_SERVICE` | `sport` | RPC-Dienst (`loco` bis ai_sport 8.1) | [50-A](50-A-Echter-Roboter.md) |
 | `G1_GROUND_CHECK` | `knee_load` | Bodenkontakt vor Walk: `knee_load`, `fsm_mode`, `none` | [30-T](30-T-Stehen-und-Gehen.md) |
 | `G1_KNEE_LOAD_MIN_NM` | `10.0` | Mindest-Kniemoment für »steht am Boden« | [30-T](30-T-Stehen-und-Gehen.md) |
-| `G1_ENABLE_LIDAR` | `0` | Livox + MOLA (nur `real-full`, experimentell) | [31-A](31-A-Navigation.md) |
-| `G1_ENABLE_NAV` | `0` | Navigation mitstarten | [31-A](31-A-Navigation.md) |
+| `G1_ENABLE_NAV` | `0` | Navigation mitstarten (nur Sim) | [31-A](31-A-Navigation.md) |
 
 ## Notaus
 
@@ -96,7 +94,7 @@ G1_ESTOP_DAMP_LEGS=1 G1_MAX_VX=0.3 make real ROBOT_INTERFACE=enp3s0
 | `G1_PS4_SPEED`, `G1_PS4_MAX_SPEED` | `Langsam`, `Normal` | Arm-Tempo beim Start, höchste Stufe | [11-A](11-A-Controller.md) |
 | `G1_PS4_WALK` | `1` | Gehen mit L2 | [11-A](11-A-Controller.md) |
 | `G1_PS4_WALK_SPEED`, `G1_PS4_WALK_MAX_SPEED` | `Langsam`, `Schnell` | Geh-Tempo beim Start, höchste Stufe | [11-A](11-A-Controller.md) |
-| `JOYSTICK_NAME` | `Wireless Controller` | Gerätename im alten Joystick-Modus | [13-A](13-A-Streamdeck.md) |
+| `JOYSTICK_NAME` | `Wireless Controller` | Gerätename im alten Joystick-Modus | [13-A](13-A-Alter-Joystick.md) |
 
 ## Handy
 

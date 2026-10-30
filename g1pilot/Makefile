@@ -1,15 +1,13 @@
 # ═══════════════════════════════════════════════════════
 # G1Pilot Makefile
 #   make build-sim       → Sim-Images bauen (~8 min)
-#   make build-real      → Real-Image bauen (schlank, ~10 min, kein Livox/MOLA)
-#   make build-real-full → Real-Image MIT Livox/MOLA bauen (~45 min)
+#   make build-real      → Real-Image bauen (~10 min)
 #   make sim             → Simulation starten
-#   make real            → Echter Roboter starten (schlank)
-#   make real-full       → Echter Roboter mit Livox/MOLA/Navigation starten
+#   make real            → Echter Roboter starten
 #   make stop            → Alles stoppen
 #   make phone-web       → Handy-Seite per USB aufs Handy (adb reverse, docs/12-A-Handy.md)
 #
-#   Duenner Wrapper um `docker compose --profile <sim|real|real-full>` auf
+#   Duenner Wrapper um `docker compose --profile <sim|real>` auf
 #   der EINEN docker-compose.yml (siehe deren Kopfkommentar) -- es gibt
 #   bewusst keine separaten docker-compose.*.yaml-Dateien mehr. Einzige
 #   Ausnahme: docker-compose.gpu.yml / docker-compose.nvidia.yml (nur GPU-
@@ -30,9 +28,9 @@ export COMPOSE_FILE
 G1_NV_PRIME_OFFLOAD ?= $(if $(HAS_NVIDIA),$(if $(shell nvidia-smi --query-gpu=display_active --format=csv,noheader 2>/dev/null | grep Enabled),0,1),0)
 export G1_NV_PRIME_OFFLOAD
 
-.PHONY: sim sim-bg real real-full stop \
-        build-sim build-real build-real-full \
-        build-mujoco build-g1pilot-sim build-g1pilot-real build-g1pilot-real-full \
+.PHONY: sim sim-bg real stop \
+        build-sim build-real \
+        build-mujoco build-g1pilot-sim build-g1pilot-real \
         logs status clean shell-sim shell-mujoco shell-real gpu-check phone-web
 
 # ─── SIMULATION ─────────────────────────────────────────────
@@ -57,31 +55,18 @@ real: build-g1pilot-real
 	bash docker/real_shutdown_watcher.sh $$$$ real & ROBOT_INTERFACE=$(ROBOT_INTERFACE) DISPLAY=$(DISPLAY) \
 	  docker compose --profile real up
 
-real-full: build-g1pilot-real-full
-	@echo "🔴 Starte G1Pilot ECHTER ROBOTER (voll: + Livox/MOLA/Navigation)..."
-	@xhost +local:root 2>/dev/null || true
-	@# Watcher fuer »Real beenden« der Demo-GUI (endet mit diesem Shell-Prozess).
-	bash docker/real_shutdown_watcher.sh $$$$ real-full & ROBOT_INTERFACE=$(ROBOT_INTERFACE) DISPLAY=$(DISPLAY) \
-	  docker compose --profile real-full up
-
 # ─── BAUEN ──────────────────────────────────────────────────
 build-sim: build-g1pilot-sim build-mujoco
 
 build-real: build-g1pilot-real
 
-build-real-full: build-g1pilot-real-full
-
 build-g1pilot-sim:
-	@echo "📦 Baue G1Pilot SIM Image (kein Livox/MOLA, ~8 min)..."
+	@echo "📦 Baue G1Pilot SIM Image (~8 min)..."
 	docker build -f docker/Dockerfile.sim -t g1pilot-sim:v1.1.0 .
 
 build-g1pilot-real:
 	@echo "📦 Baue G1Pilot REAL Image (schlank, ~10 min)..."
 	docker build -f docker/Dockerfile.real -t g1pilot-real:v1.2.0 .
-
-build-g1pilot-real-full:
-	@echo "📦 Baue G1Pilot REAL-FULL Image (+ Livox/MOLA, ~45 min)..."
-	docker build -f docker/Dockerfile -t g1pilot:v1.1.0 .
 
 build-mujoco:
 	@echo "📦 Baue MuJoCo Simulator Image..."
@@ -91,7 +76,6 @@ build-mujoco:
 stop:
 	docker compose --profile sim down --remove-orphans 2>/dev/null || true
 	docker compose --profile real down --remove-orphans 2>/dev/null || true
-	docker compose --profile real-full down --remove-orphans 2>/dev/null || true
 
 # ─── HILFS-COMMANDS ─────────────────────────────────────────
 # Handy-Seite einmalig per USB-Kabel aufs Android-Handy bringen: Webserver NUR
@@ -113,12 +97,12 @@ logs:
 	docker compose --profile sim logs -f
 
 status:
-	docker compose --profile sim --profile real --profile real-full ps
+	docker compose --profile sim --profile real ps
 
 clean:
 	docker compose --profile sim down --volumes --remove-orphans 2>/dev/null || true
 	docker compose --profile real down --volumes --remove-orphans 2>/dev/null || true
-	docker compose --profile real-full down --volumes --remove-orphans 2>/dev/null || true
+	@# g1pilot:v1.1.0 = altes Voll-Image (Livox/MOLA), nur noch zum Aufraeumen.
 	docker rmi g1pilot-sim:v1.1.0 g1pilot-mujoco:v1.0 g1pilot-real:v1.2.0 g1pilot:v1.1.0 2>/dev/null || true
 
 # Shells ueber `docker compose exec` statt Name-Filter -- Compose ohne

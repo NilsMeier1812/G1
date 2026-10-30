@@ -15,7 +15,7 @@ abfahren wollen. Technik (Dateiformat, Runner, Topics):
 Jeder Schritt wird **geplant** angefahren (Bahn um Tisch, Körper und
 Hindernisse herum, siehe [20-A-Arm-Manipulation.md](20-A-Arm-Manipulation.md)).
 Alles liegt in einer Datei (`data/arm_poses.json`), die arm_controller,
-Demo-GUI, Streamdeck und Handy gemeinsam nutzen.
+Demo-GUI und Handy gemeinsam nutzen.
 
 ## Pose speichern
 
@@ -26,7 +26,6 @@ Messung.
 |---|---|
 | Demo-GUI | GREIFEN → Erweitert ▸ → **Pose speichern …** (Kategorie `Demo` vorausgewählt, `G1_DEMO_CATEGORY`), oder im Fenster **Posen & Abläufe** „Aktuelle Stellung speichern“ |
 | Handy | **Pose speichern …** (Name, Kategorie, Komponenten, optional *An Ablauf anhängen*), siehe [12-A-Handy.md](12-A-Handy.md#posen) |
-| Streamdeck | **POSE SPEICHERN** |
 | Kommandozeile | `ros2 topic pub --once /g1pilot/pose_store/save …`, siehe [20-A-Arm-Manipulation.md](20-A-Arm-Manipulation.md) |
 | Arm-API | `POST /arm/save`, siehe [21-A-Arm-API.md](21-A-Arm-API.md) |
 
@@ -38,12 +37,11 @@ Dialog die Pose an einen gewählten Ablauf an.
 
 Demo-GUI: GREIFEN → Erweitert ▸ → **Pose anfahren …** oder im Fenster
 Posen & Abläufe *Anfahren*. Handy: **Pose anfahren …** (mit Schieber).
-Streamdeck: **POSE ANFAHREN**. Die feste Pose **Sichere Pose** (Arme hoch,
+Die feste Pose **Sichere Pose** (Arme hoch,
 Ellbogen hinten) hat in Demo-GUI und Handy einen eigenen Knopf; ihr Name ist
 `Sichere_Pose` (`G1_SAFE_POSE`).
 
-Abbrechen: **Bewegung stoppen** (Demo-GUI, Handy), **POSE ABBRECHEN**
-(Streamdeck), **Kreuz** am Controller. Ein Marker-Griff oder Stick-Ausschlag
+Abbrechen: **Bewegung stoppen** (Demo-GUI, Handy), **Kreuz** am Controller. Ein Marker-Griff oder Stick-Ausschlag
 bricht ebenfalls ab (manueller Vorrang).
 
 ## Abläufe zusammenstellen (Demo-GUI)
@@ -104,7 +102,7 @@ auch während eines Ablaufs ab dem nächsten Schritt; so hält man einen Ablauf
 **Abbruch** — danach geht es nie von selbst weiter, auch nicht nach dem
 Quittieren:
 
-- NOT-HALT (GUI, Controller-PS, Voll-Notaus, Handy, Streamdeck),
+- NOT-HALT (GUI, Controller-PS, Voll-Notaus, Handy),
 - Stopp (Bewegung stoppen, Controller-Kreuz, POSE ABBRECHEN),
 - Moduswechsel, „Hand bewegen“ während einer Fahrt,
 - Fahrt endet mit `failed` / `rejected` / `cancelled`,

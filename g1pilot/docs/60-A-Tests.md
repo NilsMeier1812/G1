@@ -76,7 +76,7 @@ docker exec -it g1pilot-g1pilot-sim-1 bash -c \
 | `test_ps4_arm_sim.py` | Controller: Richtung je Stick, Hand-Auswahl, Drehen, Spiegeln, Hände, Abriss, NOT-HALT (simuliertes Joy) | `G1_PS4_ARMS=1` |
 | `test_waist_yaw_sim.py` | Hüftdrehung: R2 + Stick, Grenze, R2 + R3 zur Mitte | `G1_PS4_ARMS=1` |
 | `test_sim_startup_grasp.py` | GREIFEN direkt nach dem Auto-Start bedienbar | frisch gestarteter Stack |
-| `run_startup_grasp_loop.sh [N] [streamdeck\|demo]` | startet den Stack N-mal und ruft jedes Mal `test_sim_startup_grasp.py` | Images gebaut, ggf. `Xvfb` |
+| `run_startup_grasp_loop.sh [N]` | startet den Stack N-mal und ruft jedes Mal `test_sim_startup_grasp.py` | Images gebaut, ggf. `Xvfb` |
 | `jog_axis_probe_sim.py [--mirror] [--reference …]` | Messung: Nebenachsen und Kippen beim Jog | `G1_PS4_ARMS=1` |
 
 ## Headless-MuJoCo (ohne ROS)

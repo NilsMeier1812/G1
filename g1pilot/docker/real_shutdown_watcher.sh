@@ -5,7 +5,7 @@
 #  Die Demo-GUI hat die Arme bereits an den Onboard-Regler zurueckgegeben
 #  (ENABLE aus -> Rueckfahrt -> Gewichtsrampe) und legt dann
 #  .real_shutdown_request im bind-gemounteten Repo an. Dieser Watcher laeuft
-#  auf dem Host (gestartet von start.sh / make real / make real-full) und
+#  auf dem Host (gestartet von start.sh / make real) und
 #  stoppt den Real-Stack SANFT: docker compose stop (SIGTERM, Gnadenfrist aus
 #  docker-compose.yml) -- NICHT kill wie bei der Sim. So gibt ein noch aktiver
 #  arm_controller die Arme selbst langsam ab (shutdown_release). Danach down.
@@ -21,7 +21,7 @@ parent="${1:-$PPID}"
 profile="${2:-real}"
 
 case "$profile" in
-  real|real-full) ;;
+  real) ;;
   *) echo "[real] real_shutdown_watcher: unbekanntes Profil '$profile'" >&2; exit 1 ;;
 esac
 

@@ -32,7 +32,7 @@ Die Seite HÄNDE der Demo-GUI (`teleoperation/hand_panel.py`) spricht die
 Bridge nur über ROS an: `/g1pilot/hand_cmd` (JSON, dieselben Befehle wie
 der Controller-WebSocket `:8766`) und `/g1pilot/hand_status` (JSON, ~10 Hz,
 Ist-Öffnung, Kraft, Taktil). Kommt kein Status, zeigt die Seite einen
-Hinweis. Ganze Hand auf/zu läuft wie beim Streamdeck über
+Hinweis. Ganze Hand auf/zu läuft über
 `/g1pilot/hand_action/{left,right}`.
 
 ## Die drei Backend-Stufen
@@ -80,7 +80,7 @@ zusätzlich an das echte URDF-Limit geklemmt (`load_limits_from_urdf`).
   muss dafür mit `publish_hand_joints:=false` laufen, sonst überschreiben
   sich beide Quellen gegenseitig (siehe
   [02-T-Architektur.md](02-T-Architektur.md)).
-- **Streamdeck-Anbindung** (`/g1pilot/hand_action/{left,right}`, String
+- **Hand-Aktionen** (`/g1pilot/hand_action/{left,right}`, String
   `open`/`close`): `_on_hand_action` → `_apply_open_close` — dieselbe
   Funktion, die auch die Controller-GUI für `open_hand`/`close_hand`
   aufruft, damit beide Wege identisch wirken. Beim Schließen bleibt die

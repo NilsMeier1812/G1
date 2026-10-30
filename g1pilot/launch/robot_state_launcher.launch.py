@@ -19,7 +19,6 @@ def generate_launch_description():
     interface = LaunchConfiguration("interface")
     sim_rate_hz = LaunchConfiguration("sim_rate_hz")
     use_rviz = LaunchConfiguration("use_rviz")
-    enable_mola = LaunchConfiguration("enable_mola")
     rviz_config = LaunchConfiguration("rviz_config")
 
     urdf = os.path.join(
@@ -49,12 +48,6 @@ def generate_launch_description():
                                           "Regelschleife einbrechen)."),
         DeclareLaunchArgument("arm_controlled", default_value="both",
                                 description="Which arm to control: 'left', 'right', or 'both'"),
-        # MOLA-Odometrie-Fix-Node. Default an (Sim/Full-Stack). Im schlanken
-        # Real-Modus OHNE LiDAR abschaltbar (bringup_real setzt false): der Node
-        # wartet sonst nur idle auf /lidar_odometry/pose, das nie kommt.
-        DeclareLaunchArgument("enable_mola", default_value="true",
-                              description="mola_fixed-Node starten (MOLA-Odometrie-TF). "
-                                          "Ohne LiDAR (schlanker Real-Modus) auf false."),
         # RViz-Config-Dateiname (in share/g1pilot/config). Nav nutzt nav.rviz
         # (Fixed Frame 'map' + Ziel-Werkzeug auf /g1pilot/goal); sonst 29dof.rviz.
         DeclareLaunchArgument("rviz_config", default_value="29dof.rviz",
@@ -72,23 +65,6 @@ def generate_launch_description():
                 'publish_hand_joints': ParameterValue(publish_hand_joints, value_type=bool),
             }],
             output='screen'
-        ),
-
-        Node(
-            package='g1pilot',
-            executable='mola_fixed',
-            name='mola_fixed',
-            condition=IfCondition(enable_mola),
-            parameters=[{
-            }],
-            output='screen'
-        ),
-
-        Node(
-            package='tf2_ros',
-            executable='static_transform_publisher',
-            name='mid360_to_livox_tf',
-            arguments=['0','0','0','0','0','3.14159265','mid360_link','livox_frame']
         ),
 
         Node(

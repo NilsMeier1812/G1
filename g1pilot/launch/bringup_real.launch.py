@@ -4,8 +4,8 @@ Schlankes Bringup fuer den ECHTEN G1 (erster Hardware-Betrieb):
 Arm-Manipulation (IK/rviz-Marker) + Inspire-FTP-Haende (Modbus TCP) +
 Unitree-eigener Loco-Controller (Balance/Gehen via loco_client).
 
-Unterschied zu bringup_launcher.launch.py (Alt/Voll-Stack):
-  - KEIN Livox/MOLA/Nav by default (per G1_ENABLE_LIDAR=1 zuschaltbar)
+Aufbau:
+  - KEIN LiDAR/Navigation (Livox/MOLA wurde 2026-10 verworfen und entfernt)
   - loco_client direkt als Node (mit Walk-Safety-Parametern) statt ueber
     navigation_launcher (der auch nav2point/dijkstra hochziehen wuerde)
   - komplett env-getrieben (vom start.sh-Real-Zweig gesetzt), keine
@@ -39,7 +39,6 @@ def generate_launch_description():
     right_host = os.environ.get('G1_HAND_RIGHT_HOST', '192.168.123.211').strip()
     hand_port = int(os.environ.get('G1_HAND_PORT', '6000'))
     joystick_name = os.environ.get('JOYSTICK_NAME', 'Wireless Controller').strip()
-    enable_lidar = _env_bool('G1_ENABLE_LIDAR')
     # PS4-Controller fuer den OBERKOERPER (Arme + Haende) und Gehen mit L2 als
     # Deadman (ps4_walk -> /g1pilot/ps4/walk_cmd -> loco_client). Der alte
     # joystick-Node startet dann nicht. Real vorsichtiger als Sim:
@@ -78,15 +77,11 @@ def generate_launch_description():
                 # RViz default AN: der rviz-Marker ist auf real das Interface
                 # fuer die Arm-Manipulation.
                 'use_rviz':             use_rviz,
-                # Ohne LiDAR keine MOLA-Odometrie -> mola_fixed wuerde nur idle
-                # auf /lidar_odometry/pose warten. Mit LiDAR (G1_ENABLE_LIDAR=1)
-                # wieder an.
-                'enable_mola':          'true' if enable_lidar else 'false',
             }.items()
         ),
 
-        # Statische TF: odom_unitree -> base_link (Identity; ohne LiDAR-Odometrie
-        # gibt es keine bewegte odom-Quelle -- RViz braucht den Frame trotzdem).
+        # Statische TF: odom_unitree -> base_link (Identity; real gibt es keine
+        # bewegte odom-Quelle -- RViz braucht den Frame trotzdem).
         Node(
             package='tf2_ros',
             executable='static_transform_publisher',
@@ -138,7 +133,7 @@ def generate_launch_description():
             }.items()
         ),
 
-        # ── 3. Teleoperation: Streamdeck-UI + PS4-Controller (evdev) ────────
+        # ── 3. Teleoperation: Demo-GUI + PS4-Controller (evdev) ────────
         #    G1_PS4_ARMS=0: alter joystick-Node -> joy_mux -> loco_client (Gehen
         #    mit Deadman). G1_PS4_ARMS=1: ps4_joystick + ps4_arm_teleop (Arme +
         #    Haende) + ps4_walk (L2 halten + Sticks = Gehen, G1_PS4_WALK=0 aus).
@@ -213,23 +208,5 @@ def generate_launch_description():
                 'modbus_port':     hand_port,
             }]
         ))
-
-    # ── 6. Optional: LiDAR (+ Navigation) zuschalten ─────────────────────────
-    #    Braucht den Livox MID360 + das VOLLE Docker-Image (g1pilot:v1.1.0 mit
-    #    livox_ros_driver2/MOLA) -- im schlanken Real-Image schlaegt der Include
-    #    fehl. nav2point/dijkstra direkt als Nodes (navigation_launcher wuerde
-    #    loco_client ein zweites Mal starten).
-    if enable_lidar:
-        nodes.append(IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                os.path.join(pkg_share, 'launch', 'livox_launcher.launch.py'))))
-        nodes.append(Node(
-            package='g1pilot', executable='nav2point', name='nav2point',
-            output='screen',
-            parameters=[{'interface': interface, 'use_robot': True}]))
-        nodes.append(Node(
-            package='g1pilot', executable='dijkstra_planner', name='dijkstra_planner',
-            output='screen',
-            parameters=[{'interface': interface, 'use_robot': True}]))
 
     return LaunchDescription(nodes)

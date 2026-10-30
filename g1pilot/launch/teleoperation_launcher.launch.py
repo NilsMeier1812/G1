@@ -7,10 +7,8 @@ from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
-# Welche Bedienoberflaeche starten? 'streamdeck' (ui_interface, Default) oder
-# 'demo' (demo_gui, vereinfacht fuer Vorfuehrungen). Nie beide: jede GUI macht
-# in der Sim ihren eigenen Auto-Start. Siehe g1pilot/docs/10-A-Demo-GUI.md.
-GUI_EXECUTABLES = {'streamdeck': 'ui_interface', 'demo': 'demo_gui'}
+# Bedienoberflaeche ist die Demo-GUI (demo_gui), siehe g1pilot/docs/10-A-Demo-GUI.md.
+# Die alte Streamdeck-GUI (ui_interface) wurde entfernt.
 
 
 def generate_launch_description():
@@ -29,8 +27,6 @@ def generate_launch_description():
     }
     ps4_walk_on = PythonExpression(["'", ps4_arms, "'.lower() == 'true' and '",
                                     LaunchConfiguration('ps4_walk'), "'.lower() == 'true'"])
-    gui = os.environ.get('G1_GUI', 'streamdeck').strip().lower()
-    gui_exe = GUI_EXECUTABLES.get(gui, 'ui_interface')
     return LaunchDescription([
         DeclareLaunchArgument(
             'joystick_name', default_value='Pro Controller',
@@ -118,8 +114,8 @@ def generate_launch_description():
 
         Node(
             package='g1pilot',
-            executable=gui_exe,
-            name=gui_exe,
+            executable='demo_gui',
+            name='demo_gui',
             output='screen'
         ),
 

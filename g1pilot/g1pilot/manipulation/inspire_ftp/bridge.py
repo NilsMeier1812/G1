@@ -99,8 +99,8 @@ class InspireFtpBridge(Node):
         # ── /joint_states-Publisher (nur die 24 Finger-Gelenke) ──────────────
         self.joint_pub = self.create_publisher(JointState, "/joint_states", QoSProfile(depth=10))
 
-        # ── Streamdeck-Hand-Buttons (OPEN/CLOSE LEFT/RIGHT HAND) ─────────────
-        #  Streamdeck (ui_interface) und loco_client publizieren "open"/"close" als
+        # ── Hand-Aktionen (OPEN/CLOSE LEFT/RIGHT HAND) ───────────────────────
+        #  Demo-GUI (Hand-Panel) und loco_client publizieren "open"/"close" als
         #  String auf diese Topics. Diese Bridge bildet sie auf die 6 Inspire-DOF ab.
         self.create_subscription(
             String, "/g1pilot/hand_action/left",
@@ -328,7 +328,7 @@ class InspireFtpBridge(Node):
     @staticmethod
     def _apply_open_close(hand: HandModel, action: str):
         """Alle 6 DOF auf offen (1000) bzw. zu setzen. Gemeinsam genutzt von der
-        Controller-GUI (open_hand/close_hand) und den Streamdeck-Hand-Buttons."""
+        Controller-GUI (open_hand/close_hand) und den Hand-Aktionen der Demo-GUI."""
         hand.set_enabled(True)
         if action == "open":
             for i in range(6):
@@ -338,7 +338,7 @@ class InspireFtpBridge(Node):
                 hand.set_angle(i, 200 if i == 4 else 0)  # Daumen-Beugung nicht ganz zu
 
     def _on_emergency_stop(self, msg):
-        """EMERGENCY STOP (Streamdeck): beide Haende sofort disablen."""
+        """EMERGENCY STOP (GUI): beide Haende sofort disablen."""
         if not msg.data:
             return
         for side in ("left", "right"):
@@ -347,13 +347,13 @@ class InspireFtpBridge(Node):
                                "(halten Position, keine neuen Sollwerte).")
 
     def _on_hand_action(self, side: str, msg: String):
-        """Streamdeck OPEN/CLOSE {LEFT,RIGHT} HAND -> Inspire-DOF-Sollwerte."""
+        """Hand-Aktion OPEN/CLOSE {LEFT,RIGHT} HAND -> Inspire-DOF-Sollwerte."""
         action = (msg.data or "").strip().lower()
         if action not in ("open", "close"):
             return
         hand = self.models["right"] if side == "right" else self.models["left"]
         self._apply_open_close(hand, action)
-        self.get_logger().info(f"Streamdeck: Hand {side} -> {action}")
+        self.get_logger().info(f"Hand-Aktion: Hand {side} -> {action}")
 
     async def _controller_broadcast(self, clients):
         while True:

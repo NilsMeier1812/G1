@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Sim-Auto-Start (GREIFEN) mit Quittung -- gemeinsam fuer Streamdeck und Demo-GUI.
+"""Sim-Auto-Start (GREIFEN) mit Quittung -- fuer die Demo-GUI.
 
 Problem (Bug 2026-10-13): Die GUIs schickten in der Sim genau EINMAL, 3 s nach
 ihrem eigenen Start, /g1pilot/arms/enabled=True + /g1pilot/start_balancing=True.

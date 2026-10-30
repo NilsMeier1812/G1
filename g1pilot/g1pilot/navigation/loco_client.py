@@ -76,7 +76,7 @@ class G1LocoClient(Node):
         self.prev_axis_last = None
         self.control_arms = False
 
-        # Streamdeck-Walk-Zustand (WALK-Button + virtueller Joystick der UI).
+        # GUI-Walk-Zustand (WALK-Button + virtueller Joystick der UI).
         # walk_enabled wirkt als Radio zu START BALANCING: nur wenn True darf
         # der cmd_vel-Pfad Move() rufen. _move_active merkt sich, ob zuletzt
         # ein Move lief, damit StopMove genau EINMAL gesendet wird (kein Spam).
@@ -118,7 +118,7 @@ class G1LocoClient(Node):
         self._cmd_vel = (0.0, 0.0, 0.0)  # normiert [-1,1] aus /g1pilot/loco_cmd_vel
         self._cmd_stamp = None           # time.monotonic() des letzten Empfangs
         # PS4-Gehen (ps4_walk, L2-Deadman): normiert wie loco_cmd_vel. Solange
-        # der Strom frisch ist, hat er Vorrang vor dem Streamdeck-Pfad.
+        # der Strom frisch ist, hat er Vorrang vor dem GUI-Pfad.
         self._ps4_cmd = (0.0, 0.0, 0.0)
         self._ps4_stamp = None
         self._ps4_active = False
@@ -138,7 +138,7 @@ class G1LocoClient(Node):
         self.declare_parameter('ik_max_dq_step', 0.05)
         self.declare_parameter('arm_velocity_limit', 2.0)
 
-        # Sicherheit/Gehen (Streamdeck- und PS4-Pfad teilen sich die Limits):
+        # Sicherheit/Gehen (GUI- und PS4-Pfad teilen sich die Limits):
         # loco_cmd_vel kommt normiert [-1,1] von der UI -> Skalierung auf m/s bzw.
         # rad/s passiert HIER. cmd_vel_timeout ist der Deadman: bleibt der Stream
         # aus (GUI zu, Verbindung weg), stoppt der Roboter von selbst.
@@ -242,7 +242,7 @@ class G1LocoClient(Node):
         self.create_subscription(Bool, '/g1pilot/start', self.start_callback, 10)
         self.create_subscription(Bool, '/g1pilot/start_balancing', self.start_balancing_callback, 10)
         self.create_subscription(Joy, '/g1pilot/joy', self.joystick_callback, 10)
-        # Streamdeck-Walk: dieselben Topics, die in der Sim loco_sim bedient.
+        # GUI-Walk: dieselben Topics, die in der Sim loco_sim bedient.
         self.create_subscription(Bool, '/g1pilot/start_walking', self.start_walking_callback, 10)
         self.create_subscription(Twist, '/g1pilot/loco_cmd_vel', self.cmd_vel_callback, 10)
         # PS4-Gehen (ps4_walk): wirkt nur, wenn der G1 schon im Walk-Modus steht
@@ -622,7 +622,7 @@ class G1LocoClient(Node):
     def start_balancing_callback(self, msg: Bool):
         if not msg.data:
             return
-        # Radio-Semantik wie am Streamdeck: BALANCING gewaehlt -> Gehen aus,
+        # Radio-Semantik wie in der GUI: BALANCING gewaehlt -> Gehen aus,
         # Roboter bleibt balanciert stehen.
         self.walk_enabled = False
         self._stop_move("START BALANCING")
@@ -654,7 +654,7 @@ class G1LocoClient(Node):
             return False
         return True
 
-    # ── Streamdeck-Walk (WALK-Button + virtueller Joystick der UI) ───────────
+    # ── GUI-Walk (WALK-Button + virtueller Joystick der UI) ───────────
 
     def start_walking_callback(self, msg: Bool):
         if not msg.data:
@@ -694,7 +694,7 @@ class G1LocoClient(Node):
                 f"vyaw={float(self.get_parameter('max_vyaw').value):.2f}).")
 
     def cmd_vel_callback(self, msg: Twist):
-        # Normiert [-1,1] (Konvention der Streamdeck-UI, identisch zur Sim).
+        # Normiert [-1,1] (Konvention der GUI, identisch zur Sim).
         nx = max(-1.0, min(1.0, float(msg.linear.x)))
         ny = max(-1.0, min(1.0, float(msg.linear.y)))
         nz = max(-1.0, min(1.0, float(msg.angular.z)))
@@ -712,7 +712,7 @@ class G1LocoClient(Node):
 
     def _ps4_walk_tick(self):
         """PS4-Gehen. -> True, solange der PS4-Strom frisch ist (dann pausiert
-        der Streamdeck-Pfad). Bleibt er aus (L2 los ohne 0, Node tot), einmal
+        der GUI-Pfad). Bleibt er aus (L2 los ohne 0, Node tot), einmal
         StopMove. Move() nur balanciert und ohne E-Stop; walk_enabled (LAUFEN
         in der GUI) ist NICHT noetig -- wie frueher der Joystick-Deadman."""
         with self._cmd_lock:
@@ -762,7 +762,7 @@ class G1LocoClient(Node):
             self.get_logger().info(f"StopMove ({reason})")
 
     def _cmd_vel_tick(self):
-        """20-Hz-Sicherheitsschleife des Streamdeck-Walk-Pfads.
+        """20-Hz-Sicherheitsschleife des GUI-Walk-Pfads.
 
         Move() laeuft nur solange ALLE Bedingungen gelten (balanciert, nicht
         gestoppt, WALK aktiv, frischer cmd_vel-Stream). Faellt eine weg --
@@ -882,10 +882,10 @@ class G1LocoClient(Node):
                 self.start_balancing_callback(Bool(data=True))
 
             # PS4-Deadman (Button 8): solange gedrueckt steuert der Controller,
-            # der Streamdeck-cmd_vel-Pfad pausiert (_cmd_vel_tick prueft das).
+            # der GUI-cmd_vel-Pfad pausiert (_cmd_vel_tick prueft das).
             # StopMove nur auf der fallenden Flanke -- frueher wurde es bei
             # losgelassenem Button in JEDEM Joy-Paket gesendet und haette damit
-            # auch ein per Streamdeck kommandiertes Gehen dauerhaft abgewuergt.
+            # auch ein per GUI kommandiertes Gehen dauerhaft abgewuergt.
             self._joy_deadman = (msg.buttons[8] == 1)
             if self._btn_falling(msg, 8) and not self.robot_stopped and self.balanced:
                 self._move_active = True   # sicherstellen, dass _stop_move sendet

@@ -8,7 +8,7 @@ siehe [30-T-Stehen-und-Gehen.md](30-T-Stehen-und-Gehen.md).
 
 Die Locomotion (Beine + Taille) ist eine kleine Zustandsmaschine mit vier
 Zuständen, gesteuert über die Demo-GUI (Kacheln GEHEN / GREIFEN), den
-Controller (L2 / R2), den Streamdeck oder ROS-Topics. In der Simulation
+Controller (L2 / R2) oder ROS-Topics. In der Simulation
 übernimmt der Node `loco_sim` die Rolle des Unitree-Onboard-Reglers (den es
 in MuJoCo nicht gibt); auf dem echten Roboter läuft weiterhin Unitrees
 eigener Onboard-Regler, angesprochen über `loco_client`.
@@ -16,8 +16,8 @@ eigener Onboard-Regler, angesprochen über `loco_client`.
 | Zustand | Was passiert | Auslöser |
 |---|---|---|
 | **HOLD** | Standby: steifer Stand, Basis gehalten | Start / `/g1pilot/start` |
-| **BALANCE** (Sim: STAND) | Modellbasierter Stand am Platz, Oberkörper frei bewegbar | Demo-GUI **GREIFEN**, Controller **R2**, Streamdeck **START BALANCING** / `/g1pilot/start_balancing` |
-| **RUN** (Sim: WALK) | Lauf-Regler; Geschwindigkeit per Knopf/Stick | Demo-GUI **GEHEN**, Controller **L2**, Streamdeck **WALK** + `/g1pilot/loco_cmd_vel` |
+| **BALANCE** (Sim: STAND) | Modellbasierter Stand am Platz, Oberkörper frei bewegbar | Demo-GUI **GREIFEN**, Controller **R2** / `/g1pilot/start_balancing` |
+| **RUN** (Sim: WALK) | Lauf-Regler; Geschwindigkeit per Knopf/Stick | Demo-GUI **GEHEN**, Controller **L2** / `/g1pilot/start_walking` + `/g1pilot/loco_cmd_vel` |
 | **DAMP** | Sim: Notaus, alle Motoren weich | NOT-HALT / `/g1pilot/emergency_stop` |
 
 Am **echten G1** heißen die Onboard-Zustände wie in der Unitree-App: Damp
@@ -29,18 +29,18 @@ Kran in [50-A-Echter-Roboter.md](50-A-Echter-Roboter.md).
 
 **Typischer Ablauf:**
 
-1. **START BALANCING** → der Roboter steht frei und balanciert; die Arme
+1. **GREIFEN** (Demo-GUI, intern `start_balancing`) → der Roboter steht frei und balanciert; die Arme
    lassen sich parallel über die Marker bewegen. In der Sim bleiben die Füße
    dabei stehen, auch mit bewegten Armen oder einer Box in den Händen. Erst
    wenn er wirklich kippt (z. B. nach einem Stoß, ein Fuß hebt ab), fängt er
    sich mit ein paar Schritten und steht danach wieder still. Er steht in der
    leicht gebeugten Haltung des Lauf-Reglers, damit er ohne Satz loslaufen kann.
-2. **WALK** → der Bildschirm-Joystick bzw. die Pfeiltasten der Demo-GUI
+2. **GEHEN** → der Bildschirm-Joystick bzw. die Pfeiltasten der Demo-GUI
    (Tempo Langsam/Normal) oder der Controller mit **gehaltenem L2** geben
    Vorwärts/Seitwärts/Drehen vor ([11-A-Controller.md › Gehen mit L2](11-A-Controller.md#gehen-mit-l2)).
 3. Joystick loslassen → der Roboter bremst ab und bleibt stehen. In der Sim
    steht dann die Lauf-Policy am Platz und macht kleine Ausgleichsschritte.
-   Für den stationären Stand mit geplanten Füßen **START BALANCING** drücken:
+   Für den stationären Stand mit geplanten Füßen **GREIFEN** wählen:
    Die Sim lässt die Policy erst ausbremsen und übergibt nach etwa einer
    Sekunde an den Stand-Regler.
 
@@ -85,7 +85,7 @@ Vergleichswerte stehen in [30-T-Stehen-und-Gehen.md](30-T-Stehen-und-Gehen.md#ga
 | Node-Start | automatisch mit `bringup_sim.launch.py` | automatisch mit `bringup_real.launch.py` |
 | Steuertopics | identisch | identisch |
 
-Demo-GUI und Streamdeck verhalten sich in beiden Modi gleich — dieselben
+Die Demo-GUI verhält sich in beiden Modi gleich — dieselben
 Knöpfe, dieselben Topics. Nur real gibt es die Startleiste und die
 Bodenkontakt-Prüfung vor »Walk«; nur in der Sim die Wahl der Lauf-Policy.
 
@@ -112,7 +112,7 @@ GREIFEN wählen (der Roboter bleibt stehen). Übersicht aller Halt-Wege:
 
 | Symptom | Ursache / Fix |
 |---|---|
-| WALK-Klick ohne Wirkung | Erst START BALANCING, dann WALK — WALK wird sonst mit Warnung ignoriert. |
+| GEHEN ohne Wirkung | Sim: erst stehen (GREIFEN bzw. Auto-Start abwarten); real: Startleiste auf Walk. Walk wird sonst mit Warnung ignoriert. |
 | Roboter fällt beim Eintritt in BALANCE | (Sim) Prüfen, ob `USE_JOYSTICK=0` gesetzt ist, sofern kein Gamepad im Container hängt. |
 | Roboter reagiert nicht auf den Joystick | Ist WALK aktiv (nicht nur BALANCING)? Kommt der `loco_cmd_vel`-Stream regelmäßig an (Deadman-Timeout)? |
 | (Sim) Roboter macht im BALANCING bei Arm-Bewegung Schritte | Im Log von `loco_sim` steht dann „Schwerpunkt-Modell nicht geladen": Der `g1pilot-sim`-Container sieht das Robotermodell nicht (Mount in `docker-compose.yml`) oder Pinocchio ist älter als 3. Container mit `--build` neu bauen. |

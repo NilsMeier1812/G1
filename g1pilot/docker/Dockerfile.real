@@ -1,7 +1,6 @@
 # Schlankes Image fuer den ECHTEN G1 (Arme + Haende + Unitree-Loco).
 # Basis = Dockerfile.sim MINUS onnxruntime (loco_sim laeuft nur in der Sim),
-# MIT Real-Umgebungsvariablen. KEIN livox/MOLA/realsense -- fuer den vollen
-# Navigations-Stack weiterhin docker/Dockerfile (g1pilot:v1.1.0) nutzen.
+# MIT Real-Umgebungsvariablen.
 #
 # Die Inspire-Haende brauchen KEINE Extra-Bibliothek: das Modbus-TCP-Backend
 # (inspire_ftp/modbus_client.py) ist stdlib-only.
@@ -39,7 +38,7 @@ RUN apt-get update && apt-get install -yy \
 
 RUN pip3 install --upgrade pip
 
-# unitree_sdk2_python (EXAKT gleicher Commit wie Original-Dockerfile!)
+# unitree_sdk2_python (EXAKT gleicher Commit wie im urspruenglichen g1pilot-Dockerfile!)
 RUN git clone https://github.com/lnotspotl/unitree_sdk2_python.git \
     && cd unitree_sdk2_python \
     && git checkout 7c661d27f4ae064ffd0dd633fd9d5b518ef0b508 \

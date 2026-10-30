@@ -70,8 +70,10 @@ Im Startmenü unter *Lauf-Policy*: `g1_wholebody` (Standard),
 | **Roboter zurücksetzen** | Roboter zurück an den Startpunkt (bzw. `g1_spawn`), festgehalten; der nächste Modus-Klick stellt ihn wieder hin |
 | **Sim beenden** | zweimal tippen, beendet den ganzen Stack |
 
-Der Streamdeck hat zusätzlich **GRASP BOX**: eine greifbare Testkugel in den
-Inspire-Handflächen an/aus ([22-A-Inspire-Haende.md](22-A-Inspire-Haende.md)).
+Ohne Knopf (früher Streamdeck **GRASP BOX**): eine greifbare Testkugel in den
+Inspire-Handflächen schaltet `ros2 topic pub --once /g1pilot/grasp_box
+std_msgs/Bool "data: true"` an (`false` = aus), siehe
+[22-A-Inspire-Haende.md](22-A-Inspire-Haende.md).
 
 ## Sim-Tempo
 

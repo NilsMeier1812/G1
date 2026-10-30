@@ -74,16 +74,15 @@ http://localhost:8767/hand_controller_viewer.html?autoconnect=1
 http://localhost:8767/inspire_hand_viewer.html?autoconnect=1
 ```
 
-Im `start.sh`-Menue kann man sie **automatisch oeffnen** lassen
-(`OPEN_GUIS=true`). Da `start.sh` auf dem Host laeuft, oeffnet es nach dem
-Hochfahren beide Seiten im Standard-Browser; es wartet dabei, bis die Bridge
-auf `:8766` lauscht. Mit `?autoconnect=1` verbinden sich die Seiten selbst
-und versuchen es alle 2 s erneut, bis die Bridge da ist (robust gegen
-Reihenfolge/Neustart). file://-Oeffnen der Dateien aus `web/` geht weiterhin,
-aber der `?autoconnect=1`-Query-String kommt dabei je nach Opener (xdg-open,
-WSL) nicht an — darum der HTTP-Weg.
+Die Seiten oeffnet man bei Bedarf selbst im Browser (das automatische Oeffnen
+per `OPEN_GUIS` gab es nur fuer die inzwischen entfernte Streamdeck-GUI). Mit
+`?autoconnect=1` verbinden sich die Seiten selbst und versuchen es alle 2 s
+erneut, bis die Bridge da ist (robust gegen Reihenfolge/Neustart).
+file://-Oeffnen der Dateien aus `web/` geht weiterhin, aber der
+`?autoconnect=1`-Query-String kommt dabei je nach Opener (xdg-open, WSL)
+nicht an — darum der HTTP-Weg.
 
-**Qt-Demo-GUI**: Ohne Browser steuert die Demo-GUI (`G1_GUI=demo`, Modus
+**Qt-Demo-GUI**: Ohne Browser steuert die Demo-GUI (Modus
 GREIFEN → Seite HÄNDE) die Haende ueber zwei ROS-Topics der Bridge:
 
 | Topic | Typ | Inhalt |
@@ -111,7 +110,7 @@ daher ist `localhost` korrekt.
 - **Greifbar = Kollisions-Bit 2**: Finger-Zonen kollidieren nur mit Objekten, die
   `contype`/`conaffinity` Bit 2 setzen (und untereinander), NICHT mit Boden/Koerper.
   Ohne so ein Objekt in Handnaehe bleiben die Kraefte 0 (nichts wird beruehrt).
-- **Test-Objekt zum Ausprobieren** (Streamdeck-Button **"GRASP BOX"**, Toggle): legt
+- **Test-Objekt zum Ausprobieren** (Topic `/g1pilot/grasp_box`, Toggle): legt
   eine kleine, fest mit jeder Handflaeche verbundene greifbare Kugel in die Griffzone.
   Beim Schliessen der Hand (~70 %) greifen alle Finger + Handflaeche zu -> man sieht
   sofort echte Griffkraefte in der GUI. Offen = kein Kontakt. Faellt nicht weg (starr

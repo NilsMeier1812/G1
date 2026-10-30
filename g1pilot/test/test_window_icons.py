@@ -16,7 +16,7 @@ HERE = Path(__file__).resolve().parent
 PKG_ROOT = HERE.parent                               # .../g1pilot
 ICON_DIR = PKG_ROOT / "resource" / "icons"
 SIM_PY = PKG_ROOT.parent / "unitree_mujoco" / "simulate_python"
-ICONS = ["g1_start", "g1_demo_sim", "g1_demo_real", "g1_streamdeck", "g1_mujoco"]
+ICONS = ["g1_start", "g1_demo_sim", "g1_demo_real", "g1_mujoco"]
 
 
 def _png_size(path):
@@ -93,8 +93,7 @@ def test_qt_set_app_identity(monkeypatch):
     monkeypatch.delenv("RESOURCE_NAME", raising=False)
     app = QApplication.instance() or QApplication([])
     for app_id, icon in [("g1-demo-sim", "g1_demo_sim"),
-                         ("g1-demo-real", "g1_demo_real"),
-                         ("g1-streamdeck", "g1_streamdeck")]:
+                         ("g1-demo-real", "g1_demo_real")]:
         monkeypatch.delenv("RESOURCE_NAME", raising=False)
         path = ws.set_app_identity(app, app_id, icon)
         assert path == ICON_DIR / f"{icon}.png"

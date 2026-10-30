@@ -12,15 +12,14 @@
 #  Allererste Frage: SIMULATION oder ECHTER ROBOTER.
 #
 #  SIM  : MuJoCo + loco_sim (Whole-Body-Policy, Lockstep immer an).
-#         Umgebung -> Bedienoberflaeche -> Inspire-Haende -> Lauf-Policy
+#         Umgebung -> Inspire-Haende -> Lauf-Policy
 #         -> Navigation -> RViz -> Rebuild.
 #  REAL : Unitree-Loco-Controller (loco_client) + Arm-Manipulation +
 #         Inspire-Haende via Modbus TCP. Netzwerk-Interface (Auto-
-#         Erkennung) -> Bedienoberflaeche -> Haende + IPs -> RViz ->
+#         Erkennung) -> Haende + IPs -> RViz ->
 #         Rebuild, plus SICHERHEITS-BESTAETIGUNG (der Roboter bewegt sich!).
 #
-#  Hand-Oberflaechen im Browser (OPEN_GUIS) werden nur beim Streamdeck
-#  abgefragt -- die Demo-GUI hat die Handsteuerung eingebaut.
+#  Bedienoberflaeche ist immer die Demo-GUI (Handsteuerung eingebaut).
 #
 #  Alles hat sinnvolle Defaults — einfach ENTER druecken nimmt den Default.
 #  Nicht-interaktiv nutzbar via Env, z.B.:
@@ -95,25 +94,6 @@ ask_menu() {
 }
 
 # ── Gemeinsame Fragen (Sim + Real) ──────────────────────────────────────
-ask_gui() {
-  ask_menu "$1) Bedienoberflaeche?" 1 "${G1_GUI:-}" \
-    "Demo-GUI   — Vorfuehrung: Gehen / Greifen, Arme + Haende|demo" \
-    "Streamdeck — Entwicklung: alle Einzelfunktionen|streamdeck"
-  export G1_GUI="$REPLY_VALUE"
-}
-
-ask_hand_browser() {
-  # Nur Streamdeck + Haende: die Demo-GUI hat die Handsteuerung eingebaut.
-  if [ "$G1_INSPIRE_HANDS" = "1" ] && [ "$G1_GUI" = "streamdeck" ]; then
-    ask_menu "$1) Hand-Oberflaechen im Browser oeffnen?" 2 "${OPEN_GUIS:-}" \
-      "Ja   — Controller + Taktil-Viewer oeffnen sich und verbinden|true" \
-      "Nein — bei Bedarf per Streamdeck-Kachel INSPIRE FTP GUIs|false"
-    export OPEN_GUIS="$REPLY_VALUE"
-  else
-    export OPEN_GUIS=false
-  fi
-}
-
 ask_rebuild() {
   ask_menu "$1) Docker-Images vor dem Start neu bauen?" 1 "" \
     "Nein — vorhandene Images nutzen (schnell)|0" \
@@ -160,9 +140,6 @@ if [ "$G1_MODE" = "real" ]; then
   fi
   export ROBOT_INTERFACE="$REPLY_VALUE"
 
-  # ── R2) Bedienoberflaeche ─────────────────────────────────────────────
-  ask_gui R2
-
   # ── R3) Inspire-FTP-Haende (Modbus TCP im Roboter-LAN) ────────────────
   ask_menu "R3) Inspire-Haende ansteuern? (Modbus TCP im Roboter-LAN)" 1 "${G1_INSPIRE_HANDS:-}" \
     "Ja   — Hand-Bridge mit Modbus-Backend|1" \
@@ -177,7 +154,6 @@ if [ "$G1_MODE" = "real" ]; then
   fi
   export G1_HAND_LEFT_HOST="${G1_HAND_LEFT_HOST:-192.168.123.210}"
   export G1_HAND_RIGHT_HOST="${G1_HAND_RIGHT_HOST:-192.168.123.211}"
-  ask_hand_browser R3b
 
   # ── R3c) Wofuer der PS4-Controller? ───────────────────────────────────
   #   Gehen = bisheriger Weg (joystick -> loco_client, Deadman Button 8).
@@ -205,7 +181,6 @@ if [ "$G1_MODE" = "real" ]; then
   echo -e "   Interface      : ${G}ROBOT_INTERFACE=${ROBOT_INTERFACE}${R}"
   _hands_lbl=$( [ "${G1_INSPIRE_HANDS}" = "1" ] && echo "Modbus ${G1_HAND_LEFT_HOST} / ${G1_HAND_RIGHT_HOST}" || echo "aus" )
   echo -e "   Haende         : ${G}G1_INSPIRE_HANDS=${G1_INSPIRE_HANDS}${R} ${DIM}(${_hands_lbl})${R}"
-  echo -e "   Oberflaeche    : ${G}G1_GUI=${G1_GUI}${R}"
   echo -e "   RViz           : ${G}USE_RVIZ=${USE_RVIZ}${R}"
   echo -e "   Geh-Limits     : ${G}vx=${G1_MAX_VX:-0.4} vy=${G1_MAX_VY:-0.3} vyaw=${G1_MAX_VYAW:-0.4}${R}"
   _ps4_lbl=$( [ "${G1_PS4_ARMS}" = "1" ] \
@@ -213,7 +188,7 @@ if [ "$G1_MODE" = "real" ]; then
     || echo "Gehen mit Deadman" )
   echo -e "   PS4-Controller : ${G}G1_PS4_ARMS=${G1_PS4_ARMS}${R} ${DIM}(${_ps4_lbl})${R}"
   echo -e "   ${DIM}Kein Auto-Start: Der Roboter bewegt sich erst, wenn er in der${R}"
-  echo -e "   ${DIM}Bedienoberflaeche gestartet wird (Demo-GUI: 'Start' in der Startleiste, Streamdeck: START).${R}"
+  echo -e "   ${DIM}Bedienoberflaeche gestartet wird (Demo-GUI: 'Start' in der Startleiste).${R}"
   echo -e "   ${Y}NOT-HALT / E-STOP: Arme schlaff, Beine bleiben stehen (kein Damp).${R}"
   echo -e "   ${Y}Voll-Notaus (Controller R1+L1+PS 2 s) = Damp = Roboter sackt in den Kran (sichern!).${R}"
   echo -e "   ${DIM}Checkliste vor dem ersten Lauf: g1pilot/docs/50-A-Echter-Roboter.md${R}"
@@ -255,9 +230,6 @@ else
   ask_menu "1) Welche Umgebung laden?" 1 "${G1_ENV:-}" "${_env_menu[@]}"
   if [ "$REPLY_VALUE" = "__default__" ]; then G1_ENV=""; else G1_ENV="$REPLY_VALUE"; fi
 
-  # ── 2) Bedienoberflaeche ──────────────────────────────────────────────
-  ask_gui 2
-
   # ── 3) Inspire-FTP-Haende ─────────────────────────────────────────────
   #   Master-Schalter: waehlt im MuJoCo das Inspire-Finger-Modell UND startet die
   #   Hand-Bridge (Finger steuerbar, Kraft/Taktil gemessen).
@@ -265,7 +237,6 @@ else
     "Ja   — Inspire-Modell + Hand-Bridge|1" \
     "Nein — starre Haende (Rubber-Hand-Modell)|0"
   export G1_INSPIRE_HANDS="$REPLY_VALUE"
-  ask_hand_browser 3b
 
   # ── 3c) PS4-Controller fuer den Oberkoerper (Arme + Haende, kein Laufen) ─
   #   Siehe docs/11-A-Controller.md. Braucht /dev/input auf dem Host.
@@ -331,11 +302,9 @@ else
   _hands_lbl=$( [ "${G1_INSPIRE_HANDS}" = "1" ] && echo "Inspire-FTP" || echo "Rubber-Hand" )
   echo -e "   Haende         : ${G}G1_INSPIRE_HANDS=${G1_INSPIRE_HANDS}${R} ${DIM}(${_hands_lbl})${R}"
   echo -e "   Lauf-Policy    : ${G}G1_WALK_POLICY=${G1_WALK_POLICY}${R}"
-  [ "${OPEN_GUIS}" = "true" ] && echo -e "   Hand-Browser   : ${G}OPEN_GUIS=${OPEN_GUIS}${R}"
   echo -e "   Sim-Tempo      : ${G}SIM_REALTIME_FACTOR=${SIM_REALTIME_FACTOR}${R} ${DIM}(Lockstep, gedeckelt)${R}"
   _nav_lbl=$( [ "${G1_ENABLE_NAV}" = "1" ] && echo "an (dijkstra + nav2point + Sim-Glue)" || echo "aus" )
   echo -e "   Navigation     : ${G}G1_ENABLE_NAV=${G1_ENABLE_NAV}${R} ${DIM}(${_nav_lbl})${R}"
-  echo -e "   Oberflaeche    : ${G}G1_GUI=${G1_GUI}${R}"
   _ps4_lbl=$( [ "${G1_PS4_ARMS}" = "1" ] && echo "an (Arme + Haende, kein Laufen)" || echo "aus" )
   echo -e "   PS4-Controller : ${G}G1_PS4_ARMS=${G1_PS4_ARMS}${R} ${DIM}(${_ps4_lbl})${R}"
   [ "${#PASSTHRU[@]}" -gt 0 ] && echo -e "   compose-Args   : ${G}${PASSTHRU[*]}${R}"
@@ -345,102 +314,6 @@ fi
 # ── X11 freigeben (MuJoCo-Viewer + ggf. RViz brauchen den X-Server) ─────
 xhost +local:root >/dev/null 2>&1 || \
   echo -e "${Y}[start] WARN: 'xhost' nicht verfuegbar - laeuft hier ein X-Server?${R}"
-
-# ── Hand-GUIs oeffnen: Host-Watcher ─────────────────────────────────────
-#  start.sh laeuft auf dem HOST (nicht im Container) — nur HIER existiert ein
-#  Browser. Der Container (ui_interface/Streamdeck-Button) kann selbst keinen
-#  Browser starten; er fasst stattdessen die Trigger-Datei .gui_open_request im
-#  bind-gemounteten Repo an. Dieser Watcher:
-#    1) wartet, bis die Controller-Bridge auf :8766 lauscht (colcon-Build dauert),
-#    2) oeffnet die GUIs einmal automatisch (nur wenn OPEN_GUIS=true),
-#    3) bleibt dann am Leben und oeffnet sie erneut, sobald die Trigger-Datei
-#       ihre mtime aendert -> der Streamdeck-Button "INSPIRE FTP GUIs" wirkt.
-#  Beide GUIs werden mit ?autoconnect=1 geoeffnet -> verbinden sich von selbst.
-gui_opener_daemon() {
-  # Die GUIs werden von der Bridge per HTTP serviert (Port 8767). file://-URLs
-  # mit ?autoconnect=1 scheiterten je nach System (xdg-open/WSL behandeln den
-  # Query-String als Teil des Dateinamens) -> Seite ging nicht auf bzw. verband
-  # sich nicht. http-URLs funktionieren mit JEDEM Opener.
-  local ctrl="http://localhost:8767/hand_controller_viewer.html?autoconnect=1"
-  local view="http://localhost:8767/inspire_hand_viewer.html?autoconnect=1"
-  local trigger="$PWD/.gui_open_request"   # == /ros2_ws/src/g1pilot/.gui_open_request im Container
-
-  # WSL2-Erkennung (Kernel-Release enthaelt "microsoft")
-  local is_wsl=0
-  grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null && is_wsl=1
-
-  # Oeffnet eine URL im System-Browser; gibt 0 zurueck wenn erfolgreich.
-  _open_url() {
-    local url="$1"
-    if [ "$is_wsl" = "1" ]; then
-      # WSL2: Browser laeuft auf Windows; http-URLs kann jeder Weg direkt oeffnen.
-      if command -v wslview >/dev/null 2>&1; then
-        wslview "$url" >/dev/null 2>&1; return 0
-      fi
-      if command -v cmd.exe >/dev/null 2>&1; then
-        cmd.exe /c start "" "$url" >/dev/null 2>&1; return 0
-      fi
-      command -v explorer.exe >/dev/null 2>&1 && { explorer.exe "$url" >/dev/null 2>&1; return 0; }
-    else
-      local c
-      for c in xdg-open open sensible-browser x-www-browser \
-               microsoft-edge microsoft-edge-stable msedge \
-               firefox google-chrome chromium chromium-browser; do
-        command -v "$c" >/dev/null 2>&1 && { "$c" "$url" >/dev/null 2>&1; return 0; }
-      done
-    fi
-    return 1
-  }
-
-  # Beide GUIs nacheinander oeffnen; bei fehlendem Opener Pfade ausgeben.
-  _open_both() {
-    if ! _open_url "$ctrl"; then
-      echo -e "${Y}[start] Kein Browser-Opener gefunden - GUIs bitte manuell oeffnen:${R}"
-      echo -e "   ${C}$ctrl${R}"
-      echo -e "   ${C}$view${R}"
-      return 1
-    fi
-    sleep 1
-    _open_url "$view" >/dev/null 2>&1 || true
-  }
-
-  # Port-Check (bash /dev/tcp) — true, solange die Bridge auf :8766 lauscht.
-  _bridge_up() { (exec 3<>"/dev/tcp/127.0.0.1/8766") 2>/dev/null; }
-
-  # 1) Warten bis die Bridge lauscht (max ~5 min, deckt auch den ersten Build ab).
-  local i=0
-  while [ $i -lt 600 ]; do _bridge_up && break; sleep 0.5; i=$((i+1)); done
-
-  # Stale-Trigger aus einem frueheren Lauf entfernen, damit der Watcher nicht
-  # sofort faelschlich oeffnet.
-  rm -f "$trigger" 2>/dev/null || true
-
-  # 2) Einmaliges Auto-Open (nur wenn gewuenscht).
-  [ "$OPEN_GUIS" = "true" ] && _open_both
-
-  # 3) Watcher-Schleife: Trigger-Datei (vom Streamdeck-Button angefasst) beobachten.
-  #    Endet, sobald die Bridge nicht mehr lauscht (Sim gestoppt) -> kein Leak.
-  local last=""
-  while _bridge_up; do
-    if [ -f "$trigger" ]; then
-      local cur
-      cur=$(stat -c %Y "$trigger" 2>/dev/null || stat -f %m "$trigger" 2>/dev/null || echo "")
-      if [ -n "$cur" ] && [ "$cur" != "$last" ]; then
-        last="$cur"
-        echo -e "${C}[start] Streamdeck: oeffne Inspire-FTP-GUIs...${R}"
-        _open_both
-      fi
-    fi
-    sleep 0.5
-  done
-}
-
-# Watcher immer starten, wenn Inspire-Haende aktiv sind: er bedient das optionale
-# Auto-Open UND den Streamdeck-Button (auch bei OPEN_GUIS=false). Gilt fuer Sim
-# UND Real gleichermassen — die Bridge serviert die GUIs in beiden Modi identisch.
-if [ "$G1_INSPIRE_HANDS" = "1" ]; then
-  ( gui_opener_daemon ) &
-fi
 
 # ── GPU fuer MuJoCo-Viewer/RViz ─────────────────────────────────────────
 # Sonst rendern die Container auf der CPU (llvmpipe) -> CPU fehlt Sim/Regler.

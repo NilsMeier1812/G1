@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-sim_localization — Sim-Lokalisierung (Ersatz fuer MOLA in der MuJoCo-Sim).
+sim_localization — Sim-Lokalisierung fuer den Nav-Stack in der MuJoCo-Sim.
 
-Auf dem echten G1 liefert MOLA (Livox-SLAM) die Roboter-Pose auf
-`/lidar_odometry/pose_fixed`. In der Sim gibt es kein LiDAR/MOLA -- diese Node
-tritt an dieselbe Stelle: sie liest die Ground-Truth-Basispose aus der MuJoCo-
+Urspruenglich lieferte auf dem echten G1 MOLA (Livox-SLAM) die Roboter-Pose auf
+`/lidar_odometry/pose_fixed` (LiDAR/MOLA wurde 2026-10 verworfen und entfernt;
+der Topic-Name blieb). Diese Node liest die Ground-Truth-Basispose aus der MuJoCo-
 Bridge (`rt/sportmodestate`: Basis-x/y/z + -Velocity) und die Basis-Orientierung
 aus `rt/lowstate` (IMU-Quaternion) und publiziert daraus EXAKT die Topics, die
 der g1pilot-Nav-Stack (dijkstra_planner, nav2point, joy_mux) erwartet:
@@ -13,9 +13,7 @@ der g1pilot-Nav-Stack (dijkstra_planner, nav2point, joy_mux) erwartet:
   /lidar_odometry/pose_fixed  (nav_msgs/Odometry, Frame 'map')  ← Pose fuer Planer/Follower
   TF  odom_unitree -> base_link (dynamisch)                     ← RViz zeigt den Roboter bewegt
 
-Damit laeuft der KOMPLETTE, unveraenderte Real-Nav-Stack in der Sim -- der
-einzige Unterschied ist die Pose-Quelle (hier statt MOLA). So kann eine
-Navigation gefahrlos in MuJoCo validiert werden, bevor sie an den echten G1 geht.
+Damit laeuft der Nav-Stack (Planer + Follower) in der Sim.
 
 Nur fuer die Sim gedacht (wird von bringup_sim bei G1_ENABLE_NAV=1 gestartet).
 """

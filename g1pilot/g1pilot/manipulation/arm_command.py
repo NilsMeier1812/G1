@@ -47,7 +47,7 @@ COMMAND_TYPES = (TYPE_JOINTS, TYPE_POSE, TYPE_MIRROR)
 # Gelenkwinkeln: shoulder_pitch, shoulder_roll, shoulder_yaw, elbow,
 # wrist_roll, wrist_pitch, wrist_yaw. Pitch-Gelenke (Achse y, senkrecht zur
 # Ebene) behalten den Winkel, Roll/Yaw-Gelenke (Achse x bzw. z, in der Ebene)
-# wechseln das Vorzeichen. Am URDF (g1_29dof_inspire_ftp.urdf und 29dof.urdf)
+# wechseln das Vorzeichen. Am URDF (g1_29dof_inspire_ftp.urdf)
 # per Vorwaertskinematik belegt (test_arm_mirror.py): die Hand der Spiegel-
 # Gelenkwinkel liegt GENAU auf der gespiegelten Hand-Pose -- Position
 # (x, -y, z), Orientierung S*R*S mit S = diag(1, -1, 1) -- Rest <= 0.01 mm
