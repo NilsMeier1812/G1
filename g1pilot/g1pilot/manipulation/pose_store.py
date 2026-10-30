@@ -62,8 +62,8 @@ Kategorien "Ablauf <Name>" abgeleitet (Posen in Namensreihenfolge, wie die
 Demo-GUI sie frueher abfuhr) und beim naechsten Schreiben fest uebernommen.
 
 Wird von ZWEI Prozessen genutzt (arm_controller.py speichert/laedt, die
-Streamdeck-GUI in teleoperation/ui_interface.py listet zum Anzeigen und legt
-Kategorien an) -- daher atomares Schreiben (write-tmp-then-rename), damit ein
+Demo-GUI listet zum Anzeigen und legt Kategorien an, Dialoge in
+teleoperation/gui_base.py) -- daher atomares Schreiben (write-tmp-then-rename), damit ein
 gleichzeitiges Lesen nie eine halb geschriebene Datei sieht.
 """
 import json

@@ -44,19 +44,18 @@ Die letzte Auswahl merkt sich das Startmenü in
 | Abschnitt | Simulation | Echter Roboter |
 |---|---|---|
 | Umgebung / Verbindung | Szene aus `scene_editor/scenes/` | Netzwerk-Interface (prüft auf 192.168.123.x) |
-| Bedienoberfläche | **Demo-GUI** (Default) oder Streamdeck | **Demo-GUI** (Default) oder Streamdeck |
 | Lauf-Policy | Alt `g1_wholebody` (Standard), AGILE Velocity, AGILE Velocity-Height | — |
 | Ausstattung | Inspire-Hände (Default an), Navigation, **PS4-Controller**, **Handy-Zugang**, RViz | Inspire-Hände + IPs, RViz (empfohlen), **PS4-Controller für Arme + Hände**, **Handy-Zugang** |
 | Geh-Limits | — | vorwärts / seitlich / drehen (Default 0,4 m/s / 0,3 m/s / 0,4 rad/s) |
-| Erweitert (eingeklappt) | Sim-Tempo (1.0 = Echtzeit), Images neu bauen | Modbus-Port, Gamepad-Name (alter Joystick), LiDAR + Navigation (experimentell), Images neu bauen |
+| Erweitert (eingeklappt) | Sim-Tempo (1.0 = Echtzeit), Images neu bauen | Modbus-Port, Gamepad-Name (alter Joystick), Images neu bauen |
 | Sicherheit | — | Häkchen „Sicherheitshinweise gelesen, Bereich frei“, sonst bleibt *Starten* grau |
 
 - **PS4-Controller** gilt auch für den Xbox-Controller
   ([11-A-Controller.md](11-A-Controller.md)). Aus = alter Joystick-Modus
-  ([13-A-Streamdeck.md](13-A-Streamdeck.md#alter-joystick-modus-ohne-schalter-ps4-controller)).
-- **Handy-Zugang** wirkt nur mit der Demo-GUI ([12-A-Handy.md](12-A-Handy.md)).
-- **Hand-Oberflächen im Browser** werden nur beim Streamdeck angeboten; die
-  Demo-GUI hat die Handsteuerung eingebaut.
+  ([13-A-Alter-Joystick.md](13-A-Alter-Joystick.md#alter-joystick-modus-ohne-schalter-ps4-controller)).
+- **Handy-Zugang** läuft über die Demo-GUI ([12-A-Handy.md](12-A-Handy.md)).
+- Die Bedienoberfläche ist immer die Demo-GUI; die frühere Auswahl
+  *Bedienoberfläche* (Streamdeck) wurde 2026-10-30 entfernt.
 - Welche Umgebungsvariable hinter welcher Option steht:
   [04-T-Umgebungsvariablen.md](04-T-Umgebungsvariablen.md).
 
@@ -85,8 +84,6 @@ Im `--yes`-Modus startet REAL nur mit `G1_REAL_CONFIRM=1`.
 - **Shutdown-Watcher** starten: *Sim beenden* bzw. *Real beenden* in der
   Demo-GUI beendet darüber den Stack (`docker/sim_shutdown_watcher.sh`,
   `docker/real_shutdown_watcher.sh`, siehe [10-T-Demo-GUI.md](10-T-Demo-GUI.md#beenden-simreal)).
-- **Hand-GUIs im Browser** öffnen, wenn der Streamdeck sie anfordert
-  (Trigger-Datei `.gui_open_request`).
 
 ## `make` und `docker compose`
 
@@ -95,20 +92,19 @@ Im `--yes`-Modus startet REAL nur mit `G1_REAL_CONFIRM=1`.
 | `make sim` | Stack im Vordergrund starten (Ctrl-C stoppt) |
 | `make sim-bg` | Stack im Hintergrund (ohne Shutdown-Watcher: *Sim beenden* geht dann nur mit `make stop`) |
 | `make real ROBOT_INTERFACE=<nic>` | Echten Roboter starten (schlank: Arme + Hände + Loco) |
-| `make real-full ROBOT_INTERFACE=<nic>` | Echten Roboter mit Livox/MOLA/Navigation starten |
 | `make stop` | Stack stoppen |
 | `make logs` / `make status` | Logs folgen / Container-Status |
 | `make shell-sim` / `make shell-mujoco` / `make shell-real` | Shell im jeweiligen Container |
 | `make clean` | Container + Images entfernen |
 
-Jedes `make sim`/`make real`/`make real-full` baut das benötigte Image bei
+Jedes `make sim`/`make real` baut das benötigte Image bei
 Bedarf automatisch nach — ein separater `make build-*`-Aufruf ist nur nötig,
 um das Bauen vom Starten zu trennen (am echten G1: **vor** dem Wechsel ins
 Roboter-LAN, solange Internet da ist). Weitere Ziele:
 [61-A-Werkzeuge.md](61-A-Werkzeuge.md#make-ziele).
 
 Intern ist `make` nur ein dünner Wrapper um
-`docker compose --profile <sim|real|real-full>`:
+`docker compose --profile <sim|real>`:
 
 ```bash
 # Simulation: MuJoCo-G1 + g1pilot (robot_state, Arme, RViz, Teleop)
@@ -116,16 +112,13 @@ G1_SIM_MODE=true docker compose --profile sim up
 
 # Echter Roboter (schlank: Arme + Hände + Unitree-Loco-Controller)
 ROBOT_INTERFACE=<iface> docker compose --profile real up
-
-# Echter Roboter mit Livox/MOLA/Navigation (großes Image, MID360 nötig)
-ROBOT_INTERFACE=<iface> docker compose --profile real-full up
 ```
 
 ## Fenster-Icons
 
 Jedes G1-Fenster hat ein eigenes Icon und eine eigene `WM_CLASS`, damit es
 im Dock bzw. in der Taskleiste unterscheidbar ist: Startmenü (grün), Demo-GUI
-Sim (blau) und Real (rot), Streamdeck (lila), MuJoCo-Viewer (türkis).
+Sim (blau) und Real (rot), MuJoCo-Viewer (türkis).
 Details: `resource/icons/README.md`.
 
 ## Fehlerbehebung

@@ -504,7 +504,7 @@ def test_joy_stream_timeout_stops_move(lc_module):
         _close(node)
 
 
-def test_streamdeck_deadman_still_stops(lc_module):
+def test_gui_deadman_still_stops(lc_module):
     node, robot = _make(lc_module)
     try:
         robot.fsm = 500

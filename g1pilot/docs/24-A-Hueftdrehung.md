@@ -46,7 +46,7 @@ Oberkörper ein Stück nach links oder rechts (nur die Taille, Gelenk
 
 | Aktion | Verhalten |
 |---|---|
-| **GEHEN** (L2, Kachel, Streamdeck) | erst Mitte, dann `walk_ready`; Sim: `loco_sim` wartet darauf (auch mit AGILE), real: `loco_client` sendet `Move()` nur mit 0, bis die Hüfte in der Mitte ist |
+| **GEHEN** (L2, Kachel) | erst Mitte, dann `walk_ready`; Sim: `loco_sim` wartet darauf (auch mit AGILE), real: `loco_client` sendet `Move()` nur mit 0, bis die Hüfte in der Mitte ist |
 | **Grundstellung** (Share 1 s) | erst Mitte, dann die geplante Fahrt |
 | **Arme abgeben** (DISABLE, real) | erst Mitte, dann Rückfahrt + Gewicht 1→0 — sonst risse der Onboard-Regler die Taille selbst zurück |
 

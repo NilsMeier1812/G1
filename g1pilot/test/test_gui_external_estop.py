@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""NOT-HALT von aussen (PS-Taste am PS4-Controller) in Demo-GUI und Streamdeck.
+"""NOT-HALT von aussen (PS-Taste am PS4-Controller) in der Demo-GUI.
 
-Die GUIs muessen einen fremden /g1pilot/emergency_stop genauso anzeigen wie
+Die GUI muss einen fremden /g1pilot/emergency_stop genauso anzeigen wie
 den eigenen Knopf -- sonst bleibt z.B. die Demo-GUI auf REAL im alten Modus
 stehen und »Start« (Quittung) gesperrt. Offscreen, ohne Roboter.
 """
@@ -83,25 +83,4 @@ def test_demo_gui_follows_external_estop(mode):
         node.tf_listener.executor.shutdown()            # TF-Spin-Thread vor rclpy beenden
         node.tf_listener.dedicated_listener_thread.join(timeout=2.0)
         node.tf_node.destroy_node()
-        node.destroy_node()
-
-
-def test_streamdeck_follows_external_estop(mode):
-    which, app = mode
-    from g1pilot.teleoperation import ui_interface as ui
-    node = ui.StreamDeck()
-    gui = ui.ButtonGUI(node)
-    try:
-        gui.set_button_active((1, 0), True)            # ENABLE MANIPULATION an
-        gui.radio_loco((0, 1), node.pub_start_balancing)
-        log = _published(node)
-        node._emergency_stop(Bool(data=True))
-        assert not gui.button_states[(1, 0)] and not gui.button_states[(0, 1)]
-        assert "#ff0000" in gui.buttons[(4, 4)].styleSheet()
-        assert log == []                                # reine Anzeige
-        # naechster ENABLE-Klick schaltet EIN (nicht aus)
-        gui.toggle_button((1, 0), node.pub_arms_enabled)
-        assert log == [("/g1pilot/arms/enabled", True)]
-    finally:
-        gui.close()
         node.destroy_node()

@@ -554,7 +554,7 @@ class ArmController(Node):
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
-        # Ziel des HOMING-ARMS-Buttons (Streamdeck) bzw. »Grundstellung« (Demo-GUI):
+        # Ziel des »Grundstellung« (Demo-GUI):
         # die Lauf-Pose walk_left/right weiter unten (Arme neben dem Koerper).
         # Frueher Nullpose (Unterarm waagerecht nach vorn) -- siehe _homing_goals.
 
@@ -632,7 +632,7 @@ class ArmController(Node):
         qos_scene.durability = DurabilityPolicy.TRANSIENT_LOCAL
         self.create_subscription(MarkerArray, "/scene_markers", self._on_scene_markers, qos_scene)
 
-        # Positionsspeicher (Streamdeck-Buttons, siehe teleoperation/ui_interface.py).
+        # Positionsspeicher (Demo-GUI / Arm-API, Dialoge in teleoperation/gui_base.py).
         self.create_subscription(String, "/g1pilot/pose_store/save", self._on_pose_save, 10)
         self.create_subscription(String, "/g1pilot/pose_store/goto", self._on_pose_goto, 10)
         self.create_subscription(Bool, "/g1pilot/pose_store/cancel", self._on_pose_cancel, 10)
@@ -659,7 +659,7 @@ class ArmController(Node):
             for s in ("left", "right")}
         self._cmd_pose_data = pin.Data(self.ik_solver.model)
         self._cmd_pose_last = 0.0
-        # Rueckkanal des Speicherns (POST /arm/save bzw. Streamdeck-Dialog):
+        # Rueckkanal des Speicherns (POST /arm/save bzw. Speichern-Dialog der Demo-GUI):
         # sagt, WAS unter welchem Namen/Kategorie wirklich in der Datei landete.
         self.pub_save_status = self.create_publisher(
             String, "/g1pilot/pose_store/save/status", 10)
@@ -1101,7 +1101,7 @@ class ArmController(Node):
     # --------------------------------------------------------
 
     # Obergrenzen auf dem ECHTEN G1, egal welches Launchfile startet (frueher
-    # bekam z.B. bringup_launcher / `make real-full` die Sim-Gains kp=150/kd=12).
+    # bekam z.B. der inzwischen entfernte Voll-Stack `make real-full` die Sim-Gains kp=150/kd=12).
     REAL_MAX_GAINS = {"kp_low": 80.0, "kd_low": 3.0, "kp_wrist": 50.0, "kd_wrist": 3.0,
                       "kp_waist": 250.0, "kd_waist": 6.0}
     WAIST_TAU_LIMIT = 25.0      # Nm, Schwerkraft-Feedforward der Taille
@@ -1807,7 +1807,7 @@ class ArmController(Node):
                                "Beine per Damp (loco_client). Quittieren: START.")
 
     def _on_start(self, msg: Bool):
-        """START (Streamdeck) quittiert den E-Stop-Latch. Die Arme bleiben
+        """START (GUI) quittiert den E-Stop-Latch. Die Arme bleiben
         schlaff (_arm_slack) und werden weiter gedaempft gehalten, bis ENABLE
         MANIPULATION die Kontrolle bewusst zurueckholt -- NICHT an den
         Onboard-Regler zurueckgeben (der wuerde sie posieren)."""
@@ -2523,7 +2523,7 @@ class ArmController(Node):
 
     def _on_pose_save(self, msg: String):
         """Speichert die AKTUELLE Stellung unter einem Namen, mit Auswahl der
-        Komponenten und einer Kategorie ("Ordner"). Quellen: der Streamdeck-
+        Komponenten und einer Kategorie ("Ordner"). Quellen: der GUI-
         Dialog und der HTTP-Endpunkt POST /arm/save (siehe g1pilot/docs/21-T-Arm-API.md) -- beide
         schicken dasselbe JSON `{id?, name, category?, components?}` auf dieses
         Topic; ein reiner Name (Altform) gilt weiter als "beide Arme".

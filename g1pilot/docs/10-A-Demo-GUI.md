@@ -6,7 +6,7 @@ Aufbau im Code, Topics und offene Punkte: [10-T-Demo-GUI.md](10-T-Demo-GUI.md).
 
 ## Ziel
 
-Die Streamdeck-GUI (`ui_interface.py`) zeigt alle 25 Funktionen gleichzeitig.
+Die frühere Streamdeck-GUI (2026-10-30 entfernt) zeigte alle 25 Funktionen gleichzeitig.
 Für Entwicklung ist das richtig, für eine Vorführung zu viel: Besucher sehen
 nicht, in welchem Zustand der Roboter ist und welche Knöpfe gerade Sinn
 ergeben. Die Demo-GUI reduziert die Bedienung auf **eine Entscheidung zur Zeit**.
@@ -70,7 +70,7 @@ Danach ist der Knopf grau (*Gestartet ✓*), nach einem NOT-HALT wieder frei
 (*NOT-HALT quittieren*). Der Controller-Zustand steht nicht mehr als eigene
 Zeile in der GUI (Modus, Hand und Tempo zeigt die GUI selbst); solange ein
 Controller aktiv ist, zeigt *🎮 Belegung* oben rechts die Tastenbelegung.
-In der Sim startet die GUI wie der Streamdeck automatisch in GREIFEN und
+In der Sim startet die GUI automatisch in GREIFEN und
 wiederholt die Anforderung, bis arm_controller und loco_sim sie bestätigt
 haben ([40-T-Simulation.md › Auto-Start](40-T-Simulation.md#auto-start-greifen)).
 
@@ -102,7 +102,7 @@ damit die Zuordnung ohne Lesen klar ist.
 
 **GEHEN**
 
-- **Knopf** (`VirtualJoystick` aus dem Streamdeck): ziehen = laufen,
+- **Knopf** (`VirtualJoystick` aus `gui_base.py`): ziehen = laufen,
   loslassen = stehen.
 - **Pfeiltasten** ▲▼◀▶ und **⟲/⟳ drehen**: *gedrückt halten* = laufen,
   loslassen = sofort 0. Das ist bewusst ein Tot-Mann-Prinzip: Ein einzelner Klick
@@ -116,8 +116,8 @@ damit die Zuordnung ohne Lesen klar ist.
   `loco_cmd_vel`. In der Sim sendet die Navigation über dasselbe Topic
   (`joy_to_cmdvel`), und die Nullen der GUI würden sie sonst ständig ausbremsen.
   Beim Wechsel zu GREIFEN und bei NOT-HALT geht AUTO NAV automatisch aus. Der
-  Knopf ist nur aktiv, wenn der Nav-Stack läuft (`G1_ENABLE_NAV` bzw.
-  `G1_ENABLE_LIDAR`); sonst erklärt ein Hinweis, wie man ihn einschaltet.
+  Knopf ist nur aktiv, wenn der Nav-Stack läuft (nur Sim,
+  `G1_ENABLE_NAV`); sonst erklärt ein Hinweis, wie man ihn einschaltet.
 - **AUTO-NAV-Zustände** (aus `/g1pilot/nav_status` von `nav2point`): Der
   Knopf zeigt *aus* → *AN, wartet auf Ziel* → *läuft …* (gestrichelter Rahmen,
   wie beim Moduswechsel) → *AN, Ziel erreicht* (grün). Nach dem Ankommen bleibt
@@ -161,7 +161,7 @@ Titelzeile vom Inhalt (auch bei GEHEN).
   hält man einen Ablauf am Stück an. Start: **real Schritt für Schritt, Sim
   am Stück** (`G1_SEQUENCE_MODE=auto|step`).
 - **Abbruch**: `failed`/`rejected`/`cancelled` der laufenden Fahrt, NOT-HALT
-  (GUI, Controller PS, Voll-Notaus, Handy, Streamdeck), Stopp (Knopf
+  (GUI, Controller PS, Voll-Notaus, Handy), Stopp (Knopf
   „Bewegung stoppen“, Controller Kreuz, `/g1pilot/pose_store/cancel`),
   Moduswechsel und „Hand bewegen“ während einer Fahrt beenden den Ablauf, auch
   wenn er gerade auf „Weiter“ wartet. Danach geht es nie von selbst weiter,
@@ -191,7 +191,7 @@ Titelzeile vom Inhalt (auch bei GEHEN).
   (Arme hoch, Ellbogen hinten; Hinweis, falls sie fehlt; Name über
   `G1_SAFE_POSE` änderbar). **Grundstellung** sendet `/g1pilot/arms/home`: der
   Arm-Controller fährt geplant die **Lauf-Pose** an (Arme neben dem Körper,
-  Hände auf Hüfthöhe), genau wie HOMING ARMS am Streamdeck. **Bewegung stoppen**
+  Hände auf Hüfthöhe) (früher HOMING ARMS). **Bewegung stoppen**
   sendet `/g1pilot/pose_store/cancel`. Hände öffnen/schließen liegt auf der
   Seite HÄNDE.
 - **Hüfte** (Zeile unter den Knöpfen): zeigt den Stand der Hüftdrehung
@@ -200,15 +200,13 @@ Titelzeile vom Inhalt (auch bei GEHEN).
   [24-A-Hueftdrehung.md](24-A-Hueftdrehung.md).
 - **Erweitert ▸** (eingeklappt) enthält die bisherigen Einzelfunktionen für den
   Betreuer: Pose anfahren (Dialog), Pose speichern (Dialog, Kategorie `Demo`
-  vorausgewählt) und Marker folgen. Die Dialoge werden aus `ui_interface.py`
-  wiederverwendet.
+  vorausgewählt) und Marker folgen. Die Dialoge liegen in `gui_base.py`.
 
 *Seite HÄNDE* (`teleoperation/hand_panel.py`) ersetzt die beiden Browser-GUIs
 der Hand-Bridge (`hand_controller_viewer.html`, `inspire_hand_viewer.html`):
 
 - **Ganze Hand**: beide Hände öffnen/schließen sowie je Hand eigene
-  Öffnen/Schließen-Knöpfe (`/g1pilot/hand_action/{left,right}`, wie der
-  Streamdeck).
+  Öffnen/Schließen-Knöpfe (`/g1pilot/hand_action/{left,right}`).
 - **Finger**: je Finger ein Soll-Schieber (oben = offen), die Ist-Öffnung
   (gelber Balken, %) und die gemessene Kraft in g (grün → orange → rot bei
   Erreichen des Griffkraft-Limits). Ein Ein/Aus-Hauptschalter fehlt bewusst:
@@ -227,8 +225,7 @@ der Hand-Bridge (`hand_controller_viewer.html`, `inspire_hand_viewer.html`):
 
 - **Statuszeile** in Klartext mit farbigem Balken, z. B. „Arme werden eingeklappt
   …“, „Arbeitsplatz 1 · Schritt 2/5: …“, „Fertig.“ oder „Abgebrochen (failed) …“.
-- **NOT-HALT** ist immer sichtbar, rund und rot. Er sendet dasselbe wie der
-  Streamdeck. Beide Kacheln werden danach inaktiv. Was er genau auslöst:
+- **NOT-HALT** ist immer sichtbar, rund und rot. Beide Kacheln werden danach inaktiv. Was er genau auslöst:
   [51-A-Notaus.md](51-A-Notaus.md).
 - **Temperaturen** (nur echter G1, links unten, „TEMP. MOTOREN“): heißester
   Motor und je eine Kachel für Bein L/R, Taille, Arm L/R mit dem Höchstwert,
@@ -239,7 +236,7 @@ der Hand-Bridge (`hand_controller_viewer.html`, `inspire_hand_viewer.html`):
 - **Roboter zurücksetzen** (nur Sim): Roboter nach NOT-HALT oder Sturz zurück
   an den Startpunkt und gehalten (HOLD); beim nächsten Modus-Klick steht er
   sanft auf.
-- **Roboter schubsen** (nur Sim): Störtest wie PUSH ROBOT im Streamdeck. Kurz
+- **Roboter schubsen** (nur Sim): Störtest. Kurz
   tippen = Standard-Schubs (150 N); **gedrückt halten lädt auf** (Anzeige im
   Knopf, bis 2000 N nach 3 s), Loslassen schubst. Er zeigt, dass sich der
   Roboter in beiden Modi fängt. Einstellbar mit `G1_PUSH_MAX_N`,
@@ -259,8 +256,8 @@ der Hand-Bridge (`hand_controller_viewer.html`, `inspire_hand_viewer.html`):
   Pose vom ENABLE zurück und rampt das Gewicht auf 0. Erst wenn
   `/g1pilot/arms/state` False meldet und die Rampe durch ist (2,5 s), legt die
   GUI `.real_shutdown_request` an. Der Host-Watcher
-  `docker/real_shutdown_watcher.sh` (von `./start.sh`, `make real` und
-  `make real-full` gestartet) stoppt den Stack **sanft** mit
+  `docker/real_shutdown_watcher.sh` (von `./start.sh` und `make real`
+  gestartet) stoppt den Stack **sanft** mit
   `docker compose stop` (SIGTERM) + `down`. Die Beine bleiben im
   Onboard-Zustand, es gibt kein Damp: Den Roboter danach per Fernbedienung
   ablegen. Kommt vom Arm-Regler 20 s lang keine Quittung, wird trotzdem

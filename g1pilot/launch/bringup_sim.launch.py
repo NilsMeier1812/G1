@@ -2,12 +2,11 @@
 bringup_sim.launch.py
 Startet G1Pilot für MuJoCo-Simulation.
 
-Unterschied zu bringup_launcher.launch.py:
+Aufbau:
   - robot_state + arm_controller: use_robot=true, interface=lo
     → kommunizieren über DDS Loopback mit MuJoCo
   - loco_sim: RL-Policy-Loco-/Balance-Controller (ersetzt das Unitree-Onboard-
     High-Level, das es in MuJoCo nicht gibt) → rt/lowstate→Policy→rt/lowcmd
-  - KEIN livox, KEIN mola (nicht nötig im Sim)
 """
 from launch import LaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -39,8 +38,8 @@ def generate_launch_description():
     #  G1_ENABLE_NAV : "1"/"0" — den g1pilot-Nav-Stack (dijkstra_planner + nav2point)
     #  in der Sim mitstarten. Ersetzt die auf real fehlenden Bausteine durch Sim-Glue:
     #  sim_localization (Pose aus rt/sportmodestate statt MOLA) + joy_to_cmdvel
-    #  (Joy->loco_cmd_vel, weil loco_sim keinen Joy liest). Real laeuft derselbe
-    #  Nav-Stack ueber bringup_real (G1_ENABLE_LIDAR=1) mit MOLA + loco_client.
+    #  (Joy->loco_cmd_vel, weil loco_sim keinen Joy liest). Navigation gibt es
+    #  nur in der Sim (LiDAR/MOLA fuer den echten G1 wurde verworfen).
     enable_nav = os.environ.get('G1_ENABLE_NAV', '0').strip().lower() in ('1', 'true', 'yes', 'on')
 
     #  G1_WALK_POLICY : Lauf-Policy von loco_sim (Ordner unter policies/), im

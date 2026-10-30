@@ -32,7 +32,7 @@ RUN apt-get update && apt-get install -yy \
 
 RUN pip3 install --upgrade pip
 
-# unitree_sdk2_python (EXAKT gleicher Commit wie Original-Dockerfile!)
+# unitree_sdk2_python (EXAKT gleicher Commit wie im urspruenglichen g1pilot-Dockerfile!)
 RUN git clone https://github.com/lnotspotl/unitree_sdk2_python.git \
     && cd unitree_sdk2_python \
     && git checkout 7c661d27f4ae064ffd0dd633fd9d5b518ef0b508 \

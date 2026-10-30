@@ -140,7 +140,7 @@ def test_waiting_sequence_ends_and_never_resumes(gui, how):
     if how == "estop_gui":
         g.emergency_stop()
     elif how == "estop_extern":
-        g._external_estop()                                  # PS am Controller, Handy, Streamdeck
+        g._external_estop()                                  # PS am Controller, Handy
     elif how == "stop":
         g._cancel()
     elif how == "controller_cross":
@@ -342,7 +342,7 @@ def test_editor_compose_reorder_wait(gui):
 
 def test_teach_in_appends_after_save_ack(gui, monkeypatch):
     dg, g, node, sent, strs, states, store = gui
-    from g1pilot.teleoperation import ui_interface as ui
+    from g1pilot.teleoperation import gui_base as ui
     seen = {}
 
     class FakeDialog:
@@ -394,10 +394,10 @@ def test_save_failure_reported(gui, monkeypatch):
 
 def test_save_dialog_sequence_field():
     app = QApplication.instance() or QApplication([])   # noqa: F841
-    from g1pilot.teleoperation.ui_interface import PoseSaveDialog
+    from g1pilot.teleoperation.gui_base import PoseSaveDialog
     d = PoseSaveDialog(None, categories=["Demo"])
     d.ed_name.setText("A")
-    assert "sequence" not in d.result_data()                 # Streamdeck unveraendert
+    assert "sequence" not in d.result_data()                 # ohne Ablauf unveraendert
     d = PoseSaveDialog(None, categories=["Demo"], sequences=["Kiste"], sequence="Kiste")
     d.ed_name.setText("A")
     assert d.result_data()["sequence"] == "Kiste"

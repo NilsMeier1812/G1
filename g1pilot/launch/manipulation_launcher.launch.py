@@ -80,7 +80,7 @@ def generate_launch_description():
         # Menue "Enable publishing" aktiviert. Der Arm bewegt sich ohnehin nur,
         # wenn /g1pilot/arms/enabled true ist -> das bleibt die Sicherheitsschranke.
         DeclareLaunchArgument("marker_publish_default", default_value="true"),
-        # Leader-Follower: Marker folgt der Hand im Idle (per Streamdeck/Topic schaltbar).
+        # Leader-Follower: Marker folgt der Hand im Idle (per Topic schaltbar).
         DeclareLaunchArgument("marker_follow_ee", default_value="true"),
         # Arme beim Laufen in die Lauf-Pose parken (true, real immer) oder frei
         # lassen (false: Sim mit der AGILE-Lauf-Policy, setzt bringup_sim). Steuert

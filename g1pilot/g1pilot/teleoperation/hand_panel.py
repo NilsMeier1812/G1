@@ -13,7 +13,7 @@ und inspire_hand_viewer). Zwei Ebenen, damit es im Demo-Betrieb einfach bleibt:
     nullen. Die Griffkraft setzt das Kraft-Limit aller Finger.
 
 Kommunikation ausschliesslich ueber ROS (siehe inspire_ftp/bridge.py):
-  /g1pilot/hand_action/{left,right}  String "open"/"close" (wie Streamdeck)
+  /g1pilot/hand_action/{left,right}  String "open"/"close" (wie loco_client)
   /g1pilot/hand_cmd                  String JSON, gleiche Befehle wie ws://…:8766
   /g1pilot/hand_status               String JSON, ~10 Hz Ist-/Soll-Zustand + Zonen
 """

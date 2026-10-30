@@ -150,10 +150,9 @@ Im grafischen Startmenü **Echter Roboter** wählen:
 | Abschnitt | Einstellung |
 |---|---|
 | Verbindung zum G1 | Interface mit `192.168.123.x` (wird vorgeschlagen, grüner Hinweis „Im Roboter-LAN“) |
-| Bedienoberfläche | **Demo-GUI** (Vorführung) oder Streamdeck (Entwicklung, alle Einzelfunktionen) |
-| Ausstattung | Inspire-Hände + IPs; RViz; **PS4-Controller für Arme + Hände** (PS4 oder Xbox, siehe unten); Handy-Zugang (nur Demo-GUI) |
+| Ausstattung | Inspire-Hände + IPs; RViz; **PS4-Controller für Arme + Hände** (PS4 oder Xbox, siehe unten); Handy-Zugang |
 | Geh-Limits | Default vorwärts 0,4 m/s, seitlich 0,3 m/s, drehen 0,4 rad/s |
-| Erweitert | Modbus-Port, Gamepad-Name, LiDAR (experimentell, nicht für den Normalbetrieb), Images neu bauen |
+| Erweitert | Modbus-Port, Gamepad-Name, Images neu bauen |
 
 Danach den Haken „Sicherheitshinweise gelesen“ setzen und **Echten Roboter
 starten**. Die Docker-Ausgabe läuft im Startmenü-Fenster mit.
@@ -170,11 +169,11 @@ Ohne grafisches Menü (kein `python3-tk`, SSH): `./start.sh --menu` fragt
 dasselbe im Terminal ab und verlangt zum Schluss die Eingabe `REAL`. Ganz
 ohne Rückfragen:
 ```bash
-G1_MODE=real ROBOT_INTERFACE=<NIC> G1_GUI=demo G1_INSPIRE_HANDS=1 \
+G1_MODE=real ROBOT_INTERFACE=<NIC> G1_INSPIRE_HANDS=1 \
   G1_PS4_ARMS=1 G1_REAL_CONFIRM=1 ./start.sh --yes
 ```
 `make real ROBOT_INTERFACE=<NIC>` geht auch, nimmt aber die Compose-Defaults
-(u. a. Streamdeck statt Demo-GUI, ohne Hände), solange die Variablen nicht
+(u. a. ohne Hände), solange die Variablen nicht
 gesetzt sind.
 
 Erwartung: Container startet, `colcon build` läuft durch, RViz und die gewählte Bedienoberfläche (Titel „— REAL")
@@ -208,10 +207,10 @@ keine Hand „nicht verbunden“ zeigen.
 
 - **Kein Auto-Damp beim Start:** `loco_client` läuft mit `damp_on_init=False`
   — der Node greift beim Hochfahren nicht in den Roboterzustand ein.
-- **Kein Auto-Start:** Der Streamdeck publiziert im Real-Modus von sich aus
-  nichts — der Roboter bewegt sich erst nach Klicks (siehe
-  [13-T-Streamdeck.md](13-T-Streamdeck.md), Abschnitt
-  Auto-Start).
+- **Kein Auto-Start:** Die Demo-GUI publiziert im Real-Modus von sich aus
+  nichts — der Roboter bewegt sich erst nach Klicks (der Auto-Start
+  `SimAutoStart` läuft nur in der Simulation, siehe
+  [40-T-Simulation.md](40-T-Simulation.md)).
 - **WALK ist gesperrt, bis balanciert:** wird sonst mit Warnung ignoriert.
 - **Übernehmen ohne Bewegung (`ENABLE`):** `arm_controller` merkt sich die
   gemessene Armpose (= Pose des Onboard-Reglers), kommandiert genau diese und
@@ -279,15 +278,15 @@ Der G1 hängt am Kran, die zweite Person hat die Unitree-Fernbedienung.
    linker Stick) erst ganz wenig. Loslassen hält an.
 7. Ende: **Real beenden** zweimal (siehe [G](#g--sicher-beenden)).
 
-Die Einzelschritte mit dem Streamdeck und die Hintergründe stehen in den
-folgenden Unterpunkten.
+Die Einzelschritte und die Hintergründe stehen in den folgenden
+Unterpunkten.
 
-### Einzeltests (Streamdeck-Begriffe)
+### Einzeltests
 
 **1. Hände (Roboter bleibt passiv, hängend/schlaff)**
 
-Hand-GUIs öffnen, Hauptschalter der linken Hand aktivieren, per
-Streamdeck/GUI öffnen/schließen. Erwartung: RViz spiegelt die Finger, die
+In der Demo-GUI die linke Hand öffnen/schließen (Hände-Bereich in
+GREIFEN). Erwartung: RViz spiegelt die Finger, die
 Viewer-GUI zeigt plausible Kräfte bei Druck.
 
 **2. Arme passiv beobachten**
@@ -297,10 +296,10 @@ exakt; die Marker folgen der Hand (Leader-Follower).
 
 **3. Arm-Manipulation (hängend oder kniend)**
 
-1. **ENABLE MANIPULATION** — Gewicht rampt 2 s von 0 auf 1; die Arme
-   übernehmen die aktuelle Pose ohne Ruck. **Reihenfolge:** erst START bzw.
-   START BALANCING, dann ENABLE — die beim ENABLE gemessene Pose ist die, in
-   die DISABLE später zurückfährt.
+1. **GREIFEN** (übernimmt die Arme, intern `arms/enabled` = ENABLE) —
+   Gewicht rampt 2 s von 0 auf 1; die Arme übernehmen die aktuelle Pose
+   ohne Ruck. Die beim ENABLE gemessene Pose ist die, in die das Abgeben
+   später zurückfährt.
    **Taille prüfen (hängend):** nach der Rampe den Oberkörper an der
    Schulter leicht vor/zurück und seitlich drücken — er muss federnd
    zurückkommen und darf nicht mehr frei kippen. Log: „Taille [12, 13, 14]
@@ -310,15 +309,15 @@ exakt; die Marker folgen der Hand (Leader-Follower).
 3. **Gate-Test:** Marker absichtlich in den Torso ziehen. Erwartung: Arm
    stoppt vor dem Körper (Log: „Selbstkollisions-Gate ..."). Marker
    zurückziehen — Arm folgt wieder.
-4. **HOMING ARMS** testen (nur bei aktiver Manipulation möglich).
-5. **E-Stop-Test (hängend!):** EMERGENCY STOP drücken. Erwartung: Arme
+4. **Grundstellung** testen (nur bei übernommenen Armen möglich).
+5. **E-Stop-Test (hängend!):** **NOT-HALT** drücken. Erwartung: Arme
    werden **sofort** drehmomentfrei und sacken gedämpft — kein Sprung in
-   eine Home-Pose. Danach START (quittiert den Latch, Arme bleiben
-   schlaff) → ENABLE MANIPULATION übernimmt wieder ruckfrei die aktuelle
-   Pose. Fährt der Arm beim E-Stop stattdessen aktiv irgendwohin, sofort
+   eine Home-Pose. Danach Startleiste **NOT-HALT quittieren** (Arme bleiben
+   schlaff) → **GREIFEN** übernimmt wieder ruckfrei die aktuelle Pose. Fährt der Arm beim E-Stop stattdessen aktiv irgendwohin, sofort
    die Fernbedienungs-Notabschaltung nutzen und den Vorfall melden.
-6. **ENABLE MANIPULATION** wieder aus — die Arme fahren erst langsam in die
-   Pose vom ENABLE zurück, dann rampt das Gewicht 2 s auf 0 und die
+6. **Arme abgeben** (*Real beenden* macht das als ersten Schritt, einzeln:
+   `ros2 topic pub --once /g1pilot/arms/enabled std_msgs/Bool "data: false"`)
+   — die Arme fahren erst langsam in die Pose vom ENABLE zurück, dann rampt das Gewicht 2 s auf 0 und die
    Roboter-eigene Armsteuerung übernimmt ohne Positionssprung.
 7. **Programmende testen (hängend):** Arm mit einem Ziel vom Körper weg
    fahren, dann `Strg+C` bzw. `docker compose stop`. Erwartung: Log
@@ -357,8 +356,7 @@ Zuerst über den **Controller** (physischer Totmann), dann über die GUI:
    **Mit `G1_PS4_ARMS=0`** (alter Weg, nur PS4): Gerätename passt zu
    `JOYSTICK_NAME`, Log „Joystick found"; Deadman (Button 8) halten + Stick
    bewegt den Roboter, loslassen stoppt.
-2. Demo-GUI **GEHEN** (nur wenn die Startleiste Walk zeigt) bzw. Streamdeck
-   **WALK** (nur nach START BALANCING), dann den virtuellen Joystick
+2. Demo-GUI **GEHEN** (nur wenn die Startleiste Walk zeigt), dann den virtuellen Joystick
    vorsichtig ziehen.
 3. **Deadman-Test (Pflicht):** Während der Roboter geht, das
    GUI-Fenster schließen. Erwartung: Roboter stoppt von selbst
@@ -377,7 +375,7 @@ erledigt dann alles der Reihe nach:
    ENABLE zurück und werden weich an den Roboter übergeben.
 3. Sie stoppt den Stack sanft.
 
-Von Hand geht es so: WALK beenden, dann ENABLE MANIPULATION aus und auf das
+Von Hand geht es so: Gehen beenden, dann die Arme abgeben (`arms/enabled` False, siehe oben) und auf das
 Log „Arme an den Onboard-Regler uebergeben“ warten, dann `Strg+C` bzw.
 `make stop`.
 
@@ -391,9 +389,9 @@ Alle Halt-Wege mit Quittieren und Einstellungen: [51-A-Notaus.md](51-A-Notaus.md
 
 | Situation | Richtige Reaktion |
 |---|---|
-| Sanft anhalten beim Gehen | Joystick bzw. **L2 loslassen**; Streamdeck: **START BALANCING** (Roboter bleibt stehen) |
-| Arm fährt falsch, aber ruhig | **ENABLE MANIPULATION aus** bzw. Demo-GUI GREIFEN verlassen (Arme fahren langsam in die Onboard-Pose, dann Übergabe) |
-| Ruckt/schwingt an den Armen, Kontakt mit Mensch/Objekt | **NOT-HALT** (Demo-GUI) / **EMERGENCY STOP** (Streamdeck) / **PS** bzw. Xbox-Taste am Controller (Arme/Hände sofort schlaff; Taille gehalten; Beine: StopMove, Onboard-Regler balanciert weiter) |
+| Sanft anhalten beim Gehen | Joystick bzw. **L2 loslassen** (Roboter bleibt stehen) |
+| Arm fährt falsch, aber ruhig | Arme abgeben (Demo-GUI GREIFEN verlassen, Arme fahren langsam in die Onboard-Pose, dann Übergabe) |
+| Ruckt/schwingt an den Armen, Kontakt mit Mensch/Objekt | **NOT-HALT** (Demo-GUI) / **PS** bzw. Xbox-Taste am Controller (Arme/Hände sofort schlaff; Taille gehalten; Beine: StopMove, Onboard-Regler balanciert weiter) |
 | Hand fährt per Controller falsch | Stick loslassen bzw. **Kreuz** / Xbox **A** (Hand steht sofort, Roboter bleibt stehen) |
 | G1 soll sofort ganz aus (Beine weich) | **Voll-Notaus am Controller: R1 + L1 + PS 2 s halten** (Xbox: RB + LB + Xbox-Taste) → ganzer G1 Damp, sackt in den Kran. Quittieren mit »Start« (bleibt in Damp), dann Startleiste Preparation → Walk. Siehe [11-A-Controller.md](11-A-Controller.md#voll-notaus-r1--l1--ps) |
 | Echte Gefahr / Sturz droht | **Unitree-Fernbedienung** (übergeordnet, Damp dort). Der normale NOT-HALT dämpft die Beine **nicht** (außer `G1_ESTOP_DAMP_LEGS=1`) |
@@ -408,9 +406,9 @@ auch wenn gerade kein Move lief) und **kein** `Damp()`: der Onboard-Regler
 balanciert den G1 stehend weiter. Der alte Stand (Beine `Damp()`, Taille
 schlaff) lässt sich mit `G1_ESTOP_DAMP_LEGS=1` bzw. `G1_ESTOP_WAIST_HOLD=false`
 zurückholen. Die Antwort-Codes der Roboter-RPCs stehen im Log
-(„EMERGENCY STOP: StopMove (Code 0) …“). Quittieren: **START** — war der G1
+(„EMERGENCY STOP: StopMove (Code 0) …“). Quittieren: Startleiste **NOT-HALT quittieren** — war der G1
 dabei im Walk-Zustand, bleibt er darin (kein Sprung nach FSM 4). Die Arme
-bleiben danach gedämpft schlaff, bis **ENABLE MANIPULATION** die Kontrolle
+bleiben danach gedämpft schlaff, bis **GREIFEN** (bzw. Controller **R2**) die Kontrolle
 bewusst zurückholt.
 
 ## Handy-App / Fernbedienung und GUI (Modus-Abgleich)
@@ -436,7 +434,7 @@ Seit 2026-10-16 (Review des Real-Ablaufs):
   G1 beim Klick zurück nach FSM 4. Ist der Modus nicht lesbar, schaltet START
   nicht blind um (Log „Onboard-Modus nicht lesbar"). Gilt auch für
   Steuerkreuz-oben am alten Joystick.
-- **GREIFEN / START BALANCING stellt nur noch aus Preparation (FSM 4) auf
+- **GREIFEN (`start_balancing`) stellt nur noch aus Preparation (FSM 4) auf
   Walk um**, wie LAUFEN. Aus Damp/Zero-Torque/Sitzen und im E-Stop: Log
   „START BALANCING ignoriert …".
 - **Höhenrampe bricht ohne `Start()` ab**, wenn der FSM-Mode ≠ 0 meldet (Füße
@@ -514,7 +512,7 @@ Seit 2026-10-19:
 | „create domain error" im Log | `ROS_DOMAIN_ID` == Unitree-Domain (muss auf real 1 vs. 0 sein — Compose setzt das automatisch; eigene Terminals ebenfalls auf `ROS_DOMAIN_ID=1` setzen). |
 | Hand „NICHT VERBUNDEN" | IP/Port prüfen (`nc -zv <ip> 6000`); Hand mit Strom versorgt? |
 | „No joystick found" | `/dev/input` gemountet (Compose-Profil `real` braucht `privileged: true`)? Gerätename weicht ab → `JOYSTICK_NAME` setzen. Geräte anzeigen: `python3 -c "import evdev;[print(p, evdev.InputDevice(p).name) for p in evdev.list_devices()]"` |
-| WALK-Klick ohne Wirkung | Demo-GUI: G1 erst über die Startleiste (Damp → Preparation → Walk) oder die App auf Walk stellen. Streamdeck: erst START → START BALANCING. |
+| WALK-Klick ohne Wirkung | Demo-GUI: G1 erst über die Startleiste (Damp → Preparation → Walk) oder die App auf Walk stellen. |
 | »Walk« abgelehnt „Füße ohne Last" | G1 hängt noch straff am Kran (FSM-Mode ≠ 0): Kran lockern, bis die Füße tragen, dann erneut. |
 | Arme ruckeln beim Enable | Rampe verkürzt/0? `arm_weight_ramp_up_s` prüfen (Default 2.0 auf real; < 1 s wird auf real korrigiert). |
 | DISABLE dauert mehrere Sekunden | Gewollt: Rückfahrt in die Onboard-Pose vor der Übergabe (max. 12 s). Log „Rueckgabe an den Onboard-Regler". |
@@ -539,11 +537,8 @@ Seit 2026-10-19:
 - Notaus: [51-A-Notaus.md](51-A-Notaus.md), Technik [51-T-Notaus.md](51-T-Notaus.md)
 - Bekannter Linksdrall beim Gehen: [30-T-Stehen-und-Gehen.md](30-T-Stehen-und-Gehen.md#bekannte-einschränkungen)
 
-`G1_ENABLE_LIDAR=1` bzw. das Compose-Profil `real-full` (`make real-full`)
-schalten Livox/Navigation zu. Beides ist **experimentell und für die
-Demo nicht nötig**: es braucht das große Image (~45 min Build) und den
-MID360, und `real-full` startet noch den alten `bringup_launcher` statt
-`bringup_real`. Siehe [31-A-Navigation.md](31-A-Navigation.md). `arm_sdk` parallel
+Navigation gibt es am echten G1 nicht (LiDAR/MOLA wurde verworfen und
+2026-10-30 entfernt, siehe [31-A-Navigation.md](31-A-Navigation.md)). `arm_sdk` parallel
 zum Gehen funktioniert konstruktionsbedingt (Gewichts-Überblendung), für die
 ersten Geh-Tests aber die Arme deaktiviert lassen — der natürliche Armschwung
 der Unitree-Steuerung ist dafür besser geeignet.
