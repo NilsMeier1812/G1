@@ -29,6 +29,7 @@ import sys
 PKG = pathlib.Path(__file__).resolve().parents[1]
 SRC = PKG / "g1pilot"
 OUT_DIR = PKG / "docs" / "images"
+DRAWIO = OUT_DIR / "ros_graph.drawio"
 
 # ── Kategorien (Farben wie in der Vorlage) ──────────────────────────────────
 CATS = {
@@ -748,19 +749,24 @@ def _arrow(x, y, direction, color):
             f'fill="{color}"/>')
 
 
+def _edge_points(e, boxes, gap_x, lane_of):
+    """Eckpunkte einer Kante: Anschluss rechts an a, Sammellinie(n), links an b."""
+    a, b = boxes[e.a], boxes[e.b]
+    ya, yb = a.port_y[("R", e.src_port)], b.port_y[("L", e.dst_port)]
+    xs = [gap_x[g] + (lane_of[(k, g)] + 1) * LANE for k, g in e.trunks]
+    xa, xb = a.x + a.w, b.x
+    if e.kind == "adj":
+        return [(xa, ya), (xs[0], ya), (xs[0], yb), (xb, yb)]
+    return [(xa, ya), (xs[0], ya), (xs[0], e.track), (xs[1], e.track),
+            (xs[1], yb), (xb, yb)]
+
+
 def _svg_edges(boxes, edges, gap_x, lane_of):
     out = []
     order = {"demo": 0, "sim": 1, "real": 2}
     for e in sorted(edges, key=lambda e: order.get(e.scope, 3)):
-        a, b = boxes[e.a], boxes[e.b]
-        ya, yb = a.port_y[("R", e.src_port)], b.port_y[("L", e.dst_port)]
-        xs = [gap_x[g] + (lane_of[(k, g)] + 1) * LANE for k, g in e.trunks]
-        xa, xb = a.x + a.w, b.x
-        if e.kind == "adj":
-            pts = [(xa, ya), (xs[0], ya), (xs[0], yb), (xb, yb)]
-        else:
-            pts = [(xa, ya), (xs[0], ya), (xs[0], e.track), (xs[1], e.track),
-                   (xs[1], yb), (xb, yb)]
+        pts = _edge_points(e, boxes, gap_x, lane_of)
+        (xa, ya), (xb, yb) = pts[0], pts[-1]
         color, attrs = _edge_style(e.scope)
         d = " ".join(f"{'M' if i == 0 else 'L'}{x:.1f},{y:.1f}" for i, (x, y) in enumerate(pts))
         out.append(f'<path d="{d}" fill="none" {attrs} stroke-linejoin="round"/>')
@@ -816,46 +822,211 @@ def _svg_legend(x, y):
     return out, w, h
 
 
+class Layout:
+    """Fertig angeordnete Ansicht (fuer SVG und draw.io)."""
+
+    def __init__(self, title, topics, legend_w, legend_h):
+        self.title = title
+        self.boxes, self.edges = _collect(topics)
+        ncols = _assign_columns(self.boxes, self.edges, topics)
+        _plan_edges(self.boxes, self.edges)
+        cols = _place_rows(self.boxes, self.edges, ncols)
+        gap_lanes, self.lane_of = _route(self.boxes, self.edges, cols)
+        min_gap = {}
+        for e in self.edges:
+            if e.label:
+                g = e.trunks[0][1]
+                min_gap[g] = max(min_gap.get(g, 0), TEXT_W(e.label, 9) + 4 * LANE)
+        self.gap_x, self.width = _layout_x(cols, gap_lanes, legend_w + 30, min_gap)
+        tracks = [e.track for e in self.edges if e.track is not None]
+        ys = [b.y for b in self.boxes.values()] + tracks
+        ye = [b.y + b.h for b in self.boxes.values()] + tracks
+        self.top, self.bottom = min(ys) - 20, max(max(ye), legend_h) + 20
+
+    def points(self, e):
+        return _edge_points(e, self.boxes, self.gap_x, self.lane_of)
+
+
+HEAD = 56
+SUBTITLE = "ROS-Nodes und Topics, aus dem Code ermittelt mit tools/ros_graph.py"
+
+
 def build_svg(title, topics):
     """SVG fuer eine Ansicht: nur `topics` und die daran haengenden Nodes."""
-    boxes, edges = _collect(topics)
-    ncols = _assign_columns(boxes, edges, topics)
-    _plan_edges(boxes, edges)
-    cols = _place_rows(boxes, edges, ncols)
-    gap_lanes, lane_of = _route(boxes, edges, cols)
     legend, lw, lh = _svg_legend(0, 0)
-    min_gap = {}
-    for e in edges:
-        if e.label:
-            g = e.trunks[0][1]
-            min_gap[g] = max(min_gap.get(g, 0), TEXT_W(e.label, 9) + 4 * LANE)
-    gap_x, width = _layout_x(cols, gap_lanes, lw + 30, min_gap)
-    ys = [b.y for b in boxes.values()] + [e.track for e in edges if e.track is not None]
-    ye = [b.y + b.h for b in boxes.values()] + [e.track for e in edges if e.track is not None]
-    top, bottom = min(ys) - 20, max(max(ye), lh) + 20
-    head = 56
-    body = _svg_edges(boxes, edges, gap_x, lane_of)
-    for b in boxes.values():
+    lay = Layout(title, topics, lw, lh)
+    body = _svg_edges(lay.boxes, lay.edges, lay.gap_x, lay.lane_of)
+    for b in lay.boxes.values():
         body += _svg_box(b)
-    w, h = width + 20, bottom - top + head
-    oy = head - top
+    w, h = lay.width + 20, lay.bottom - lay.top + HEAD
+    oy = HEAD - lay.top
     return "\n".join([
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{w:.0f}" height="{h:.0f}" '
         f'viewBox="0 0 {w:.0f} {h:.0f}" font-family="{FONT}">',
         f'<rect width="{w:.0f}" height="{h:.0f}" fill="#ffffff"/>',
         _svg_text(20, 34, f"g1pilot — {title}", 20, True, "#1e1e1e", "start"),
         _svg_text(20 + TEXT_W(f"g1pilot — {title}", 20, True) + 14, 34,
-                  "ROS-Nodes und Topics, aus dem Code ermittelt mit tools/ros_graph.py",
-                  11, False, "#555555", "start"),
-        f'<g transform="translate(20,{oy + max(0, top):.1f})">', *legend, "</g>",
+                  SUBTITLE, 11, False, "#555555", "start"),
+        f'<g transform="translate(20,{oy + max(0, lay.top):.1f})">', *legend, "</g>",
         f'<g transform="translate(20,{oy:.1f})">', *body, "</g>",
         "</svg>", ""])
+
+
+# ── draw.io-Export: dieselbe Anordnung, Kaesten frei verschiebbar ───────────
+
+def _xa(s):
+    """Text fuer ein XML-Attribut (draw.io-Labels sind HTML)."""
+    return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            .replace('"', "&quot;").replace("\n", "&#10;"))
+
+
+def _dio_label(b):
+    parts = []
+    for t, size, bold, color in b.lines:
+        t = _esc(t)
+        if bold:
+            t = f"<b>{t}</b>"
+        parts.append(f'<font style="font-size:{size}px" color="{color}">{t}</font>')
+    return "<br>".join(parts)
+
+
+def _dio_box_style(b):
+    s = b.style
+    style = ["whiteSpace=wrap", "html=1", f"fillColor={s['fill']}",
+             f"strokeColor={s['stroke']}", "fontFamily=DejaVu Sans", "verticalAlign=middle"]
+    if s["ext"]:
+        style += ["rounded=0", "shadow=1", "strokeWidth=1.4"]
+    elif b.kind == "node":
+        style += ["rounded=1", "arcSize=18", "strokeWidth=1.6"]
+    else:
+        style += ["rounded=0", "strokeWidth=0.9"]
+    if s["dashed"]:
+        style += ["dashed=1", "dashPattern=5 3"]
+    return ";".join(style) + ";"
+
+
+def _dio_edge_style(e, pts, a, b):
+    color = SCOPE_COLOR.get(e.scope, EDGE_COLOR)
+    style = ["edgeStyle=orthogonalEdgeStyle", "rounded=0", "html=1", "jumpStyle=none",
+             f"strokeColor={color}", "strokeWidth=1.2", "endArrow=block", "endFill=1",
+             "endSize=5", "exitX=1", f"exitY={(pts[0][1] - a.y) / a.h:.3f}", "exitDx=0",
+             "exitDy=0", "entryX=0", f"entryY={(pts[-1][1] - b.y) / b.h:.3f}",
+             "entryDx=0", "entryDy=0", "fontSize=9", f"fontColor={color}"]
+    if e.both:
+        style += ["startArrow=block", "startFill=1", "startSize=5"]
+    else:
+        style += ["startArrow=none"]
+    if e.scope == "demo":
+        style += ["dashed=1", "dashPattern=6 3"]
+    return ";".join(style) + ";"
+
+
+def _dio_legend(x, y):
+    """Legende als eigene Zellen (ein Rahmen + Muster + Texte)."""
+    cells = []
+    rows = [("box", fill, border, f"{label} Nodes") for _, (label, fill, border) in CATS.items()]
+    rows += [
+        ("topic", "#ffffff", "#666666", "ROS-2-Topic: Name und Nachrichtentyp"),
+        ("topic", "#f2f2f2", "#666666", "Unitree-DDS-Kanal (unitree_sdk2py, kein ROS)"),
+        ("line", "x", "", "Publisher → Topic → Subscriber (Sim und Real)"),
+        ("line", "sim", "", "nur Simulation (Node gestrichelt: läuft nur in Sim)"),
+        ("line", "real", "", "nur echter Roboter (Node gestrichelt: läuft nur real)"),
+        ("line", "demo", "", "nur Demo-GUI (nicht Streamdeck-GUI)"),
+        ("both", "x", "", "Node publiziert und abonniert dasselbe Topic"),
+    ]
+    rh, w = 22, 360
+    h = 34 + rh * len(rows) + 26
+    cells.append(("legend", "<b>Legende</b>",
+                  "rounded=0;whiteSpace=wrap;html=1;fillColor=#fbfbfb;strokeColor=#999999;"
+                  "verticalAlign=top;align=left;spacingLeft=10;spacingTop=4;fontSize=12;"
+                  "container=1;collapsible=0;", 0, 0, w, h, None))
+    yy = 34
+    for i, (kind, a, bcol, text) in enumerate(rows):
+        cy = yy + rh / 2
+        if kind in ("box", "topic"):
+            rnd = "rounded=1;arcSize=25;" if kind == "box" else "rounded=0;"
+            cells.append((f"legend_s{i}", "", f"{rnd}html=1;fillColor={a};strokeColor={bcol};",
+                          12, cy - 8, 44, 16, "legend"))
+        else:
+            color = SCOPE_COLOR.get(a, EDGE_COLOR)
+            dash = "dashed=1;dashPattern=6 3;" if a == "demo" else ""
+            start = "startArrow=block;startFill=1;startSize=5;" if kind == "both" else ""
+            cells.append((f"legend_s{i}", None,
+                          f"endArrow=block;endFill=1;endSize=5;{start}html=1;"
+                          f"strokeColor={color};strokeWidth=1.2;{dash}",
+                          12, cy, 56, cy, "legend"))
+        cells.append((f"legend_t{i}", _esc(text),
+                      "text;html=1;align=left;verticalAlign=middle;fontSize=10;",
+                      66, cy - 10, 290, 20, "legend"))
+        yy += rh
+    cells.append(("legend_note", "Topics ohne Subscriber: Anzeige in RViz. "
+                  "{left,right} = zwei Topics.",
+                  "text;html=1;align=left;verticalAlign=middle;fontSize=9;fontColor=#555555;",
+                  12, yy + 6, 340, 18, "legend"))
+    return cells, w, h
+
+
+def build_drawio_page(key, title, topics):
+    legend, lw, lh = _dio_legend(0, 0)
+    lay = Layout(title, topics, lw, lh)
+    oy = HEAD - lay.top
+    out = [f'<diagram id="{key}" name="{_xa(title)}"><mxGraphModel dx="1600" dy="900" '
+           'grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" '
+           'fold="1" page="0" pageScale="1" math="0" shadow="0"><root>',
+           '<mxCell id="0"/><mxCell id="1" parent="0"/>',
+           f'<mxCell id="title" value="{_xa(f"<b>g1pilot — {_esc(title)}</b>")}" '
+           'style="text;html=1;align=left;verticalAlign=middle;fontSize=20;" vertex="1" '
+           'parent="1"><mxGeometry x="20" y="14" width="900" height="30" as="geometry"/>'
+           '</mxCell>',
+           f'<mxCell id="subtitle" value="{_xa(SUBTITLE)}" style="text;html=1;align=left;'
+           'verticalAlign=middle;fontSize=11;fontColor=#555555;" vertex="1" parent="1">'
+           f'<mxGeometry x="20" y="40" width="600" height="18" as="geometry"/></mxCell>']
+    ly = oy + max(0, lay.top)
+    for cid, value, style, x, y, w, h, parent in legend:
+        par = parent or "1"
+        if parent is None:
+            x, y = x + 20, y + ly
+        if value is None:   # Linie in der Legende
+            out.append(f'<mxCell id="{cid}" style="{_xa(style)}" edge="1" parent="{par}">'
+                       '<mxGeometry relative="1" as="geometry">'
+                       f'<mxPoint x="{x}" y="{y:.1f}" as="sourcePoint"/>'
+                       f'<mxPoint x="{w}" y="{h:.1f}" as="targetPoint"/></mxGeometry></mxCell>')
+        else:
+            out.append(f'<mxCell id="{cid}" value="{_xa(value)}" style="{_xa(style)}" '
+                       f'vertex="1" parent="{par}"><mxGeometry x="{x:.1f}" y="{y:.1f}" '
+                       f'width="{w:.1f}" height="{h:.1f}" as="geometry"/></mxCell>')
+    for b in lay.boxes.values():
+        out.append(f'<mxCell id="{b.id}" value="{_xa(_dio_label(b))}" '
+                   f'style="{_xa(_dio_box_style(b))}" vertex="1" parent="1">'
+                   f'<mxGeometry x="{b.x + 20:.1f}" y="{b.y + oy:.1f}" width="{b.w:.1f}" '
+                   f'height="{b.h:.1f}" as="geometry"/></mxCell>')
+    order = {"demo": 0, "sim": 1, "real": 2}
+    for i, e in enumerate(sorted(lay.edges, key=lambda e: order.get(e.scope, 3))):
+        a, b = lay.boxes[e.a], lay.boxes[e.b]
+        pts = lay.points(e)
+        inner = "".join(f'<mxPoint x="{x + 20:.1f}" y="{y + oy:.1f}"/>' for x, y in pts[1:-1])
+        value = _xa(_esc(e.label)) if e.label else ""
+        out.append(f'<mxCell id="e{i}" value="{value}" '
+                   f'style="{_xa(_dio_edge_style(e, pts, a, b))}" edge="1" parent="1" '
+                   f'source="{e.a}" target="{e.b}"><mxGeometry relative="1" as="geometry">'
+                   f'<Array as="points">{inner}</Array></mxGeometry></mxCell>')
+    out.append("</root></mxGraphModel></diagram>")
+    return "".join(out)
+
+
+def build_drawio(views):
+    pages = [build_drawio_page(k, t, ts) for k, (t, ts) in views.items()]
+    return ('<mxfile host="g1pilot-ros_graph" type="device">\n'
+            + "\n".join(pages) + "\n</mxfile>\n")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--check", action="store_true", help="nur gegen den Code pruefen")
     ap.add_argument("-o", "--out-dir", default=str(OUT_DIR), help="Zielordner der SVGs")
+    ap.add_argument("--drawio", metavar="DATEI", nargs="?", const=str(DRAWIO),
+                    help="zusaetzlich alle Ansichten als draw.io-Datei schreiben "
+                         f"(Default {DRAWIO.relative_to(PKG)}; ueberschreibt Handarbeit!)")
     args = ap.parse_args()
 
     problems = check()
@@ -878,6 +1049,9 @@ def main():
         path = out_dir / f"ros_graph_{key}.svg"
         path.write_text(build_svg(title, topics), encoding="utf-8")
         print("geschrieben:", path)
+    if args.drawio:
+        pathlib.Path(args.drawio).write_text(build_drawio(views), encoding="utf-8")
+        print("geschrieben:", args.drawio)
     return 1 if problems else 0
 
 

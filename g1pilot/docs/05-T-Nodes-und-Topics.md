@@ -99,6 +99,28 @@ keinen Node, der `/map` publiziert (`create_map` läuft nur in der Sim), der
 [31-T-Navigation.md](31-T-Navigation.md)). `/g1pilot/catch_falls` publiziert
 die Streamdeck-GUI, im Stack liest es derzeit kein Node.
 
+## Von Hand bearbeiten (draw.io)
+
+[`images/ros_graph.drawio`](images/ros_graph.drawio) enthält alle sechs
+Ansichten als Seiten, mit derselben Anordnung wie die SVGs. Kästen lassen sich
+verschieben, die Linien bleiben angeschlossen und rechtwinklig.
+
+- **Öffnen:** im Browser auf [app.diagrams.net](https://app.diagrams.net)
+  (*Datei → Öffnen von → Gerät*), mit der Desktop-App *draw.io* oder in
+  VS Code mit der Erweiterung *Draw.io Integration*.
+- **Linien nach dem Verschieben glätten:** Linie(n) markieren, dann
+  *Anordnen → Wegpunkte löschen*. draw.io legt die Linie dann selbst neu
+  rechtwinklig.
+- **Als Bild speichern:** *Datei → Exportieren als → SVG*. Mit dem Häkchen
+  *Kopie meines Diagramms einbeziehen* bleibt das SVG in draw.io bearbeitbar.
+  Zum Ersetzen der Bilder hier nach `docs/images/ros_graph_<ansicht>.svg`
+  exportieren.
+
+Achtung: `tools/ros_graph.py` überschreibt die SVGs bei jedem Lauf und die
+draw.io-Datei bei `--drawio`. Wer von Hand nachbessert, sollte danach
+Änderungen an Topics von Hand in draw.io nachtragen oder vorher neu erzeugen
+und dann erst schieben.
+
 ## Diagramme neu erzeugen
 
 Nach jeder Änderung an Publishern oder Subscribern:
@@ -106,6 +128,7 @@ Nach jeder Änderung an Publishern oder Subscribern:
 ```bash
 python3 tools/ros_graph.py --check   # nur prüfen, braucht nichts außer Python
 python3 tools/ros_graph.py           # prüfen + SVGs nach docs/images/ schreiben
+python3 tools/ros_graph.py --drawio  # zusätzlich docs/images/ros_graph.drawio neu schreiben
 ```
 
 Das Skript zeichnet ohne Graphviz mit einem eigenen Layout: Jeder Node hat
