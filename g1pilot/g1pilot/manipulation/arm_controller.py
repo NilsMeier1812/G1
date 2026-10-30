@@ -176,10 +176,10 @@ class ArmController(Node):
         # aufsetzen, Hand ignoriert Greif-Objekte, ein Armpunkt unter seinem
         # Mindestabstand darf sich nicht weiter annaehern. Eigener
         # Schalter, unabhaengig von self_collision_gate (siehe g1pilot/
-        # g1pilot/docs/11_arm_manipulation_technik.md (Umgebungs-Kollisionsgate)).
+        # g1pilot/docs/20-T-Arm-Manipulation.md (Umgebungs-Kollisionsgate)).
         self.declare_parameter("environment_collision_gate", True)
         # Toleranz [rad], ab der das Ende einer GEPLANTEN Bewegung (siehe
-        # g1pilot/docs/11_arm_manipulation_technik.md (Armplaner)) als erreicht gilt.
+        # g1pilot/docs/20-T-Arm-Manipulation.md (Armplaner)) als erreicht gilt.
         self.declare_parameter("planned_motion_tolerance", 0.02)
         # Armplaner (manipulation/arm_planner.py): Abstand zu Objekten in der
         # MITTE einer Bewegung [m]; nahe Start und Ziel klingt er auf 0 ab
@@ -427,7 +427,7 @@ class ArmController(Node):
         self._reset_after_home = False
         self._initialized = False
 
-        # Positionsspeicher (plan-execute, siehe g1pilot/docs/11_arm_manipulation_technik.md
+        # Positionsspeicher (plan-execute, siehe g1pilot/docs/20-T-Arm-Manipulation.md
         # (Armplaner)): Endpunkt wird gespeichert, die Bahn dorthin JEDES MAL
         # neu geplant (arm_planner.plan_arms im Planer-Prozess), weil Startpose und
         # Umgebung sich seit dem Speichern geaendert haben koennen.
@@ -637,7 +637,7 @@ class ArmController(Node):
         self.create_subscription(String, "/g1pilot/pose_store/goto", self._on_pose_goto, 10)
         self.create_subscription(Bool, "/g1pilot/pose_store/cancel", self._on_pose_cancel, 10)
 
-        # Live-Pose-Schnittstelle (siehe g1pilot/docs/21_arm_api_technik.md): fremde Projekte
+        # Live-Pose-Schnittstelle (siehe g1pilot/docs/21-T-Arm-API.md): fremde Projekte
         # spielen ein Ziel ein, das DIREKT ausgefuehrt wird -- nichts wird
         # gespeichert. JSON-Wire-Format in manipulation/arm_command.py; die
         # HTTP-Bruecke (arm_api.py) ist nur ein Adapter auf genau dieses Topic.
@@ -2491,7 +2491,7 @@ class ArmController(Node):
             self.arm_geom.reachable(Environment(self._env_objects), ["left", "right"], margin=0.05))
 
     # --------------------------------------------------------
-    # Positionsspeicher (plan-execute), siehe g1pilot/docs/11_arm_manipulation_technik.md (Positionsspeicher)
+    # Positionsspeicher (plan-execute), siehe g1pilot/docs/20-T-Arm-Manipulation.md (Positionsspeicher)
     # --------------------------------------------------------
 
     def _on_hand_state(self, side: str, msg: Float32MultiArray):
@@ -2524,7 +2524,7 @@ class ArmController(Node):
     def _on_pose_save(self, msg: String):
         """Speichert die AKTUELLE Stellung unter einem Namen, mit Auswahl der
         Komponenten und einer Kategorie ("Ordner"). Quellen: der Streamdeck-
-        Dialog und der HTTP-Endpunkt POST /arm/save (siehe g1pilot/docs/21_arm_api_technik.md) -- beide
+        Dialog und der HTTP-Endpunkt POST /arm/save (siehe g1pilot/docs/21-T-Arm-API.md) -- beide
         schicken dasselbe JSON `{id?, name, category?, components?}` auf dieses
         Topic; ein reiner Name (Altform) gilt weiter als "beide Arme".
 
@@ -2662,7 +2662,7 @@ class ArmController(Node):
 
     def _on_arm_command(self, msg: String):
         """Live eingespielte Zielpose DIREKT ausfuehren (nichts speichern) --
-        siehe g1pilot/docs/21_arm_api_technik.md. Varianten: Gelenkwinkel ('joints'),
+        siehe g1pilot/docs/21-T-Arm-API.md. Varianten: Gelenkwinkel ('joints'),
         kartesische Hand-Pose ('pose', wird per IK aufgeloest) oder Spiegelpose
         des anderen Arms ('mirror', Controller: Steuerkreuz + Kreuz halten).
 
@@ -3088,7 +3088,7 @@ class ArmController(Node):
                                              reason="Rueckgabe an den Onboard-Regler")
             return
 
-        # Mode-Mux (siehe g1pilot/docs/11_arm_manipulation_technik.md (Mode-Mux Marker vs. Positionsspeicher)): manueller
+        # Mode-Mux (siehe g1pilot/docs/20-T-Arm-Manipulation.md (Mode-Mux Marker vs. Positionsspeicher)): manueller
         # Marker hat IMMER Vorrang -- ein laufender ODER gerade geplanter Plan
         # (Positionsspeicher) wird sofort verworfen, kein Kaempfen zweier
         # Geschwindigkeitsquellen.
@@ -3171,7 +3171,7 @@ class ArmController(Node):
                                              reason="Rueckgabe an den Onboard-Regler")
             return
 
-        # Mode-Mux (siehe g1pilot/docs/11_arm_manipulation_technik.md (Mode-Mux Marker vs. Positionsspeicher)): manueller
+        # Mode-Mux (siehe g1pilot/docs/20-T-Arm-Manipulation.md (Mode-Mux Marker vs. Positionsspeicher)): manueller
         # Marker hat IMMER Vorrang -- ein laufender ODER gerade geplanter Plan
         # (Positionsspeicher) wird sofort verworfen, kein Kaempfen zweier
         # Geschwindigkeitsquellen.

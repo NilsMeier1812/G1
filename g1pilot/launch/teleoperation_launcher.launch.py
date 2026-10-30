@@ -9,7 +9,7 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 # Welche Bedienoberflaeche starten? 'streamdeck' (ui_interface, Default) oder
 # 'demo' (demo_gui, vereinfacht fuer Vorfuehrungen). Nie beide: jede GUI macht
-# in der Sim ihren eigenen Auto-Start. Siehe g1pilot/docs/42_demo_gui_konzept.md.
+# in der Sim ihren eigenen Auto-Start. Siehe g1pilot/docs/10-A-Demo-GUI.md.
 GUI_EXECUTABLES = {'streamdeck': 'ui_interface', 'demo': 'demo_gui'}
 
 
@@ -41,7 +41,7 @@ def generate_launch_description():
         # Dann laeuft der alte joystick-Node NICHT: er laese denselben
         # Controller und schickte die Sticks ueber joy_mux an das Laufen
         # (Sim: joy_to_cmdvel, Real: loco_client mit Deadman).
-        # Siehe g1pilot/docs/43_ps4_controller.md.
+        # Siehe g1pilot/docs/11-A-Controller.md.
         DeclareLaunchArgument(
             'ps4_arms', default_value='false',
             description='PS4-Controller fuer Arme/Haende statt fuer joy_mux'),
@@ -80,7 +80,7 @@ def generate_launch_description():
             parameters=[
                 {'joystick_name': joystick_name,
                  # PS4 oder Xbox (gleiche Belegung nach Position), siehe
-                 # g1pilot/docs/43_ps4_controller.md#xbox-controller
+                 # g1pilot/docs/11-A-Controller.md#xbox-controller
                  'controller': os.environ.get('G1_CONTROLLER', 'auto').strip().lower() or 'auto',
                  'xbox_ps_button': os.environ.get('G1_XBOX_PS_BUTTON', 'xbox').strip().lower() or 'xbox'}],
             condition=IfCondition(ps4_arms),

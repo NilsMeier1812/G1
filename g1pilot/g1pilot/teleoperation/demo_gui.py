@@ -32,7 +32,7 @@ NOT-HALT, welcher Controller verbunden ist).
 Die GUI publiziert auf DIESELBEN Topics wie ui_interface.py (Streamdeck) --
 die Logik bleibt in loco_sim/loco_client/arm_controller. Beide GUIs NICHT
 gleichzeitig starten (doppelter Auto-Start). Auswahl ueber G1_GUI=demo,
-siehe launch/teleoperation_launcher.launch.py und docs/42_demo_gui_konzept.md.
+siehe launch/teleoperation_launcher.launch.py und docs/10-A-Demo-GUI.md.
 """
 
 import json

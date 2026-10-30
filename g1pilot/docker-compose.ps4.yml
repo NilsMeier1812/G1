@@ -12,7 +12,7 @@
 # /dev/input hat. Von Hand:
 #   COMPOSE_FILE=docker-compose.yml:docker-compose.ps4.yml G1_PS4_ARMS=1 \
 #     docker compose --profile sim up
-# Siehe g1pilot/docs/43_ps4_controller.md.
+# Siehe g1pilot/docs/11-A-Controller.md.
 # ══════════════════════════════════════════════════════════════════════
 services:
   g1pilot-sim:

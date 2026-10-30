@@ -6,9 +6,9 @@ sicherheitsrelevant — vor dem ersten Realbetrieb vollständig lesen.
 
 Architektur in Kürze: Unterkörper = Unitrees Onboard-Loco-Controller
 (`loco_client`), Oberkörper/Arme/Hände = dieser Stack. Details in
-[02_architektur.md](02_architektur.md),
-[31_loco_technik.md](31_loco_technik.md) und
-[11_arm_manipulation_technik.md](11_arm_manipulation_technik.md).
+[02-T-Architektur.md](02-T-Architektur.md),
+[30-T-Stehen-und-Gehen.md](30-T-Stehen-und-Gehen.md) und
+[20-T-Arm-Manipulation.md](20-T-Arm-Manipulation.md).
 
 ## Kurzfassung: frischer PC → Demo-GUI am echten G1
 
@@ -36,7 +36,7 @@ Ethernet-Port (USB-Ethernet-Adapter geht auch), X11-Desktop. **Kein WSL2**,
 denn das Unitree-SDK braucht die Netzwerkkarte direkt, und DDS kommt durch die
 WSL2-NAT nicht zuverlässig. Keine GPU nötig.
 
-1. **Pakete und Docker** wie in [01_installation.md](01_installation.md)
+1. **Pakete und Docker** wie in [01-A-Installation.md](01-A-Installation.md)
    Schritte 1–3 (System-Pakete inkl. `python3-tk` für das grafische
    Startmenü, Docker Engine + Compose-Plugin, Docker ohne `sudo`). Danach
    einmal ab- und wieder anmelden. Für das Prüfen der Hände zusätzlich
@@ -67,14 +67,14 @@ WSL2-NAT nicht zuverlässig. Keine GPU nötig.
    ```
    Per USB-Kabel geht es ohne Koppeln. Prüfen:
    `ls /dev/input/by-id/` zeigt einen `…event-joystick`-Eintrag. Details und
-   Xbox: [43_ps4_controller.md](43_ps4_controller.md#xbox-controller).
+   Xbox: [11-A-Controller.md](11-A-Controller.md#xbox-controller).
 5. **Daten vom alten PC:**
    - Gespeicherte **Posen und Abläufe** liegen versioniert in
      `g1pilot/data/arm_poses.json`. Wurden auf dem alten PC neue Posen
      gespeichert, dort vorher committen und pushen (oder die Datei kopieren).
    - **Gekoppelte Handys** stehen in `~/.config/g1pilot/phone_devices.json`
      auf dem alten PC. Entweder die Datei kopieren oder die Handys neu
-     koppeln ([44_handy_bedienung.md](44_handy_bedienung.md)).
+     koppeln ([12-A-Handy.md](12-A-Handy.md)).
    - Die zuletzt gewählten Startmenü-Optionen (`~/.config/g1pilot/launcher.json`)
      sind nur Komfort. Auf dem neuen PC einmal neu auswählen.
 
@@ -162,7 +162,7 @@ starten**. Die Docker-Ausgabe läuft im Startmenü-Fenster mit.
 
 - **an** (`G1_PS4_ARMS=1`, empfohlen mit Demo-GUI): Controller steuert Arme
   und Hände, **L2 halten + Sticks = Gehen** (Totmann), PS4 oder Xbox.
-  Siehe [43_ps4_controller.md](43_ps4_controller.md).
+  Siehe [11-A-Controller.md](11-A-Controller.md).
 - **aus** (`G1_PS4_ARMS=0`): alter Weg, nur PS4. Der Controller steuert
   ausschließlich das Gehen (Deadman Button 8 + Sticks), keine Arme.
 
@@ -210,7 +210,7 @@ keine Hand „nicht verbunden“ zeigen.
   — der Node greift beim Hochfahren nicht in den Roboterzustand ein.
 - **Kein Auto-Start:** Der Streamdeck publiziert im Real-Modus von sich aus
   nichts — der Roboter bewegt sich erst nach Klicks (siehe
-  [41_teleoperation_technik.md](41_teleoperation_technik.md), Abschnitt
+  [13-T-Streamdeck.md](13-T-Streamdeck.md), Abschnitt
   Auto-Start).
 - **WALK ist gesperrt, bis balanciert:** wird sonst mit Warnung ignoriert.
 - **Übernehmen ohne Bewegung (`ENABLE`):** `arm_controller` merkt sich die
@@ -326,7 +326,7 @@ exakt; die Marker folgen der Hand (Leader-Follower).
    den Onboard-Regler uebergeben", kein Schwung.
 8. Optional **PS4-/Xbox-Controller für Arme + Hände** (Start mit
    `G1_PS4_ARMS=1`, Startmenü: Ausstattung): Ablauf in
-   [43_ps4_controller.md](43_ps4_controller.md#echter-roboter). In diesem
+   [11-A-Controller.md](11-A-Controller.md#echter-roboter). In diesem
    Modus geht das Gehen über **L2 halten + Sticks** (`ps4_walk`), nicht über
    den alten Deadman-Button 8 aus Schritt 5.
 
@@ -353,7 +353,7 @@ Zuerst über den **Controller** (physischer Totmann), dann über die GUI:
 1. Controller verbinden. **Mit `G1_PS4_ARMS=1`** (Controller für Arme +
    Hände): **L2 halten** (Xbox: LT) + linker Stick geht, rechter Stick dreht; L2
    loslassen stoppt sofort. L2 wirkt nur, wenn der G1 schon in Walk steht
-   ([43_ps4_controller.md](43_ps4_controller.md#gehen-mit-l2)).
+   ([11-A-Controller.md](11-A-Controller.md#gehen-mit-l2)).
    **Mit `G1_PS4_ARMS=0`** (alter Weg, nur PS4): Gerätename passt zu
    `JOYSTICK_NAME`, Log „Joystick found"; Deadman (Button 8) halten + Stick
    bewegt den Roboter, loslassen stoppt.
@@ -387,13 +387,15 @@ Unitree-Fernbedienung, gesichert.
 
 ## Notaus-Reflex (auswendig lernen)
 
+Alle Halt-Wege mit Quittieren und Einstellungen: [51-A-Notaus.md](51-A-Notaus.md).
+
 | Situation | Richtige Reaktion |
 |---|---|
 | Sanft anhalten beim Gehen | Joystick bzw. **L2 loslassen**; Streamdeck: **START BALANCING** (Roboter bleibt stehen) |
 | Arm fährt falsch, aber ruhig | **ENABLE MANIPULATION aus** bzw. Demo-GUI GREIFEN verlassen (Arme fahren langsam in die Onboard-Pose, dann Übergabe) |
 | Ruckt/schwingt an den Armen, Kontakt mit Mensch/Objekt | **NOT-HALT** (Demo-GUI) / **EMERGENCY STOP** (Streamdeck) / **PS** bzw. Xbox-Taste am Controller (Arme/Hände sofort schlaff; Taille gehalten; Beine: StopMove, Onboard-Regler balanciert weiter) |
 | Hand fährt per Controller falsch | Stick loslassen bzw. **Kreuz** / Xbox **A** (Hand steht sofort, Roboter bleibt stehen) |
-| G1 soll sofort ganz aus (Beine weich) | **Voll-Notaus am Controller: R1 + L1 + PS 2 s halten** (Xbox: RB + LB + Xbox-Taste) → ganzer G1 Damp, sackt in den Kran. Quittieren mit »Start« (bleibt in Damp), dann Startleiste Preparation → Walk. Siehe [43_ps4_controller.md](43_ps4_controller.md#voll-notaus-r1--l1--ps) |
+| G1 soll sofort ganz aus (Beine weich) | **Voll-Notaus am Controller: R1 + L1 + PS 2 s halten** (Xbox: RB + LB + Xbox-Taste) → ganzer G1 Damp, sackt in den Kran. Quittieren mit »Start« (bleibt in Damp), dann Startleiste Preparation → Walk. Siehe [11-A-Controller.md](11-A-Controller.md#voll-notaus-r1--l1--ps) |
 | Echte Gefahr / Sturz droht | **Unitree-Fernbedienung** (übergeordnet, Damp dort). Der normale NOT-HALT dämpft die Beine **nicht** (außer `G1_ESTOP_DAMP_LEGS=1`) |
 
 Was EMERGENCY STOP konkret bewirkt (Stand 2026-10-15): Arme werden
@@ -531,11 +533,17 @@ Seit 2026-10-19:
 
 ## Weiterführend
 
+- Startmenü und Optionen: [03-A-Startmenue.md](03-A-Startmenue.md)
+- Alle Umgebungsvariablen (Geh-Limits, Notaus, Taille …): [04-T-Umgebungsvariablen.md](04-T-Umgebungsvariablen.md)
+- Bedienung: [10-A-Demo-GUI.md](10-A-Demo-GUI.md), [11-A-Controller.md](11-A-Controller.md), [12-A-Handy.md](12-A-Handy.md)
+- Notaus: [51-A-Notaus.md](51-A-Notaus.md), Technik [51-T-Notaus.md](51-T-Notaus.md)
+- Bekannter Linksdrall beim Gehen: [30-T-Stehen-und-Gehen.md](30-T-Stehen-und-Gehen.md#bekannte-einschränkungen)
+
 `G1_ENABLE_LIDAR=1` bzw. das Compose-Profil `real-full` (`make real-full`)
 schalten Livox/Navigation zu. Beides ist **experimentell und für die
 Demo nicht nötig**: es braucht das große Image (~45 min Build) und den
 MID360, und `real-full` startet noch den alten `bringup_launcher` statt
-`bringup_real`. Siehe [50_navigation_anleitung.md](50_navigation_anleitung.md). `arm_sdk` parallel
+`bringup_real`. Siehe [31-A-Navigation.md](31-A-Navigation.md). `arm_sdk` parallel
 zum Gehen funktioniert konstruktionsbedingt (Gewichts-Überblendung), für die
 ersten Geh-Tests aber die Arme deaktiviert lassen — der natürliche Armschwung
 der Unitree-Steuerung ist dafür besser geeignet.

@@ -1,8 +1,10 @@
-# Teleoperation — Technik
+# Streamdeck — Technik
 
-Richtet sich an: Entwickler, die die Bedienoberfläche oder die
-Controller-Anbindung ändern wollen. Für die Bedienung siehe
-[40_teleoperation_anleitung.md](40_teleoperation_anleitung.md).
+Richtet sich an: Entwickler, die den Streamdeck, den alten Joystick-Pfad
+oder den Auto/Manuell-Mux ändern wollen. Der PS4-/Xbox-Controller ist in
+[11-T-Controller.md](11-T-Controller.md) beschrieben, die Demo-GUI in
+[10-T-Demo-GUI.md](10-T-Demo-GUI.md). Für die Bedienung siehe
+[13-A-Streamdeck.md](13-A-Streamdeck.md).
 
 ## Beteiligte Dateien
 
@@ -11,7 +13,8 @@ Controller-Anbindung ändern wollen. Für die Bedienung siehe
 | `g1pilot/teleoperation/ui_interface.py` | Streamdeck-GUI (PyQt6), Hauptbedienoberfläche |
 | `g1pilot/teleoperation/joystick.py` | Physischer Controller (evdev) → `/g1pilot/joy_manual` |
 | `g1pilot/teleoperation/joy_mux.py` | Multiplexer manuell/autonom |
-| `g1pilot/g1_gui.py` | Start-Menü (getrennt von der Streamdeck-GUI, siehe [01_installation.md](01_installation.md)) |
+| `g1pilot/teleoperation/sim_autostart.py` | Sim-Auto-Start mit Quittung (gemeinsam mit der Demo-GUI) |
+| `g1_gui.py` (Paketwurzel) | Startmenü (getrennt von der Streamdeck-GUI, siehe [03-A-Startmenue.md](03-A-Startmenue.md)) |
 
 ## `ui_interface.py` (Streamdeck)
 
@@ -32,7 +35,7 @@ Wichtige Muster:
   Senden ist harmlos und garantiert beim Loslassen sauber das
   Stop-Kommando.
 - `PoseSaveDialog` / `PoseLoadDialog`: siehe
-  [11_arm_manipulation_technik.md](11_arm_manipulation_technik.md), Abschnitt
+  [20-T-Arm-Manipulation.md](20-T-Arm-Manipulation.md), Abschnitt
   Positionsspeicher — die GUI liest den `PoseStore` direkt von der Platte
   (derselbe Prozessraum/Container wie `arm_controller`, kein ROS-Service
   nötig für die Anzeige; Schreiben läuft über das Topic
@@ -42,18 +45,27 @@ Wichtige Muster:
   selbst einen Browser zu starten, fasst der Node eine Trigger-Datei
   (`.gui_open_request`) im bind-gemounteten Repo an; ein Host-Watcher in
   `start.sh` beobachtet die Datei und öffnet den Browser dort, wo tatsächlich
-  einer existiert (siehe [61_inspire_haende_technik.md](61_inspire_haende_technik.md)).
-- **Auto-Start nur in der Simulation** (`_auto_start`, `QTimer.singleShot(3000, ...)`):
-  aktiviert nach 3 Sekunden automatisch die Arme und startet BALANCING. Auf
-  echter Hardware ist dieser Pfad **hart ausgeschaltet** (kein Parameter zum
-  Umgehen) — der Operator entscheidet dort immer selbst, wann sich der
-  Roboter bewegt (`self.sim_mode = is_sim_mode()`).
+  einer existiert (siehe [22-T-Inspire-Haende.md](22-T-Inspire-Haende.md)).
+- **Auto-Start nur in der Simulation** (`SimAutoStart`, `sim_autostart.py`):
+  fordert Arme + BALANCING an und wiederholt nur, was noch fehlt, bis
+  `arm_controller` (`/g1pilot/arms/state`) und `loco_sim`
+  (`/g1pilot/loco_state`) bestätigen. Ein Eingriff des Nutzers (Modus,
+  NOT-HALT, ENABLE) bricht ihn ab. Auf echter Hardware ist dieser Pfad
+  **hart ausgeschaltet** (kein Parameter zum Umgehen) — der Operator
+  entscheidet dort immer selbst, wann sich der Roboter bewegt
+  (`self.sim_mode = is_sim_mode()`). Hintergrund (Bug 2026-10-13):
+  [40-T-Simulation.md](40-T-Simulation.md#auto-start-greifen).
 - `emergency_stop()`: setzt alle Buttons zurück und publiziert `False` auf
   sämtliche Steuertopics sowie `True` auf `/g1pilot/emergency_stop` — die
-  eigentliche Wirkung (Arme drehmomentfrei, Beine `Damp()`) passiert in den
-  jeweiligen Regel-Nodes, nicht in der GUI.
+  eigentliche Wirkung (Arme drehmomentfrei, Beine real `StopMove`) passiert
+  in den jeweiligen Regel-Nodes, nicht in der GUI. Ein NOT-HALT von außen
+  (Controller-PS) wird nur angezeigt (`_show_emergency_stop`).
 
-## `joystick.py` (physischer Controller)
+## `joystick.py` (alter Joystick-Modus)
+
+Läuft nur ohne `G1_PS4_ARMS=1` (`UnlessCondition(ps4_arms)` im
+`teleoperation_launcher`).
+
 
 `ManualJoystick(Node)` liest per `evdev` direkt von `/dev/input` (im
 Docker-Compose-Profil `real` mit `privileged: true` und
@@ -65,13 +77,13 @@ Struktur schreibt; ein 50-Hz-Timer publiziert daraus `sensor_msgs/Joy` auf
 
 Die eigentliche Button-/Achsen-Interpretation (Deadman, Move, E-Stop,
 Greifer) sitzt **nicht** hier, sondern in `loco_client.joystick_callback`
-(siehe [31_loco_technik.md](31_loco_technik.md)) — `joystick.py` liefert nur
+(siehe [30-T-Stehen-und-Gehen.md](30-T-Stehen-und-Gehen.md)) — `joystick.py` liefert nur
 das rohe `Joy`-Signal.
 
 ## `joy_mux.py` (Auto/Manuell-Mux)
 
 Mischt `/g1pilot/joy_manual` (Mensch) und `/g1pilot/auto_joy` (von
-`nav2point`, siehe [51_navigation_technik.md](51_navigation_technik.md)) auf
+`nav2point`, siehe [31-T-Navigation.md](31-T-Navigation.md)) auf
 ein gemeinsames Ausgabe-Topic `/g1pilot/joy`:
 
 ```python
@@ -98,7 +110,7 @@ nav2point   ──/g1pilot/auto_joy────┘
 
 In der Simulation läuft derselbe Pfad, nur dass `loco_sim` keinen `Joy`
 liest — `joy_to_cmdvel` übersetzt `/g1pilot/joy` zusätzlich in
-`/g1pilot/loco_cmd_vel` (siehe [51_navigation_technik.md](51_navigation_technik.md)).
+`/g1pilot/loco_cmd_vel` (siehe [31-T-Navigation.md](31-T-Navigation.md)).
 
 ## Bekannte Einschränkungen
 

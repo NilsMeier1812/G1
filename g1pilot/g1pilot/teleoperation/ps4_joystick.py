@@ -299,7 +299,7 @@ class Ps4Joystick(Node):
                     self.get_logger().warn(
                         f"Kein {what} gefunden (PS4-Name: '{self.wanted}'). "
                         "Warte ... (Bluetooth koppeln oder per USB anstecken; im "
-                        "Container braucht es /dev/input, siehe docs/43_ps4_controller.md)")
+                        "Container braucht es /dev/input, siehe docs/11-A-Controller.md)")
                 time.sleep(self.reconnect_s)
                 continue
             missing_logged = False

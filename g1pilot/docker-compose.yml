@@ -52,7 +52,7 @@ services:
       # bisheriges Terrain (scene.xml). Sonst laedt config.py die von start.sh
       # erzeugte kombinierte Szene scene_env_<G1_ENV>.xml. Siehe scene_editor/.
       - G1_ENV=${G1_ENV:-}
-      # Szenen-Bruecke (Umgebungs-Objekte -> RViz/Nav/IK, siehe g1pilot/docs/51_navigation_technik.md):
+      # Szenen-Bruecke (Umgebungs-Objekte -> RViz/Nav/IK, siehe g1pilot/docs/31-T-Navigation.md):
       # UDP-Port MUSS mit g1pilot-sim uebereinstimmen (unten dieselbe Variable).
       - SIM_SCENE_PORT=${SIM_SCENE_PORT:-47902}
     volumes:
@@ -107,22 +107,22 @@ services:
       # Bezug der Controller-/GUI-Jogs (command | start | tf), siehe Real-Service.
       - G1_JOG_REFERENCE=${G1_JOG_REFERENCE:-command}
       # Navigation (g1pilot-Ansatz) in der Sim mitstarten: dijkstra_planner +
-      # nav2point + Sim-Glue (sim_localization, joy_to_cmdvel). Siehe g1pilot/docs/50_navigation_anleitung.md.
+      # nav2point + Sim-Glue (sim_localization, joy_to_cmdvel). Siehe g1pilot/docs/31-A-Navigation.md.
       - G1_ENABLE_NAV=${G1_ENABLE_NAV:-0}
       # Lauf-Policy von loco_sim (Ordner unter g1pilot/policies), im Startmenue
       # waehlbar: g1_wholebody (Default, alt) | agile_velocity_g1 |
-      # agile_velocity_height_g1. Siehe g1pilot/docs/31_loco_technik.md.
+      # agile_velocity_height_g1. Siehe g1pilot/docs/30-T-Stehen-und-Gehen.md.
       - G1_WALK_POLICY=${G1_WALK_POLICY:-g1_wholebody}
       # Bedienoberflaeche: streamdeck (Default) | demo (vereinfachte Demo-GUI,
-      # siehe g1pilot/docs/42_demo_gui_konzept.md).
+      # siehe g1pilot/docs/10-A-Demo-GUI.md).
       - G1_GUI=${G1_GUI:-streamdeck}
       - G1_GUI_FULLSCREEN=${G1_GUI_FULLSCREEN:-0}
-      # Handy-Bedienung ueber Bluetooth LE (nur Demo-GUI, docs/44_handy_bedienung.md).
+      # Handy-Bedienung ueber Bluetooth LE (nur Demo-GUI, docs/12-A-Handy.md).
       # 0 = aus (kein Werben, kein Thread). Adapter: hci0 = einziger Dongle (teilt
       # sich den Funk mit dem Controller), hci1 = zweiter Dongle nur fuers Handy.
       - G1_PHONE=${G1_PHONE:-0}
       - G1_PHONE_BT_ADAPTER=${G1_PHONE_BT_ADAPTER:-auto}
-      # Szenen-Bruecke (siehe g1pilot/docs/51_navigation_technik.md): MUSS zum mujoco-sim-Wert oben passen.
+      # Szenen-Bruecke (siehe g1pilot/docs/31-T-Navigation.md): MUSS zum mujoco-sim-Wert oben passen.
       - SIM_SCENE_PORT=${SIM_SCENE_PORT:-47902}
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
@@ -182,10 +182,10 @@ services:
       - ROBOT_INTERFACE=${ROBOT_INTERFACE:-eth0}
       # RViz default AN: der rviz-Marker ist das Interface der Arm-Manipulation.
       - USE_RVIZ=${USE_RVIZ:-true}
-      # Bedienoberflaeche: streamdeck (Default) | demo (siehe docs/42_demo_gui_konzept.md).
+      # Bedienoberflaeche: streamdeck (Default) | demo (siehe docs/10-A-Demo-GUI.md).
       - G1_GUI=${G1_GUI:-streamdeck}
       - G1_GUI_FULLSCREEN=${G1_GUI_FULLSCREEN:-0}
-      # Handy-Bedienung ueber Bluetooth LE (nur Demo-GUI, docs/44_handy_bedienung.md).
+      # Handy-Bedienung ueber Bluetooth LE (nur Demo-GUI, docs/12-A-Handy.md).
       # 0 = aus (kein Werben, kein Thread). Adapter: hci0 = einziger Dongle (teilt
       # sich den Funk mit dem Controller), hci1 = zweiter Dongle nur fuers Handy.
       - G1_PHONE=${G1_PHONE:-0}
@@ -198,7 +198,7 @@ services:
       # PS4-Controller-Gerätename (evdev); Bluetooth-PS4 = "Wireless Controller".
       - JOYSTICK_NAME=${JOYSTICK_NAME:-Wireless Controller}
       # PS4-Controller: 0 = Gehen (alter joystick -> loco_client, Deadman),
-      # 1 = Arme + Haende, KEIN Laufen (docs/43_ps4_controller.md).
+      # 1 = Arme + Haende, KEIN Laufen (docs/11-A-Controller.md).
       - G1_PS4_ARMS=${G1_PS4_ARMS:-0}
       - G1_PS4_SPEED=${G1_PS4_SPEED:-Langsam}
       - G1_PS4_MAX_SPEED=${G1_PS4_MAX_SPEED:-Normal}

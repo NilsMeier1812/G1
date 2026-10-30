@@ -3,7 +3,7 @@
 Richtet sich an: Entwickler, die die HTTP-Brücke ändern oder ein eigenes,
 unabhängiges Projekt tiefer an die G1-DDS-Schnittstelle anbinden wollen (statt
 über HTTP). Für die reine Nutzung siehe
-[20_arm_api_anleitung.md](20_arm_api_anleitung.md).
+[21-A-Arm-API.md](21-A-Arm-API.md).
 
 ## Beteiligte Dateien
 
@@ -41,7 +41,7 @@ ROS-Topics und sammelt die Statusantworten pro Vorgang.
 `type="mirror"` (`{"type": "mirror", "side": "left"}`, ohne Ziele) fährt den
 Arm `side` geplant in die Spiegelpose des **anderen** Arms — genutzt vom
 PS4/Xbox-Controller (Steuerkreuz links/rechts + Kreuz/A 2 s halten, siehe
-[43_ps4_controller.md](43_ps4_controller.md)). Quelle ist der kommandierte
+[11-A-Controller.md](11-A-Controller.md)). Quelle ist der kommandierte
 Gelenkstand des anderen Arms im `arm_controller`; gespiegelt wird in
 Gelenkwinkeln (`mirror_arm_joints`: Pitch/Ellbogen gleich, Roll/Yaw mit
 umgekehrtem Vorzeichen). Das ist am URDF per Vorwärtskinematik als exakt
@@ -53,7 +53,7 @@ Geprüft wird **nur das Format** (Struktur, Anzahl, endliche Zahlen) —
 Gelenklimits, Kollision, Reichweite und ob die Arme überhaupt bereit sind,
 prüft der `arm_controller`, weil dafür Robotermodell und Live-Zustand nötig
 sind (siehe
-[11_arm_manipulation_technik.md](11_arm_manipulation_technik.md)). Ein
+[20-T-Arm-Manipulation.md](20-T-Arm-Manipulation.md)). Ein
 ungültiges Kommando wirft `CommandError` mit einer Begründung, die 1:1 an den
 Aufrufer zurückgeht.
 
@@ -140,7 +140,7 @@ MuJoCo-Simulation testen: Die Simulation spricht exakt dieselbe
 DDS-Schnittstelle wie der echte Roboter (`rt/lowcmd`/`rt/lowstate`,
 `unitree_hg`-IDL). Es genügt, die eigene DDS-Verbindung auf **Domain 1,
 Interface `lo`** zu zeigen statt auf das Roboter-Ethernet (siehe
-[02_architektur.md](02_architektur.md), Abschnitt „Sim ↔ Real"). Das
+[02-T-Architektur.md](02-T-Architektur.md), Abschnitt „Sim ↔ Real"). Das
 umgeht den kompletten g1pilot-ROS-Graph inklusive Arm-Controller und
 Sicherheitsgates — eigenverantwortlich zu nutzen, meist für Projekte, die
 selbst einen vollständigen Regler (inklusive eigener Kollisionsprüfung)

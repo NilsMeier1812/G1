@@ -47,7 +47,7 @@ def generate_launch_description():
     #  Startmenue waehlbar. g1_wholebody (Default, alte Policy, Arme beim Laufen
     #  in der Lauf-Pose) | agile_velocity_g1 (sehr robust, Gang mit Fangschritten,
     #  Arme frei) | agile_velocity_height_g1 (gleichmaessiger Gang, Arme frei).
-    #  Siehe docs/31_loco_technik.md.
+    #  Siehe docs/30-T-Stehen-und-Gehen.md.
     walk_policy = os.environ.get('G1_WALK_POLICY', '').strip() or 'g1_wholebody'
     #  Arme beim Laufen parken, wenn die Policy ihre Lauf-Pose braucht (aus der
     #  deploy.yaml, siehe walk_policy.needs_arm_pose).
@@ -56,7 +56,7 @@ def generate_launch_description():
     #  G1_PS4_ARMS : "1"/"0" — PS4-Controller steuert den OBERKOERPER (Arme +
     #  Haende, kein Laufen): ps4_joystick + ps4_arm_teleop statt des alten
     #  joystick-Nodes. Der Container braucht dafuer /dev/input (start.sh nimmt
-    #  dann docker-compose.ps4.yml dazu). Siehe g1pilot/docs/43_ps4_controller.md.
+    #  dann docker-compose.ps4.yml dazu). Siehe g1pilot/docs/11-A-Controller.md.
     ps4_arms = os.environ.get('G1_PS4_ARMS', '0').strip().lower() in ('1', 'true', 'yes', 'on')
     #  G1_PS4_WALK : "1"/"0" — zusaetzlich Gehen per PS4 (L2 halten + Sticks,
     #  wirkt nur im WALK-Zustand von loco_sim). Default an.
@@ -125,7 +125,7 @@ def generate_launch_description():
         #    IMMER gestartet (nicht an G1_ENABLE_NAV gekoppelt!): der IK-Solver
         #    (arm_controller.py, Schritt 2) braucht die Umgebung genauso wie
         #    die Nav-Karte weiter unten -- Manipulation soll auch OHNE
-        #    aktivierte Navigation um Hindernisse wissen. Siehe g1pilot/docs/51_navigation_technik.md.
+        #    aktivierte Navigation um Hindernisse wissen. Siehe g1pilot/docs/31-T-Navigation.md.
         Node(
             package='g1pilot', executable='scene_bridge', name='scene_bridge',
             output='screen'

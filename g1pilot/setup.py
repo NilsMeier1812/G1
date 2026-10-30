@@ -95,7 +95,7 @@ setup(
             'arm_controller = g1pilot.manipulation.arm_controller:main',
             # Inspire-FTP-Hand: GUI-WebSocket-Bridge + DDS-Backend (rt/inspire/cmd|state).
             'inspire_hand = g1pilot.manipulation.inspire_ftp.bridge:main',
-            # Live-Pose-Schnittstelle: HTTP-JSON -> /g1pilot/arm_command (g1pilot/docs/21_arm_api_technik.md).
+            # Live-Pose-Schnittstelle: HTTP-JSON -> /g1pilot/arm_command (g1pilot/docs/21-T-Arm-API.md).
             'arm_api = g1pilot.manipulation.arm_api:main',
 
             # Teleoperation Nodes
@@ -106,7 +106,7 @@ setup(
             'demo_gui = g1pilot.teleoperation.demo_gui:main',
             # PS4-Controller fuer den Oberkoerper (nur Arme/Haende, kein Laufen):
             # evdev -> /g1pilot/ps4/joy (feste Belegung) -> Hand-Ziele/Hand-Aktionen.
-            # Siehe g1pilot/docs/43_ps4_controller.md, Start via G1_PS4_ARMS=1.
+            # Siehe g1pilot/docs/11-A-Controller.md, Start via G1_PS4_ARMS=1.
             'ps4_joystick = g1pilot.teleoperation.ps4_joystick:main',
             'ps4_arm_teleop = g1pilot.teleoperation.ps4_arm_teleop:main',
             'ps4_walk = g1pilot.teleoperation.ps4_walk:main',
@@ -118,7 +118,7 @@ setup(
             'nav2point = g1pilot.navigation.nav2point:main',
             'create_map = g1pilot.navigation.create_map:main',
             # Umgebungs-Objekte (Hindernisse + Greif-Objekte) aus der MuJoCo-Sim
-            # -> /scene_markers (RViz + Nav + IK-Kollision). Siehe g1pilot/docs/51_navigation_technik.md.
+            # -> /scene_markers (RViz + Nav + IK-Kollision). Siehe g1pilot/docs/31-T-Navigation.md.
             'scene_bridge = g1pilot.navigation.scene_bridge:main',
             'mola_fixed = g1pilot.navigation.fix_mola_odometry:main',
             # Sim-Nav-Glue (nur Sim): Ersatz fuer MOLA (Pose aus rt/sportmodestate)
@@ -129,7 +129,7 @@ setup(
             # Diagnostics / sim tools
             'sim_dds_check = g1pilot.tools.sim_dds_check:main',
             # Alias: dasselbe Tool ist mode-agnostisch (resolve_dds) und dient
-            # auf real als erster Verbindungstest zum G1 (s. g1pilot/docs/70_echtroboter_anleitung.md):
+            # auf real als erster Verbindungstest zum G1 (s. g1pilot/docs/50-A-Echter-Roboter.md):
             #   G1_SIM_MODE=false ros2 run g1pilot dds_check --interface <NIC>
             'dds_check = g1pilot.tools.sim_dds_check:main',
             'sim_arm_wiggle = g1pilot.tools.sim_arm_wiggle:main',

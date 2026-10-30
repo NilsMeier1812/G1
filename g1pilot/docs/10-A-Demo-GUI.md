@@ -1,8 +1,8 @@
-# Demo-Oberfläche — Konzept
+# Demo-GUI — Anleitung
 
-Richtet sich an: alle, die den G1 vorführen (Messe, Besuch, Lehre), und an
-Entwickler, die die Demo-GUI weiterbauen. Status: **Konzept / Prototyp**
-(Branch `anne/demo-gui`).
+Richtet sich an alle, die den G1 bedienen oder vorführen (Messe, Besuch,
+Lehre). Die Demo-GUI ist die Standard-Oberfläche in Sim und Real.
+Aufbau im Code, Topics und offene Punkte: [10-T-Demo-GUI.md](10-T-Demo-GUI.md).
 
 ## Ziel
 
@@ -70,13 +70,30 @@ Danach ist der Knopf grau (*Gestartet ✓*), nach einem NOT-HALT wieder frei
 (*NOT-HALT quittieren*). Der Controller-Zustand steht nicht mehr als eigene
 Zeile in der GUI (Modus, Hand und Tempo zeigt die GUI selbst); solange ein
 Controller aktiv ist, zeigt *🎮 Belegung* oben rechts die Tastenbelegung.
-In der Sim startet die GUI wie der Streamdeck nach 3 s automatisch in GREIFEN.
+In der Sim startet die GUI wie der Streamdeck automatisch in GREIFEN und
+wiederholt die Anforderung, bis arm_controller und loco_sim sie bestätigt
+haben ([40-T-Simulation.md › Auto-Start](40-T-Simulation.md#auto-start-greifen)).
+
+**Startleiste (nur echter G1):** *Damp* und ein *Walk*, der den Walk-Modus
+wechselt, brauchen einen zweiten Tipp innerhalb weniger Sekunden („Wirklich
+Damp? nochmal tippen“, „Kran gelockert? nochmal tippen“). *Walk* zeigt schon vor
+dem Klick die Bodenkontakt-Prüfung (Knie-Last aus `rt/lowstate`): »Walk
+Bodenkontakt ✓« oder gesperrt mit „kein Bodenkontakt“; die GEHEN-Kachel zeigt
+dann „gesperrt · kein Bodenkontakt“. Die Info-Zeile daneben zeigt den
+Onboard-Modus des G1, z. B. „G1: Walk mit Taille (FSM 501)“, und bei einem
+abgelehnten Befehl den RPC-Fehlercode. Details:
+[50-A-Echter-Roboter.md](50-A-Echter-Roboter.md).
 
 **Mit Controller (PS4/Xbox) gekoppelt:** Kacheln, Hand-Auswahl, Tempo »Hand
 bewegen« und Geh-Tempo teilen sich GUI und Controller
 (`/g1pilot/teleop_state`). L2 am Controller → Kachel GEHEN, R2 → GREIFEN;
 die GUI sendet dabei selbst nichts. Details:
-[43_ps4_controller.md › Controller und Demo-GUI gekoppelt](43_ps4_controller.md#controller-und-demo-gui-gekoppelt).
+[11-A-Controller.md › Controller und Demo-GUI gekoppelt](11-A-Controller.md#controller-und-demo-gui-gekoppelt).
+
+**Kopfzeile rechts:** *🎮 Belegung* (nur solange ein Controller aktiv ist,
+zeigt die Tastenbelegung), *📱 Handy* (nur mit Handy-Zugang `G1_PHONE=1`,
+Koppeln und Steuerhoheit, siehe [12-A-Handy.md](12-A-Handy.md)) und
+*⛶ Vollbild*.
 
 ### 2 · Steuerung (Mitte)
 
@@ -122,9 +139,10 @@ Titelzeile vom Inhalt (auch bei GEHEN).
 
 *Seite ARME*
 
-- **Abläufe** (seit 2026-10-22): ein Ablauf ist eine Liste von **Verweisen auf
+- **Abläufe** (seit 2026-10-22, ausführlich in
+  [23-A-Posen-und-Ablaeufe.md](23-A-Posen-und-Ablaeufe.md)): ein Ablauf ist eine Liste von **Verweisen auf
   gespeicherte Posen** im Pose-Store (`sequences`, siehe
-  [11_arm_manipulation_technik.md](11_arm_manipulation_technik.md)). Dieselbe
+  [23-T-Posen-und-Ablaeufe.md](23-T-Posen-und-Ablaeufe.md)). Dieselbe
   Pose (z. B. `Sichere_Pose`) kann in mehreren Abläufen und mehrfach in einem
   stehen, ohne Kopie und ohne Umbenennen. Jeder Ablauf mit mindestens einem
   Schritt wird ein Knopf „<Name>“, die Statuszeile zeigt „Schritt n/m“.
@@ -176,6 +194,10 @@ Titelzeile vom Inhalt (auch bei GEHEN).
   Hände auf Hüfthöhe), genau wie HOMING ARMS am Streamdeck. **Bewegung stoppen**
   sendet `/g1pilot/pose_store/cancel`. Hände öffnen/schließen liegt auf der
   Seite HÄNDE.
+- **Hüfte** (Zeile unter den Knöpfen): zeigt den Stand der Hüftdrehung
+  („Hüfte 12° links“) und hat den Knopf **Hüfte Mitte**. Gedreht wird mit
+  dem Controller (R2 halten + rechter Stick), siehe
+  [24-A-Hueftdrehung.md](24-A-Hueftdrehung.md).
 - **Erweitert ▸** (eingeklappt) enthält die bisherigen Einzelfunktionen für den
   Betreuer: Pose anfahren (Dialog), Pose speichern (Dialog, Kategorie `Demo`
   vorausgewählt) und Marker folgen. Die Dialoge werden aus `ui_interface.py`
@@ -206,11 +228,22 @@ der Hand-Bridge (`hand_controller_viewer.html`, `inspire_hand_viewer.html`):
 - **Statuszeile** in Klartext mit farbigem Balken, z. B. „Arme werden eingeklappt
   …“, „Arbeitsplatz 1 · Schritt 2/5: …“, „Fertig.“ oder „Abgebrochen (failed) …“.
 - **NOT-HALT** ist immer sichtbar, rund und rot. Er sendet dasselbe wie der
-  Streamdeck. Beide Kacheln werden danach inaktiv.
-- **Szene zurücksetzen** (nur Sim).
-- **Roboter schubsen** (nur Sim): Störtest wie PUSH ROBOT im Streamdeck
-  (400-ms-Impuls auf `/g1pilot/push`). Er zeigt, dass sich der Roboter in beiden
-  Modi fängt.
+  Streamdeck. Beide Kacheln werden danach inaktiv. Was er genau auslöst:
+  [51-A-Notaus.md](51-A-Notaus.md).
+- **Temperaturen** (nur echter G1, links unten, „TEMP. MOTOREN“): heißester
+  Motor und je eine Kachel für Bein L/R, Taille, Arm L/R mit dem Höchstwert,
+  gelb ab 60 °C, rot ab 75 °C (`G1_TEMP_WARN` / `G1_TEMP_CRIT`). Klick öffnet
+  die Tabelle aller 29 Motoren (beide Sensoren, Spannung) plus IMU. Quelle ist
+  `robot_state` (`/g1pilot/temperatures`), reiner Lesepfad.
+- **Szene zurücksetzen** (nur Sim): Objekte der Umgebung zurück an den Start.
+- **Roboter zurücksetzen** (nur Sim): Roboter nach NOT-HALT oder Sturz zurück
+  an den Startpunkt und gehalten (HOLD); beim nächsten Modus-Klick steht er
+  sanft auf.
+- **Roboter schubsen** (nur Sim): Störtest wie PUSH ROBOT im Streamdeck. Kurz
+  tippen = Standard-Schubs (150 N); **gedrückt halten lädt auf** (Anzeige im
+  Knopf, bis 2000 N nach 3 s), Loslassen schubst. Er zeigt, dass sich der
+  Roboter in beiden Modi fängt. Einstellbar mit `G1_PUSH_MAX_N`,
+  `G1_PUSH_CHARGE_S`, `G1_PUSH_TAP_S`.
 - **Sim beenden** (nur Sim): schließt den ganzen Sim-Stack (MuJoCo, RViz,
   Demo-GUI) in unter einer Sekunde. Erster Klick schaltet scharf („Wirklich?
   nochmal tippen“, gestrichelt), ein zweiter Klick innerhalb von 4 s beendet.
@@ -238,7 +271,7 @@ der Hand-Bridge (`hand_controller_viewer.html`, `inspire_hand_viewer.html`):
 ## Bedienen
 
 ```bash
-./start.sh          # grafisches Startmenü → Simulation → Bedienoberfläche: Demo-GUI (Default)
+./start.sh          # grafisches Startmenü → Simulation oder Echter Roboter → Bedienoberfläche: Demo-GUI (Default)
 ./start.sh --menu   # Text-Menü: 2) Bedienoberfläche → Demo-GUI
 ```
 
@@ -262,32 +295,3 @@ schaltet um, **Esc** verlässt das Vollbild. Funktioniert auch ohne Titelleiste
 des Fenstermanagers (Roboter-Rechner). `G1_GUI_FULLSCREEN=1` startet die
 Demo-GUI direkt im Vollbild (Default 0 = maximiert). Reine Fensterfunktion,
 sendet nichts an den Roboter.
-
-## Technik
-
-| Datei | Änderung |
-|---|---|
-| `g1pilot/teleoperation/demo_gui.py` | neu, PyQt6. `DemoNode` erbt die Publisher von `StreamDeck` und abonniert zusätzlich `arms/walk_ready` und `arm_command/status`. |
-| `setup.py` | Entry-Point `demo_gui` |
-| `launch/teleoperation_launcher.launch.py` | startet je nach `G1_GUI` **entweder** `ui_interface` **oder** `demo_gui`. Nie beide, weil sonst der Sim-Auto-Start doppelt läuft. |
-| `docker-compose.yml`, `start.sh` | `G1_GUI` durchreichen und Menüpunkt 2d |
-
-Die Logik bleibt wie beim Streamdeck in den Ziel-Nodes. Die GUI publiziert nur
-auf die bestehenden Topics. Es gibt keine neuen Schnittstellen.
-
-## Offene Punkte / nächste Schritte
-
-1. **Echter Zustand statt angenommener Zustand**: `loco_sim` und `loco_client`
-   publizieren ihren FSM-Zustand (HOLD/STAND/WALK/DAMP) nicht. Ein Topic
-   `/g1pilot/loco_state` würde die Modus-Kacheln *zuverlässig* machen, etwa
-   wenn die Sim nach einem Sturz auf DAMP geht.
-2. **Pose-Status-Zuordnung**: `pose_store/goto` hat keine Request-ID. Die GUI
-   nimmt deshalb den nächsten Endzustand als „ihren“. Mit einer ID wie bei der
-   Arm-API wäre das eindeutig.
-3. **Touch/Vollbild**: Für ein Tablet am Stand `showFullScreen()` und größere
-   Abstände einbauen. Optional als Kiosk ohne Fensterrahmen.
-4. **Sprache**: Labels sind Deutsch. Ein EN-Umschalter wäre für Messen sinnvoll.
-5. **Bilder statt Text** auf den Bewegungs-Knöpfen, z. B. ein Vorschaubild je
-   Pose im Pose-Store.
-6. **Navigation mit festen Zielen**: Statt eines Ziels in RViz könnten
-   Ziel-Knöpfe (»zum Tisch«, »zur Tür«) direkt auf das Goal-Topic publizieren.

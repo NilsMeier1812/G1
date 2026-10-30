@@ -31,11 +31,11 @@ def generate_launch_description():
         # Selbstkollisions-Gate (kommandierte Pose wird vor dem Senden geprueft).
         DeclareLaunchArgument("self_collision_gate", default_value="true"),
         # Umgebungs-Kollisions-Gate (Hindernisse/Greif-Objekte aus /scene_markers,
-        # siehe g1pilot/docs/11_arm_manipulation_technik.md (Umgebungs-Kollisionsgate)). Eigener Schalter, unabhaengig vom
+        # siehe g1pilot/docs/20-T-Arm-Manipulation.md (Umgebungs-Kollisionsgate)). Eigener Schalter, unabhaengig vom
         # Selbstkollisions-Gate oben.
         DeclareLaunchArgument("environment_collision_gate", default_value="true"),
         # Toleranz [rad] fuer die geplante Bewegung (Positionsspeicher, siehe
-        # g1pilot/docs/11_arm_manipulation_technik.md (Positionsspeicher)), ab der ein Wegpunkt als erreicht gilt.
+        # g1pilot/docs/20-T-Arm-Manipulation.md (Positionsspeicher)), ab der ein Wegpunkt als erreicht gilt.
         DeclareLaunchArgument("planned_motion_tolerance", default_value="0.02"),
         # Glaettung geplanter Pose-Fahrten (-1 = wie ik_alpha), Wartezeit reiner
         # Hand-Posen. Sim setzt schnellere Werte (bringup_sim).
@@ -86,7 +86,7 @@ def generate_launch_description():
         # lassen (false: Sim mit der AGILE-Lauf-Policy, setzt bringup_sim). Steuert
         # arm_controller walk_park_arms und interactive_marker hide_in_walk.
         DeclareLaunchArgument("walk_park_arms", default_value="true"),
-        # Live-Pose-Schnittstelle (siehe g1pilot/docs/21_arm_api_technik.md): HTTP-JSON-Bruecke, damit
+        # Live-Pose-Schnittstelle (siehe g1pilot/docs/21-T-Arm-API.md): HTTP-JSON-Bruecke, damit
         # fremde Projekte OHNE ROS Zielposen einspielen koennen. Bind bewusst auf
         # 127.0.0.1 -- der Container laeuft mit network_mode: host, ein Prozess
         # auf dem Host erreicht die API also ueber localhost, das Netz nicht.

@@ -23,8 +23,11 @@ Real läuft.
 - **Locomotion** — Stehen und Laufen; in der Simulation über einen
   RL-basierten Lauf-Regler plus modellbasierten Stand-Regler, auf echter
   Hardware über Unitrees Onboard-Controller.
-- **Teleoperation** — grafische Bedienoberfläche (Streamdeck) und
-  Unterstützung für einen physischen Gamepad.
+- **Bedienung** — Demo-GUI (Standard), PS4-/Xbox-Controller für Arme,
+  Hände, Hüfte und Gehen, Handy per Bluetooth, alternativ Streamdeck.
+- **Posen und Abläufe** — Armposen speichern und als Ablauf abfahren.
+- **Notaus** — NOT-HALT aus GUI, Controller und Handy, Voll-Notaus am
+  Controller.
 - **Autonome Navigation** — Punkt-zu-Punkt-Fahrt mit Pfadplanung und
   Hindernisvermeidung.
 - **Inspire-FTP-Hände** — Fingersteuerung mit Kraft- und Tastsinn-Rückmeldung,
@@ -42,10 +45,10 @@ make sim
 ```
 
 Echter Roboter: Schritt für Schritt vom frischen PC bis zur Demo-GUI in
-[g1pilot/docs/70_echtroboter_anleitung.md](g1pilot/docs/70_echtroboter_anleitung.md).
+[g1pilot/docs/50-A-Echter-Roboter.md](g1pilot/docs/50-A-Echter-Roboter.md).
 
 Ausführliche Installationsanleitung (Linux, Windows/WSL2, Voraussetzungen):
-[g1pilot/docs/01_installation.md](g1pilot/docs/01_installation.md).
+[g1pilot/docs/01-A-Installation.md](g1pilot/docs/01-A-Installation.md).
 
 Nach dem Start öffnet sich ein grafisches Startmenü (`./start.sh`), über das
 sich sowohl die Simulation als auch der echte Roboter starten lassen, und
@@ -55,20 +58,23 @@ sich sowohl die Simulation als auch der echte Roboter starten lassen, und
 ## Dokumentation
 
 Die vollständige Dokumentation liegt in [g1pilot/docs/](g1pilot/docs/README.md)
-und ist nach Themen gegliedert. Jedes Thema hat zwei Dokumente: eine
-**Anleitung** für Anwender und ein **Technik**-Dokument für Entwickler.
+und ist nach Gruppen und Themen nummeriert (`GT-X-Name.md`). Zu einem Thema
+gibt es eine **Anleitung** (`-A-`) für Anwender und meist ein
+**Technik**-Dokument (`-T-`) für Entwickler.
 
-| Thema | Anleitung | Technik |
-|---|---|---|
-| Installation | [g1pilot/docs/01_installation.md](g1pilot/docs/01_installation.md) | — |
-| Architektur | — | [g1pilot/docs/02_architektur.md](g1pilot/docs/02_architektur.md) |
-| Arm-Manipulation | [10_arm_manipulation_anleitung.md](g1pilot/docs/10_arm_manipulation_anleitung.md) | [11_arm_manipulation_technik.md](g1pilot/docs/11_arm_manipulation_technik.md) |
-| Arm-API (externe Projekte) | [20_arm_api_anleitung.md](g1pilot/docs/20_arm_api_anleitung.md) | [21_arm_api_technik.md](g1pilot/docs/21_arm_api_technik.md) |
-| Locomotion | [30_loco_anleitung.md](g1pilot/docs/30_loco_anleitung.md) | [31_loco_technik.md](g1pilot/docs/31_loco_technik.md) |
-| Teleoperation | [40_teleoperation_anleitung.md](g1pilot/docs/40_teleoperation_anleitung.md) | [41_teleoperation_technik.md](g1pilot/docs/41_teleoperation_technik.md) |
-| Navigation | [50_navigation_anleitung.md](g1pilot/docs/50_navigation_anleitung.md) | [51_navigation_technik.md](g1pilot/docs/51_navigation_technik.md) |
-| Inspire-FTP-Hände | [60_inspire_haende_anleitung.md](g1pilot/docs/60_inspire_haende_anleitung.md) | [61_inspire_haende_technik.md](g1pilot/docs/61_inspire_haende_technik.md) |
-| Echter Roboter (Sicherheit) | [70_echtroboter_anleitung.md](g1pilot/docs/70_echtroboter_anleitung.md) | — |
+| Gruppe | Themen |
+|---|---|
+| [0 Einstieg](g1pilot/docs/0-Einstieg.md) | [Installation](g1pilot/docs/01-A-Installation.md), [Architektur](g1pilot/docs/02-T-Architektur.md), [Startmenü](g1pilot/docs/03-A-Startmenue.md), [Umgebungsvariablen](g1pilot/docs/04-T-Umgebungsvariablen.md) |
+| [1 Bedienung](g1pilot/docs/1-Bedienung.md) | [Demo-GUI](g1pilot/docs/10-A-Demo-GUI.md), [Controller](g1pilot/docs/11-A-Controller.md), [Handy](g1pilot/docs/12-A-Handy.md), [Streamdeck](g1pilot/docs/13-A-Streamdeck.md) |
+| [2 Arme und Hände](g1pilot/docs/2-Arme-und-Haende.md) | [Arm-Manipulation](g1pilot/docs/20-A-Arm-Manipulation.md), [Arm-API](g1pilot/docs/21-A-Arm-API.md), [Inspire-Hände](g1pilot/docs/22-A-Inspire-Haende.md), [Posen und Abläufe](g1pilot/docs/23-A-Posen-und-Ablaeufe.md), [Hüftdrehung](g1pilot/docs/24-A-Hueftdrehung.md) |
+| [3 Fortbewegung](g1pilot/docs/3-Fortbewegung.md) | [Stehen und Gehen](g1pilot/docs/30-A-Stehen-und-Gehen.md), [Navigation](g1pilot/docs/31-A-Navigation.md) |
+| [4 Simulation](g1pilot/docs/4-Simulation.md) | [Simulation](g1pilot/docs/40-A-Simulation.md) |
+| [5 Echter Roboter](g1pilot/docs/5-Echter-Roboter.md) | [Echter Roboter](g1pilot/docs/50-A-Echter-Roboter.md), [Notaus](g1pilot/docs/51-A-Notaus.md) |
+| [6 Entwicklung](g1pilot/docs/6-Entwicklung.md) | [Tests](g1pilot/docs/60-A-Tests.md), [Werkzeuge](g1pilot/docs/61-A-Werkzeuge.md) |
+
+Verlinkt sind die Anleitungen; das Technik-Dokument zum selben Thema hat
+dieselbe Nummer mit `-T-` statt `-A-`. Namensschema und vollständige
+Tabelle: [g1pilot/docs/README.md](g1pilot/docs/README.md).
 
 ## Projektstruktur
 
@@ -92,7 +98,7 @@ liegen mit im Baum.
 
 - Der Simulations-Lauf-Regler (`loco_sim`) ist ein reiner Sim-Stellvertreter
   für den Onboard-Regler des echten G1 und nicht für den Realeinsatz gedacht
-  — Details in [g1pilot/docs/31_loco_technik.md](g1pilot/docs/31_loco_technik.md).
+  — Details in [g1pilot/docs/30-T-Stehen-und-Gehen.md](g1pilot/docs/30-T-Stehen-und-Gehen.md).
 - Autonome Navigation hat keine Live-Perzeption; Hindernisvermeidung gilt
   nur für die beim Start geladene Umgebung.
 

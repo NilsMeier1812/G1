@@ -46,7 +46,7 @@ def generate_launch_description():
     # Start-Tempo Langsam, hoechstens Normal (15 cm/s < EE-Limit 0.25 m/s),
     # Options uebernimmt nur die Arme (kein start_balancing -> der Controller
     # aendert den Zustand der Beine nie; PS = NOT-HALT wie die GUIs).
-    # Siehe g1pilot/docs/43_ps4_controller.md.
+    # Siehe g1pilot/docs/11-A-Controller.md.
     ps4_arms = _env_bool('G1_PS4_ARMS')
     ps4_speed = os.environ.get('G1_PS4_SPEED', 'Langsam').strip()
     ps4_max_speed = os.environ.get('G1_PS4_MAX_SPEED', 'Normal').strip()
@@ -111,7 +111,7 @@ def generate_launch_description():
                 'arm_velocity_limit': os.environ.get('G1_ARM_VEL_LIMIT', '1.5'),
                 'ee_velocity_limit':  os.environ.get('G1_EE_VEL_LIMIT', '0.25'),
                 'self_collision_gate': 'true',
-                # Schleppfehler-Begrenzung + Anfahrrampe (siehe 70_echtroboter_anleitung.md).
+                # Schleppfehler-Begrenzung + Anfahrrampe (siehe 50-A-Echter-Roboter.md).
                 'max_tracking_error': os.environ.get('G1_ARM_MAX_TRACKING_ERROR', '0.3'),
                 'arm_accel_limit':    os.environ.get('G1_ARM_ACCEL_LIMIT', '3.0'),
                 # Marker-/Jog-IK im eigenen Prozess (Arm ratterte beim Joggen,
