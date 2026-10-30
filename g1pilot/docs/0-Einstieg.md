@@ -9,6 +9,7 @@ Stack aufgebaut ist, und starten.
 | [02-T-Architektur.md](02-T-Architektur.md) | Container, DDS-Domains, alle Nodes und wie Sim und Real sich unterscheiden |
 | [03-A-Startmenue.md](03-A-Startmenue.md) | `./start.sh`: Startmenü mit Karten Simulation, Echter Roboter, Umgebungen; Text-Menü, `make`, `docker compose` |
 | [04-T-Umgebungsvariablen.md](04-T-Umgebungsvariablen.md) | alle `G1_*`-Variablen mit Default, z. B. Geh-Limits, Notaus-Verhalten, Controller |
+| [05-T-Nodes-und-Topics.md](05-T-Nodes-und-Topics.md) | Diagramme: welcher Node welches Topic schreibt und liest, Sim und Real |
 
 Der übliche Weg: einmal [Installation](01-A-Installation.md), danach immer
 `./start.sh` und im Startmenü *Simulation* oder *Echter Roboter* wählen.

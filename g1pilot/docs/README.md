@@ -34,6 +34,7 @@ jedem Umbenennen `python3 tools/check_doc_links.py` laufen lassen
 | Architektur (Container, DDS, Nodes) | | [02-T-Architektur.md](02-T-Architektur.md) |
 | Startmenü, `start.sh`, `make` | [03-A-Startmenue.md](03-A-Startmenue.md) | |
 | Umgebungsvariablen | | [04-T-Umgebungsvariablen.md](04-T-Umgebungsvariablen.md) |
+| Nodes und Topics (Diagramme) | | [05-T-Nodes-und-Topics.md](05-T-Nodes-und-Topics.md) |
 
 ## 1 · Bedienung
 

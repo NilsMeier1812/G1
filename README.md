@@ -64,7 +64,7 @@ gibt es eine **Anleitung** (`-A-`) für Anwender und meist ein
 
 | Gruppe | Themen |
 |---|---|
-| [0 Einstieg](g1pilot/docs/0-Einstieg.md) | [Installation](g1pilot/docs/01-A-Installation.md), [Architektur](g1pilot/docs/02-T-Architektur.md), [Startmenü](g1pilot/docs/03-A-Startmenue.md), [Umgebungsvariablen](g1pilot/docs/04-T-Umgebungsvariablen.md) |
+| [0 Einstieg](g1pilot/docs/0-Einstieg.md) | [Installation](g1pilot/docs/01-A-Installation.md), [Architektur](g1pilot/docs/02-T-Architektur.md), [Startmenü](g1pilot/docs/03-A-Startmenue.md), [Umgebungsvariablen](g1pilot/docs/04-T-Umgebungsvariablen.md), [Nodes und Topics](g1pilot/docs/05-T-Nodes-und-Topics.md) |
 | [1 Bedienung](g1pilot/docs/1-Bedienung.md) | [Demo-GUI](g1pilot/docs/10-A-Demo-GUI.md), [Controller](g1pilot/docs/11-A-Controller.md), [Handy](g1pilot/docs/12-A-Handy.md), [Streamdeck](g1pilot/docs/13-A-Streamdeck.md) |
 | [2 Arme und Hände](g1pilot/docs/2-Arme-und-Haende.md) | [Arm-Manipulation](g1pilot/docs/20-A-Arm-Manipulation.md), [Arm-API](g1pilot/docs/21-A-Arm-API.md), [Inspire-Hände](g1pilot/docs/22-A-Inspire-Haende.md), [Posen und Abläufe](g1pilot/docs/23-A-Posen-und-Ablaeufe.md), [Hüftdrehung](g1pilot/docs/24-A-Hueftdrehung.md) |
 | [3 Fortbewegung](g1pilot/docs/3-Fortbewegung.md) | [Stehen und Gehen](g1pilot/docs/30-A-Stehen-und-Gehen.md), [Navigation](g1pilot/docs/31-A-Navigation.md) |

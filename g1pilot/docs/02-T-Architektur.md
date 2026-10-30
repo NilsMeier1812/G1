@@ -168,11 +168,15 @@ Auf dem echten Roboter übernimmt dieselbe Logik die G1-Firmware.
 | `dds_check`, `sim_dds_check` | `tools/sim_dds_check.py` | Verbindungstest zur Unitree-DDS (real bzw. Sim) |
 | `sim_arm_wiggle`, `sim_goal_probe`, `sim_arm_monitor`, `sim_leg_hold` | `tools/sim_*.py` | Sim-Diagnose |
 
+Welcher Node welches Topic schreibt und liest, zeigen die Diagramme in
+[05-T-Nodes-und-Topics.md](05-T-Nodes-und-Topics.md).
+
 Werkzeuge außerhalb des Node-Graphen: [61-A-Werkzeuge.md](61-A-Werkzeuge.md).
 
 ## Weiterführend
 
 - [04-T-Umgebungsvariablen.md](04-T-Umgebungsvariablen.md) — alle `G1_*`-Schalter
+- [05-T-Nodes-und-Topics.md](05-T-Nodes-und-Topics.md) — Node-/Topic-Diagramme
 - [10-T-Demo-GUI.md](10-T-Demo-GUI.md) — Demo-GUI, Topics
 - [11-T-Controller.md](11-T-Controller.md) — PS4/Xbox-Controller
 - [12-T-Handy.md](12-T-Handy.md) — Handy-Gateway (Bluetooth LE)

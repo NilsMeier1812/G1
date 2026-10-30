@@ -86,6 +86,7 @@ DOCS = [
     ("02 Architektur (Technik)", DOCS_DIR / "02-T-Architektur.md"),
     ("03 Startmenue", DOCS_DIR / "03-A-Startmenue.md"),
     ("04 Umgebungsvariablen (Technik)", DOCS_DIR / "04-T-Umgebungsvariablen.md"),
+    ("05 Nodes und Topics (Technik)", DOCS_DIR / "05-T-Nodes-und-Topics.md"),
     None,
     ("1 Bedienung — Uebersicht", DOCS_DIR / "1-Bedienung.md"),
     ("10 Demo-GUI — Anleitung", DOCS_DIR / "10-A-Demo-GUI.md"),
