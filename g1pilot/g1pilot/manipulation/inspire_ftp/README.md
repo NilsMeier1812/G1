@@ -2,14 +2,15 @@
 
 Bringt den urspruenglich eigenstaendigen **ftp_hand_controller** in das
 g1pilot-Setup — EIN Node, der je nach Backend mit der **Simulation** ODER per
-**Modbus TCP** mit den **echten Haenden** spricht. Die beiden HTML-GUIs
-bleiben in allen Modi identisch.
+**Modbus TCP** mit den **echten Haenden** spricht. Bedient wird ueber die
+Demo-GUI (ROS-Topics, siehe unten), in allen Modi identisch.
 
 ```
-  hand_controller_viewer.html ──ws://…:8766──┐
-                                             ├─► inspire_hand (ROS2-Node) ──► /joint_states ──► RViz
-  inspire_hand_viewer.html    ──ws://…:8765──┘            │
-                                                          └─► Backend (austauschbar)
+  Demo-GUI ──/g1pilot/hand_cmd──►┐
+           ◄─/g1pilot/hand_status┤
+                                 ├─► inspire_hand (ROS2-Node) ──► /joint_states ──► RViz
+                                 │            │
+                                 │            └─► Backend (sim / MuJoCo-DDS / Modbus TCP)
 ```
 
 ## Die drei Backend-Stufen
@@ -35,8 +36,7 @@ Backend-Wahl: Parameter `backend` = `sim` / `mujoco` / `modbus`. Fuer
 | `model.py`     | `HandModel`: geteilter Soll-/Ist-Zustand einer Hand (threadsicher). |
 | `backends.py`  | Die drei Backends (Stufe 1–3, s.o.). |
 | `modbus_client.py` | Raw-Socket-Modbus-TCP-Client (stdlib-only, aus der Referenz uebernommen). |
-| `bridge.py`    | ROS2-Node `inspire_hand`: beide WebSocket-Server + HTTP-GUI-Server + `/joint_states`. |
-| `web/*.html`   | Die GUIs (Controller + Viewer), in allen Modi identisch. |
+| `bridge.py`    | ROS2-Node `inspire_hand`: `/g1pilot/hand_cmd`/`hand_status` + `/joint_states`. |
 
 Test ohne Hardware: `g1pilot/test/test_inspire_modbus_backend.py` faehrt das
 Modbus-Backend gegen einen In-Process-Fake-Server (FC03/FC16).
@@ -44,7 +44,7 @@ Modbus-Backend gegen einen In-Process-Fake-Server (FC03/FC16).
 ## Mapping-Konvention
 
 Inspire-Winkel **1000 = offen** (Gelenk 0 rad), **0 = geschlossen**
-(`CLOSED_RAD`), linear dazwischen. DOF-Reihenfolge wie in den GUIs:
+(`CLOSED_RAD`), linear dazwischen. DOF-Reihenfolge (wie im Modbus-Register):
 `[Kleiner, Ring, Mittel, Zeige, Daumen-Beugung, Daumen-Rotation]`.
 
 ## Start
@@ -67,44 +67,26 @@ ros2 launch g1pilot hand_launcher.launch.py
 # manuell dann robot_state mit publish_hand_joints:=false starten!
 ```
 
-**GUIs**: Die Bridge serviert beide GUIs selbst per **HTTP auf Port 8767**:
-
-```
-http://localhost:8767/hand_controller_viewer.html?autoconnect=1
-http://localhost:8767/inspire_hand_viewer.html?autoconnect=1
-```
-
-Die Seiten oeffnet man bei Bedarf selbst im Browser (das automatische Oeffnen
-per `OPEN_GUIS` gab es nur fuer die inzwischen entfernte Streamdeck-GUI). Mit
-`?autoconnect=1` verbinden sich die Seiten selbst und versuchen es alle 2 s
-erneut, bis die Bridge da ist (robust gegen Reihenfolge/Neustart).
-file://-Oeffnen der Dateien aus `web/` geht weiterhin, aber der
-`?autoconnect=1`-Query-String kommt dabei je nach Opener (xdg-open, WSL)
-nicht an — darum der HTTP-Weg.
-
-**Qt-Demo-GUI**: Ohne Browser steuert die Demo-GUI (Modus
-GREIFEN → Seite HÄNDE) die Haende ueber zwei ROS-Topics der Bridge:
+**Bedienung**: Die Demo-GUI (Modus GREIFEN → Seite HÄNDE) steuert die Haende
+ueber zwei ROS-Topics der Bridge (die frueheren Browser-GUIs samt WebSocket-
+und HTTP-Server wurden 2026-11-04 entfernt):
 
 | Topic | Typ | Inhalt |
 |-------|-----|--------|
-| `/g1pilot/hand_cmd` | `std_msgs/String` (JSON) | dieselben Befehle wie der Controller-WebSocket (`set_angle`, `set_force`, `set_speed`, `set_enabled`, `set_all_angles`, `open_hand`, `close_hand`) |
+| `/g1pilot/hand_cmd` | `std_msgs/String` (JSON) | Befehle (`set_angle`, `set_force`, `set_speed`, `set_enabled`, `set_all_angles`, `open_hand`, `close_hand`) |
 | `/g1pilot/hand_status` | `std_msgs/String` (JSON, ~10 Hz) | je Hand `controller_state()` + `zones` (Spitzenwert 0..4095 je Taktil-Zone) |
-
-Die WebSockets bleiben unveraendert: `ws://localhost:8766` (Controller) bzw.
-`ws://localhost:8765` (Viewer). Der Container nutzt `network_mode: host`,
-daher ist `localhost` korrekt.
 
 ## Hinweise zur Sim
 
 **Stufe 2 (`mujoco`, Default)** — echte Kontaktsensorik:
 - Die echte Hand hat ZWEI unabhaengige Kraft-Ausgaben, beide in der Sim abgebildet:
   - **`force_act`** (Register 1582, 6/Hand, Gramm) = die **echte Kontaktkraft je
-    Finger** (Summe seiner Taktil-Zonen), die die **Controller-GUI** als Kraftbalken
+    Finger** (Summe seiner Taktil-Zonen), die die Demo-GUI als Kraft je Finger
     zeigt. **UNGEDECKELT**: zeigt die tatsaechliche Kraft — auch wenn sie das Limit
     (`force_set`) beim Aufprall kurz uebersteigt (der Wert wird NICHT beschoenigt).
     Ohne Kontakt = 0 (ein Kraftsensor misst nur, was der Finger tatsaechlich drueckt).
-  - **17 Taktil-Zonen je Hand** (Register 3000+) = die Kontakt-**Haut** (Viewer-
-    Heatmap). Platziert an den `*_force_sensor_*`-Frames des URDF, palm + je Finger
+  - **17 Taktil-Zonen je Hand** (Register 3000+) = die Kontakt-**Haut** (Kraftzonen-
+    Heatmap der Demo-GUI). Platziert an den `*_force_sensor_*`-Frames des URDF, palm + je Finger
     tip/nail/pad, Daumen auch mid. Echte, physikbasierte Kontaktkraefte — greift die
     Hand etwas Greifbares, leuchten die Zonen auf.
 - **Greifbar = Kollisions-Bit 2**: Finger-Zonen kollidieren nur mit Objekten, die
@@ -119,9 +101,9 @@ daher ist `localhost` korrekt.
   stoert Loco/Nav nicht. `G1_GRASP_TEST=1` startet ihn direkt AN, `G1_GRASP_BOX=0`
   laesst ihn ganz weg. Ohne ROS toggeln: `echo -n on|nc -u -w0 127.0.0.1 47901`.
 - MuJoCo liefert je Zone EINEN Kraft-Skalar (Summe der Normal-Kontaktkraefte); die
-  per-Taxel-Matrix des Viewers wird daraus verteilt. Der raeumliche Feindruck
+  per-Taxel-Matrix wird daraus verteilt. Der raeumliche Feindruck
   INNERHALB einer Zone ist also synthetisch, die Zonen-Gesamtkraft ist echt.
-- **Kraft-Limit `force_set`** (GUI-Slider, Register 1498, Gramm) = echte
+- **Kraft-Limit `force_set`** (Demo-GUI: Griffkraft, Register 1498, Gramm) = echte
   **Kraftregelung** wie an der Hardware: die GEMESSENE Kontaktkraft (`force_act`,
   Gramm) wird laufend gegen `force_set` (gleiche Einheit) verglichen. Uebersteigt
   sie das Limit, **faehrt der Finger seinen Winkel aktiv wieder auf** (oeffnet,
@@ -140,5 +122,5 @@ daher ist `localhost` korrekt.
 
 **Stufe 1 (`sim`, nur RViz)** — keine Kontaktphysik:
 - Kraft/Taktil bleiben **0** (Platzhalter), nur die Ist-Winkel werden
-  geschwindigkeitsbegrenzt nachgefuehrt (`speed`-Slider wirkt).
-- `enabled` (Hauptschalter) gilt wie beim Original: ohne ihn bewegt sich nichts.
+  geschwindigkeitsbegrenzt nachgefuehrt (`set_speed` wirkt).
+- `enabled` gilt wie beim Original: ohne ihn bewegt sich nichts (Finger-Befehle der Demo-GUI setzen ihn selbst).

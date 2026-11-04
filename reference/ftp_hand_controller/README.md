@@ -10,7 +10,6 @@ Inspire RH56DFTP-2 Haende per **Modbus TCP** angesteuert haben (vom Branch
 |-------|-------|
 | `Controller/hand_controller_bridge.py` | Soll-Winkel/Kraft/Speed schreiben + Ist lesen (Register-Map!) |
 | `Viewer/inspire_hand_bridge.py`        | Taktil-Zonen + Kraefte lesen (Taktil-Register-Map!) |
-| `*/*.html`                             | Urspruengliche GUIs (die Repo-GUIs sind daraus weiterentwickelt) |
 
 ## Verbindliche Hardware-Fakten (aus diesen Skripten)
 
@@ -25,5 +24,6 @@ Inspire RH56DFTP-2 Haende per **Modbus TCP** angesteuert haben (vom Branch
   FC03 lesen (max. 125 Register/Chunk), FC16 schreiben; beim Verbinden
   zuerst speedSet schreiben. close_hand: Daumen-Beugung auf 200 (nicht 0).
 
-Die Original-README verwies noch auf zwei Screenshots (`image.png`,
-`image-1.png`) — die sind hier weggelassen (nur Bilder der GUIs).
+Die urspruenglichen Browser-GUIs (`*.html`) und die Screenshots der
+Original-README sind entfernt (2026-11-04); die Handsteuerung steckt in der
+Demo-GUI (`g1pilot/teleoperation/hand_panel.py`).

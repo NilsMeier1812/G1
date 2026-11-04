@@ -202,8 +202,9 @@ Titelzeile vom Inhalt (auch bei GEHEN).
   Betreuer: Pose anfahren (Dialog), Pose speichern (Dialog, Kategorie `Demo`
   vorausgewählt) und Marker folgen. Die Dialoge liegen in `gui_base.py`.
 
-*Seite HÄNDE* (`teleoperation/hand_panel.py`) ersetzt die beiden Browser-GUIs
-der Hand-Bridge (`hand_controller_viewer.html`, `inspire_hand_viewer.html`):
+*Seite HÄNDE* (`teleoperation/hand_panel.py`) ist die einzige grafische
+Handsteuerung (die früheren Browser-GUIs der Hand-Bridge wurden 2026-11-04
+entfernt):
 
 - **Ganze Hand**: beide Hände öffnen/schließen sowie je Hand eigene
   Öffnen/Schließen-Knöpfe (`/g1pilot/hand_action/{left,right}`).
@@ -217,8 +218,8 @@ der Hand-Bridge (`hand_controller_viewer.html`, `inspire_hand_viewer.html`):
   aller Finger: Sanft 300 g, Mittel 800 g, Fest 1500 g) und **Tempo**
   (Langsam/Normal/Schnell), dazu „Kraftzonen nullen“ (aktuelle Taktil-Werte
   als Nulllage). Einzelne Kraft-Limits je Finger gibt es in der Demo-GUI nicht.
-- Kommuniziert nur über ROS: `/g1pilot/hand_cmd` (JSON, dieselben Befehle wie
-  der Controller-WebSocket `:8766`) und `/g1pilot/hand_status` (JSON, ~10 Hz).
+- Kommuniziert nur über ROS: `/g1pilot/hand_cmd` (JSON-Befehle, siehe
+  [22-T-Inspire-Haende.md](22-T-Inspire-Haende.md)) und `/g1pilot/hand_status` (JSON, ~10 Hz).
   Kommt kein Status, erscheint ein Hinweis (Hand-Bridge läuft nicht).
 
 ### 3 · Status (unten)

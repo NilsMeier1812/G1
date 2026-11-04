@@ -31,8 +31,6 @@ setup(
         ]),
 
         # Inspire-FTP-Hand HTML-GUIs (Controller/Viewer) – im Browser zu oeffnen.
-        (f'share/{package_name}/manipulation/inspire_ftp/web',
-            expand(['g1pilot/manipulation/inspire_ftp/web/*.html'])),
         (f'share/{package_name}/teleoperation/phone/web',
             expand(['g1pilot/teleoperation/phone/web/*'])),
 
@@ -86,7 +84,7 @@ setup(
             # Manipulation Nodes
             'interactive_marker = g1pilot.manipulation.interactive_marker:main',
             'arm_controller = g1pilot.manipulation.arm_controller:main',
-            # Inspire-FTP-Hand: GUI-WebSocket-Bridge + DDS-Backend (rt/inspire/cmd|state).
+            # Inspire-FTP-Hand: ROS-Bridge + DDS-/Modbus-Backend (rt/inspire/cmd|state).
             'inspire_hand = g1pilot.manipulation.inspire_ftp.bridge:main',
             # Live-Pose-Schnittstelle: HTTP-JSON -> /g1pilot/arm_command (g1pilot/docs/21-T-Arm-API.md).
             'arm_api = g1pilot.manipulation.arm_api:main',

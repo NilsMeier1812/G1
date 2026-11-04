@@ -188,7 +188,7 @@ def generate_launch_description():
     ]
 
     # ── 5. Inspire-FTP-Hand-Bridge: ECHTE Haende via Modbus TCP ─────────────
-    #    GUIs identisch zur Sim (Controller :8766 / Viewer :8765 / HTTP :8767);
+    #    Bedienung ueber die Demo-GUI (/g1pilot/hand_cmd, /g1pilot/hand_status);
     #    Ist-Winkel/Kraefte/Taktil kommen von der Hardware, RViz spiegelt die
     #    echten Finger ueber /joint_states.
     if inspire_hands:
@@ -198,9 +198,6 @@ def generate_launch_description():
             name='inspire_ftp_bridge',
             output='screen',
             parameters=[{
-                'ws_host':         '0.0.0.0',
-                'controller_port': 8766,
-                'viewer_port':     8765,
                 'update_rate_hz':  50.0,
                 'backend':         'modbus',
                 'left_host':       left_host,

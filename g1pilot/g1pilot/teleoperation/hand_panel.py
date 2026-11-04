@@ -3,8 +3,8 @@
 """
 hand_panel — Handsteuerung der Demo-GUI (Inspire RH56DFTP-2, Sim UND real).
 
-Qt-Ersatz fuer die beiden Browser-GUIs der Hand-Bridge (hand_controller_viewer
-und inspire_hand_viewer). Zwei Ebenen, damit es im Demo-Betrieb einfach bleibt:
+Ersetzt die frueheren Browser-GUIs der Hand-Bridge (hand_controller_viewer und
+inspire_hand_viewer, 2026-11-04 entfernt). Zwei Ebenen, damit es im Demo-Betrieb einfach bleibt:
 
   * GANZE HAND: Beide/Links/Rechts oeffnen + schliessen.
   * FINGER: je Finger Soll-Schieber, Ist-Oeffnung und gemessene Kraft, dazu
@@ -14,7 +14,7 @@ und inspire_hand_viewer). Zwei Ebenen, damit es im Demo-Betrieb einfach bleibt:
 
 Kommunikation ausschliesslich ueber ROS (siehe inspire_ftp/bridge.py):
   /g1pilot/hand_action/{left,right}  String "open"/"close" (wie loco_client)
-  /g1pilot/hand_cmd                  String JSON, gleiche Befehle wie ws://…:8766
+  /g1pilot/hand_cmd                  String JSON (set_angle, set_force, open_hand, …)
   /g1pilot/hand_status               String JSON, ~10 Hz Ist-/Soll-Zustand + Zonen
 """
 
@@ -46,7 +46,7 @@ USER_HOLD_S = 1.0
 # Kein hand_status seit ... -> Bridge gilt als nicht erreichbar.
 STALE_S = 1.5
 
-# Taktil-Normierung wie inspire_hand_viewer.html: Delta zur Nulllage, Rauschen
+# Taktil-Normierung wie in der frueheren Browser-GUI inspire_hand_viewer.html: Delta zur Nulllage, Rauschen
 # weg, 1200 ADC-Einheiten = voller Ausschlag.
 TACTILE_NOISE = 80
 TACTILE_FULL = 1200

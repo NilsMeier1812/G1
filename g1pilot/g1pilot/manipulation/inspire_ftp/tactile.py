@@ -11,7 +11,7 @@ Diese 17 Zonen sind die EINZIGE Wahrheit fuer alle Backends:
   * Stufe 2 (MuJoCo-Sim): das Modell g1_29dof_inspire_ftp traegt genau diese 17
     <touch>-Sensoren JE HAND (an den *_force_sensor_*-Frames des URDF). Der
     MujocoContactBackend fuellt daraus echte, physikbasierte Kontaktkraefte in
-    dieselben Zonen -> der Viewer zeigt in Sim UND real identische Zonen.
+    dieselben Zonen -> die Demo-GUI zeigt in Sim UND real identische Zonen.
   * Stufe 1 (RViz-only): keine Kontaktphysik -> ``zero_zones()`` (Platzhalter).
 """
 
@@ -39,27 +39,8 @@ TACTILE_ZONES = [
     ("palme",        "Palme",   "palm", 4900,  8, 14),
 ]
 
-FINGER_LAYOUT = {
-    "Kleiner": ["kleiner_tip", "kleiner_nail", "kleiner_pad"],
-    "Ring":    ["ring_tip", "ring_nail", "ring_pad"],
-    "Mittel":  ["mittel_tip", "mittel_nail", "mittel_pad"],
-    "Zeige":   ["zeige_tip", "zeige_nail", "zeige_pad"],
-    "Daumen":  ["daumen_tip", "daumen_nail", "daumen_mid", "daumen_pad"],
-    "Palme":   ["palme"],
-}
-
 
 def zero_zones() -> Dict[str, List[int]]:
     """Leere (Null-)Zonen in der richtigen Form — Startwert (Stufe 1 / kein Kontakt)."""
     return {z[0]: [0] * (z[4] * z[5]) for z in TACTILE_ZONES}
 
-
-def meta() -> dict:
-    """Meta-Nachricht fuer den HTML-Viewer (Zonen + Finger-Layout)."""
-    return {
-        "zones": [
-            {"id": z[0], "finger": z[1], "zone": z[2], "rows": z[4], "cols": z[5]}
-            for z in TACTILE_ZONES
-        ],
-        "fingers": FINGER_LAYOUT,
-    }

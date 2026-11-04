@@ -162,9 +162,9 @@ def generate_launch_description():
     ]
 
     # ── 5. Inspire-FTP-Hand-Bridge (nur bei Inspire-Haenden) ────────────
-    #    Bedient die HTML-GUIs (Controller :8766 / Viewer :8765), bewegt die Finger in
+    #    Bedient die Demo-GUI (/g1pilot/hand_cmd, /g1pilot/hand_status), bewegt die Finger in
     #    RViz (/joint_states) UND redet per DDS (rt/inspire/cmd|state) mit der MuJoCo-
-    #    Sim: backend='mujoco' -> echte Finger-Winkel + Touch-Kraefte in den GUIs.
+    #    Sim: backend='mujoco' -> echte Finger-Winkel + Touch-Kraefte in der GUI.
     if inspire_hands:
         nodes.append(Node(
             package='g1pilot',
@@ -172,9 +172,6 @@ def generate_launch_description():
             name='inspire_ftp_bridge',
             output='screen',
             parameters=[{
-                'ws_host':        '0.0.0.0',
-                'controller_port': 8766,
-                'viewer_port':     8765,
                 'update_rate_hz':  50.0,
                 'backend':         'mujoco',
                 'interface':       'lo',

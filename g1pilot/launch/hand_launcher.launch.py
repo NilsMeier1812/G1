@@ -2,7 +2,7 @@
 hand_launcher.launch.py
 Startet die Inspire-FTP-Hand-Bridge (inspire_hand) eigenstaendig.
 
-Die Bridge bedient beide HTML-GUIs (Controller :8766 / Viewer :8765) und
+Die Bridge nimmt Befehle auf /g1pilot/hand_cmd (Demo-GUI) entgegen und
 publiziert die Finger-Gelenke nach /joint_states (RViz, Stufe 1).
 
 WICHTIG: Laeuft die Bridge, muss robot_state mit publish_hand_joints:=false
@@ -19,9 +19,6 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument("ws_host", default_value="0.0.0.0"),
-        DeclareLaunchArgument("controller_port", default_value="8766"),
-        DeclareLaunchArgument("viewer_port", default_value="8765"),
         DeclareLaunchArgument("update_rate_hz", default_value="50.0"),
         # sim | mujoco | modbus (modbus = ECHTE Haende, braucht left/right_host)
         DeclareLaunchArgument("backend", default_value="sim"),
@@ -36,11 +33,6 @@ def generate_launch_description():
             name="inspire_ftp_bridge",
             output="screen",
             parameters=[{
-                "ws_host": ParameterValue(LaunchConfiguration("ws_host"), value_type=str),
-                "controller_port": ParameterValue(
-                    LaunchConfiguration("controller_port"), value_type=int),
-                "viewer_port": ParameterValue(
-                    LaunchConfiguration("viewer_port"), value_type=int),
                 "update_rate_hz": ParameterValue(
                     LaunchConfiguration("update_rate_hz"), value_type=float),
                 "backend": ParameterValue(LaunchConfiguration("backend"), value_type=str),
