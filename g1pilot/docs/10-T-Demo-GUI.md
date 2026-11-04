@@ -5,19 +5,19 @@ Richtet sich an Entwickler, die die Demo-GUI weiterbauen. Bedienung:
 
 ## Grundsatz
 
-Die Logik bleibt wie beim Streamdeck in den Ziel-Nodes (`arm_controller`,
+Die Logik bleibt in den Ziel-Nodes (`arm_controller`,
 `loco_sim`, `loco_client`, Hand-Bridge). Die GUI publiziert auf die
 bestehenden Topics und liest Zustände, sie rechnet selbst keine Bewegung.
-`DemoNode` erbt die Publisher von `StreamDeck` (`ui_interface.py`), damit
-beide Oberflächen garantiert dasselbe senden. Es läuft immer **nur eine** der
-beiden GUIs (`G1_GUI=demo|streamdeck`), sonst liefe der Sim-Auto-Start doppelt.
+`DemoNode` erbt die Publisher von `GuiNode` (`gui_base.py`). Das ist der
+Rest der früheren Streamdeck-GUI (`ui_interface.py`, 2026-10-30 entfernt);
+die Demo-GUI ist seitdem die einzige Bedienoberfläche.
 
 ## Beteiligte Dateien
 
 | Datei | Inhalt |
 |---|---|
 | `g1pilot/teleoperation/demo_gui.py` | PyQt6-Oberfläche: `DemoNode` (ROS), `ModeTile`, `TempPanel`, Seiten ARME/HÄNDE, Startleiste, Status, Vollbild |
-| `g1pilot/teleoperation/ui_interface.py` | Basisklasse `StreamDeck` (Publisher), `VirtualJoystick`, Dialoge `PoseSaveDialog` / `PoseLoadDialog` |
+| `g1pilot/teleoperation/gui_base.py` | Basisklasse `GuiNode` (Publisher), `VirtualJoystick`, Dialoge `PoseSaveDialog` / `PoseLoadDialog` |
 | `g1pilot/teleoperation/hand_panel.py` | Seite HÄNDE (Finger, Kraft, Kraftzonen) über `/g1pilot/hand_cmd` und `/g1pilot/hand_status` |
 | `g1pilot/teleoperation/sequence_runner.py` | Ablauf abfahren (Am Stück / Schritt für Schritt), ohne Qt/ROS testbar, siehe [23-T-Posen-und-Ablaeufe.md](23-T-Posen-und-Ablaeufe.md) |
 | `g1pilot/teleoperation/sequence_editor.py` | Fenster „Posen & Abläufe“ |
@@ -29,7 +29,7 @@ beiden GUIs (`G1_GUI=demo|streamdeck`), sonst liefe der Sim-Auto-Start doppelt.
 | `g1pilot/utils/g1_temperature.py` | Temperaturen aufbereiten (Gruppen, Schwellen, heißester Motor) |
 | `g1pilot/utils/push_charge.py` | aufladbarer Schubs (Haltedauer → Kraft), gemeinsam mit `loco_sim` |
 | `g1pilot/utils/window_style.py` | dunkles Fenster-Design, Fenster-Icon und `WM_CLASS` |
-| `launch/teleoperation_launcher.launch.py` | startet je nach `G1_GUI` **entweder** `ui_interface` **oder** `demo_gui` |
+| `launch/teleoperation_launcher.launch.py` | startet `demo_gui` |
 | `setup.py` | Entry-Point `demo_gui` |
 
 ## Topics
@@ -66,7 +66,7 @@ im gemounteten Repo an, die ein Watcher auf dem Host abarbeitet:
 | `.sim_shutdown_request` | `docker/sim_shutdown_watcher.sh` | `docker compose kill` + `down` (sofort) |
 | `.real_shutdown_request` | `docker/real_shutdown_watcher.sh` | `docker compose stop` (SIGTERM) + `down`, erst nachdem die Arme abgegeben sind |
 
-Die Watcher starten `./start.sh`, `make sim`, `make real` und `make real-full`.
+Die Watcher starten `./start.sh`, `make sim` und `make real`.
 
 ## Tests
 

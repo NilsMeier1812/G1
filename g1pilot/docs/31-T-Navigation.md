@@ -13,8 +13,7 @@ wollen. Für die Bedienung siehe
 | `g1pilot/navigation/create_map.py` | `/scene_markers` → 2D-Belegungskarte `/map` |
 | `g1pilot/navigation/dijkstra_planner.py` | globaler Pfadplaner |
 | `g1pilot/navigation/nav2point.py` | Pure-Pursuit-Waypoint-Follower |
-| `g1pilot/navigation/sim_localization.py` | Sim-Ersatz für MOLA (Pose aus Ground-Truth) |
-| `g1pilot/navigation/fix_mola_odometry.py` (`mola_fixed`) | Orientierungs-Fix der MOLA-Odometrie (nur Real) |
+| `g1pilot/navigation/sim_localization.py` | Pose aus der MuJoCo-Ground-Truth |
 | `g1pilot/teleoperation/joy_mux.py`, `navigation/joy_to_cmdvel.py` | Kopplung an die Loco-Schicht |
 
 ## Datenfluss
@@ -30,7 +29,7 @@ wollen. Für die Bedienung siehe
  │ Shortcut + Glättung│                                  │                      │
  └─────────┬─────────┘                                   │ sim_localization      │
            │ /g1pilot/path                               │  (rt/sportmodestate)  │
-           ▼                                              │ real: MOLA + fix     │
+           ▼                                              │                      │
  ┌───────────────────┐                                    └──────────┬───────────┘
  │ nav2point         │◄────────────── Pose ──────────────────────────┘
  │ Pure-Pursuit-     │
@@ -147,20 +146,20 @@ blockiert, kein kollisionsfreier Weg) einen **leeren Pfad**. `nav2point` hält
 dann an, statt dem vorherigen Pfad weiter zu folgen. Die Demo-GUI nutzt
 `nav_status` für die AUTO-NAV-Anzeige (siehe `10-A-Demo-GUI.md`).
 
-### `sim_localization` (nur Sim) / MOLA + `mola_fixed` (nur Real)
+### `sim_localization`
 
 `sim_localization` liest die Basis-Position/-Geschwindigkeit aus
 `rt/sportmodestate` (MuJoCo-Ground-Truth) und die Orientierung aus der
 IMU in `rt/lowstate`, und veröffentlicht daraus exakt die Topics, die der
 Rest des Stacks erwartet: `/lidar_odometry/pose_fixed`
 (`nav_msgs/Odometry`, Frame `map`) und die dynamische TF
-`odom_unitree → base_link`. Auf echter Hardware übernimmt MOLA
-(Livox-SLAM) dieselbe Rolle; `mola_fixed` transformiert deren Odometrie in
-das vom Stack erwartete Frame.
+`odom_unitree → base_link`. Der Topic-Name `/lidar_odometry/…` stammt aus
+der früheren LiDAR-Anbindung (MOLA/Livox, am 2026-10-30 entfernt) und ist
+geblieben, damit Planer und Follower unverändert bleiben.
 
 ### `joy_mux` / `joy_to_cmdvel`
 
-Siehe [13-T-Streamdeck.md](13-T-Streamdeck.md). Auf real
+Siehe [13-T-Alter-Joystick.md](13-T-Alter-Joystick.md). Auf real
 liest `loco_client` `/g1pilot/joy` direkt; in der Simulation liest
 `loco_sim` keinen `Joy`, daher übersetzt `joy_to_cmdvel` das (bereits durch
 `joy_mux`/`auto_enable` gegatete) `/g1pilot/joy` in `/g1pilot/loco_cmd_vel`
@@ -172,20 +171,16 @@ Damit die Autonomie exakt denselben, erprobten Pfad nimmt wie die manuelle
 Teleoperation — inklusive Deadman, Geschwindigkeitslimits und Notaus. Es
 gibt keinen zweiten, ungetesteten Steuerweg zum Roboter.
 
-## Sim vs. Real — Bausteintabelle
+## Nur Simulation
 
-| Baustein | Sim | Real |
-|---|---|---|
-| Lokalisierung | `sim_localization` | MOLA + `mola_fixed` |
-| Planer | `dijkstra_planner` | identisch |
-| Follower | `nav2point` | identisch |
-| Joy-Mux | `joy_mux` | identisch |
-| Loco-Anbindung | `joy_to_cmdvel` → `loco_sim` | Joy direkt → `loco_client` |
-| Karte | `create_map` aus `/scene_markers` | `create_map`, i. d. R. leer ohne eigenes Setup |
+Der Stack läuft nur in der Simulation (`G1_ENABLE_NAV=1`). Auf dem echten G1
+fehlt eine Pose-Quelle; die LiDAR-Anbindung (Livox MID360 + MOLA) wurde
+verworfen. Die Kopplung über `joy_mux` → `/g1pilot/joy` würde real
+grundsätzlich auch `loco_client` erreichen, das ist aber nicht mehr
+vorgesehen.
 
 ## Bekannte Einschränkungen
 
 - Keine Live-Perzeption: die Karte spiegelt nur die beim Sim-Start geladene
   Umgebung, keine spontanen Hindernisse.
-- Auf echter Hardware ist ein Livox MID360 + das große Docker-Image
-  Voraussetzung für Navigation (`G1_ENABLE_LIDAR=1`).
+- Kein Betrieb auf echter Hardware (keine Lokalisierung).

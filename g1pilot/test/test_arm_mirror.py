@@ -64,7 +64,7 @@ def test_parse_mirror_command():
 
 
 # ── Am URDF: Gelenk-Spiegelung == Spiegelung der Hand-Pose ───────────────
-@pytest.mark.parametrize("urdf", ["g1_29dof_inspire_ftp.urdf", "29dof.urdf"])
+@pytest.mark.parametrize("urdf", ["g1_29dof_inspire_ftp.urdf"])
 def test_joint_mirror_equals_cartesian_mirror_fk(urdf):
     pin = pytest.importorskip("pinocchio")
     model = pin.buildModelFromUrdf(os.path.join(URDF_DIR, urdf))

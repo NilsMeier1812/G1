@@ -10,7 +10,7 @@ Sicherheitsablauf am echten Roboter: [50-A-Echter-Roboter.md](50-A-Echter-Robote
 |---|---|---|
 | **Stopp** | Controller **Kreuz** (Xbox **A**), Stick loslassen | Hand steht sofort, geplante Bewegung bricht ab. Roboter bleibt, wie er ist |
 | **Gehen stoppen** | **L2 loslassen** (Totmann), GUI-Gehknopf loslassen | G1 bleibt stehen, balanciert weiter |
-| **NOT-HALT** | Demo-GUI **NOT-HALT**, Streamdeck **EMERGENCY STOP**, Controller **PS** (Xbox-Taste), Handy **NOT-HALT** | Arme schlaff (sacken gedämpft ab), Hände aus (halten ihre Stellung), Hüftdrehung steht, **Taille gehalten**, Beine `StopMove`: der G1 **bleibt stehen** |
+| **NOT-HALT** | Demo-GUI **NOT-HALT**, Controller **PS** (Xbox-Taste), Handy **NOT-HALT** | Arme schlaff (sacken gedämpft ab), Hände aus (halten ihre Stellung), Hüftdrehung steht, **Taille gehalten**, Beine `StopMove`: der G1 **bleibt stehen** |
 | **Voll-Notaus** | Controller **R1 + L1 + PS 2 s halten** (Xbox **RB + LB + Xbox-Taste**) | ganzer G1 in **Damp**, auch Beine und Taille: er **sackt zusammen** (Kran!) |
 | **Unitree-Fernbedienung** | Damp an der Fernbedienung | wirkt an der Firmware, unabhängig von PC und Stack |
 
@@ -30,12 +30,11 @@ Nach einem NOT-HALT ist alles gesperrt, bis quittiert wird:
 | | Sim | Echter G1 |
 |---|---|---|
 | Demo-GUI | einen Modus wählen (GREIFEN/GEHEN) | Startleiste **NOT-HALT quittieren** (»Start«) |
-| Streamdeck | **START** | **START** |
 | Handy | **Start** (mit Recht »Bedienen«) | **Start** |
 | Controller | geht nicht, absichtlich | geht nicht, absichtlich |
 
 Danach bleiben die Arme schlaff, bis man sie bewusst wieder übernimmt
-(GREIFEN, Controller **R2**, Streamdeck ENABLE MANIPULATION). Stand der
+(GREIFEN, Controller **R2**). Stand der
 G1 vorher im Walk-Modus, bleibt er darin (kein Sprung nach FSM 4).
 
 Nach dem **Voll-Notaus** quittiert »Start« nur; der G1 bleibt in Damp.

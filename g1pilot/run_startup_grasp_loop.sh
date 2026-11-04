@@ -3,14 +3,13 @@
 # GREIFEN direkt nach dem Auto-Start bedienbar ist (test_sim_startup_grasp.py).
 # Bug 2026-10-13: Arme reagierten nach dem Start oft nicht (Auto-Start verloren).
 #
-#   ./run_startup_grasp_loop.sh [N] [streamdeck|demo]
+#   ./run_startup_grasp_loop.sh [N]
 # Headless: vorher z.B. `Xvfb :99 &` und DISPLAY=:99 setzen. Images muessen gebaut sein.
 set -u
 N=${1:-5}
-GUI=${2:-streamdeck}
 cd "$(dirname "$0")"
 export G1_SIM_MODE=true HOLD_BASE_MODE=off SIM_LOCKSTEP=1 SIM_REALTIME_FACTOR=1.0
-export USE_RVIZ=false G1_ENABLE_NAV=0 G1_GUI="$GUI" G1_PS4_ARMS=0
+export USE_RVIZ=false G1_ENABLE_NAV=0 G1_PS4_ARMS=0
 export G1_WALK_POLICY=${G1_WALK_POLICY:-g1_wholebody}
 pass=0
 for i in $(seq 1 "$N"); do

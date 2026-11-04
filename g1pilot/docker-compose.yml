@@ -6,11 +6,8 @@
 
 
 # ── Gemeinsame Basis-Konfiguration für G1Pilot Container ────────────
+# build/image setzt jeder Service selbst (Dockerfile.sim bzw. Dockerfile.real).
 x-g1pilot-base: &g1pilot-base
-  build:
-    context: .
-    dockerfile: docker/Dockerfile
-  image: g1pilot:v1.1.0
   network_mode: host         # KRITISCH: DDS braucht Host-Netzwerk!
   volumes:
     - /tmp/.X11-unix:/tmp/.X11-unix:rw
@@ -68,16 +65,15 @@ services:
     # ── G1Pilot im Simulations-Modus ───────────────────────────────
     profiles: ["sim"]
     <<: *g1pilot-base
-    # Schlankes Sim-Image: KEIN livox/MOLA (die braucht nur der echte Roboter
-    # und ihr Build schlägt sonst fehl). Nur rviz2/pin/tf2/cyclonedds/sdk.
+    # Schlankes Sim-Image: nur rviz2/pin/tf2/cyclonedds/sdk.
     build:
       context: .
       dockerfile: docker/Dockerfile.sim
     image: g1pilot-sim:v1.1.0
     # Handy-Zugang: Dockers AppArmor-Profil »docker-default« verbietet jeden System-D-Bus-Aufruf
     # (journalctl: apparmor="DENIED" ... member="Hello"), BlueZ ist dann unerreichbar.
-    # Das Start-Fenster setzt G1_SIM_APPARMOR=unconfined nur mit Haken »Handy-Zugang«,
-    # sonst bleibt das Profil wie bisher. Der Real-Container ist privileged und betrifft das nicht.
+    # Das Start-Fenster setzt G1_SIM_APPARMOR=unconfined mit der Demo-GUI (Handy-Knopf),
+    # mit dem Streamdeck bleibt das Profil wie bisher. Der Real-Container ist privileged und betrifft das nicht.
     security_opt:
       - apparmor=${G1_SIM_APPARMOR:-docker-default}
     environment:
@@ -113,14 +109,13 @@ services:
       # waehlbar: g1_wholebody (Default, alt) | agile_velocity_g1 |
       # agile_velocity_height_g1. Siehe g1pilot/docs/30-T-Stehen-und-Gehen.md.
       - G1_WALK_POLICY=${G1_WALK_POLICY:-g1_wholebody}
-      # Bedienoberflaeche: streamdeck (Default) | demo (vereinfachte Demo-GUI,
-      # siehe g1pilot/docs/10-A-Demo-GUI.md).
-      - G1_GUI=${G1_GUI:-streamdeck}
+      # Bedienoberflaeche ist immer die Demo-GUI (g1pilot/docs/10-A-Demo-GUI.md).
       - G1_GUI_FULLSCREEN=${G1_GUI_FULLSCREEN:-0}
       # Handy-Bedienung ueber Bluetooth LE (nur Demo-GUI, docs/12-A-Handy.md).
-      # 0 = aus (kein Werben, kein Thread). Adapter: hci0 = einziger Dongle (teilt
+      # 1 = Knopf »📱 Handy« in der Demo-GUI; Bluetooth startet erst beim Klick darauf.
+      # 0 = ganz aus. Adapter: hci0 = einziger Dongle (teilt
       # sich den Funk mit dem Controller), hci1 = zweiter Dongle nur fuers Handy.
-      - G1_PHONE=${G1_PHONE:-0}
+      - G1_PHONE=${G1_PHONE:-1}
       - G1_PHONE_BT_ADAPTER=${G1_PHONE_BT_ADAPTER:-auto}
       # Szenen-Bruecke (siehe g1pilot/docs/31-T-Navigation.md): MUSS zum mujoco-sim-Wert oben passen.
       - SIM_SCENE_PORT=${SIM_SCENE_PORT:-47902}
@@ -158,7 +153,6 @@ services:
   g1pilot-real:
     # ── G1Pilot mit echtem G1 (schlank: Arme + Haende + Unitree-Loco) ──
     # Roboter per LAN (192.168.123.x), Haende ebenfalls im Roboter-LAN.
-    # LiDAR/Nav: G1_ENABLE_LIDAR=1 + grosses Image (siehe g1pilot-real-full).
     profiles: ["real"]
     <<: *g1pilot-base
     build:
@@ -182,13 +176,13 @@ services:
       - ROBOT_INTERFACE=${ROBOT_INTERFACE:-eth0}
       # RViz default AN: der rviz-Marker ist das Interface der Arm-Manipulation.
       - USE_RVIZ=${USE_RVIZ:-true}
-      # Bedienoberflaeche: streamdeck (Default) | demo (siehe docs/10-A-Demo-GUI.md).
-      - G1_GUI=${G1_GUI:-streamdeck}
+      # Bedienoberflaeche ist immer die Demo-GUI (docs/10-A-Demo-GUI.md).
       - G1_GUI_FULLSCREEN=${G1_GUI_FULLSCREEN:-0}
       # Handy-Bedienung ueber Bluetooth LE (nur Demo-GUI, docs/12-A-Handy.md).
-      # 0 = aus (kein Werben, kein Thread). Adapter: hci0 = einziger Dongle (teilt
+      # 1 = Knopf »📱 Handy« in der Demo-GUI; Bluetooth startet erst beim Klick darauf.
+      # 0 = ganz aus. Adapter: hci0 = einziger Dongle (teilt
       # sich den Funk mit dem Controller), hci1 = zweiter Dongle nur fuers Handy.
-      - G1_PHONE=${G1_PHONE:-0}
+      - G1_PHONE=${G1_PHONE:-1}
       - G1_PHONE_BT_ADAPTER=${G1_PHONE_BT_ADAPTER:-auto}
       # Inspire-FTP-Haende (Modbus TCP im Roboter-LAN).
       - G1_INSPIRE_HANDS=${G1_INSPIRE_HANDS:-0}
@@ -214,6 +208,10 @@ services:
       - G1_WAIST_HOLD=${G1_WAIST_HOLD:-true}
       - G1_WAIST_KP=${G1_WAIST_KP:-150.0}
       - G1_WAIST_KD=${G1_WAIST_KD:-4.0}
+      # Taillen-Ziel beim Uebernehmen der Arme (Linksdrall-Test 2026-10-27):
+      # hold = eingefroren wie beim ENABLE (alt), zero = gerade auf 0,
+      # onboard = 0 und beim GEHEN fuehrt der Onboard-Regler die Taille.
+      - G1_WAIST_MODE=${G1_WAIST_MODE:-hold}
       # NOT-HALT: Taille bleibt gehalten, Beine nur StopMove (kein Damp).
       # Alt-Verhalten: G1_ESTOP_WAIST_HOLD=false und/oder G1_ESTOP_DAMP_LEGS=1.
       - G1_ESTOP_WAIST_HOLD=${G1_ESTOP_WAIST_HOLD:-true}
@@ -233,7 +231,6 @@ services:
       - G1_MAX_VX=${G1_MAX_VX:-0.4}
       - G1_MAX_VY=${G1_MAX_VY:-0.3}
       - G1_MAX_VYAW=${G1_MAX_VYAW:-0.4}
-      - G1_ENABLE_LIDAR=${G1_ENABLE_LIDAR:-0}
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - .:/ros2_ws/src/g1pilot:rw
@@ -255,33 +252,4 @@ services:
     # Gewicht 1->0 (sanfte Uebergabe an den Onboard-Regler). Ohne exec bekam
     # die bash (PID 1) das Signal, ignorierte es, und nach 10 s riss SIGKILL
     # alles ab. Die Frist deckt Rueckfahrt + Rampe + launch-Eskalation.
-    stop_grace_period: 20s
-
-  g1pilot-real-full:
-    # ── Voller Real-Stack (Livox MID360 + MOLA + Navigation) ───────────
-    # Braucht das grosse Image (docker/Dockerfile) und den LiDAR. Fuer den
-    # ersten Hardware-Betrieb NICHT noetig -- siehe g1pilot-real.
-    profiles: ["real-full"]
-    <<: *g1pilot-base
-    privileged: true
-    environment:
-      - DISPLAY=${DISPLAY}
-      - G1_SIM_MODE=false
-      - ROS_DOMAIN_ID=1
-      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-      - ROBOT_INTERFACE=${ROBOT_INTERFACE:-eth0}
-    volumes:
-      - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - .:/ros2_ws/src/g1pilot:rw
-      - /dev:/dev                  # Livox/USB/Gamepad
-    command: >
-      bash -c "cd /ros2_ws &&
-               source /opt/ros/humble/setup.bash &&
-               source /ros2_ws/install/setup.bash &&
-               colcon build --packages-select g1pilot --symlink-install &&
-               source /ros2_ws/install/setup.bash &&
-               exec ros2 launch g1pilot bringup_launcher.launch.py
-                 use_robot:=true
-                 interface:=${ROBOT_INTERFACE:-eth0}"
-    # Siehe g1pilot-real: exec + Frist fuer die sanfte Arm-Uebergabe beim Beenden.
     stop_grace_period: 20s

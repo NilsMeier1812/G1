@@ -17,10 +17,9 @@ Tastsinn-Rückmeldung. Bedient werden die Hände über:
 - **Controller:** Kreis = öffnen, Viereck = schließen (gewählte Hand),
   siehe [11-A-Controller.md](11-A-Controller.md).
 - **Handy:** Hände öffnen/schließen, siehe [12-A-Handy.md](12-A-Handy.md).
-- **Zwei HTML-Oberflächen der Hand-Bridge** (vor allem mit dem Streamdeck):
-  **Controller** (Port 8766) — Winkel/Kraft/Geschwindigkeit je Finger
-  einstellen, Hand öffnen/schließen; **Viewer** (Port 8765) — Kraft- und
-  Tastsinn-Heatmap.
+
+Die früheren Browser-Oberflächen der Hand-Bridge (Controller/Viewer) wurden
+2026-11-04 entfernt; alles davon steckt in der Demo-GUI.
 
 Alle Wege sind in Simulation und auf echter Hardware identisch.
 
@@ -39,21 +38,7 @@ Auf echter Hardware zusätzlich die Modbus-IP-Adressen der Hände angeben
 
 ## Bedienung
 
-**Schnellzugriff über den Streamdeck:** `OPEN LEFT/RIGHT HAND`,
-`CLOSE LEFT/RIGHT HAND`, `INSPIRE FTP GUIs` (öffnet beide Oberflächen im
-Browser).
-
-**GUIs manuell öffnen:**
-
-```
-http://localhost:8767/hand_controller_viewer.html?autoconnect=1
-http://localhost:8767/inspire_hand_viewer.html?autoconnect=1
-```
-
-Mit der Streamdeck-Oberfläche kann man beim Sim-/Real-Start „Hand-Oberflächen
-im Browser öffnen“ aktivieren — dann öffnen sich beide Seiten von selbst,
-sobald die Bridge bereit ist. Die Demo-GUI braucht das nicht: dort steckt die
-Handsteuerung unter Greifen → Hände.
+**Demo-GUI:** Greifen → Hände.
 
 **Per Kommandozeile:**
 
@@ -67,17 +52,18 @@ linke/rechte Hand) — siehe [23-A-Posen-und-Ablaeufe.md](23-A-Posen-und-Ablaeuf
 
 ## In der Simulation: greifbare Testkugel
 
-Der Streamdeck-Button **GRASP BOX** legt eine kleine, fest mit der
+Das Topic `/g1pilot/grasp_box` (Bool, `true` = an, `false` = aus, z. B.
+`ros2 topic pub --once /g1pilot/grasp_box std_msgs/msg/Bool "{data: true}"`)
+legt eine kleine, fest mit der
 Handfläche verbundene greifbare Kugel in die Griffzone. Beim Schließen der
 Hand (etwa 70 %) greifen alle Finger und die Handfläche zu — sofort sichtbare
-Griffkräfte in der Viewer-GUI. Standardmäßig aus; direkt beim Start aktiv
+Griffkräfte in der Demo-GUI (Kraftzonen). Standardmäßig aus; direkt beim Start aktiv
 mit `G1_GRASP_TEST=1`.
 
 ## Fehlerbehebung
 
 | Symptom | Ursache / Fix |
 |---|---|
-| GUI zeigt „NICHT VERBUNDEN" (real) | IP/Port prüfen (`nc -zv <ip> 6000`); Hand am G1 mit Strom versorgt? |
-| GUI öffnet sich nicht automatisch | Läuft die Bridge schon (Port 8766 erreichbar)? Läuft `start.sh` auf dem Host (nicht in einem verschachtelten Container)? |
+| Demo-GUI meldet „Keine Daten von der Hand-Bridge“ bzw. Hand nicht verbunden (real) | IP/Port prüfen (`nc -zv <ip> 6000`); Hand am G1 mit Strom versorgt? |
 | Finger bewegen sich nicht in RViz | Ist die Inspire-Bridge aktiv (`G1_INSPIRE_HANDS=1`)? `robot_state` muss dann `publish_hand_joints:=false` laufen (passiert automatisch über die Launch-Datei). |
 | Kraft/Taktil bleiben 0 (Simulation) | Backend `sim` (Stufe 1) hat keine Kontaktphysik — Default ist Stufe 2 (`mujoco`), die echte Kräfte liefert. |

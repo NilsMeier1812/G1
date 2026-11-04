@@ -12,7 +12,7 @@ neben `arm_controller` und übersetzt gewöhnliche HTTP-POST-Requests in
 Arm-Kommandos. Nichts wird gespeichert — jedes Kommando wird sofort
 ausgeführt (für Speichern siehe den `/arm/save`-Endpunkt oder direkt den
 [Positionsspeicher](20-A-Arm-Manipulation.md)). Es gelten exakt
-dieselben Sicherheitsgates wie beim Streamdeck (E-Stop, ENABLE MANIPULATION,
+dieselben Sicherheitsgates wie in der Demo-GUI (E-Stop, Arme übernommen,
 Kollision, Limits) — die Brücke kann sie nicht umgehen.
 
 Standardmäßig gebunden an `127.0.0.1:8770` — nur vom selben Rechner
@@ -22,7 +22,7 @@ Docker, dank `network_mode: host`), reicht `http://localhost:8770`.
 ## Voraussetzungen
 
 - Der g1pilot-Stack läuft (Simulation oder echter Roboter).
-- Manipulation ist aktiviert (`ENABLE MANIPULATION`, siehe
+- Die Arme sind übernommen (Demo-GUI **GREIFEN** bzw. Controller **R2**, siehe
   [20-A-Arm-Manipulation.md](20-A-Arm-Manipulation.md)) —
   ohne das lehnt die API jedes Bewegungskommando ab.
 
@@ -96,7 +96,7 @@ Request kehrt zurück, sobald das Kommando angenommen oder abgelehnt wurde
 ```
 
 Bewegt nichts — schreibt die aktuelle Stellung in dieselbe Datei, die auch
-der Streamdeck-Speichern-Dialog nutzt (siehe
+der Speichern-Dialog der Demo-GUI nutzt (siehe
 [20-A-Arm-Manipulation.md](20-A-Arm-Manipulation.md)).
 `components`: `left_arm`, `right_arm`, `left_hand`, `right_hand`, oder die
 Kurzformen `arms`, `hands`, `all`.
@@ -143,7 +143,7 @@ ros2 launch g1pilot manipulation_launcher.launch.py \
 | Symptom | Ursache / Fix |
 |---|---|
 | `Keine Verbindung` | Läuft `arm_api`? (`enable_arm_api:=true`, Default an). Port belegt? |
-| `409` bei jedem Request | Manipulation nicht aktiviert — `ENABLE MANIPULATION` am Streamdeck. |
+| `409` bei jedem Request | Manipulation nicht aktiviert — in der Demo-GUI GREIFEN wählen (bzw. Controller R2). |
 | `422`, Detail zeigt großen `pos_err_m` | Ziel außerhalb des erreichbaren Arbeitsraums. |
 | `504` | `arm_controller` läuft nicht oder ist abgestürzt. |
 | Request hängt lange | `wait` gesetzt und Bewegung braucht Zeit (Planung kann mehrere Sekunden dauern) — normal. |

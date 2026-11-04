@@ -4,7 +4,7 @@
 
 Move() nur, solange der G1 schon im Walk-Modus steht und kein E-Stop aktiv ist;
 der Controller schaltet den Modus der Beine nie selbst um. Bleibt der Strom
-aus, StopMove. Solange er frisch ist, pausiert der Streamdeck-Pfad.
+aus, StopMove. Solange er frisch ist, pausiert der GUI-Pfad.
 Fake-LocoClient und Fixture aus test_loco_client_real.py.
 """
 import pytest
@@ -91,7 +91,7 @@ def test_ps4_walk_blocked_by_estop(lc_module):
         _close(node)
 
 
-def test_ps4_walk_has_priority_over_streamdeck(lc_module):
+def test_ps4_walk_has_priority_over_gui(lc_module):
     node, robot = _make(lc_module)
     try:
         _walk_mode(node, robot)
@@ -106,7 +106,7 @@ def test_ps4_walk_has_priority_over_streamdeck(lc_module):
         node._ps4_stamp -= 5.0
         node.cmd_vel_callback(_cmd(vx=1.0))
         node._cmd_vel_tick()                     # PS4-Timeout: einmal StopMove
-        node._cmd_vel_tick()                     # danach wieder Streamdeck
+        node._cmd_vel_tick()                     # danach wieder GUI-Pfad
         assert robot.vel[0] == pytest.approx(0.4)
     finally:
         _close(node)

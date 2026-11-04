@@ -97,7 +97,7 @@ GEHEN und GREIFEN der Demo-GUI:
 - **R2 drücken** → Modus **GREIFEN**: Arme übernehmen und
   `/g1pilot/start_balancing` (Gehen aus, Roboter steht). Die Arm-Steuerung
   ist wieder frei.
-- Wählt man GEHEN/GREIFEN in der Demo-GUI oder am Streamdeck, folgt der
+- Wählt man GEHEN/GREIFEN in der Demo-GUI, folgt der
   Controller (Sperre an/aus).
 - Die Trigger sind analog: gedrückt ab halbem Weg, losgelassen erst unter
   30 % (kein Flattern).
@@ -207,14 +207,13 @@ Trigger beim Hinlegen (L2 = GEHEN/laufen, R2 = GREIFEN/Hüfte).
 
 ## NOT-HALT und Quittieren
 
-PS löst den NOT-HALT aus — derselbe wie der Knopf in Demo-GUI und Streamdeck.
-Die GUIs zeigen ihn dann auch an (Demo-GUI: Modus aus, real erscheint wieder
-»Start«; Streamdeck: alle Knöpfe aus, EMERGENCY rot). Umgekehrt
+PS löst den NOT-HALT aus — derselbe wie der Knopf in der Demo-GUI.
+Die Demo-GUI zeigt ihn dann auch an (Modus aus, real erscheint wieder
+»Start«). Umgekehrt
 sperrt ein NOT-HALT aus der GUI auch den Controller (LED rot).
 
 Danach ignoriert der Controller alles außer PS, bis quittiert ist: Sim in
-der Demo-GUI einen Modus wählen, Real »Start« bzw. Streamdeck
-START. Das Quittieren liegt absichtlich nicht auf dem Controller: in der Sim
+der Demo-GUI einen Modus wählen, Real »Start«. Das Quittieren liegt absichtlich nicht auf dem Controller: in der Sim
 setzt START den Roboter auch zurück, real schaltet es den Roboter in Standby.
 
 ## Voll-Notaus (R1 + L1 + PS)
@@ -242,7 +241,7 @@ das Tempo; sobald PS dazukommt, wird dieser Tempo-Schritt zurückgenommen.
    - Demo-GUI: „G1: Damp (FSM 1) · VOLL-NOTAUS – »Start« quittiert,
      dann Startleiste“.
 
-**Zurück:** »Start« (bzw. Streamdeck START) **quittiert nur** –
+**Zurück:** »Start« **quittiert nur** –
 anders als nach einem normalen NOT-HALT schaltet der G1 danach **nicht** von
 selbst nach Preparation, er bleibt in Damp. Aufstehen ausdrücklich über die
 Startleiste der Demo-GUI: **Preparation** (am Kran), dann **Walk**; danach
@@ -411,7 +410,7 @@ Mit dem Schalter gilt am echten Roboter:
 - **Gehen nur mit L2 gehalten** (siehe [Gehen mit L2](#gehen-mit-l2)):
   `ps4_walk` → `/g1pilot/ps4/walk_cmd` → `loco_client` → `Move()` (1 s
   Dauer, 20 Hz erneuert). Der alte `joystick`-Node startet nicht. Gehen über
-  die GUI (Demo-GUI GEHEN, Streamdeck WALK) geht weiter; solange L2 gehalten
+  die GUI (Demo-GUI GEHEN) geht weiter; solange L2 gehalten
   wird, hat der Controller Vorrang.
 - **Der Controller ändert nie den Zustand der Beine.** R2 übernimmt real ohne
   Walk-Modus nur die Arme, kein Aufstehen/Balancing; L2 geht nur, wenn der G1 schon im
@@ -446,9 +445,8 @@ Ablauf:
 
 1. Start wie gewohnt; Log zeigt `PS4-Arm-Steuerung bereit … (max. Normal,
    PS=NOT-HALT, …, Options = sperren, R2 Arme = nur Arme)` und `PS4-Controller: Daten kommen an`.
-2. In der GUI **Start** (Startleiste), dann **GREIFEN** (Demo-GUI) bzw. START →
-   START BALANCING → ENABLE MANIPULATION (Streamdeck). Für die ersten Tests
-   den Roboter hängend lassen und nur ENABLE MANIPULATION bzw. **R2**.
+2. In der GUI **Start** (Startleiste), dann **GREIFEN** (Demo-GUI). Für die ersten Tests
+   den Roboter hängend lassen und nur **R2**.
 3. Steuerkreuz → Hand wählen (LED-Farbe prüfen), Stick **wenig** auslenken.
    Erwartung: Hand fährt langsam, steht beim Loslassen.
 4. **Kreuz** testen (Hand steht sofort), dann Kreis/Viereck (Hände).
@@ -502,7 +500,7 @@ Ablauf:
 | Xbox: NOT-HALT per Xbox-Taste tut nichts | Taste wird abgefangen (Steam/Desktop) → `G1_XBOX_PS_BUTTON=view`, siehe [Xbox-Controller](#xbox-controller). |
 | Xbox: Tasten/Sticks vertauscht | `ros2 topic echo /g1pilot/ps4/joy` prüfen; X/Y vertauscht → `xbox_swap_xy:=true`; sonst Controller-Firmware aktualisieren (Xbox-Zubehör-App) oder `xpadneo` nehmen. |
 | Log: „Kein PS4-Controller gefunden … Warte“ | Controller nicht gekoppelt oder Container ohne `/dev/input` (über start.sh starten bzw. `COMPOSE_FILE=…:docker-compose.ps4.yml`). |
-| LED/Kugel zeigt die Auswahl, aber die Hand bewegt sich nicht | Arme nicht übernommen → **R2** drücken (oder GUI: GREIFEN / ENABLE MANIPULATION). Im Gehen-Modus hängen die Arme in der Lauf-Pose. Real nach NOT-HALT: erst »Start«, dann R2. LED fast aus + GUI „GESPERRT“ → Controller per Options gesperrt, Options drücken. |
+| LED/Kugel zeigt die Auswahl, aber die Hand bewegt sich nicht | Arme nicht übernommen → **R2** drücken (oder Demo-GUI: GREIFEN). Im Gehen-Modus hängen die Arme in der Lauf-Pose. Real nach NOT-HALT: erst »Start«, dann R2. LED fast aus + GUI „GESPERRT“ → Controller per Options gesperrt, Options drücken. |
 | Hand bleibt an einer Stelle hängen | Kollisions-Gate (Log: „Kollisions-Gate …“) oder Reichweite erreicht → in eine andere Richtung bewegen. |
 | Sim: Hand reagiert spürbar verzögert / fährt nach dem Loslassen weiter | PC ausgelastet → arm_controller regelt nur mit 10–15 Hz. RViz und Navigation abschalten (`USE_RVIZ=false G1_ENABLE_NAV=0`), Last mit `top` prüfen. Siehe [Reaktionszeit](11-T-Controller.md#reaktionszeit). |
 | Nach PS reagiert nichts mehr | NOT-HALT aktiv → in der GUI quittieren (Sim: Modus wählen, Real: Start). |

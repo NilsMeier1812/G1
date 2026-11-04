@@ -1,7 +1,7 @@
 # Arm-Manipulation — Anleitung
 
-Richtet sich an: Anwender, die die Arme des G1 über RViz, die Demo-GUI, den
-Controller oder den Streamdeck bedienen wollen. Für Entwickler siehe
+Richtet sich an: Anwender, die die Arme des G1 über RViz, die Demo-GUI oder den
+Controller bedienen wollen. Für Entwickler siehe
 [20-T-Arm-Manipulation.md](20-T-Arm-Manipulation.md). Für die
 HTTP-Schnittstelle für externe Projekte siehe
 [21-A-Arm-API.md](21-A-Arm-API.md).
@@ -35,8 +35,7 @@ durch dieselben Sicherheitsprüfungen.
 
 **1. Manipulation aktivieren**
 
-Demo-GUI: Kachel **GREIFEN**. Controller: **R2**. Streamdeck: Button
-**ENABLE MANIPULATION**. Alternativ per Kommandozeile:
+Demo-GUI: Kachel **GREIFEN**. Controller: **R2**. Alternativ per Kommandozeile:
 
 ```bash
 ros2 topic pub --once /g1pilot/arms/enabled std_msgs/msg/Bool "{data: true}"
@@ -102,15 +101,16 @@ Gehen halten.
 
 Der Positionsspeicher merkt sich beliebige Kombinationen aus linkem Arm,
 rechtem Arm, linker Hand, rechter Hand unter einem Namen, gruppiert in
-Kategorien ("Ordner"). Hier die Streamdeck-Knöpfe; Abläufe, relative
-Bewegungen und die Bedienung in Demo-GUI und Handy stehen in
+Kategorien ("Ordner"). Hier, was die Funktionen tun (in der Demo-GUI
+unter GREIFEN → Erweitert ▸); Abläufe, relative Bewegungen und die genaue
+Bedienung in Demo-GUI und Handy stehen in
 [23-A-Posen-und-Ablaeufe.md](23-A-Posen-und-Ablaeufe.md).
 
-- **POSE SPEICHERN** öffnet einen Dialog: Name, Kategorie (mit Button
+- **Pose speichern** öffnet einen Dialog: Name, Kategorie (mit Button
   „Kategorie anlegen"), und vier Häkchen für die zu speichernden
   Komponenten. Gespeichert wird die zuletzt *kommandierte* Stellung (nicht
   die verrauschte Messung).
-- **POSE ANFAHREN** zeigt alle gespeicherten Posen gruppiert nach Kategorie,
+- **Pose anfahren** zeigt alle gespeicherten Posen gruppiert nach Kategorie,
   inklusive der enthaltenen Komponenten. Beim Anfahren wird die Bahn dorthin
   **jedes Mal neu geplant** (meist in 0,02-0,5 s) — kollisionsfrei um
   Hindernisse und den eigenen Körper, da sich Startpose und Umgebung seit
@@ -119,7 +119,7 @@ Bewegungen und die Bedienung in Demo-GUI und Handy stehen in
   heran, am Ziel auch aufliegen (Hand auf den Tisch legen geht). Greif-Objekte
   darf die Hand immer berühren. Nahe am Tisch kommt die Hand entlang ihrer
   Handachse an (geht das nicht: von oben).
-- **POSE ABBRECHEN** bricht eine laufende geplante Bewegung ab. Das passiert
+- **Bewegung stoppen** bricht eine laufende geplante Bewegung ab. Das passiert
   auch automatisch, sobald ein Marker manuell angefasst wird — manuelle
   Eingabe hat immer Vorrang.
 
@@ -179,7 +179,7 @@ oder live via `ros2 param set /arm_controller <name> <wert>`):
 
 | Symptom | Ursache / Fix |
 |---|---|
-| Arm bewegt sich nicht | Manipulation aktiviert? (`ENABLE MANIPULATION`) |
+| Arm bewegt sich nicht | Arme übernommen? (GREIFEN bzw. Controller R2, `/g1pilot/arms/enabled`) |
 | Arm hält vor einem Hindernis an | Kollisions-Gate hat gegriffen — Marker zurückziehen; siehe Log „Kollisions-Gate: ...". |
 | Pose anfahren meldet „no_path_found" / „goal_in_collision" | Kein Weg mit mindestens 1,5 cm Abstand gefunden bzw. Zielpose steckt im Körper oder > 2 cm in einem Objekt (Roboter steht anders als beim Speichern?). |
 | Pose anfahren meldet „Planer startet noch" | Der Planer-Prozess lädt nach dem Start noch das Modell (einige Sekunden) — kurz warten, erneut anfahren. |

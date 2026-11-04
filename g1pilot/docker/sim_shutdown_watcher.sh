@@ -4,7 +4,7 @@
 #
 #  Die Demo-GUI laeuft IM Container und kann den Stack nicht selbst stoppen.
 #  Sie legt stattdessen .sim_shutdown_request im bind-gemounteten Repo an
-#  (wie .gui_open_request beim Streamdeck). Dieser Watcher laeuft auf dem Host
+#  (Trigger-Datei im Repo). Dieser Watcher laeuft auf dem Host
 #  (gestartet von start.sh / make sim), sieht die Datei und stoppt den
 #  Sim-Stack SOFORT: docker compose kill (SIGKILL, kein 10-s-Warten auf das
 #  Herunterfahren) + down. Alle Fenster (MuJoCo, RViz, Demo-GUI) gehen zu.

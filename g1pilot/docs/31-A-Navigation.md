@@ -12,16 +12,14 @@ indem er einen **virtuellen Joystick** erzeugt — denselben Signalweg, den
 auch eine manuelle Bedienung nutzt. Die Autonomie läuft dadurch über exakt
 denselben, erprobten Steuerpfad wie die Teleoperation.
 
-Es ist derselbe Navigations-Stack in Simulation und auf echter Hardware; nur
-die Pose-Quelle unterscheidet sich (Simulation: aus der MuJoCo-Ground-Truth,
-Real: MOLA-LiDAR-Odometrie).
+Die Navigation läuft **nur in der Simulation**; die Pose kommt dort aus der
+MuJoCo-Ground-Truth. Die frühere LiDAR-Anbindung für den echten G1 (Livox
+MID360 + MOLA) wurde verworfen und am 2026-10-30 entfernt.
 
 ## Voraussetzungen
 
 - **Simulation:** Navigation beim Start aktivieren (Startmenü → Simulation →
   Ausstattung → „Navigation“, oder `G1_ENABLE_NAV=1 ./start.sh --yes`).
-- **Echter Roboter:** Livox-MID360-LiDAR + das große Docker-Image, aktiviert
-  über `G1_ENABLE_LIDAR=1`.
 - RViz wird bei aktiver Navigation automatisch mitgestartet (Nav-Ansicht,
   Fixed Frame `map`) — es gibt kein eigenes Navigationsfenster.
 
@@ -35,7 +33,7 @@ ros2 topic pub --once /g1pilot/start_walking   std_msgs/msg/Bool "{data: true}" 
 ```
 
 Demo-GUI: Kachel **GEHEN** (dort sitzen AUTO NAV und die Stations-Knöpfe).
-Streamdeck: START BALANCING, dann (in der Sim) WALK. Erst danach reagiert
+Erst danach reagiert
 der Roboter auf Geschwindigkeitskommandos.
 
 **2. Ziel setzen**
@@ -56,8 +54,7 @@ ros2 topic pub --once /g1pilot/goal geometry_msgs/msg/PoseStamped \
 
 Demo-GUI: im Modus GEHEN der Knopf **AUTO NAV** (Zustände *aus* → *AN,
 wartet auf Ziel* → *läuft …* → *AN, Ziel erreicht*; Knopf und Pfeile sind
-währenddessen gesperrt). Streamdeck: Button **AUTO NAV** (erscheint
-automatisch, sobald der Nav-Stack läuft). Per Kommandozeile:
+währenddessen gesperrt). Per Kommandozeile:
 
 ```bash
 ros2 topic pub --once /g1pilot/auto_enable std_msgs/msg/Bool "{data: true}"
@@ -76,35 +73,15 @@ Umgebungs-Editor an ([40-A-Simulation.md](40-A-Simulation.md#umgebungen)).
 
 **AUTO NAV** erneut klicken — der Roboter stoppt sofort. Beim Wechsel zu
 GREIFEN und bei NOT-HALT geht AUTO NAV automatisch aus. Sanftes Anhalten wie
-immer: GREIFEN bzw. START BALANCING. Harter Halt: NOT-HALT
+immer: GREIFEN. Harter Halt: NOT-HALT
 ([51-A-Notaus.md](51-A-Notaus.md)).
 
-## Echter Roboter (Stand 2026-10-15, Code-Prüfung, nicht an Hardware getestet)
+## Echter Roboter
 
-> **Achtung:** Eine Analyse vom 2026-10-22 (Projekt-Analysen,
-> `lidar_autonav_real_g1.md`) kam zum Ergebnis, dass der Real-Pfad so noch
-> nicht läuft: im schlanken Real-Image fehlt der Livox-Treiber, MOLA wurde
-> nicht gestartet und es gibt einen TF-Konflikt. Vor einem Versuch am
-> Roboter erst diese Punkte klären.
-
-- **Pflicht: Pose-Quelle.** Planer (`dijkstra_planner`) und Folger (`nav2point`)
-  brauchen `/lidar_odometry/pose_fixed`. Auf dem echten G1 liefert die nur die
-  MOLA-LiDAR-Odometrie (`G1_ENABLE_LIDAR=1`, großes Image `g1pilot-real-full`,
-  Livox MID360). Ohne LiDAR gibt es keine Pose: der Planer meldet „No odom pose
-  yet“ und publiziert keinen Pfad, AUTO NAV ist in der GUI gesperrt.
-  `sim_localization` (Pose aus `rt/sportmodestate`) läuft nur in der Sim.
-- **Ziel ohne Karte funktioniert:** `create_map`/`scene_bridge` laufen nur in
-  der Sim, real gibt es kein `/map`. Dann publiziert der Planer eine **gerade
-  Linie** von der aktuellen Pose zum RViz-Ziel („2D Goal Pose“ → `/g1pilot/goal`).
-  Der Roboter läuft sie ohne Hindernisvermeidung ab (LiDAR-Punkte fließen nicht
-  in die Planung). Fläche freihalten, Aufsicht mit Fernbedienung.
-- **Kette:** Ziel → `dijkstra_planner` → `/g1pilot/path` → `nav2point` →
-  `/g1pilot/auto_joy` → `joy_mux` (AUTO NAV an) → `/g1pilot/joy` →
-  `loco_client` (`Move`, Limits `G1_MAX_VX/VY/VYAW`). Der Roboter muss im
-  Walk-Zustand sein (LAUFEN); bleibt der Joy-Strom aus, stoppt `loco_client`
-  nach 0,5 s.
-- Das Koordinatensystem „map“ ist die MOLA-Startpose; Drift der LiDAR-Odometrie
-  ist nicht vermessen.
+Auf dem echten G1 gibt es keine Navigation: ohne LiDAR fehlt eine Pose-Quelle
+(`/lidar_odometry/pose_fixed`). Die Vorarbeiten dazu (Analyse
+`lidar_autonav_real_g1.md` in den Projekt-Analysen, PR #28 `lidar_test`)
+wurden nicht weiterverfolgt.
 
 ## Worauf zu achten ist
 
@@ -113,9 +90,7 @@ immer: GREIFEN bzw. START BALANCING. Harter Halt: NOT-HALT
   (Szenen-Brücke, siehe [31-T-Navigation.md](31-T-Navigation.md#scene_bridge-nur-sim)
   und [40-A-Simulation.md](40-A-Simulation.md#umgebungen))
   — spontane Hindernisse (Menschen, verschobene Objekte) werden **nicht**
-  erkannt, es gibt keine Live-Perzeption. Auf echter Hardware ohne
-  entsprechendes Setup bleibt die Karte leer. Nur in freier, kontrollierter
-  Fläche einsetzen.
+  erkannt, es gibt keine Live-Perzeption.
 - **Auto ODER manuell, nicht beides gleichzeitig.** Bei aktivem `auto_enable`
   hat der Navigations-Joystick Vorrang; UI-/PS4-Joystick nicht gleichzeitig
   anfassen.
@@ -127,9 +102,9 @@ immer: GREIFEN bzw. START BALANCING. Harter Halt: NOT-HALT
 
 | Symptom | Ursache / Fix |
 |---|---|
-| Ziel gesetzt, aber kein Pfad | Liegt eine Pose vor? `ros2 topic echo /lidar_odometry/pose_fixed` — läuft die Lokalisierung (Sim: `sim_localization`; Real: MOLA/Livox)? |
-| Pfad vorhanden, Roboter fährt nicht | `auto_enable` gesendet? Roboter laufbereit (Sim: WALK; Real: BALANCING)? |
+| Ziel gesetzt, aber kein Pfad | Liegt eine Pose vor? `ros2 topic echo /lidar_odometry/pose_fixed` — läuft `sim_localization`? (Der Topic-Name stammt noch aus der LiDAR-Zeit.) |
+| Pfad vorhanden, Roboter fährt nicht | `auto_enable` gesendet? Roboter laufbereit (GEHEN)? |
 | Roboter ruckelt / zwei Geschwindigkeitsquellen | Manuellen Joystick loslassen — bei aktiver Autonomie nicht gleichzeitig manuell fahren. |
 | Fährt am Ziel vorbei / dreht unruhig | Regelparameter des Followers prüfen (siehe Technik-Dokument). |
 | RViz zeigt den Roboter fest im Ursprung | Nur bei aktiver Navigation bewegt sich das TF-Modell; Fixed Frame in RViz muss `map` sein. |
-| „Fährt in Hindernis" | Läuft die Szenen-Brücke? Objekt in der geladenen Umgebung enthalten? Ohne eigene Umgebung bzw. auf real ist die Karte weiterhin leer — Fläche freihalten. |
+| „Fährt in Hindernis" | Läuft die Szenen-Brücke? Objekt in der geladenen Umgebung enthalten? Ohne eigene Umgebung ist die Karte leer. |

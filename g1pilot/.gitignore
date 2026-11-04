@@ -65,7 +65,6 @@ hardware/~$armAssembly.SLDASM
 /rosbags
 
 # Trigger-Datei: Streamdeck-Button -> Host-Browser-Watcher (start.sh)
-.gui_open_request
 # Trigger-Datei: Demo-GUI »Sim beenden« -> Host-Watcher (docker/sim_shutdown_watcher.sh)
 .sim_shutdown_request
 # Trigger-Datei: Demo-GUI »Real beenden« -> Host-Watcher (docker/real_shutdown_watcher.sh)
@@ -82,3 +81,6 @@ hardware/~$armAssembly.SLDASM
 
 *.FCBak
 
+
+# Geh-Diagnose (g1pilot.tools.walk_diag)
+diag_logs/

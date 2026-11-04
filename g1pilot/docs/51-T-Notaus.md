@@ -7,13 +7,12 @@ Node was tut. Bedienung: [51-A-Notaus.md](51-A-Notaus.md).
 
 | Topic | Typ | Sender | Empfänger |
 |---|---|---|---|
-| `/g1pilot/emergency_stop` | Bool | Demo-GUI, Streamdeck (`ui_interface`), `ps4_arm_teleop` (PS), Handy über die Demo-GUI (`phone/link.py`), alter Joystick | `arm_controller`, `loco_client` / `loco_sim`, Inspire-Bridge, `ps4_arm_teleop`, `ps4_walk`, GUIs |
+| `/g1pilot/emergency_stop` | Bool | Demo-GUI, `ps4_arm_teleop` (PS), Handy über die Demo-GUI (`phone/link.py`), alter Joystick | `arm_controller`, `loco_client` / `loco_sim`, Inspire-Bridge, `ps4_arm_teleop`, `ps4_walk`, GUIs |
 | `/g1pilot/full_emergency_stop` | Bool | `ps4_arm_teleop` (R1 + L1 + PS 2 s) | `arm_controller`, `loco_client` |
-| `/g1pilot/start` | Bool | Demo-GUI-Startleiste, Streamdeck START, Handy | quittiert in `arm_controller`, `loco_client` / `loco_sim` |
+| `/g1pilot/start` | Bool | Demo-GUI-Startleiste, Handy | quittiert in `arm_controller`, `loco_client` / `loco_sim` |
 
-Die GUIs hören selbst auf `/g1pilot/emergency_stop`, damit ein NOT-HALT vom
-Controller dort angezeigt wird (`demo_gui._external_estop`,
-`ui_interface._emergency_stop`).
+Die Demo-GUI hört selbst auf `/g1pilot/emergency_stop`, damit ein NOT-HALT
+vom Controller dort angezeigt wird (`demo_gui._external_estop`).
 
 ## Wer was tut
 

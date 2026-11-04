@@ -136,7 +136,7 @@ make sim               # baut bei Bedarf nach und startet den Stack
 
 Beim ersten `make sim` wird zusätzlich `xhost +local:docker` gesetzt, damit
 die Container auf das Display zugreifen dürfen. Erscheinen das MuJoCo-Fenster
-und der Streamdeck, steht die Umgebung. Der Roboter steht dabei zunächst nur
+und die Demo-GUI, steht die Umgebung. Der Roboter steht dabei zunächst nur
 — siehe [30-A-Stehen-und-Gehen.md](30-A-Stehen-und-Gehen.md) für die Bedienung.
 
 ## Windows (WSL2)

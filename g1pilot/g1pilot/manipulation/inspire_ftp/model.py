@@ -4,7 +4,7 @@
 model.py — Gemeinsamer Zustand einer Hand
 =========================================
 ``HandModel`` haelt Soll- und Ist-Werte einer Inspire-Hand. Es ist die einzige
-geteilte Datenstruktur zwischen den WebSocket-Servern (Controller/Viewer) und dem
+geteilte Datenstruktur zwischen der ROS-Seite der Bridge (hand_cmd/hand_status) und dem
 Backend (das die Ist-Werte aus der Sim fuellt). Threadsicher via ``lock``.
 """
 
@@ -33,7 +33,7 @@ class HandModel:
         self.zones: Dict[str, List[int]] = tactile.zero_zones()
         self.connected: bool = False
 
-    # ── Setter (vom Controller-WebSocket aufgerufen) ─────────────────────────
+    # ── Setter (von hand_cmd / hand_action aufgerufen) ─────────────────────────
     def set_angle(self, idx: int, val: int):
         with self.lock:
             self.angle_set[idx] = int(val)
@@ -55,7 +55,7 @@ class HandModel:
 
     # ── Snapshots fuer die GUIs ──────────────────────────────────────────────
     def controller_state(self) -> dict:
-        """Format fuer hand_controller_viewer.html (Typ 'state'/'config')."""
+        """Soll-/Ist-Zustand, Grundlage von /g1pilot/hand_status."""
         with self.lock:
             return {
                 "connected": self.connected,
@@ -70,7 +70,7 @@ class HandModel:
             }
 
     def viewer_state(self) -> dict:
-        """Format fuer inspire_hand_viewer.html (Typ 'data')."""
+        """Kraefte und volle Taktil-Zonen (Ist-Werte)."""
         with self.lock:
             zones = {k: list(v) for k, v in self.zones.items()}
             raw: List[int] = []
