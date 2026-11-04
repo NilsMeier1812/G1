@@ -9,10 +9,9 @@ Posen-Werkzeuge und Messskripte. Alle Pfade relativ zu `g1pilot/`.
 | Ziel | Wirkung |
 |---|---|
 | `make build-sim` | Sim-Images bauen (~8 min) |
-| `make build-real` | Real-Image bauen (schlank, ~10 min, ohne Livox/MOLA). **Vor** dem Wechsel ins Roboter-LAN, braucht Internet |
-| `make build-real-full` | Real-Image mit Livox/MOLA (~45 min) |
+| `make build-real` | Real-Image bauen (~10 min). **Vor** dem Wechsel ins Roboter-LAN, braucht Internet |
 | `make sim` / `make sim-bg` | Simulation starten (Vordergrund / Hintergrund; `sim-bg` ohne Shutdown-Watcher) |
-| `make real` / `make real-full` | echter Roboter (schlank / mit LiDAR und Navigation), `ROBOT_INTERFACE=<nic>` |
+| `make real` | echter Roboter, `ROBOT_INTERFACE=<nic>` |
 | `make stop` | alles stoppen |
 | `make logs`, `make status` | Logs bzw. laufende Container |
 | `make shell-sim`, `make shell-mujoco`, `make shell-real` | Shell im jeweiligen Container |

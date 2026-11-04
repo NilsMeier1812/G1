@@ -229,7 +229,7 @@ schreibt `_publish_arm_slack()` weiterhin auf `rt/arm_sdk`, aber mit
 `kp=0, tau=0, kd=estop_arm_kd` — die Arme werden drehmomentfrei und sacken
 gedämpft, statt aktiv irgendwohin zu fahren. `/g1pilot/start` quittiert nur
 den Latch (`estop_active`); die Arme bleiben schlaff, bis
-`ENABLE MANIPULATION` die Kontrolle bewusst zurückholt.
+`/g1pilot/arms/enabled` (GREIFEN, R2) die Kontrolle bewusst zurückholt.
 
 ### Positionsspeicher (plan-execute)
 

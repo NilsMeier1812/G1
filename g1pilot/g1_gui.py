@@ -20,12 +20,10 @@
 #  wieder hin. Schliessen = ein einziges Fenster schliessen.
 #
 #  Aufbau (Sim und Real gleich, in der Reihenfolge der Entscheidungen):
-#     Umgebung (nur Sim) bzw. Verbindung (nur Real) -> Bedienoberflaeche
-#     (Demo-GUI / Streamdeck) -> Lauf-Policy (nur Sim) -> Ausstattung
-#     (Haende, Navigation, RViz)
+#     Umgebung (nur Sim) bzw. Verbindung (nur Real) -> Lauf-Policy (nur Sim)
+#     -> Ausstattung (Haende, Navigation, RViz)
 #     -> eingeklapptes 'Erweitert'. Real zusaetzlich Geh-Limits und das
-#     Sicherheits-Gate. Hand-Oberflaechen im Browser werden nur beim
-#     Streamdeck angeboten -- die Demo-GUI hat die Handsteuerung eingebaut.
+#     Sicherheits-Gate. Bedienoberflaeche ist immer die Demo-GUI.
 #  Die letzte Auswahl wird gemerkt (~/.config/g1pilot/launcher.json); die
 #  Real-Sicherheitsbestaetigung und "Images neu bauen" bewusst nicht.
 #
@@ -95,8 +93,8 @@ DOCS = [
     ("11 Controller — Technik", DOCS_DIR / "11-T-Controller.md"),
     ("12 Handy — Anleitung", DOCS_DIR / "12-A-Handy.md"),
     ("12 Handy — Technik", DOCS_DIR / "12-T-Handy.md"),
-    ("13 Streamdeck — Anleitung", DOCS_DIR / "13-A-Streamdeck.md"),
-    ("13 Streamdeck — Technik", DOCS_DIR / "13-T-Streamdeck.md"),
+    ("13 Alter Joystick — Anleitung", DOCS_DIR / "13-A-Alter-Joystick.md"),
+    ("13 Alter Joystick — Technik", DOCS_DIR / "13-T-Alter-Joystick.md"),
     None,
     ("2 Arme und Haende — Uebersicht", DOCS_DIR / "2-Arme-und-Haende.md"),
     ("20 Arm-Manipulation — Anleitung", DOCS_DIR / "20-A-Arm-Manipulation.md"),
@@ -739,14 +737,6 @@ class ConsoleFrame(tk.Frame):
 # ════════════════════════════════════════════════════════════════════════
 #  Gemeinsame Bausteine der beiden Start-Ansichten
 # ════════════════════════════════════════════════════════════════════════
-GUI_CHOICES = [
-    ("demo", "Demo-GUI",
-     "Vorführung: Gehen / Greifen, Arme + Hände, Stationen anfahren"),
-    ("streamdeck", "Streamdeck",
-     "Entwicklung: alle Einzelfunktionen als Kacheln"),
-]
-
-
 # Lauf-Policy von loco_sim (nur Sim; Ordner unter policies/, -> G1_WALK_POLICY).
 WALK_POLICY_CHOICES = [
     ("g1_wholebody", "Alt (Standard)",
@@ -757,24 +747,6 @@ WALK_POLICY_CHOICES = [
      "gleichmäßiger Gang, bis 1 m/s; Arme frei"),
 ]
 DEFAULT_WALK_POLICY = WALK_POLICY_CHOICES[0][0]
-
-
-def gui_section(parent, var: tk.StringVar) -> None:
-    s = section(parent, "Bedienoberfläche")
-    choice_rows(s, var, GUI_CHOICES)
-
-
-def hand_gui_rows(parent, var: tk.BooleanVar):
-    """Browser-Oberflaechen der Hand-Bridge (nur fuer den Streamdeck relevant)
-    bzw. Hinweis, dass die Demo-GUI die Handsteuerung eingebaut hat.
-    -> (zeile_browser, zeile_hinweis), beide per show_row() umschaltbar."""
-    s = slot(parent)
-    row = toggle_row(s, "Hand-Oberflächen im Browser öffnen", var,
-                     "Controller + Taktil-Viewer der Hand-Bridge")
-    s2 = slot(parent)
-    note = tk.Label(s2, text="Handsteuerung ist in der Demo-GUI eingebaut (Greifen → Hände).",
-                    bg=CARD, fg=MUTED, font=("TkDefaultFont", 9), anchor="w")
-    return row, note
 
 
 def start_footer(frame, app, text: str, cmd, color: str) -> tk.Button:
@@ -792,7 +764,7 @@ def start_footer(frame, app, text: str, cmd, color: str) -> tk.Button:
 # ════════════════════════════════════════════════════════════════════════
 class SimFrame(tk.Frame):
     """Sim-Start. Aufbau in der Reihenfolge der Entscheidungen:
-    Umgebung -> Bedienoberflaeche -> Lauf-Policy -> Ausstattung -> Erweitert.
+    Umgebung -> Lauf-Policy -> Ausstattung -> Erweitert.
     Die Auswahl wird gemerkt (settings), Defaults siehe start.sh (Sim-Zweig)."""
 
     ephemeral = True
@@ -814,7 +786,6 @@ class SimFrame(tk.Frame):
         scenes = [p.stem for p in list_scenes()]
         env = st.get("env", "")
         self.v_env = tk.StringVar(value=env if env in scenes else self.DEFAULT_ENV)
-        self.v_gui = tk.StringVar(value=st.get("gui", "demo"))
         policy = st.get("walk_policy", DEFAULT_WALK_POLICY)
         if policy not in {c[0] for c in WALK_POLICY_CHOICES}:
             policy = DEFAULT_WALK_POLICY
@@ -825,7 +796,6 @@ class SimFrame(tk.Frame):
         self.v_phone = tk.BooleanVar(value=st.get("phone", False))
         self.v_rviz = tk.BooleanVar(value=st.get("rviz", False))
         self._rviz_own = None   # eigene RViz-Wahl, solange Navigation RViz erzwingt
-        self.v_open_guis = tk.BooleanVar(value=st.get("open_guis", False))
         self.v_rt = tk.StringVar(value=st.get("rt", "1.0"))
         self.v_rebuild = tk.BooleanVar(value=False)   # bewusst nie gemerkt
 
@@ -836,34 +806,27 @@ class SimFrame(tk.Frame):
         hint(s, "Der G1 bleibt gleich, nur die Welt wechselt. Anlegen und bearbeiten: "
                 "Startmenü → Umgebungen.")
 
-        # 2) Bedienoberflaeche
-        gui_section(b, self.v_gui)
-
-        # 3) Lauf-Policy
+        # 2) Lauf-Policy
         s = section(b, "Lauf-Policy")
         choice_rows(s, self.v_policy, WALK_POLICY_CHOICES, width=20)
         hint(s, "Stehen ist bei allen gleich (Füße bleiben stehen, Schritte nur beim "
                 "Kippen). Vergleich: docs/30-T-Stehen-und-Gehen.md, Abschnitt „Gangbild“.")
 
-        # 4) Ausstattung
+        # 3) Ausstattung
         s = section(b, "Ausstattung")
         toggle_row(s, "Inspire-Hände", self.v_hands,
-                   "Finger steuerbar, Kraftsensoren; sonst starre Hände")
-        hand_box = tk.Frame(s, bg=CARD)
-        hand_box.pack(fill="x", padx=(24, 0))
-        self._open_row, self._hand_hint = hand_gui_rows(hand_box, self.v_open_guis)
+                   "Finger steuerbar, Kraftsensoren; Steuerung in der Demo-GUI (Greifen → Hände)")
         toggle_row(s, "Navigation", self.v_nav,
                    "Planer + Stationen / AUTO NAV in der Demo-GUI")
         toggle_row(s, "PS4-Controller", self.v_ps4,
                    "PS4 oder Xbox: Arme + Hände, Gehen mit L2/LT; Belegung: docs/11-A-Controller.md")
         toggle_row(s, "Handy-Zugang (Bluetooth)", self.v_phone,
-                   "nur Demo-GUI; Kopplung über 📱 in der GUI, docs/12-A-Handy.md")
+                   "Kopplung über 📱 in der Demo-GUI, docs/12-A-Handy.md")
         self._rviz_row = toggle_row(s, "RViz", self.v_rviz,
                                     "Zusatzfenster mit TF/Markern; MuJoCo-Fenster kommt immer")
-        for v in (self.v_hands, self.v_gui, self.v_nav):
-            v.trace_add("write", lambda *_: self._sync())
+        self.v_nav.trace_add("write", lambda *_: self._sync())
 
-        # 5) Erweitert
+        # 4) Erweitert
         s = collapsible(b, "Erweitert")
         field_row(s, "Sim-Tempo (1.0 = Echtzeit)", self.v_rt, width=8)
         hint(s, "Kleiner als 1.0 = Zeitlupe (Obergrenze; langsame PCs laufen ohnehin langsamer).")
@@ -872,11 +835,6 @@ class SimFrame(tk.Frame):
         self._sync()
 
     def _sync(self) -> None:
-        hands = self.v_hands.get()
-        streamdeck = self.v_gui.get() == "streamdeck"
-        # Browser-Oberflaechen nur fuer den Streamdeck -- die Demo-GUI hat sie eingebaut.
-        show_row(self._open_row, hands and streamdeck)
-        show_row(self._hand_hint, hands and not streamdeck)
         # Navigation braucht RViz (Karte/Ziel-Werkzeug leben dort) -> erzwungen;
         # ohne Navigation wieder die eigene RViz-Wahl.
         nav = self.v_nav.get()
@@ -899,26 +857,22 @@ class SimFrame(tk.Frame):
         env_name = self.v_env.get()
         env_name = "" if env_name == self.DEFAULT_ENV else env_name
         hands = self.v_hands.get()
-        gui = self.v_gui.get()
         save_settings("sim", {
-            "env": env_name, "gui": gui, "walk_policy": self.v_policy.get(),
+            "env": env_name, "walk_policy": self.v_policy.get(),
             "hands": hands, "nav": self.v_nav.get(),
             "rviz": self.v_rviz.get() if self._rviz_own is None else self._rviz_own,
-            "open_guis": self.v_open_guis.get(), "rt": rt, "ps4": self.v_ps4.get(),
+            "rt": rt, "ps4": self.v_ps4.get(),
             "phone": self.v_phone.get(),
         })
 
         env = os.environ.copy()
         env["G1_MODE"] = "sim"
         env["G1_ENV"] = env_name
-        env["G1_GUI"] = gui
         env["G1_WALK_POLICY"] = self.v_policy.get()
         env["G1_INSPIRE_HANDS"] = "1" if hands else "0"
-        env["OPEN_GUIS"] = "true" if (hands and gui == "streamdeck"
-                                      and self.v_open_guis.get()) else "false"
         env["G1_ENABLE_NAV"] = "1" if self.v_nav.get() else "0"
         env["G1_PS4_ARMS"] = "1" if self.v_ps4.get() else "0"
-        env["G1_PHONE"] = "1" if self.v_phone.get() and gui == "demo" else "0"
+        env["G1_PHONE"] = "1" if self.v_phone.get() else "0"
         # BlueZ ueber den System-D-Bus geht nur ohne Dockers AppArmor-Profil (docker-compose.yml).
         env["G1_SIM_APPARMOR"] = "unconfined" if env["G1_PHONE"] == "1" else "docker-default"
         env["USE_RVIZ"] = "true" if self.v_rviz.get() else "false"
@@ -956,11 +910,9 @@ class RealFrame(tk.Frame):
         b = body.body
 
         st = load_settings("real")
-        self.v_gui = tk.StringVar(value=st.get("gui", "demo"))
         self.v_hands = tk.BooleanVar(value=st.get("hands", True))
         self.v_left = tk.StringVar(value=st.get("left", "192.168.123.210"))
         self.v_right = tk.StringVar(value=st.get("right", "192.168.123.211"))
-        self.v_open_guis = tk.BooleanVar(value=st.get("open_guis", False))
         self.v_rviz = tk.BooleanVar(value=st.get("rviz", True))
         self.v_vx = tk.StringVar(value=st.get("vx", "0.4"))
         self.v_vy = tk.StringVar(value=st.get("vy", "0.3"))
@@ -969,7 +921,6 @@ class RealFrame(tk.Frame):
         self.v_joy = tk.StringVar(value=st.get("joy", "Wireless Controller"))
         self.v_ps4 = tk.BooleanVar(value=st.get("ps4", False))
         self.v_phone = tk.BooleanVar(value=st.get("phone", False))
-        self.v_lidar = tk.BooleanVar(value=False)
         self.v_rebuild = tk.BooleanVar(value=False)
         self.v_confirm = tk.BooleanVar(value=False)
 
@@ -996,26 +947,21 @@ class RealFrame(tk.Frame):
         self.v_iface.trace_add("write", lambda *_: self._sync_lan(nics))
         self._sync_lan(nics)
 
-        # 2) Bedienoberflaeche
-        gui_section(b, self.v_gui)
-
-        # 3) Ausstattung
+        # 2) Ausstattung
         s = section(b, "Ausstattung")
         toggle_row(s, "Inspire-Hände (Modbus TCP im Roboter-LAN)", self.v_hands)
         self._hand_box = tk.Frame(s, bg=CARD)
         self._hand_box.pack(fill="x", padx=(24, 0))
         field_row(self._hand_box, "IP linke Hand", self.v_left)
         field_row(self._hand_box, "IP rechte Hand", self.v_right)
-        self._open_row, self._hand_hint = hand_gui_rows(self._hand_box, self.v_open_guis)
         toggle_row(s, "RViz", self.v_rviz, "empfohlen: Arm-Marker + Zustand sichtbar")
         toggle_row(s, "PS4-Controller für Arme + Hände", self.v_ps4,
                    "PS4 oder Xbox; aus = Gehen mit Deadman (bisher, nur PS4)")
         toggle_row(s, "Handy-Zugang (Bluetooth)", self.v_phone,
-                   "nur Demo-GUI; Ansicht, NOT-HALT, Quittieren, Startleiste (docs/12-A-Handy.md)")
-        for v in (self.v_hands, self.v_gui):
-            v.trace_add("write", lambda *_: self._sync())
+                   "Ansicht, NOT-HALT, Quittieren, Startleiste (docs/12-A-Handy.md)")
+        self.v_hands.trace_add("write", lambda *_: self._sync())
 
-        # 4) Geh-Limits
+        # 3) Geh-Limits
         s = section(b, "Geh-Limits (konservativ für die ersten Tests)")
         row = tk.Frame(s, bg=CARD)
         row.pack(fill="x", pady=2)
@@ -1026,24 +972,22 @@ class RealFrame(tk.Frame):
                      insertbackground=FG, relief="flat").pack(side="left", ipady=2)
             tk.Label(row, text=unit, bg=CARD, fg=MUTED).pack(side="left", padx=(2, 16))
 
-        # 5) Erweitert
+        # 4) Erweitert
         s = collapsible(b, "Erweitert")
         field_row(s, "Modbus-Port der Hände", self.v_port, width=8)
         field_row(s, "Gamepad-Name (evdev)", self.v_joy, width=24)
-        toggle_row(s, "LiDAR + Navigation", self.v_lidar,
-                   "experimentell: braucht Livox MID360 und das volle Image (make real-full)")
         toggle_row(s, "Docker-Images neu bauen", self.v_rebuild,
                    "nur nach Änderungen an Dockerfiles/Abhängigkeiten")
 
-        # 6) Sicherheit
+        # 5) Sicherheit
         gate = tk.Frame(b, bg="#3a2326", bd=0)
         gate.pack(fill="x", padx=14, pady=8)
         tk.Label(gate, text="ACHTUNG: ECHTER ROBOTER", bg="#3a2326", fg=RED,
                  font=("TkDefaultFont", 11, "bold")).pack(anchor="w", padx=12, pady=(8, 0))
         tk.Label(gate,
                  text=("Kein Auto-Start: der Roboter bewegt sich erst, wenn er in der\n"
-                       "Bedienoberfläche gestartet wird (Demo-GUI: »Start« in der Startleiste,\n"
-                       "Streamdeck: START). NOT-HALT: Arme schlaff, Beine bleiben stehen.\n"
+                       "Demo-GUI gestartet wird (»Start« in der Startleiste).\n"
+                       "NOT-HALT: Arme schlaff, Beine bleiben stehen.\n"
                        "Voll-Notaus (Controller R1+L1+PS 2 s) = Damp = sackt in den Kran.\n"
                        "Checkliste vorher: g1pilot/docs/50-A-Echter-Roboter.md"),
                  bg="#3a2326", fg=FG, justify="left",
@@ -1068,11 +1012,7 @@ class RealFrame(tk.Frame):
                                      "Kabel/IP prüfen (Roboter-LAN).", fg=AMBER)
 
     def _sync(self) -> None:
-        hands = self.v_hands.get()
-        streamdeck = self.v_gui.get() == "streamdeck"
-        set_row_state(self._hand_box, hands)
-        show_row(self._open_row, streamdeck)
-        show_row(self._hand_hint, not streamdeck)
+        set_row_state(self._hand_box, self.v_hands.get())
 
     def _sync_confirm(self) -> None:
         self.start_btn.configure(state="normal" if self.v_confirm.get() else "disabled")
@@ -1087,13 +1027,12 @@ class RealFrame(tk.Frame):
                                  parent=self)
             return
         hands = self.v_hands.get()
-        gui = self.v_gui.get()
         vals = {
-            "iface": iface, "gui": gui, "hands": hands,
+            "iface": iface, "hands": hands,
             "left": self.v_left.get().strip() or "192.168.123.210",
             "right": self.v_right.get().strip() or "192.168.123.211",
             "port": self.v_port.get().strip() or "6000",
-            "open_guis": self.v_open_guis.get(), "rviz": self.v_rviz.get(),
+            "rviz": self.v_rviz.get(),
             "vx": self.v_vx.get().strip() or "0.4",
             "vy": self.v_vy.get().strip() or "0.3",
             "vyaw": self.v_vyaw.get().strip() or "0.4",
@@ -1106,18 +1045,14 @@ class RealFrame(tk.Frame):
         env["G1_MODE"] = "real"
         env["G1_REAL_CONFIRM"] = "1"  # Sicherheits-Gate von start.sh im --yes-Modus
         env["ROBOT_INTERFACE"] = iface
-        env["G1_GUI"] = gui
         env["G1_INSPIRE_HANDS"] = "1" if hands else "0"
-        env["OPEN_GUIS"] = "true" if (hands and gui == "streamdeck"
-                                      and vals["open_guis"]) else "false"
         env["G1_HAND_LEFT_HOST"] = vals["left"]
         env["G1_HAND_RIGHT_HOST"] = vals["right"]
         env["G1_HAND_PORT"] = vals["port"]
         env["USE_RVIZ"] = "true" if vals["rviz"] else "false"
-        env["G1_ENABLE_LIDAR"] = "1" if self.v_lidar.get() else "0"
         env["JOYSTICK_NAME"] = vals["joy"]
         env["G1_PS4_ARMS"] = "1" if vals["ps4"] else "0"
-        env["G1_PHONE"] = "1" if vals["phone"] and gui == "demo" else "0"
+        env["G1_PHONE"] = "1" if vals["phone"] else "0"
         env["G1_MAX_VX"] = vals["vx"]
         env["G1_MAX_VY"] = vals["vy"]
         env["G1_MAX_VYAW"] = vals["vyaw"]

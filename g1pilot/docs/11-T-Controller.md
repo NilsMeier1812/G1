@@ -16,7 +16,7 @@ Richtet sich an Entwickler. Bedienung und Belegung: [11-A-Controller.md](11-A-Co
 | `launch/teleoperation_launcher.launch.py` | Argument `ps4_arms` (Default `false`): startet `ps4_joystick` + `ps4_arm_teleop` statt `joystick`; `ps4_speed`, `ps4_max_speed`, `ps4_options_balancing`, `ps4_ps_estop`; `ps4_walk` (Default `true`) startet zusätzlich `ps4_walk`, `ps4_walk_speed`, `ps4_walk_max_speed` |
 | `launch/bringup_sim.launch.py` | setzt `ps4_arms` aus `G1_PS4_ARMS` (Sim-Defaults) |
 | `launch/bringup_real.launch.py` | setzt `ps4_arms` aus `G1_PS4_ARMS` mit Real-Werten (Langsam/max Normal, R2 ohne `start_balancing`) |
-| `teleoperation/demo_gui.py`, `teleoperation/ui_interface.py` | zeigen einen NOT-HALT von außen (PS-Taste) an; Demo-GUI folgt dem gemeinsamen Zustand (Kacheln, Hand-Auswahl, Tempo) |
+| `teleoperation/demo_gui.py`, `teleoperation/gui_base.py` | zeigen einen NOT-HALT von außen (PS-Taste) an; Demo-GUI folgt dem gemeinsamen Zustand (Kacheln, Hand-Auswahl, Tempo) |
 | `g1pilot/teleoperation/shared_state.py` | gemeinsamer Bedienzustand GUI ↔ Controller (`/g1pilot/teleop_state`, latched JSON, Zeitstempel je Feld) |
 | `g1pilot/teleoperation/status_line.py` | Texte der Startleiste (Onboard-Modus) und Controller-Zustand (Typ, Belegung) |
 | `docker-compose.ps4.yml` | `/dev/input` + `device_cgroup_rules: c 13:* rmw` für `g1pilot-sim` |
@@ -24,7 +24,7 @@ Richtet sich an Entwickler. Bedienung und Belegung: [11-A-Controller.md](11-A-Co
 | `test/test_xbox_layout.py` | Xbox ohne ROS: Erkennung, drei Treiber-Varianten, Zuordnung nach Position, View-Ersatz, Gehen mit LT, NOT-HALT, Voll-Notaus RB + LB + Xbox |
 | `test/test_ps4_walk.py`, `test/test_loco_client_ps4_walk.py`, `test/test_ps4_walk_node.py` | Gehen: Deadman, Tempo, NOT-HALT, Abriss, Arme pausieren; loco_client nur im Walk-Modus, Timeout, Vorrang; Node mit simuliertem Joy |
 | `test/test_ps4_arm_teleop_node.py` | Node mit Real-Einstellungen gegen simuliertes Joy + TF (R2 = Arme, Options-Sperre, Tempo, NOT-HALT von außen, kein Laufbefehl) |
-| `test/test_gui_external_estop.py` | Demo-GUI + Streamdeck folgen einem NOT-HALT von außen (Sim und Real, offscreen) |
+| `test/test_gui_external_estop.py` | Demo-GUI folgt einem NOT-HALT von außen (Sim und Real, offscreen) |
 | `test/test_demo_gui_jog_hold.py` | Demo-GUI »Hand bewegen«: Halte-Ziel beim Loslassen (auf der Linie, 1 s wiederholt, Grundstellung löscht es) |
 | `test/test_shared_state.py`, `test/test_demo_gui_controller_sync.py` | gemeinsamer Zustand: neuester gewinnt, Echo/alte Stände ignoriert; Demo-GUI folgt Controller (Kacheln, Auswahl, Tempo) ohne etwas zu senden, Sim und Real offscreen |
 | `test_ps4_arm_sim.py` | Ende-zu-Ende-Test gegen die laufende Sim (simulierte Joy-Eingabe) |
@@ -287,10 +287,6 @@ im NOT-HALT (`--no-estop` lässt das aus).
 - Nach einem NOT-HALT hat die GUI keinen Modus mehr, der Controller behält
   seinen letzten (z. B. GEHEN mit Arm-Sperre, wie bisher). Beim nächsten
   Modus-Wechsel auf einer der beiden Seiten sind sie wieder gleich.
-- Der Streamdeck (`ui_interface`) nimmt am gemeinsamen Zustand nicht teil;
-  der Controller folgt seinen Modus-Knöpfen wie bisher über die Topics.
-- `g1pilot-real-full` (LiDAR-Profil) startet ein anderes Bringup ohne den
-  Schalter.
 - LED im Sim-Container nicht setzbar (sysfs read-only), siehe oben.
 - Reaktionszeit in der Sim hängt an der PC-Last (siehe
   [Reaktionszeit](#reaktionszeit)); real ist sie nur offline abgeschätzt.

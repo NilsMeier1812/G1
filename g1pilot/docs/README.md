@@ -45,7 +45,7 @@ jedem Umbenennen `python3 tools/check_doc_links.py` laufen lassen
 | Demo-GUI (Standard-Oberfläche) | [10-A-Demo-GUI.md](10-A-Demo-GUI.md) | [10-T-Demo-GUI.md](10-T-Demo-GUI.md) |
 | Controller (PS4/Xbox) | [11-A-Controller.md](11-A-Controller.md) | [11-T-Controller.md](11-T-Controller.md) |
 | Handy (Bluetooth, Android) | [12-A-Handy.md](12-A-Handy.md) | [12-T-Handy.md](12-T-Handy.md) |
-| Streamdeck und alter Joystick-Modus | [13-A-Streamdeck.md](13-A-Streamdeck.md) | [13-T-Streamdeck.md](13-T-Streamdeck.md) |
+| Alter Joystick-Modus | [13-A-Alter-Joystick.md](13-A-Alter-Joystick.md) | [13-T-Alter-Joystick.md](13-T-Alter-Joystick.md) |
 
 ## 2 · Arme und Hände
 

@@ -4,7 +4,7 @@
 demo_gui — vereinfachte Bedienoberflaeche fuer Vorfuehrungen (KONZEPT).
 
 Gedacht fuer Besucher/Demo-Bediener, die den Stack nicht kennen. Statt 25
-Streamdeck-Kacheln gibt es drei klar getrennte Bereiche:
+Einzel-Kacheln (frueher die Streamdeck-GUI) gibt es drei klar getrennte Bereiche:
 
   1) MODUS (oben)      : GEHEN  <->  GREIFEN. Genau einer ist aktiv und farbig
                          hervorgehoben; der andere ist ausgegraut. Waehrend des
@@ -29,10 +29,10 @@ und Geh-Tempo folgen dem Controller und umgekehrt. Die Info-Zeile zeigt
 dazu, was am Controller gerade passiert (Gehen mit L2, Arm-Sperre,
 NOT-HALT, welcher Controller verbunden ist).
 
-Die GUI publiziert auf DIESELBEN Topics wie ui_interface.py (Streamdeck) --
-die Logik bleibt in loco_sim/loco_client/arm_controller. Beide GUIs NICHT
-gleichzeitig starten (doppelter Auto-Start). Auswahl ueber G1_GUI=demo,
-siehe launch/teleoperation_launcher.launch.py und docs/10-A-Demo-GUI.md.
+Die GUI publiziert nur Bedien-Topics (gui_base.GuiNode) -- die Logik bleibt
+in loco_sim/loco_client/arm_controller. Sie ist die einzige Bedienoberflaeche
+(die alte Streamdeck-GUI ui_interface.py wurde 2026-10-30 entfernt), siehe
+launch/teleoperation_launcher.launch.py und docs/10-A-Demo-GUI.md.
 """
 
 import json
@@ -64,8 +64,8 @@ from g1pilot.utils import g1_temperature as g1t
 from g1pilot.utils import push_charge
 from g1pilot.utils.push_charge import PushCharger
 from g1pilot.teleoperation.sim_autostart import SimAutoStart
-from g1pilot.teleoperation.ui_interface import (
-    StreamDeck, VirtualJoystick, PoseSaveDialog, PoseLoadDialog,
+from g1pilot.teleoperation.gui_base import (
+    GuiNode, VirtualJoystick, PoseSaveDialog, PoseLoadDialog,
 )
 from g1pilot.teleoperation.hand_panel import HandPanel
 from g1pilot.teleoperation import status_line
@@ -152,9 +152,9 @@ def _envflag(name):
     return os.environ.get(name, '0').strip().lower() in ('1', 'true', 'yes', 'on')
 
 
-# AUTO NAV nur, wenn der Nav-Stack laeuft (Sim: G1_ENABLE_NAV, Real:
-# G1_ENABLE_LIDAR) -- sonst publiziert der Knopf an niemanden.
-NAV_AVAILABLE = _envflag('G1_ENABLE_NAV') or _envflag('G1_ENABLE_LIDAR')
+# AUTO NAV nur, wenn der Nav-Stack laeuft (nur Sim: G1_ENABLE_NAV) -- sonst
+# publiziert der Knopf an niemanden.
+NAV_AVAILABLE = _envflag('G1_ENABLE_NAV')
 
 
 pretty_pose_name = sr.pretty_pose_name   # 'Demo_2_Winken' -> 'Winken'
@@ -185,8 +185,8 @@ def default_sequence_mode(sim):
     return sr.MODE_AUTO if sim else sr.MODE_STEP
 
 
-class DemoNode(StreamDeck):
-    """Publisher wie der Streamdeck + Rueckkanaele fuer die Statusanzeige."""
+class DemoNode(GuiNode):
+    """Bedien-Publisher (gui_base.GuiNode) + Rueckkanaele fuer die Statusanzeige."""
 
     def __init__(self):
         super().__init__()
@@ -197,7 +197,7 @@ class DemoNode(StreamDeck):
                                  lambda m: self.on_walk_ready and self.on_walk_ready(m.data), 10)
         self.create_subscription(String, "/g1pilot/arm_command/status",
                                  self._arm_status, 10)
-        # Ablauf: »Weiter« vom Controller (L3), Stopp von Controller/Streamdeck
+        # Ablauf: »Weiter« vom Controller (L3), Stopp vom Controller
         # (pose_store/cancel beendet auch einen wartenden Ablauf), Speicher-
         # Quittung (Schritt anhaengen) und eigener Stand (latched, Controller
         # vibriert beim Warten; Handy/Logs).
@@ -1214,7 +1214,7 @@ class DemoGUI(QWidget):
         # Handy-Bedienung (G1_PHONE=1): ruft dieselben Methoden wie die Knoepfe.
         self.phone = phone_link.attach(self)
 
-        # Wie ui_interface: Auto-Start NUR in der Sim (Arme an + BALANCING),
+        # Auto-Start NUR in der Sim (Arme an + BALANCING),
         # wiederholt bis arm_controller und loco_sim quittieren (sim_autostart.py;
         # frueher EIN Versuch nach 3 s -> ging verloren, wenn die Regler noch
         # luden: GREIFEN angezeigt, Arme aber aus).
@@ -1886,7 +1886,7 @@ class DemoGUI(QWidget):
                              "in RViz setzen.", "#ffb300")
 
     def _publish_cmd_vel(self):
-        # Dauerhaft senden (wie ui_interface): ausserhalb von GEHEN immer 0.
+        # Dauerhaft senden: ausserhalb von GEHEN immer 0.
         # Bei AUTO NAV GAR NICHT senden: in der Sim faehrt Nav ueber dasselbe
         # Topic (joy_to_cmdvel) -- unsere Nullen wuerden den Roboter staendig bremsen.
         if self.auto_nav:
@@ -2005,7 +2005,7 @@ class DemoGUI(QWidget):
         self.seq.on_status(data)
 
     def _on_pose_cancel(self):
-        """Stopp von aussen (Controller Kreuz, Streamdeck, eigener Knopf):
+        """Stopp von aussen (Controller Kreuz, eigener Knopf):
         auch ein auf »Weiter« wartender Ablauf endet."""
         self.seq.cancel("Stopp")
 
@@ -2178,7 +2178,7 @@ class DemoGUI(QWidget):
 
     # ── Sicherheit / Status ─────────────────────────────────────────────
     def _pulse(self, pub, duration=1000):
-        """Bool-Impuls True -> False (wie flash_button im Streamdeck)."""
+        """Bool-Impuls True -> False (Taster-Verhalten)."""
         self.node.publish_bool(pub, True)
         QTimer.singleShot(duration, lambda: self.node.publish_bool(pub, False))
 

@@ -56,8 +56,8 @@ Kommt kein Kommando, schreitet ein Watchdog nach `SIM_LOCKSTEP_WATCHDOG_S`
 
 ## Auto-Start (GREIFEN)
 
-`SimAutoStart` (`g1pilot/teleoperation/sim_autostart.py`, gemeinsam für
-Streamdeck und Demo-GUI, nur bei `is_sim_mode()`):
+`SimAutoStart` (`g1pilot/teleoperation/sim_autostart.py`, genutzt von der
+Demo-GUI, nur bei `is_sim_mode()`):
 
 - schickt `/g1pilot/arms/enabled=True` und `/g1pilot/start_balancing=True`,
 - wiederholt alle 1,5 s nur das, was noch nicht bestätigt ist:

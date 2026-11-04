@@ -23,7 +23,7 @@ In der Sim nimmt loco_sim das Topic im WALK-Zustand wie loco_cmd_vel.
 Sicherheit: kommt kein Joy mehr (Funkabriss, Stall-Erkennung im
 ps4_joystick), sendet der Node einmal 0 und dann nichts mehr; loco_client
 stoppt zusaetzlich selbst, wenn der Strom ausbleibt (cmd_vel_timeout).
-NOT-HALT (PS bzw. von GUI/Streamdeck) sperrt das Gehen bis START.
+NOT-HALT (PS bzw. von GUI) sperrt das Gehen bis START.
 Controller per Options gesperrt (ps4_arm_teleop, Feld "locked" auf dem latched
 /g1pilot/ps4/status): kein Gehen, kein Geh-Tempo; nach dem Entsperren erst
 wieder nach einem "L2 los" (wie nach NOT-HALT).

@@ -326,7 +326,7 @@ Live änderbar via `ros2 param set /loco_sim <name> <wert>`.
 
 - **PUSH** (`/g1pilot/push`) — schickt einen UDP-Stoßimpuls an die Sim, um
   die Störunterdrückung zu testen.
-  **Aufladbar** (Streamdeck-Button und Demo-GUI „Roboter schubsen“): Kurzer Klick
+  **Aufladbar** (Demo-GUI „Roboter schubsen“): Kurzer Klick
   (≤ 0,3 s) = Schubs wie bisher (150 N, 0,12 s, Impuls 18 N·s). Gehaltener Button
   lädt auf: Ladegrad wächst linear nach 0,3 s bis 100 % bei 3,0 s; der Button zeigt
   Prozent und Kraft, Loslassen schubst (Topic `/g1pilot/push_charge`, Float32 =
@@ -341,7 +341,7 @@ Live änderbar via `ros2 param set /loco_sim <name> <wert>`.
 ## `loco_client` (echter Roboter)
 
 Dünner ROS-Node um `unitree_sdk2py.g1.loco.g1_loco_client.LocoClient`. Bildet
-dieselben Streamdeck-Topics wie `loco_sim` auf die Unitree-High-Level-RPCs
+dieselben GUI-Topics wie `loco_sim` auf die Unitree-High-Level-RPCs
 ab:
 
 | Topic | RPC / Wirkung |

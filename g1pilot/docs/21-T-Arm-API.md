@@ -71,8 +71,8 @@ ST_CANCELLED   abgebrochen (E-Stop, Marker, /arm/cancel)       -- Endzustand
 Speichern (`/arm/save`) läuft über ein eigenes Topic
 (`/g1pilot/pose_store/save`) mit eigenem Erfolgs-Endzustand `ST_SAVED`
 (`parse_save_command`, `save_status_message`) — dieselbe Wire-Struktur, die
-auch der Streamdeck-Speichern-Dialog sendet (siehe
-`teleoperation/ui_interface.py::PoseSaveDialog`).
+auch der Speichern-Dialog der Demo-GUI sendet (siehe
+`teleoperation/gui_base.py::PoseSaveDialog`).
 
 ## `ArmApiNode` (ROS-Seite)
 
@@ -110,10 +110,10 @@ auch der Streamdeck-Speichern-Dialog sendet (siehe
 
 - Default-Bind `127.0.0.1` — die Schnittstelle steuert einen echten
   Roboterarm, sie gehört nicht ungeschützt ins Netz.
-- Alle Sicherheitsgates (E-Stop, `ENABLE MANIPULATION`, Kollision,
+- Alle Sicherheitsgates (E-Stop, `/g1pilot/arms/enabled`, Kollision,
   Geschwindigkeits-/Gelenklimits) sitzen im `arm_controller`, nicht in
   `arm_api` — die Brücke kann sie prinzipbedingt nicht umgehen, weil sie nur
-  auf dasselbe Topic schreibt wie jeder andere Aufrufer (Streamdeck
+  auf dasselbe Topic schreibt wie jeder andere Aufrufer (Demo-GUI
   eingeschlossen).
 - Für Netzwerkzugriff: `arm_api_host` öffnen **und** `arm_api_token`
   setzen (Header `X-Auth-Token`); die Prüfung läuft dann für GET/POST

@@ -23,7 +23,6 @@ Hintergrund und Abwägung (WLAN, Bildschirmspiegelung, App): Analysebericht
 - **Android-Handy mit Chrome.** iOS kann kein Web Bluetooth.
 - **Bluetooth-Adapter am PC** mit BLE. Am besten ein **eigener zweiter Dongle nur fürs Handy** (siehe
   „Zweiter Dongle“ unten). Mit nur einem Dongle teilen sich Handy und Controller den Funk.
-- **Demo-GUI** (`G1_GUI=demo`). Der Streamdeck hat keinen Handy-Zugang.
 - **Docker-Image neu bauen** nach dem Update (neue Abhängigkeit `dbus-next`): im Start-Fenster unter
   „Erweitert → Docker-Images neu bauen“ einmal anhaken.
 

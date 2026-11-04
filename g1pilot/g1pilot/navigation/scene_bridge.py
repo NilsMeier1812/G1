@@ -66,7 +66,7 @@ class SceneBridge(Node):
 
         self.timer = self.create_timer(1.0 / rate if rate > 0 else 0.1, self._publish)
 
-        # RESET SCENE (Streamdeck): bewegliche Umgebungs-Objekte in der Sim auf
+        # RESET SCENE (GUI): bewegliche Umgebungs-Objekte in der Sim auf
         # ihre Startpose zuruecksetzen, Roboter bleibt. Der MuJoCo-Container hat
         # kein ROS -> UDP an scene_reset.py (Port MUSS zu SCENE_RESET_PORT passen).
         self.declare_parameter("reset_udp_port", 47903)

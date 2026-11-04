@@ -2,7 +2,7 @@
 # ════════════════════════════════════════════════════════════════════════
 #  pose_tool.py — gespeicherte Posen auflisten, loeschen, umbenennen.
 #
-#  Der Streamdeck kann Posen nur SPEICHERN und ANFAHREN. Aufraeumen (loeschen,
+#  Die Demo-GUI kann Posen nur SPEICHERN und ANFAHREN. Aufraeumen (loeschen,
 #  umbenennen, in eine andere Kategorie schieben) geht hiermit -- direkt auf
 #  derselben Datei data/arm_poses.json, die auch der arm_controller nutzt.
 #  Er liest sie bei jedem Zugriff neu: Aenderungen wirken ohne Neustart.

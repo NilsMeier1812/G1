@@ -134,7 +134,7 @@ class InteractiveMarkerEFF(Node):
         self.create_subscription(Bool, '/g1pilot/start_walking', self._on_walk_mode, 10)
         self.create_subscription(Bool, '/g1pilot/start_balancing', self._on_balance_mode, 10)
 
-        # Laufzeit-Umschalten des Follow-Verhaltens (z.B. vom Streamdeck-Button).
+        # Laufzeit-Umschalten des Follow-Verhaltens (per Topic).
         self.create_subscription(Bool, '/g1pilot/marker_follow_ee', self._set_follow, 10)
         self.follow_timer = self.create_timer(self.follow_dt, self._follow_update)
         self.get_logger().info(f"[marker] follow_ee={self.follow_ee} (Leader-Follower)")

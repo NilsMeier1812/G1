@@ -1,9 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1994" height="475" viewBox="0 0 1994 475" font-family="DejaVu Sans, Verdana, Arial, sans-serif">
-<rect width="1994" height="475" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1992" height="471" viewBox="0 0 1992 471" font-family="DejaVu Sans, Verdana, Arial, sans-serif">
+<rect width="1992" height="471" fill="#ffffff"/>
 <text x="20.0" y="34.0" font-size="20" font-weight="bold" fill="#1e1e1e" text-anchor="start">g1pilot — Gehen und Fortbewegung</text>
 <text x="439.3" y="34.0" font-size="11" fill="#555555" text-anchor="start">ROS-Nodes und Topics, aus dem Code ermittelt mit tools/ros_graph.py</text>
 <g transform="translate(20,109.0)">
-<rect x="0" y="0" width="360" height="346" fill="#fbfbfb" stroke="#999999"/>
+<rect x="0" y="0" width="360" height="324" fill="#fbfbfb" stroke="#999999"/>
 <text x="12.0" y="22.0" font-size="12" font-weight="bold" fill="#1e1e1e" text-anchor="start">Legende</text>
 <rect x="12" y="37.0" width="44" height="16" rx="4" fill="#fdf3b0" stroke="#b8a23a" stroke-width="1.4"/>
 <text x="66.0" y="49.0" font-size="10" fill="#1e1e1e" text-anchor="start">Teleoperation Nodes</text>
@@ -30,131 +30,127 @@
 <path d="M12,265.0 L56,265.0" stroke="#c0392b" stroke-width="1.3"/>
 <path d="M49.0,261.5 L56.0,265.0 L49.0,268.5 z" fill="#c0392b"/>
 <text x="66.0" y="269.0" font-size="10" fill="#1e1e1e" text-anchor="start">nur echter Roboter (Node gestrichelt: läuft nur real)</text>
-<path d="M12,287.0 L56,287.0" stroke="#8a6cc2" stroke-width="1.3" stroke-dasharray="6 3"/>
-<path d="M49.0,283.5 L56.0,287.0 L49.0,290.5 z" fill="#8a6cc2"/>
-<text x="66.0" y="291.0" font-size="10" fill="#1e1e1e" text-anchor="start">nur Demo-GUI (nicht Streamdeck-GUI)</text>
-<path d="M12,309.0 L56,309.0" stroke="#4a4a4a" stroke-width="1.1"/>
-<path d="M49.0,305.5 L56.0,309.0 L49.0,312.5 z" fill="#4a4a4a"/>
-<path d="M19.0,305.5 L12.0,309.0 L19.0,312.5 z" fill="#4a4a4a"/>
-<text x="66.0" y="313.0" font-size="10" fill="#1e1e1e" text-anchor="start">Node publiziert und abonniert dasselbe Topic</text>
-<text x="12.0" y="336.0" font-size="9" fill="#555555" text-anchor="start">Topics ohne Subscriber: Anzeige in RViz. {left,right} = zwei Topics.</text>
+<path d="M12,287.0 L56,287.0" stroke="#4a4a4a" stroke-width="1.1"/>
+<path d="M49.0,283.5 L56.0,287.0 L49.0,290.5 z" fill="#4a4a4a"/>
+<path d="M19.0,283.5 L12.0,287.0 L19.0,290.5 z" fill="#4a4a4a"/>
+<text x="66.0" y="291.0" font-size="10" fill="#1e1e1e" text-anchor="start">Node publiziert und abonniert dasselbe Topic</text>
+<text x="12.0" y="314.0" font-size="9" fill="#555555" text-anchor="start">Topics ohne Subscriber: Anzeige in RViz. {left,right} = zwei Topics.</text>
 </g>
 <g transform="translate(20,109.0)">
-<path d="M1174.5,179.3 L1194.5,179.3 L1194.5,268.0 L1224.1,268.0" fill="none" stroke="#8a6cc2" stroke-width="1.3" stroke-dasharray="6 3" stroke-linejoin="round"/>
-<path d="M1217.1,264.5 L1224.1,268.0 L1217.1,271.5 z" fill="#8a6cc2"/>
-<path d="M940.8,143.6 L957.3,143.6 L957.3,173.0 L997.3,173.0" fill="none" stroke="#8a6cc2" stroke-width="1.3" stroke-dasharray="6 3" stroke-linejoin="round"/>
-<path d="M990.3,169.5 L997.3,173.0 L990.3,176.5 z" fill="#8a6cc2"/>
-<path d="M947.3,231.6 L957.3,231.6 L957.3,173.0 L997.3,173.0" fill="none" stroke="#8a6cc2" stroke-width="1.3" stroke-dasharray="6 3" stroke-linejoin="round"/>
-<path d="M990.3,169.5 L997.3,173.0 L990.3,176.5 z" fill="#8a6cc2"/>
-<path d="M932.4,187.6 L957.3,187.6 L957.3,173.0 L997.3,173.0" fill="none" stroke="#8a6cc2" stroke-width="1.3" stroke-dasharray="6 3" stroke-linejoin="round"/>
-<path d="M990.3,169.5 L997.3,173.0 L990.3,176.5 z" fill="#8a6cc2"/>
-<path d="M539.4,179.3 L549.4,179.3 L549.4,163.3 L977.3,163.3 L977.3,185.5 L997.3,185.5" fill="none" stroke="#8a6cc2" stroke-width="1.3" stroke-dasharray="6 3" stroke-linejoin="round"/>
-<path d="M990.3,182.0 L997.3,185.5 L990.3,189.0 z" fill="#8a6cc2"/>
-<text x="763.4" y="159.3" font-size="9" fill="#8a6cc2" text-anchor="middle">Bluetooth LE</text>
-<path d="M1352.6,12.0 L1362.6,12.0 L1362.6,135.2 L1408.7,135.2" fill="none" stroke="#1f6fb2" stroke-width="1.3" stroke-linejoin="round"/>
-<path d="M1401.7,131.7 L1408.7,135.2 L1401.7,138.7 z" fill="#1f6fb2"/>
-<path d="M1143.1,317.6 L1184.5,317.6 L1184.5,324.0 L1222.4,324.0" fill="none" stroke="#1f6fb2" stroke-width="1.3" stroke-linejoin="round"/>
-<path d="M1215.4,320.5 L1222.4,324.0 L1215.4,327.5 z" fill="#1f6fb2"/>
-<path d="M1350.7,312.0 L1362.6,312.0 L1362.6,135.2 L1408.7,135.2" fill="none" stroke="#1f6fb2" stroke-width="1.3" stroke-linejoin="round"/>
-<path d="M1401.7,131.7 L1408.7,135.2 L1401.7,138.7 z" fill="#1f6fb2"/>
-<path d="M1491.1,135.2 L1511.2,135.2 L1511.2,-33.0 L765.2,-33.0 L765.2,87.6 L818.2,87.6" fill="none" stroke="#1f6fb2" stroke-width="1.3" stroke-linejoin="round"/>
+<path d="M1350.5,12.0 L1360.5,12.0 L1360.5,135.2 L1406.6,135.2" fill="none" stroke="#1f6fb2" stroke-width="1.3" stroke-linejoin="round"/>
+<path d="M1399.6,131.7 L1406.6,135.2 L1399.6,138.7 z" fill="#1f6fb2"/>
+<path d="M1142.1,317.6 L1182.4,317.6 L1182.4,324.0 L1220.3,324.0" fill="none" stroke="#1f6fb2" stroke-width="1.3" stroke-linejoin="round"/>
+<path d="M1213.3,320.5 L1220.3,324.0 L1213.3,327.5 z" fill="#1f6fb2"/>
+<path d="M1348.6,312.0 L1360.5,312.0 L1360.5,135.2 L1406.6,135.2" fill="none" stroke="#1f6fb2" stroke-width="1.3" stroke-linejoin="round"/>
+<path d="M1399.6,131.7 L1406.6,135.2 L1399.6,138.7 z" fill="#1f6fb2"/>
+<path d="M1489.0,135.2 L1509.1,135.2 L1509.1,-33.0 L765.2,-33.0 L765.2,87.6 L818.2,87.6" fill="none" stroke="#1f6fb2" stroke-width="1.3" stroke-linejoin="round"/>
 <path d="M811.2,84.1 L818.2,87.6 L811.2,91.1 z" fill="#1f6fb2"/>
-<path d="M947.3,243.6 L957.3,243.6 L957.3,243.6 L1362.6,243.6 L1362.6,135.2 L1408.7,135.2" fill="none" stroke="#1f6fb2" stroke-width="1.3" stroke-linejoin="round"/>
-<path d="M1401.7,131.7 L1408.7,135.2 L1401.7,138.7 z" fill="#1f6fb2"/>
-<path d="M932.4,196.6 L987.3,196.6 L987.3,143.2 L1362.6,143.2 L1362.6,135.2 L1408.7,135.2" fill="none" stroke="#1f6fb2" stroke-width="1.3" stroke-linejoin="round"/>
-<path d="M1401.7,131.7 L1408.7,135.2 L1401.7,138.7 z" fill="#1f6fb2"/>
-<path d="M1491.1,135.2 L1511.2,135.2 L1511.2,133.6 L1574.0,133.6" fill="none" stroke="#1f6fb2" stroke-width="1.3" stroke-linejoin="round"/>
-<path d="M1567.0,130.1 L1574.0,133.6 L1567.0,137.1 z" fill="#1f6fb2"/>
-<path d="M1690.8,133.6 L1727.5,133.6 L1727.5,132.3 L1771.6,132.3" fill="none" stroke="#1f6fb2" stroke-width="1.3" stroke-linejoin="round"/>
-<path d="M1764.6,128.8 L1771.6,132.3 L1764.6,135.8 z" fill="#1f6fb2"/>
-<path d="M1329.4,68.0 L1362.6,68.0 L1362.6,135.2 L1408.7,135.2" fill="none" stroke="#1f6fb2" stroke-width="1.3" stroke-linejoin="round"/>
-<path d="M1401.7,131.7 L1408.7,135.2 L1401.7,138.7 z" fill="#1f6fb2"/>
-<path d="M1349.1,118.0 L1362.6,118.0 L1362.6,135.2 L1408.7,135.2" fill="none" stroke="#1f6fb2" stroke-width="1.3" stroke-linejoin="round"/>
-<path d="M1401.7,131.7 L1408.7,135.2 L1401.7,138.7 z" fill="#1f6fb2"/>
-<path d="M1342.8,168.0 L1362.6,168.0 L1362.6,135.2 L1408.7,135.2" fill="none" stroke="#1f6fb2" stroke-width="1.3" stroke-linejoin="round"/>
-<path d="M1401.7,131.7 L1408.7,135.2 L1401.7,138.7 z" fill="#1f6fb2"/>
-<path d="M1352.6,24.0 L1372.6,24.0 L1372.6,198.2 L1398.6,198.2" fill="none" stroke="#c0392b" stroke-width="1.3" stroke-linejoin="round"/>
-<path d="M1391.6,194.7 L1398.6,198.2 L1391.6,201.7 z" fill="#c0392b"/>
-<path d="M1350.7,324.0 L1372.6,324.0 L1372.6,198.2 L1398.6,198.2" fill="none" stroke="#c0392b" stroke-width="1.3" stroke-linejoin="round"/>
-<path d="M1391.6,194.7 L1398.6,198.2 L1391.6,201.7 z" fill="#c0392b"/>
-<path d="M1349.0,268.0 L1372.6,268.0 L1372.6,198.2 L1398.6,198.2" fill="none" stroke="#c0392b" stroke-width="1.3" stroke-linejoin="round"/>
-<path d="M1391.6,194.7 L1398.6,198.2 L1391.6,201.7 z" fill="#c0392b"/>
-<path d="M1501.2,198.2 L1521.2,198.2 L1521.2,-24.0 L775.2,-24.0 L775.2,137.6 L807.8,137.6" fill="none" stroke="#c0392b" stroke-width="1.3" stroke-linejoin="round"/>
+<path d="M947.3,243.6 L957.3,243.6 L957.3,243.6 L1360.5,243.6 L1360.5,135.2 L1406.6,135.2" fill="none" stroke="#1f6fb2" stroke-width="1.3" stroke-linejoin="round"/>
+<path d="M1399.6,131.7 L1406.6,135.2 L1399.6,138.7 z" fill="#1f6fb2"/>
+<path d="M932.4,196.6 L987.3,196.6 L987.3,143.2 L1360.5,143.2 L1360.5,135.2 L1406.6,135.2" fill="none" stroke="#1f6fb2" stroke-width="1.3" stroke-linejoin="round"/>
+<path d="M1399.6,131.7 L1406.6,135.2 L1399.6,138.7 z" fill="#1f6fb2"/>
+<path d="M1489.0,135.2 L1509.1,135.2 L1509.1,133.6 L1571.9,133.6" fill="none" stroke="#1f6fb2" stroke-width="1.3" stroke-linejoin="round"/>
+<path d="M1564.9,130.1 L1571.9,133.6 L1564.9,137.1 z" fill="#1f6fb2"/>
+<path d="M1688.7,133.6 L1725.4,133.6 L1725.4,132.3 L1769.5,132.3" fill="none" stroke="#1f6fb2" stroke-width="1.3" stroke-linejoin="round"/>
+<path d="M1762.5,128.8 L1769.5,132.3 L1762.5,135.8 z" fill="#1f6fb2"/>
+<path d="M1327.2,68.0 L1360.5,68.0 L1360.5,135.2 L1406.6,135.2" fill="none" stroke="#1f6fb2" stroke-width="1.3" stroke-linejoin="round"/>
+<path d="M1399.6,131.7 L1406.6,135.2 L1399.6,138.7 z" fill="#1f6fb2"/>
+<path d="M1346.9,118.0 L1360.5,118.0 L1360.5,135.2 L1406.6,135.2" fill="none" stroke="#1f6fb2" stroke-width="1.3" stroke-linejoin="round"/>
+<path d="M1399.6,131.7 L1406.6,135.2 L1399.6,138.7 z" fill="#1f6fb2"/>
+<path d="M1340.7,168.0 L1360.5,168.0 L1360.5,135.2 L1406.6,135.2" fill="none" stroke="#1f6fb2" stroke-width="1.3" stroke-linejoin="round"/>
+<path d="M1399.6,131.7 L1406.6,135.2 L1399.6,138.7 z" fill="#1f6fb2"/>
+<path d="M1350.5,24.0 L1370.5,24.0 L1370.5,198.2 L1396.5,198.2" fill="none" stroke="#c0392b" stroke-width="1.3" stroke-linejoin="round"/>
+<path d="M1389.5,194.7 L1396.5,198.2 L1389.5,201.7 z" fill="#c0392b"/>
+<path d="M1348.6,324.0 L1370.5,324.0 L1370.5,198.2 L1396.5,198.2" fill="none" stroke="#c0392b" stroke-width="1.3" stroke-linejoin="round"/>
+<path d="M1389.5,194.7 L1396.5,198.2 L1389.5,201.7 z" fill="#c0392b"/>
+<path d="M1346.9,268.0 L1370.5,268.0 L1370.5,198.2 L1396.5,198.2" fill="none" stroke="#c0392b" stroke-width="1.3" stroke-linejoin="round"/>
+<path d="M1389.5,194.7 L1396.5,198.2 L1389.5,201.7 z" fill="#c0392b"/>
+<path d="M1499.1,198.2 L1519.1,198.2 L1519.1,-24.0 L775.2,-24.0 L775.2,137.6 L807.8,137.6" fill="none" stroke="#c0392b" stroke-width="1.3" stroke-linejoin="round"/>
 <path d="M800.8,134.1 L807.8,137.6 L800.8,141.1 z" fill="#c0392b"/>
-<path d="M932.4,196.6 L987.3,196.6 L987.3,94.2 L1372.6,94.2 L1372.6,198.2 L1398.6,198.2" fill="none" stroke="#c0392b" stroke-width="1.3" stroke-linejoin="round"/>
-<path d="M1391.6,194.7 L1398.6,198.2 L1391.6,201.7 z" fill="#c0392b"/>
-<path d="M1501.2,198.2 L1521.2,198.2 L1521.2,196.6 L1547.2,196.6" fill="none" stroke="#c0392b" stroke-width="1.3" stroke-linejoin="round"/>
-<path d="M1540.2,193.1 L1547.2,196.6 L1540.2,200.1 z" fill="#c0392b"/>
-<path d="M1717.5,196.6 L1727.5,196.6 L1727.5,195.3 L1763.5,195.3" fill="none" stroke="#c0392b" stroke-width="1.3" stroke-linejoin="round"/>
-<path d="M1756.5,191.8 L1763.5,195.3 L1756.5,198.8 z" fill="#c0392b"/>
+<path d="M932.4,196.6 L987.3,196.6 L987.3,94.2 L1370.5,94.2 L1370.5,198.2 L1396.5,198.2" fill="none" stroke="#c0392b" stroke-width="1.3" stroke-linejoin="round"/>
+<path d="M1389.5,194.7 L1396.5,198.2 L1389.5,201.7 z" fill="#c0392b"/>
+<path d="M1499.1,198.2 L1519.1,198.2 L1519.1,196.6 L1545.1,196.6" fill="none" stroke="#c0392b" stroke-width="1.3" stroke-linejoin="round"/>
+<path d="M1538.1,193.1 L1545.1,196.6 L1538.1,200.1 z" fill="#c0392b"/>
+<path d="M1715.4,196.6 L1725.4,196.6 L1725.4,195.3 L1761.4,195.3" fill="none" stroke="#c0392b" stroke-width="1.3" stroke-linejoin="round"/>
+<path d="M1754.4,191.8 L1761.4,195.3 L1754.4,198.8 z" fill="#c0392b"/>
 <path d="M515.9,32.0 L549.4,32.0 L549.4,32.0 L785.2,32.0 L785.2,32.0 L825.5,32.0" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
 <path d="M818.5,28.5 L825.5,32.0 L818.5,35.5 z" fill="#4a4a4a"/>
-<path d="M923.0,38.0 L967.3,38.0 L967.3,112.0 L1023.1,112.0" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
-<path d="M1016.1,108.5 L1023.1,112.0 L1016.1,115.5 z" fill="#4a4a4a"/>
-<path d="M923.0,26.0 L957.3,26.0 L957.3,60.7 L998.4,60.7" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
-<path d="M991.4,57.2 L998.4,60.7 L991.4,64.2 z" fill="#4a4a4a"/>
-<path d="M1173.4,66.9 L1184.5,66.9 L1184.5,18.0 L1220.5,18.0" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
-<path d="M1213.5,14.5 L1220.5,18.0 L1213.5,21.5 z" fill="#4a4a4a"/>
-<path d="M1174.5,179.3 L1194.5,179.3 L1194.5,312.0 L1222.4,312.0" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
-<path d="M1215.4,308.5 L1222.4,312.0 L1215.4,315.5 z" fill="#4a4a4a"/>
-<path d="M940.8,131.6 L977.3,131.6 L977.3,73.2 L998.4,73.2" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
-<path d="M991.4,69.7 L998.4,73.2 L991.4,76.7 z" fill="#4a4a4a"/>
-<path d="M940.8,131.6 L977.3,131.6 L977.3,124.5 L1023.1,124.5" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
-<path d="M1016.1,121.0 L1023.1,124.5 L1016.1,128.0 z" fill="#4a4a4a"/>
-<path d="M930.4,81.6 L957.3,81.6 L957.3,60.7 L998.4,60.7" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
-<path d="M991.4,57.2 L998.4,60.7 L991.4,64.2 z" fill="#4a4a4a"/>
-<path d="M930.4,93.6 L957.3,93.6 L957.3,173.0 L997.3,173.0" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
-<path d="M990.3,169.5 L997.3,173.0 L990.3,176.5 z" fill="#4a4a4a"/>
+<path d="M923.0,38.0 L967.3,38.0 L967.3,112.0 L1022.1,112.0" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M1015.1,108.5 L1022.1,112.0 L1015.1,115.5 z" fill="#4a4a4a"/>
+<path d="M923.0,26.0 L957.3,26.0 L957.3,60.7 L997.3,60.7" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M990.3,57.2 L997.3,60.7 L990.3,64.2 z" fill="#4a4a4a"/>
+<path d="M1172.4,66.9 L1182.4,66.9 L1182.4,18.0 L1218.4,18.0" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M1211.4,14.5 L1218.4,18.0 L1211.4,21.5 z" fill="#4a4a4a"/>
+<path d="M1127.2,179.3 L1192.4,179.3 L1192.4,312.0 L1220.3,312.0" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M1213.3,308.5 L1220.3,312.0 L1213.3,315.5 z" fill="#4a4a4a"/>
+<path d="M1127.2,179.3 L1192.4,179.3 L1192.4,268.0 L1222.0,268.0" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M1215.0,264.5 L1222.0,268.0 L1215.0,271.5 z" fill="#4a4a4a"/>
+<path d="M940.8,131.6 L977.3,131.6 L977.3,73.2 L997.3,73.2" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M990.3,69.7 L997.3,73.2 L990.3,76.7 z" fill="#4a4a4a"/>
+<path d="M940.8,131.6 L977.3,131.6 L977.3,124.5 L1022.1,124.5" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M1015.1,121.0 L1022.1,124.5 L1015.1,128.0 z" fill="#4a4a4a"/>
+<path d="M940.8,143.6 L957.3,143.6 L957.3,174.8 L1042.5,174.8" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M1035.5,171.3 L1042.5,174.8 L1035.5,178.3 z" fill="#4a4a4a"/>
+<path d="M930.4,81.6 L957.3,81.6 L957.3,60.7 L997.3,60.7" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M990.3,57.2 L997.3,60.7 L990.3,64.2 z" fill="#4a4a4a"/>
+<path d="M930.4,93.6 L957.3,93.6 L957.3,174.8 L1042.5,174.8" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M1035.5,171.3 L1042.5,174.8 L1035.5,178.3 z" fill="#4a4a4a"/>
 <path d="M755.2,212.6 L765.2,212.6 L765.2,237.6 L801.2,237.6" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
 <path d="M794.2,234.1 L801.2,237.6 L794.2,241.1 z" fill="#4a4a4a"/>
+<path d="M947.3,231.6 L957.3,231.6 L957.3,174.8 L1042.5,174.8" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M1035.5,171.3 L1042.5,174.8 L1035.5,178.3 z" fill="#4a4a4a"/>
 <path d="M755.2,212.6 L765.2,212.6 L765.2,187.6 L816.1,187.6" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
 <path d="M809.1,184.1 L816.1,187.6 L809.1,191.1 z" fill="#4a4a4a"/>
-<path d="M932.4,178.6 L967.3,178.6 L967.3,112.0 L1023.1,112.0" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
-<path d="M1016.1,108.5 L1023.1,112.0 L1016.1,115.5 z" fill="#4a4a4a"/>
-<path d="M1174.5,179.3 L1194.5,179.3 L1194.5,68.0 L1243.7,68.0" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
-<path d="M1236.7,64.5 L1243.7,68.0 L1236.7,71.5 z" fill="#4a4a4a"/>
-<path d="M1174.5,179.3 L1194.5,179.3 L1194.5,118.0 L1224.0,118.0" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
-<path d="M1217.0,114.5 L1224.0,118.0 L1217.0,121.5 z" fill="#4a4a4a"/>
-<path d="M1174.5,179.3 L1194.5,179.3 L1194.5,168.0 L1230.2,168.0" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
-<path d="M1223.2,164.5 L1230.2,168.0 L1223.2,171.5 z" fill="#4a4a4a"/>
-<path d="M1174.5,179.3 L1194.5,179.3 L1194.5,218.0 L1229.4,218.0" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
-<path d="M1222.4,214.5 L1229.4,218.0 L1222.4,221.5 z" fill="#4a4a4a"/>
+<path d="M932.4,178.6 L967.3,178.6 L967.3,112.0 L1022.1,112.0" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M1015.1,108.5 L1022.1,112.0 L1015.1,115.5 z" fill="#4a4a4a"/>
+<path d="M932.4,187.6 L957.3,187.6 L957.3,174.8 L1042.5,174.8" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M1035.5,171.3 L1042.5,174.8 L1035.5,178.3 z" fill="#4a4a4a"/>
+<path d="M1127.2,179.3 L1192.4,179.3 L1192.4,68.0 L1241.6,68.0" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M1234.6,64.5 L1241.6,68.0 L1234.6,71.5 z" fill="#4a4a4a"/>
+<path d="M1127.2,179.3 L1192.4,179.3 L1192.4,118.0 L1221.9,118.0" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M1214.9,114.5 L1221.9,118.0 L1214.9,121.5 z" fill="#4a4a4a"/>
+<path d="M1127.2,179.3 L1192.4,179.3 L1192.4,168.0 L1228.1,168.0" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M1221.1,164.5 L1228.1,168.0 L1221.1,171.5 z" fill="#4a4a4a"/>
+<path d="M1127.2,179.3 L1192.4,179.3 L1192.4,218.0 L1227.3,218.0" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M1220.3,214.5 L1227.3,218.0 L1220.3,221.5 z" fill="#4a4a4a"/>
+<path d="M539.4,179.3 L549.4,179.3 L549.4,163.3 L977.3,163.3 L977.3,183.8 L1042.5,183.8" fill="none" stroke="#4a4a4a" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M1035.5,180.3 L1042.5,183.8 L1035.5,187.3 z" fill="#4a4a4a"/>
+<text x="763.4" y="159.3" font-size="9" fill="#4a4a4a" text-anchor="middle">Bluetooth LE</text>
 <rect x="413.5" y="13.4" width="102.3" height="37.3" rx="7" fill="#fdf3b0" stroke="#b8a23a" stroke-width="1.6"/>
 <text x="464.7" y="30.4" font-size="12" font-weight="bold" fill="#1e1e1e" text-anchor="middle">ps4_joystick</text>
 <text x="464.7" y="43.0" font-size="9" fill="#555555" text-anchor="middle">G1_PS4_ARMS=1</text>
-<rect x="1023.1" y="99.6" width="125.6" height="37.3" rx="7" fill="#fdf3b0" stroke="#b8a23a" stroke-width="1.6"/>
-<text x="1085.9" y="116.6" font-size="12" font-weight="bold" fill="#1e1e1e" text-anchor="middle">ps4_arm_teleop</text>
-<text x="1085.9" y="129.2" font-size="9" fill="#555555" text-anchor="middle">G1_PS4_ARMS=1</text>
-<rect x="998.4" y="48.3" width="175.0" height="37.3" rx="7" fill="#fdf3b0" stroke="#b8a23a" stroke-width="1.6"/>
-<text x="1085.9" y="65.3" font-size="12" font-weight="bold" fill="#1e1e1e" text-anchor="middle">ps4_walk</text>
-<text x="1085.9" y="77.9" font-size="9" fill="#555555" text-anchor="middle">G1_PS4_ARMS=1 + G1_PS4_WALK</text>
-<rect x="997.3" y="160.6" width="177.1" height="37.3" rx="7" fill="#e6dcf7" stroke="#8a6cc2" stroke-width="1.6"/>
-<text x="1085.9" y="177.6" font-size="12" font-weight="bold" fill="#1e1e1e" text-anchor="middle">ui_interface | demo_gui</text>
-<text x="1085.9" y="190.2" font-size="9" fill="#555555" text-anchor="middle">G1_GUI=streamdeck | demo</text>
+<rect x="1022.1" y="99.6" width="125.6" height="37.3" rx="7" fill="#fdf3b0" stroke="#b8a23a" stroke-width="1.6"/>
+<text x="1084.8" y="116.6" font-size="12" font-weight="bold" fill="#1e1e1e" text-anchor="middle">ps4_arm_teleop</text>
+<text x="1084.8" y="129.2" font-size="9" fill="#555555" text-anchor="middle">G1_PS4_ARMS=1</text>
+<rect x="997.3" y="48.3" width="175.0" height="37.3" rx="7" fill="#fdf3b0" stroke="#b8a23a" stroke-width="1.6"/>
+<text x="1084.8" y="65.3" font-size="12" font-weight="bold" fill="#1e1e1e" text-anchor="middle">ps4_walk</text>
+<text x="1084.8" y="77.9" font-size="9" fill="#555555" text-anchor="middle">G1_PS4_ARMS=1 + G1_PS4_WALK</text>
+<rect x="1042.5" y="165.8" width="84.7" height="27.0" rx="7" fill="#e6dcf7" stroke="#8a6cc2" stroke-width="1.6"/>
+<text x="1084.8" y="183.5" font-size="12" font-weight="bold" fill="#1e1e1e" text-anchor="middle">demo_gui</text>
 <rect x="636.6" y="199.8" width="118.6" height="25.6" rx="7" fill="#fbd8b8" stroke="#c98142" stroke-width="1.6"/>
 <text x="695.9" y="216.8" font-size="12" font-weight="bold" fill="#1e1e1e" text-anchor="middle">arm_controller</text>
-<rect x="1408.7" y="110.7" width="82.4" height="49.0" rx="7" fill="#bff0d4" stroke="#3fa36b" stroke-width="1.6" stroke-dasharray="5 3"/>
-<text x="1449.9" y="127.7" font-size="12" font-weight="bold" fill="#1e1e1e" text-anchor="middle">loco_sim</text>
-<text x="1449.9" y="140.3" font-size="9" font-weight="bold" fill="#1f6fb2" text-anchor="middle">NUR SIM</text>
-<text x="1449.9" y="152.0" font-size="9" fill="#555555" text-anchor="middle">RL-Lauf-Policy</text>
-<rect x="1398.6" y="173.7" width="102.6" height="49.0" rx="7" fill="#bff0d4" stroke="#3fa36b" stroke-width="1.6" stroke-dasharray="5 3"/>
-<text x="1449.9" y="190.7" font-size="12" font-weight="bold" fill="#1e1e1e" text-anchor="middle">loco_client</text>
-<text x="1449.9" y="203.3" font-size="9" font-weight="bold" fill="#c0392b" text-anchor="middle">NUR REAL</text>
-<text x="1449.9" y="215.0" font-size="9" fill="#555555" text-anchor="middle">Unitree LocoClient</text>
-<rect x="1028.7" y="293.1" width="114.4" height="49.0" rx="7" fill="#bff0d4" stroke="#3fa36b" stroke-width="1.6" stroke-dasharray="5 3"/>
-<text x="1085.9" y="310.1" font-size="12" font-weight="bold" fill="#1e1e1e" text-anchor="middle">joy_to_cmdvel</text>
-<text x="1085.9" y="322.7" font-size="9" font-weight="bold" fill="#1f6fb2" text-anchor="middle">NUR SIM</text>
-<text x="1085.9" y="334.4" font-size="9" fill="#555555" text-anchor="middle">G1_ENABLE_NAV=1</text>
-<rect x="1775.6" y="103.8" width="147.9" height="49.0" fill="#c8c8c8" stroke="#7a7a7a"/>
-<rect x="1771.6" y="107.8" width="147.9" height="49.0" fill="#e4e4e4" stroke="#7a7a7a" stroke-width="1.4" stroke-dasharray="5 3"/>
-<text x="1845.6" y="124.8" font-size="12" font-weight="bold" fill="#1e1e1e" text-anchor="middle">MuJoCo-Simulation</text>
-<text x="1845.6" y="137.4" font-size="9" font-weight="bold" fill="#1f6fb2" text-anchor="middle">NUR SIM</text>
-<text x="1845.6" y="149.1" font-size="9" fill="#555555" text-anchor="middle">unitree_sdk2py_bridge</text>
-<rect x="1767.5" y="166.8" width="164.1" height="49.0" fill="#c8c8c8" stroke="#7a7a7a"/>
-<rect x="1763.5" y="170.8" width="164.1" height="49.0" fill="#e4e4e4" stroke="#7a7a7a" stroke-width="1.4" stroke-dasharray="5 3"/>
-<text x="1845.6" y="187.8" font-size="12" font-weight="bold" fill="#1e1e1e" text-anchor="middle">G1 onboard (Unitree)</text>
-<text x="1845.6" y="200.4" font-size="9" font-weight="bold" fill="#c0392b" text-anchor="middle">NUR REAL</text>
-<text x="1845.6" y="212.1" font-size="9" fill="#555555" text-anchor="middle">Motoren, Loco-Dienst</text>
+<rect x="1406.6" y="110.7" width="82.4" height="49.0" rx="7" fill="#bff0d4" stroke="#3fa36b" stroke-width="1.6" stroke-dasharray="5 3"/>
+<text x="1447.8" y="127.7" font-size="12" font-weight="bold" fill="#1e1e1e" text-anchor="middle">loco_sim</text>
+<text x="1447.8" y="140.3" font-size="9" font-weight="bold" fill="#1f6fb2" text-anchor="middle">NUR SIM</text>
+<text x="1447.8" y="152.0" font-size="9" fill="#555555" text-anchor="middle">RL-Lauf-Policy</text>
+<rect x="1396.5" y="173.7" width="102.6" height="49.0" rx="7" fill="#bff0d4" stroke="#3fa36b" stroke-width="1.6" stroke-dasharray="5 3"/>
+<text x="1447.8" y="190.7" font-size="12" font-weight="bold" fill="#1e1e1e" text-anchor="middle">loco_client</text>
+<text x="1447.8" y="203.3" font-size="9" font-weight="bold" fill="#c0392b" text-anchor="middle">NUR REAL</text>
+<text x="1447.8" y="215.0" font-size="9" fill="#555555" text-anchor="middle">Unitree LocoClient</text>
+<rect x="1027.6" y="293.1" width="114.4" height="49.0" rx="7" fill="#bff0d4" stroke="#3fa36b" stroke-width="1.6" stroke-dasharray="5 3"/>
+<text x="1084.8" y="310.1" font-size="12" font-weight="bold" fill="#1e1e1e" text-anchor="middle">joy_to_cmdvel</text>
+<text x="1084.8" y="322.7" font-size="9" font-weight="bold" fill="#1f6fb2" text-anchor="middle">NUR SIM</text>
+<text x="1084.8" y="334.4" font-size="9" fill="#555555" text-anchor="middle">G1_ENABLE_NAV=1</text>
+<rect x="1773.5" y="103.8" width="147.9" height="49.0" fill="#c8c8c8" stroke="#7a7a7a"/>
+<rect x="1769.5" y="107.8" width="147.9" height="49.0" fill="#e4e4e4" stroke="#7a7a7a" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="1843.5" y="124.8" font-size="12" font-weight="bold" fill="#1e1e1e" text-anchor="middle">MuJoCo-Simulation</text>
+<text x="1843.5" y="137.4" font-size="9" font-weight="bold" fill="#1f6fb2" text-anchor="middle">NUR SIM</text>
+<text x="1843.5" y="149.1" font-size="9" fill="#555555" text-anchor="middle">unitree_sdk2py_bridge</text>
+<rect x="1765.4" y="166.8" width="164.1" height="49.0" fill="#c8c8c8" stroke="#7a7a7a"/>
+<rect x="1761.4" y="170.8" width="164.1" height="49.0" fill="#e4e4e4" stroke="#7a7a7a" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="1843.5" y="187.8" font-size="12" font-weight="bold" fill="#1e1e1e" text-anchor="middle">G1 onboard (Unitree)</text>
+<text x="1843.5" y="200.4" font-size="9" font-weight="bold" fill="#c0392b" text-anchor="middle">NUR REAL</text>
+<text x="1843.5" y="212.1" font-size="9" fill="#555555" text-anchor="middle">Motoren, Loco-Dienst</text>
 <rect x="394.0" y="156.6" width="149.4" height="37.3" fill="#c8c8c8" stroke="#7a7a7a"/>
 <rect x="390.0" y="160.6" width="149.4" height="37.3" fill="#e4e4e4" stroke="#7a7a7a" stroke-width="1.4"/>
 <text x="464.7" y="177.6" font-size="12" font-weight="bold" fill="#1e1e1e" text-anchor="middle">Handy (Browser)</text>
@@ -162,15 +158,15 @@
 <rect x="825.5" y="14.0" width="97.5" height="36.0" fill="#ffffff" stroke="#666666" stroke-width="0.9"/>
 <text x="874.3" y="29.0" font-size="10" fill="#1e1e1e" text-anchor="middle">/g1pilot/ps4/joy</text>
 <text x="874.3" y="42.0" font-size="10" font-weight="bold" fill="#1e1e1e" text-anchor="middle">Joy</text>
-<rect x="1220.5" y="0.0" width="132.1" height="36.0" fill="#ffffff" stroke="#666666" stroke-width="0.9"/>
-<text x="1286.5" y="15.0" font-size="10" fill="#1e1e1e" text-anchor="middle">/g1pilot/ps4/walk_cmd</text>
-<text x="1286.5" y="28.0" font-size="10" font-weight="bold" fill="#1e1e1e" text-anchor="middle">Twist</text>
-<rect x="1222.4" y="300.0" width="128.3" height="36.0" fill="#ffffff" stroke="#666666" stroke-width="0.9"/>
-<text x="1286.5" y="315.0" font-size="10" fill="#1e1e1e" text-anchor="middle">/g1pilot/loco_cmd_vel</text>
-<text x="1286.5" y="328.0" font-size="10" font-weight="bold" fill="#1e1e1e" text-anchor="middle">Twist</text>
-<rect x="1224.1" y="250.0" width="124.9" height="36.0" fill="#ffffff" stroke="#666666" stroke-width="0.9"/>
-<text x="1286.5" y="265.0" font-size="10" fill="#1e1e1e" text-anchor="middle">/g1pilot/loco_request</text>
-<text x="1286.5" y="278.0" font-size="10" font-weight="bold" fill="#1e1e1e" text-anchor="middle">String</text>
+<rect x="1218.4" y="0.0" width="132.1" height="36.0" fill="#ffffff" stroke="#666666" stroke-width="0.9"/>
+<text x="1284.4" y="15.0" font-size="10" fill="#1e1e1e" text-anchor="middle">/g1pilot/ps4/walk_cmd</text>
+<text x="1284.4" y="28.0" font-size="10" font-weight="bold" fill="#1e1e1e" text-anchor="middle">Twist</text>
+<rect x="1220.3" y="300.0" width="128.3" height="36.0" fill="#ffffff" stroke="#666666" stroke-width="0.9"/>
+<text x="1284.4" y="315.0" font-size="10" fill="#1e1e1e" text-anchor="middle">/g1pilot/loco_cmd_vel</text>
+<text x="1284.4" y="328.0" font-size="10" font-weight="bold" fill="#1e1e1e" text-anchor="middle">Twist</text>
+<rect x="1222.0" y="250.0" width="124.9" height="36.0" fill="#ffffff" stroke="#666666" stroke-width="0.9"/>
+<text x="1284.4" y="265.0" font-size="10" fill="#1e1e1e" text-anchor="middle">/g1pilot/loco_request</text>
+<text x="1284.4" y="278.0" font-size="10" font-weight="bold" fill="#1e1e1e" text-anchor="middle">String</text>
 <rect x="807.8" y="119.6" width="133.1" height="36.0" fill="#ffffff" stroke="#666666" stroke-width="0.9"/>
 <text x="874.3" y="134.6" font-size="10" fill="#1e1e1e" text-anchor="middle">/g1pilot/onboard_state</text>
 <text x="874.3" y="147.6" font-size="10" font-weight="bold" fill="#1e1e1e" text-anchor="middle">String</text>
@@ -183,25 +179,25 @@
 <rect x="816.1" y="169.6" width="116.3" height="36.0" fill="#ffffff" stroke="#666666" stroke-width="0.9"/>
 <text x="874.3" y="184.6" font-size="10" fill="#1e1e1e" text-anchor="middle">/g1pilot/waist/state</text>
 <text x="874.3" y="197.6" font-size="10" font-weight="bold" fill="#1e1e1e" text-anchor="middle">String (JSON)</text>
-<rect x="1574.0" y="110.4" width="116.8" height="46.4" fill="#f2f2f2" stroke="#666666" stroke-width="0.9"/>
-<text x="1632.4" y="123.4" font-size="8" fill="#777777" text-anchor="middle">Unitree-DDS</text>
-<text x="1632.4" y="135.8" font-size="10" fill="#1e1e1e" text-anchor="middle">rt/lowcmd</text>
-<text x="1632.4" y="148.8" font-size="10" font-weight="bold" fill="#1e1e1e" text-anchor="middle">LowCmd_ (Beine)</text>
-<rect x="1547.2" y="173.4" width="170.3" height="46.4" fill="#f2f2f2" stroke="#666666" stroke-width="0.9"/>
-<text x="1632.4" y="186.4" font-size="8" fill="#777777" text-anchor="middle">Unitree-DDS</text>
-<text x="1632.4" y="198.8" font-size="10" fill="#1e1e1e" text-anchor="middle">rt/api/sport/request</text>
-<text x="1632.4" y="211.8" font-size="10" font-weight="bold" fill="#1e1e1e" text-anchor="middle">Loco-RPC: SetFsmId, Move</text>
-<rect x="1243.7" y="50.0" width="85.6" height="36.0" fill="#ffffff" stroke="#666666" stroke-width="0.9"/>
-<text x="1286.5" y="65.0" font-size="10" fill="#1e1e1e" text-anchor="middle">/g1pilot/push</text>
-<text x="1286.5" y="78.0" font-size="10" font-weight="bold" fill="#1e1e1e" text-anchor="middle">Bool</text>
-<rect x="1224.0" y="100.0" width="125.0" height="36.0" fill="#ffffff" stroke="#666666" stroke-width="0.9"/>
-<text x="1286.5" y="115.0" font-size="10" fill="#1e1e1e" text-anchor="middle">/g1pilot/push_charge</text>
-<text x="1286.5" y="128.0" font-size="10" font-weight="bold" fill="#1e1e1e" text-anchor="middle">Float32</text>
-<rect x="1230.2" y="150.0" width="112.6" height="36.0" fill="#ffffff" stroke="#666666" stroke-width="0.9"/>
-<text x="1286.5" y="165.0" font-size="10" fill="#1e1e1e" text-anchor="middle">/g1pilot/grasp_box</text>
-<text x="1286.5" y="178.0" font-size="10" font-weight="bold" fill="#1e1e1e" text-anchor="middle">Bool</text>
-<rect x="1229.4" y="200.0" width="114.2" height="36.0" fill="#ffffff" stroke="#666666" stroke-width="0.9"/>
-<text x="1286.5" y="215.0" font-size="10" fill="#1e1e1e" text-anchor="middle">/g1pilot/catch_falls</text>
-<text x="1286.5" y="228.0" font-size="10" font-weight="bold" fill="#1e1e1e" text-anchor="middle">Bool</text>
+<rect x="1571.9" y="110.4" width="116.8" height="46.4" fill="#f2f2f2" stroke="#666666" stroke-width="0.9"/>
+<text x="1630.3" y="123.4" font-size="8" fill="#777777" text-anchor="middle">Unitree-DDS</text>
+<text x="1630.3" y="135.8" font-size="10" fill="#1e1e1e" text-anchor="middle">rt/lowcmd</text>
+<text x="1630.3" y="148.8" font-size="10" font-weight="bold" fill="#1e1e1e" text-anchor="middle">LowCmd_ (Beine)</text>
+<rect x="1545.1" y="173.4" width="170.3" height="46.4" fill="#f2f2f2" stroke="#666666" stroke-width="0.9"/>
+<text x="1630.3" y="186.4" font-size="8" fill="#777777" text-anchor="middle">Unitree-DDS</text>
+<text x="1630.3" y="198.8" font-size="10" fill="#1e1e1e" text-anchor="middle">rt/api/sport/request</text>
+<text x="1630.3" y="211.8" font-size="10" font-weight="bold" fill="#1e1e1e" text-anchor="middle">Loco-RPC: SetFsmId, Move</text>
+<rect x="1241.6" y="50.0" width="85.6" height="36.0" fill="#ffffff" stroke="#666666" stroke-width="0.9"/>
+<text x="1284.4" y="65.0" font-size="10" fill="#1e1e1e" text-anchor="middle">/g1pilot/push</text>
+<text x="1284.4" y="78.0" font-size="10" font-weight="bold" fill="#1e1e1e" text-anchor="middle">Bool</text>
+<rect x="1221.9" y="100.0" width="125.0" height="36.0" fill="#ffffff" stroke="#666666" stroke-width="0.9"/>
+<text x="1284.4" y="115.0" font-size="10" fill="#1e1e1e" text-anchor="middle">/g1pilot/push_charge</text>
+<text x="1284.4" y="128.0" font-size="10" font-weight="bold" fill="#1e1e1e" text-anchor="middle">Float32</text>
+<rect x="1228.1" y="150.0" width="112.6" height="36.0" fill="#ffffff" stroke="#666666" stroke-width="0.9"/>
+<text x="1284.4" y="165.0" font-size="10" fill="#1e1e1e" text-anchor="middle">/g1pilot/grasp_box</text>
+<text x="1284.4" y="178.0" font-size="10" font-weight="bold" fill="#1e1e1e" text-anchor="middle">Bool</text>
+<rect x="1227.3" y="200.0" width="114.2" height="36.0" fill="#ffffff" stroke="#666666" stroke-width="0.9"/>
+<text x="1284.4" y="215.0" font-size="10" fill="#1e1e1e" text-anchor="middle">/g1pilot/catch_falls</text>
+<text x="1284.4" y="228.0" font-size="10" font-weight="bold" fill="#1e1e1e" text-anchor="middle">Bool</text>
 </g>
 </svg>

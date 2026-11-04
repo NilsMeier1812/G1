@@ -4,7 +4,7 @@ ps4_arm_teleop — Oberkoerper (Arme + Haende) mit dem PS4-Controller steuern.
 
 Liest den Controller in fester Belegung (ps4_layout.py) von /g1pilot/ps4/joy
 (Quelle: ps4_joystick) und spricht DIESELBEN Schnittstellen wie RViz-Marker,
-Demo-GUI und Streamdeck -- die Logik (IK, Kollisions-Gate, Haende) bleibt im
+Demo-GUI -- die Logik (IK, Kollisions-Gate, Haende) bleibt im
 arm_controller bzw. in der Inspire-Bridge:
 
   /g1pilot/hand_goal/<side>     PoseStamped  kartesisches Hand-Ziel (pelvis)
@@ -360,7 +360,7 @@ class ArmTeleopLogic:
                 "seq_busy": self.seq_busy, "label": self.label()}
 
     def clear_estop(self):
-        """NOT-HALT quittiert (START aus GUI/Streamdeck gesehen)."""
+        """NOT-HALT quittiert (START aus GUI gesehen)."""
         if self.estop or self.full_estop:
             self.estop = False
             self.full_estop = False
@@ -368,7 +368,7 @@ class ArmTeleopLogic:
         return False
 
     def latch_estop(self):
-        """NOT-HALT von aussen (GUI/Streamdeck): Controller sperren wie bei PS."""
+        """NOT-HALT von aussen (GUI): Controller sperren wie bei PS."""
         if not self.estop:
             self.estop = True
             return True
@@ -752,7 +752,7 @@ def main(args=None):
             # R2 = Arme uebernehmen (frueher Options): zusaetzlich start_balancing senden (wie die
             # Kachel GREIFEN der Demo-GUI). false -> nur Arme uebernehmen.
             # Real: false -- der Controller aendert den Zustand der Beine nie
-            # (Aufstehen/Balancing bleibt eine Aktion in GUI/Streamdeck).
+            # (Aufstehen/Balancing bleibt eine Aktion in GUI).
             self.declare_parameter("options_starts_balancing", True)
             # Bezug der Jog-Ziele (hand_jog.JOG_REFERENCES): "command" = Start,
             # Vorlauf und Anhalten an der kommandierten Hand (/g1pilot/hand_cmd_pose,
@@ -840,11 +840,11 @@ def main(args=None):
                 self.create_subscription(
                     PoseStamped, JOG_CMD_TOPIC.format(side=s),
                     lambda m, s=s: self._on_cmd_pose(s, m), 10)
-            # START (GUI/Streamdeck) quittiert den NOT-HALT im arm_controller.
+            # START (GUI) quittiert den NOT-HALT im arm_controller.
             self.create_subscription(Bool, "/g1pilot/start", self._on_start, 10)
-            # NOT-HALT aus GUI/Streamdeck sperrt auch den Controller (LED rot).
+            # NOT-HALT aus GUI sperrt auch den Controller (LED rot).
             self.create_subscription(Bool, "/g1pilot/emergency_stop", self._on_estop, 10)
-            # Modus-Wechsel aus GUIs/Streamdeck (auch die eigenen) mitverfolgen.
+            # Modus-Wechsel aus GUIs (auch die eigenen) mitverfolgen.
             self.create_subscription(Bool, "/g1pilot/start_walking",
                                      lambda m: self._on_mode_topic("walk", m), 10)
             self.create_subscription(Bool, "/g1pilot/start_balancing",
@@ -1107,7 +1107,7 @@ def main(args=None):
             elif kind == "estop":
                 self.holds.clear()
                 self.pub_estop.publish(Bool(data=True))
-                self.get_logger().warn("NOT-HALT (PS-Taste). Quittieren in GUI/Streamdeck.")
+                self.get_logger().warn("NOT-HALT (PS-Taste). Quittieren in GUI.")
                 self._send_feedback(rumble_ms=600, strong=1.0, weak=1.0)
             elif kind == "full_arm":
                 # Vibration ueber die ganze Haltezeit: "jetzt wird es ernst".

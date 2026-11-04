@@ -7,7 +7,6 @@ Eigene Icons für die G1-Fenster in Dock/Taskleiste (statt Zahnrad):
 | `g1_start` (grün, Play) | Start-GUI `g1_gui.py` (Tk, Host) | `g1-start` / `G1-start` |
 | `g1_demo_sim` (blau, Roboter) | Demo-GUI in der Sim | `g1-demo-sim` |
 | `g1_demo_real` (rot, Roboter) | Demo-GUI am echten Roboter | `g1-demo-real` |
-| `g1_streamdeck` (lila, Tastenfeld) | Streamdeck `ui_interface` | `g1-streamdeck` |
 | `g1_mujoco` (türkis, Würfel) | MuJoCo-Viewer | `g1-mujoco` / `MuJoCo` |
 
 RViz bringt sein eigenes Icon mit.

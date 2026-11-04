@@ -8,31 +8,35 @@ neues Backend hinzufügen wollen. Für die Bedienung siehe
 
 | Datei | Rolle |
 |---|---|
-| `g1pilot/manipulation/inspire_ftp/bridge.py` | ROS-2-Node `inspire_hand`: WebSocket-Server (GUIs) + HTTP-Server (GUI-Dateien) + `/joint_states` |
+| `g1pilot/manipulation/inspire_ftp/bridge.py` | ROS-2-Node `inspire_hand`: `/g1pilot/hand_cmd`/`hand_status` + `/joint_states` |
 | `g1pilot/manipulation/inspire_ftp/joint_map.py` | Single Source of Truth: 6-DOF-Mapping → 24 URDF-Fingergelenke |
 | `g1pilot/manipulation/inspire_ftp/tactile.py` | Taktil-Zonenlayout inkl. echter Modbus-Registeradressen |
 | `g1pilot/manipulation/inspire_ftp/model.py` | `HandModel`: geteilter Soll-/Ist-Zustand einer Hand (threadsicher) |
 | `g1pilot/manipulation/inspire_ftp/backends.py` | Die drei Backends (siehe unten) |
 | `g1pilot/manipulation/inspire_ftp/modbus_client.py` | Raw-Socket-Modbus-TCP-Client (nur Standardbibliothek) |
-| `g1pilot/manipulation/inspire_ftp/web/*.html` | Die beiden GUIs (Controller/Viewer), backend-unabhängig |
 | `g1pilot/teleoperation/hand_panel.py` | Seite HÄNDE der Demo-GUI (über `/g1pilot/hand_cmd` / `/g1pilot/hand_status`) |
 | `g1pilot/manipulation/inspire_ftp/README.md` | Kurzüberblick im Quellordner |
 | `g1pilot/test/test_inspire_modbus_backend.py` | Test des Modbus-Backends gegen einen In-Process-Fake-Server |
 
 ```
-  hand_controller_viewer.html ──ws://…:8766──┐
-                                             ├──► inspire_hand (ROS-2-Node) ──► /joint_states ──► RViz
-  inspire_hand_viewer.html    ──ws://…:8765──┘            │
-                                                          └──► Backend (austauschbar)
+  Demo-GUI (hand_panel) ──/g1pilot/hand_cmd──►┐
+                       ◄─/g1pilot/hand_status─┤
+  hand_action, finger_goal, emergency_stop ──►├──► inspire_hand (ROS-2-Node) ──► /joint_states ──► RViz
+                                              │            │
+                                              │            └──► Backend (sim / MuJoCo-DDS / Modbus TCP)
 ```
+
+Die früheren Browser-GUIs (`hand_controller_viewer.html`,
+`inspire_hand_viewer.html`) samt WebSocket- (`:8766`/`:8765`) und HTTP-Server
+(`:8767`) wurden 2026-11-04 entfernt.
 
 ## Anbindung der Demo-GUI
 
 Die Seite HÄNDE der Demo-GUI (`teleoperation/hand_panel.py`) spricht die
-Bridge nur über ROS an: `/g1pilot/hand_cmd` (JSON, dieselben Befehle wie
-der Controller-WebSocket `:8766`) und `/g1pilot/hand_status` (JSON, ~10 Hz,
+Bridge nur über ROS an: `/g1pilot/hand_cmd` (JSON, Befehle siehe
+unten) und `/g1pilot/hand_status` (JSON, ~10 Hz,
 Ist-Öffnung, Kraft, Taktil). Kommt kein Status, zeigt die Seite einen
-Hinweis. Ganze Hand auf/zu läuft wie beim Streamdeck über
+Hinweis. Ganze Hand auf/zu läuft über
 `/g1pilot/hand_action/{left,right}`.
 
 ## Die drei Backend-Stufen
@@ -50,7 +54,7 @@ zusätzlich `left_host`/`right_host` (leer = Seite nicht ansteuern) und
 ## Mapping-Konvention (`joint_map.py`)
 
 Inspire-Winkel-Konvention: `1000` = offen (Gelenk 0 rad), `0` = geschlossen
-(`CLOSED_RAD`, linear dazwischen). DOF-Reihenfolge, identisch zu den GUIs:
+(`CLOSED_RAD`, linear dazwischen). DOF-Reihenfolge (wie im Modbus-Register):
 
 ```
 0 Kleiner (little)      -> little_1, little_2
@@ -67,28 +71,24 @@ zusätzlich an das echte URDF-Limit geklemmt (`load_limits_from_urdf`).
 
 ## `bridge.py` — Node
 
-- **WebSocket `:8766`** (Controller): sendet beim Verbinden die aktuelle
-  Konfiguration, nimmt danach Kommandos entgegen (`_handle_cmd`):
-  `set_angle`, `set_force`, `set_speed` (beide Hände gemeinsam), `set_enabled`,
-  `set_all_angles`, `open_hand`/`close_hand`.
-- **WebSocket `:8765`** (Viewer): sendet Metadaten (Zonenlayout) beim
-  Verbinden, danach nur Broadcast (`_viewer_broadcast`, 20 Hz).
-- **HTTP `:8767`**: liefert die GUI-Dateien selbst aus (statt `file://`),
-  weil `?autoconnect=1` je nach Betriebssystem/Opener bei `file://`-URLs
-  verlorengeht.
+- **`/g1pilot/hand_cmd`** (String, JSON `{"type": …, "side": "left"|"right", …}`),
+  ausgewertet in `_handle_cmd`: `set_angle`, `set_force`, `set_speed` (beide
+  Hände gemeinsam), `set_enabled`, `set_all_angles`, `open_hand`/`close_hand`.
+- **`/g1pilot/hand_status`** (String, JSON, 10 Hz): je Hand Soll/Ist,
+  Kräfte, Verbindungsstatus und je Taktil-Zone der Spitzenwert.
 - **`/joint_states`**: nur die 24 beweglichen Fingergelenke; `robot_state`
   muss dafür mit `publish_hand_joints:=false` laufen, sonst überschreiben
   sich beide Quellen gegenseitig (siehe
   [02-T-Architektur.md](02-T-Architektur.md)).
-- **Streamdeck-Anbindung** (`/g1pilot/hand_action/{left,right}`, String
+- **Hand-Aktionen** (`/g1pilot/hand_action/{left,right}`, String
   `open`/`close`): `_on_hand_action` → `_apply_open_close` — dieselbe
-  Funktion, die auch die Controller-GUI für `open_hand`/`close_hand`
-  aufruft, damit beide Wege identisch wirken. Beim Schließen bleibt die
+  Funktion wie für `open_hand`/`close_hand` aus `hand_cmd`, damit beide
+  Wege identisch wirken. Beim Schließen bleibt die
   Daumen-Beugung absichtlich nicht ganz auf 0 (`200` statt `0`), damit der
   Daumen nicht in die Handfläche fährt.
 - **E-Stop** (`/g1pilot/emergency_stop`): deaktiviert beide Hände sofort —
   keine neuen Sollwerte mehr, aktuelle Position wird gehalten. Re-Aktivierung
-  ist bewusst manuell (nächster GUI-Hauptschalter oder OPEN/CLOSE-Befehl).
+  ist bewusst manuell (nächster Finger- oder OPEN/CLOSE-Befehl bzw. `set_enabled`).
 - **Positionsspeicher-Anbindung**: `hand_state_pub` veröffentlicht laufend
   den Ist-Fingerzustand (`/g1pilot/hand_state/{left,right}`, 6 Werte
   0..1000) für `arm_controller` zum Speichern; `_on_finger_goal` nimmt
@@ -137,13 +137,12 @@ ursprünglichen `reference/ftp_hand_controller/` übernommen.
 | `left_host` / `right_host` | Ziel-IPs für `modbus`; leer = Seite aus |
 | `modbus_port` | Modbus-TCP-Port (Default 6000) |
 | `hand_poll_rate_hz` / `tactile_every` | Poll-Rate des Modbus-I/O-Threads |
-| `controller_port` / `viewer_port` / `http_port` | WebSocket-/HTTP-Ports |
 | `update_rate_hz` | Takt des Backend-Updates + `/joint_states`-Publish |
 
 ## Bekannte Einschränkungen
 
 - Stufe 1 (`sim`) hat keine Kontaktphysik — Kraft/Taktil bleiben konstant 0,
   nur die Ist-Winkel werden geschwindigkeitsbegrenzt nachgeführt.
-- Die per-Taxel-Matrix des Viewers innerhalb einer Zone ist ein synthetisch
-  verteiltes Bild des einen echten Zonen-Kraftskalars, kein echtes
-  Feindruckbild.
+- In der Sim ist die Taxel-Matrix innerhalb einer Zone ein synthetisch
+  verteiltes Bild des einen Zonen-Kraftskalars, kein echtes Feindruckbild
+  (die Demo-GUI zeigt ohnehin nur den Spitzenwert je Zone).

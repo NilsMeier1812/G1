@@ -90,7 +90,7 @@ class ArmApiNode(Node):
         self.pub_cancel = self.create_publisher(Bool, "/g1pilot/arm_command/cancel", 10)
         self.create_subscription(String, "/g1pilot/arm_command/status",
                                  self._on_status, 50)
-        # Speichern laeuft ueber das Topic, das auch die Streamdeck-GUI nutzt --
+        # Speichern laeuft ueber das Topic, das auch die Demo-GUI nutzt --
         # eine Implementierung, zwei Aufrufer (siehe arm_controller._on_pose_save).
         self.pub_save = self.create_publisher(String, "/g1pilot/pose_store/save", 10)
         self.create_subscription(String, "/g1pilot/pose_store/save/status",
@@ -346,7 +346,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     def _do_save(self):
         """POST /arm/save — AKTUELLE Stellung in die Pose-Datei schreiben.
 
-        Bewegt nichts. Geht auf dasselbe Topic wie der Streamdeck-Speichern-
+        Bewegt nichts. Geht auf dasselbe Topic wie der GUI-Speichern-
         Dialog, also dieselbe Implementierung und dieselbe Datei; der Rueckkanal
         sagt, WAS tatsaechlich gespeichert wurde (Haende brauchen eine laufende
         inspire-Bridge). Gespeichert wird immer sofort -- kein `wait` noetig, die
