@@ -1211,7 +1211,8 @@ class DemoGUI(QWidget):
         self.seq_timer.start(100)
         self._on_seq_change(self.seq, "init", "")
         self._refresh_info()
-        # Handy-Bedienung (G1_PHONE=1): ruft dieselben Methoden wie die Knoepfe.
+        # Handy-Bedienung: ruft dieselben Methoden wie die Knoepfe. Bluetooth
+        # startet erst beim Klick auf »📱 Handy« (G1_PHONE=0 = ganz aus).
         self.phone = phone_link.attach(self)
 
         # Wie ui_interface: Auto-Start NUR in der Sim (Arme an + BALANCING),
@@ -1249,7 +1250,7 @@ class DemoGUI(QWidget):
         head1.addWidget(self.btn_pad_help)
         # Vollbild immer aus der GUI erreichbar (am Roboter-Rechner fehlt oft die
         # Titelleiste des Fenstermanagers). Tasten: F11 umschalten, Esc verlassen.
-        # Handy-Zugang (nur mit G1_PHONE=1 sichtbar, phone/link.py).
+        # Handy-Zugang (sichtbar ausser mit G1_PHONE=0, phone/link.py).
         self.btn_phone = self._small_button("📱 Handy")
         self.btn_phone.setVisible(False)
         head1.addWidget(self.btn_phone)

@@ -5,9 +5,13 @@ Handy-Bedienung in der Demo-GUI: Gateway + Bluetooth starten, Befehle des
 Handys mit DENSELBEN Methoden ausfuehren wie die Knoepfe der PC-GUI, Status
 fuers Handy zusammenstellen, Kopplung/Steuerhoheit am PC.
 
-Nur aktiv mit G1_PHONE=1 (Start-Fenster: »Handy-Zugang«). Sonst gibt es
-keinen Knopf, keinen Thread und keine Bluetooth-Werbung.
+In der Demo-GUI immer dabei (G1_PHONE=0 schaltet es ganz ab). Bluetooth
+startet aber erst, wenn jemand oben auf »📱 Handy« klickt: ohne Dongle gibt es
+beim normalen Start keine Fehlermeldung, und erst der Klick sucht den
+BlueZ-Adapter. Fehlt er, steht im Handy-Fenster ein verstaendlicher Hinweis
+und »Bluetooth erneut versuchen«.
 
+  G1_PHONE              1 = Handy-Knopf in der Demo-GUI (Default), 0 = ganz aus
   G1_PHONE_BT_ADAPTER   auto (Default: Dongle ohne Controller) | hciN | MAC des Dongles
   G1_PHONE_BT_NAME      Name beim Werben (Default "G1 SIM" / "G1 REAL")
   G1_PHONE_BT_ENCRYPT   1 = zusaetzlich BLE-Kopplung verlangen (Default 0)
@@ -40,22 +44,23 @@ HAND_ARGS = {"open": (None, "open"), "close": (None, "close"),
 
 
 def enabled():
-    return os.environ.get("G1_PHONE", "0").strip().lower() in ("1", "true", "yes", "on")
+    return os.environ.get("G1_PHONE", "1").strip().lower() in ("1", "true", "yes", "on")
 
 
 def _env_flag(name, default):
     return os.environ.get(name, default).strip().lower() in ("1", "true", "yes", "on")
 
 
-def attach(gui, start_ble=True):
-    """In DemoGUI.__init__ aufgerufen. -> PhoneLink oder None (aus)."""
+def attach(gui, start_ble=False):
+    """In DemoGUI.__init__ aufgerufen. -> PhoneLink oder None (aus).
+    Bluetooth startet erst beim Klick auf »📱 Handy« (start_bluetooth)."""
     if not enabled():
         return None
     return PhoneLink(gui, start_ble=start_ble)
 
 
 class PhoneLink:
-    def __init__(self, gui, start_ble=True, gateway=None):
+    def __init__(self, gui, start_ble=False, gateway=None):
         self.gui = gui
         node = gui.node
         log = lambda t: node.get_logger().info(t)   # noqa: E731
@@ -69,8 +74,9 @@ class PhoneLink:
         self._phone_motion = False      # Bewegung vom Handy gestartet, laeuft evtl. noch
         self._ble_state = None
         self.dialog = None
+        self._ble_wanted = False         # erst nach Klick auf »📱 Handy«
         if start_ble:
-            self.ble.start()
+            self.start_bluetooth()
         self._tick_timer = QTimer(gui)
         self._tick_timer.timeout.connect(self.tick)
         self._tick_timer.start(TICK_MS)
@@ -85,6 +91,16 @@ class PhoneLink:
         self._btn_css = btn.styleSheet()
         btn.setVisible(True)
         btn.clicked.connect(self.show_dialog)
+        self._update_button()
+
+    def start_bluetooth(self):
+        """BlueZ-Adapter suchen und werben (Hintergrund-Thread). Mehrfach
+        aufrufbar; nach einem Fehler startet es neu."""
+        self._ble_wanted = True
+        self._ble_state = None          # Fehler danach wieder in der Statuszeile
+        if not self.ble.running:
+            self.gui._status("📱 Handy-Bluetooth: suche Bluetooth-Adapter …", "#4fc3f7")
+            self.ble.start()
         self._update_button()
 
     def stop(self):
@@ -103,10 +119,14 @@ class PhoneLink:
         g = self.gui
         if self._phone_motion and not g.seq.active:
             self._phone_motion = False
-        if self.ble.state != self._ble_state:
+        if self._ble_wanted and self.ble.state != self._ble_state:
             self._ble_state = self.ble.state
             if self._ble_state.startswith("Fehler"):
-                g._status(f"📱 Handy-Bluetooth: {self._ble_state}", "#ffb300")
+                g._status(f"📱 Handy-Bluetooth: {self._ble_state[len('Fehler: '):]}", "#ffb300")
+            elif self._ble_state.startswith("wirbt"):
+                g._status(f"📱 Handy-Bluetooth bereit: {self._ble_state}", "#4fc3f7")
+            if self.dialog is not None:
+                self.dialog.refresh()
         self._update_button()
 
     def _on_event(self, kind, text):
@@ -132,7 +152,8 @@ class PhoneLink:
         if text != b.text():
             b.setText(text)
             b.setStyleSheet(self._btn_css + (f" QPushButton {{ color:{color}; }}" if color else ""))
-        b.setToolTip(f"Handy-Zugang (Bluetooth): {self.ble.state}")
+        b.setToolTip(f"Handy-Zugang (Bluetooth): {self.ble.state}" if self._ble_wanted
+                     else "Handy-Zugang: Klick startet Bluetooth und zeigt die Kopplung")
 
     # ── Befehle ─────────────────────────────────────────────────────────
     def _execute(self, a):
@@ -415,6 +436,7 @@ class PhoneLink:
 
     # ── Dialog am PC ────────────────────────────────────────────────────
     def show_dialog(self):
+        self.start_bluetooth()
         if self.dialog is None:
             self.dialog = PhoneDialog(self)
         self.dialog.refresh()
@@ -435,6 +457,10 @@ class PhoneDialog(QDialog):
         self.lbl_state.setWordWrap(True)
         self.lbl_state.setStyleSheet("color:#ddd; font-size:15px;")
         lay.addWidget(self.lbl_state)
+        self.btn_retry = QPushButton("Bluetooth erneut versuchen")
+        self.btn_retry.clicked.connect(lambda: (link.start_bluetooth(), self.refresh()))
+        self.btn_retry.setVisible(False)
+        lay.addWidget(self.btn_retry)
         self.btn_revoke = QPushButton("Bedienung zurückholen")
         self.btn_revoke.clicked.connect(lambda: (link.gw.revoke_control(), self.refresh()))
         lay.addWidget(self.btn_revoke)
@@ -485,7 +511,15 @@ class PhoneDialog(QDialog):
     def refresh(self):
         gw = self.link.gw
         connected, name, role, ctl = gw.state()
-        lines = [f"Bluetooth: {self.link.ble.state}"]
+        ble = self.link.ble.state
+        failed = ble.startswith("Fehler")
+        if failed:
+            ble = ble[len("Fehler: "):]
+        elif ble == "startet":
+            ble = "sucht Bluetooth-Adapter …"
+        lines = [f"Bluetooth: {ble}"]
+        self.btn_retry.setVisible(failed)
+        self.lbl_state.setStyleSheet("color:%s; font-size:15px;" % ("#ffb300" if failed else "#ddd"))
         if connected:
             lines.append(f"Verbunden: {name} ({G.ROLE_TITLE[role]})"
                          + (" — bedient gerade" if ctl else ""))

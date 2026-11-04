@@ -41,8 +41,9 @@ Hintergrund und Abwägung (WLAN, Bildschirmspiegelung, App): Analysebericht
 
    *Ohne Internet:* Handy per USB (USB-Debugging an), am PC im Ordner `g1pilot` `make phone-web`, am Handy
    `http://localhost:8790/index.html` öffnen. Der Webserver lauscht nur auf `127.0.0.1`.
-2. **Start-Fenster:** Ausstattung → **Handy-Zugang (Bluetooth)** anhaken, starten. Ohne den Haken gibt es weder
-   Knopf noch Funk.
+2. **Starten** mit der Demo-GUI. Ein Haken im Start-Fenster ist nicht nötig: Der Knopf **📱 Handy** ist immer
+   da, aber Bluetooth startet erst, wenn du darauf klickst. Ohne Dongle gibt es beim normalen Start also keine
+   Fehlermeldung. Fehlt der Adapter beim Klick, steht es im Handy-Fenster, mit **Bluetooth erneut versuchen**.
 3. **Koppeln:** In der Demo-GUI oben **📱 Handy** → **Als Bediener koppeln** (oder **Nur Ansicht koppeln**).
    Es erscheint ein 16-stelliger Code, 2 Minuten gültig und nur einmal. Am Handy Name und Code eingeben, dann
    **Verbinden & koppeln** und in der Chrome-Auswahl „G1 REAL“ bzw. „G1 SIM“ wählen.
@@ -117,7 +118,7 @@ Gehen und Arm-/Hand-Jog, Kategorien anlegen, „Real/Sim beenden“, Parameter, 
 
 | Variable | Default | Bedeutung |
 |---|---|---|
-| `G1_PHONE` | `0` | `1` = Handy-Zugang an (Start-Fenster-Haken). |
+| `G1_PHONE` | `1` | `1` = Knopf 📱 Handy in der Demo-GUI (Bluetooth erst beim Klick), `0` = ganz aus. |
 | `G1_PHONE_BT_ADAPTER` | `auto` | Adapter fürs Handy: `auto` = der Dongle ohne gekoppelten Controller, sonst `hciN` oder die MAC des Dongles. |
 | `G1_PHONE_BT_NAME` | `G1 SIM` / `G1 REAL` | Name beim Werben. |
 | `G1_PHONE_BT_ENCRYPT` | `0` | `1` = zusätzlich Android-Bluetooth-Kopplung verlangen (die Sicherheit hängt nicht davon ab). |
@@ -144,9 +145,12 @@ Willst du es fest einstellen, schreib `G1_PHONE_BT_ADAPTER=<MAC-neu>` in die Dat
 ## Fehlerbehebung
 
 - **Tooltip/Dialog zeigt „Fehler: dbus-next fehlt“:** Image neu bauen.
-- **„Fehler: … org.bluez …“:** Läuft `bluetoothd` auf dem Host? Ist der Adapter an (`bluetoothctl show`,
+- **„Kein Bluetooth-Adapter gefunden“ / „Bluetooth-Dienst (bluetoothd) läuft nicht“:** Meist fehlt der
+  USB-Dongle. Einstecken, ein paar Sekunden warten, dann im Handy-Fenster **Bluetooth erneut versuchen**.
+  Den technischen Fehler schreibt die GUI ins Log.
+- **Anderer Bluetooth-Fehler:** Läuft `bluetoothd` auf dem Host? Ist der Adapter an (`bluetoothctl show`,
   `bluetoothctl power on`)? Stimmt `G1_PHONE_BT_ADAPTER`?
-- **Chrome findet „G1 …“ nicht:** Bluetooth und Standort am Handy an? Läuft die GUI mit dem Haken? Bei geändertem
+- **Chrome findet „G1 …“ nicht:** Bluetooth und Standort am Handy an? Hast du in der GUI auf 📱 Handy geklickt (erst dann wirbt der PC)? Bei geändertem
   Dienst einmal Bluetooth am Handy aus- und einschalten (Android merkt sich alte Dienste).
 - **Controller hakt, seit das Handy verbunden ist:** Das ist der geteilte Dongle. Abhilfe ist ein zweiter
   Dongle (`hci1`), über ein kurzes USB-Verlängerungskabel und nicht direkt neben dem ersten.
