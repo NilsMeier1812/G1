@@ -36,7 +36,7 @@ G1_ESTOP_DAMP_LEGS=1 G1_MAX_VX=0.3 make real ROBOT_INTERFACE=enp3s0
 | `G1_LOCO_DEBUG` | `0` | ausführliches Log von `loco_sim` | [30-T](30-T-Stehen-und-Gehen.md) |
 | `G1_PUSH_MAX_N`, `G1_PUSH_CHARGE_S`, `G1_PUSH_TAP_S` | `2000`, `3.0`, `0.3` | aufladbarer Schubs | [40-T](40-T-Simulation.md#zusatzbefehle-udp-über-loopback) |
 | `G1_GRASP_TEST`, `G1_GRASP_BOX` | aus, an bei Inspire | Testkugel in der Hand | [40-T](40-T-Simulation.md#zusatzbefehle-udp-über-loopback) |
-| `G1_SIM_APPARMOR` | `docker-default` | `unconfined` für Bluetooth im Sim-Container (setzt das Startmenü mit Handy-Zugang) | [12-T](12-T-Handy.md) |
+| `G1_SIM_APPARMOR` | `docker-default` | `unconfined` für Bluetooth im Sim-Container (setzt das Startmenü mit der Demo-GUI) | [12-T](12-T-Handy.md) |
 | `G1_NV_PRIME_OFFLOAD` | automatisch | `1` = NVIDIA-Rendern auf Hybrid-Laptops; bei Bildschirm direkt an der NVIDIA `0` (sonst schwarzes Fenster) | [01-A](01-A-Installation.md) |
 | `G1_SKIP_GPU_CHECK` | `0` | Warnung der GPU-Prüfung (`docker/check_gpu.sh`) abschalten | [61-A](61-A-Werkzeuge.md) |
 | `HOLD_BASE_MODE`, `SIM_LOCKSTEP`, `SIM_REALTIME_FACTOR`, `SIM_*` | siehe 40-T | Physik und Ports der Sim | [40-T](40-T-Simulation.md#umgebungsvariablen-der-sim) |
@@ -101,7 +101,7 @@ G1_ESTOP_DAMP_LEGS=1 G1_MAX_VX=0.3 make real ROBOT_INTERFACE=enp3s0
 
 | Variable | Default | Wirkung | Doku |
 |---|---|---|---|
-| `G1_PHONE` | `0` | Handy-Zugang (nur mit Demo-GUI) | [12-A](12-A-Handy.md) |
+| `G1_PHONE` | `1` | Knopf *📱 Handy* in der Demo-GUI, Bluetooth startet erst beim Klick; `0` = ganz aus | [12-A](12-A-Handy.md) |
 | `G1_PHONE_BT_ADAPTER` | `auto` | Bluetooth-Adapter | [12-A](12-A-Handy.md) |
 | `G1_PHONE_BT_NAME` | `G1 SIM` / `G1 REAL` | angezeigter Name | [12-A](12-A-Handy.md) |
 | `G1_PHONE_BT_ENCRYPT` | `0` | BLE-Kopplung verlangen | [12-A](12-A-Handy.md) |

@@ -180,6 +180,32 @@ def choose_adapter(objects, wanted="auto"):
     return first, f"{first.rsplit('/', 1)[-1]}, geteilt mit Controller"
 
 
+NO_ADAPTER = ("Kein Bluetooth-Adapter gefunden. Ist der USB-Bluetooth-Dongle eingesteckt? "
+              "Danach »Bluetooth erneut versuchen«.")
+NO_BLUEZ = ("Bluetooth-Dienst (bluetoothd) läuft nicht — meist fehlt der USB-Bluetooth-Dongle. "
+            "Dongle einstecken, kurz warten, dann »Bluetooth erneut versuchen«.")
+
+
+def explain_error(step, text):
+    """Technischen D-Bus-/BlueZ-Fehler in einen Satz fuer die GUI uebersetzen.
+    Unbekanntes bleibt technisch (mit Schritt), damit nichts verschluckt wird."""
+    t = str(text)
+    for known in (NO_ADAPTER, NO_BLUEZ):
+        if known in t:
+            return known
+    if "kein Bluetooth-Adapter gefunden" in t:
+        return NO_ADAPTER
+    if "org.bluez" in t and ("TimedOut" in t or "ServiceUnknown" in t or "NameHasNoOwner" in t):
+        return NO_BLUEZ
+    if "System-D-Bus" in str(step):
+        return f"{step} fehlgeschlagen — läuft der Container mit D-Bus-Mount? ({t})"
+    if "AccessDenied" in t:
+        return f"Zugriff auf Bluetooth verweigert (AppArmor?). ({t})"
+    if "Adapter" in t and ("fehlt" in t or "nicht gefunden" in t):
+        return f"{t} — G1_PHONE_BT_ADAPTER prüfen oder Dongle einstecken."
+    return f"{step}: {t}"
+
+
 def _opt(options, key, default=None):
     v = options.get(key) if options else None
     return default if v is None else getattr(v, "value", v)
@@ -280,7 +306,15 @@ class BleServer:
             self.gw.link_lost(msg.path)
 
     # ── Start/Stop ──────────────────────────────────────────────────────
+    @property
+    def running(self):
+        """Thread laeuft (startet oder wirbt)."""
+        return self._thread is not None and self._thread.is_alive()
+
     def start(self):
+        """Startet Werben/GATT im Hintergrund. Nach einem Fehler erneut aufrufbar."""
+        if self.running:
+            return True
         if not HAVE_DBUS:
             self.state = "Fehler: dbus-next fehlt (pip install dbus-next)"
             self._log("Handy: " + self.state)
@@ -301,8 +335,9 @@ class BleServer:
             # Viele D-Bus-/asyncio-Fehler haben leeren Text -> Schritt + Typ mit ausgeben.
             name = getattr(e, "type", None) or type(e).__name__
             text = str(e) or repr(e)
-            self.state = f"Fehler bei {self._step}: {name}: {text}"
-            self._log(f"Handy-Bluetooth: {self.state}")
+            detail = f"Fehler bei {self._step}: {name}: {text}"
+            self.state = "Fehler: " + explain_error(self._step, f"{name}: {text}")
+            self._log(f"Handy-Bluetooth: {detail}")
             traceback.print_exc()
         finally:
             try:
@@ -325,6 +360,16 @@ class BleServer:
         for ch in self._chars:
             bus.export(ch.path, ch)
         bus.export(f"{APP_PATH}/adv0", self.adv)
+        # Ohne Dongle laeuft bluetoothd nicht (systemd: ConditionPathIsDirectory=
+        # /sys/class/bluetooth). Erst fragen, ob org.bluez da ist -- sonst wartet
+        # GetManagedObjects 25 s auf die D-Bus-Aktivierung und endet in TimedOut.
+        self._step = "BlueZ suchen"
+        reply = await bus.call(Message(destination="org.freedesktop.DBus",
+                                       path="/org/freedesktop/DBus",
+                                       interface="org.freedesktop.DBus",
+                                       member="NameHasOwner", signature="s", body=[BLUEZ]))
+        if reply.message_type != MessageType.ERROR and not reply.body[0]:
+            raise RuntimeError(NO_BLUEZ)
         self._step = "BlueZ-Adapter suchen (laeuft bluetoothd?)"
         reply = await bus.call(Message(destination=BLUEZ, path="/",
                                        interface="org.freedesktop.DBus.ObjectManager",

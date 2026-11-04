@@ -45,7 +45,7 @@ Die letzte Auswahl merkt sich das Startmenü in
 |---|---|---|
 | Umgebung / Verbindung | Szene aus `scene_editor/scenes/` | Netzwerk-Interface (prüft auf 192.168.123.x) |
 | Lauf-Policy | Alt `g1_wholebody` (Standard), AGILE Velocity, AGILE Velocity-Height | — |
-| Ausstattung | Inspire-Hände (Default an), Navigation, **PS4-Controller**, **Handy-Zugang**, RViz | Inspire-Hände + IPs, RViz (empfohlen), **PS4-Controller für Arme + Hände**, **Handy-Zugang** |
+| Ausstattung | Inspire-Hände (Default an), Navigation, **PS4-Controller**, RViz | Inspire-Hände + IPs, RViz (empfohlen), **PS4-Controller für Arme + Hände** |
 | Geh-Limits | — | vorwärts / seitlich / drehen (Default 0,4 m/s / 0,3 m/s / 0,4 rad/s) |
 | Erweitert (eingeklappt) | Sim-Tempo (1.0 = Echtzeit), Images neu bauen | Modbus-Port, Gamepad-Name (alter Joystick), Images neu bauen |
 | Sicherheit | — | Häkchen „Sicherheitshinweise gelesen, Bereich frei“, sonst bleibt *Starten* grau |
@@ -53,7 +53,10 @@ Die letzte Auswahl merkt sich das Startmenü in
 - **PS4-Controller** gilt auch für den Xbox-Controller
   ([11-A-Controller.md](11-A-Controller.md)). Aus = alter Joystick-Modus
   ([13-A-Alter-Joystick.md](13-A-Alter-Joystick.md#alter-joystick-modus-ohne-schalter-ps4-controller)).
-- **Handy-Zugang** läuft über die Demo-GUI ([12-A-Handy.md](12-A-Handy.md)).
+- **Handy-Zugang** ist keine Option mehr: Die Demo-GUI hat oben immer den Knopf
+  *📱 Handy*, und erst der Klick darauf startet Bluetooth
+  ([12-A-Handy.md](12-A-Handy.md)). Ohne Dongle gibt es beim Start also keine
+  Fehlermeldung.
 - Die Bedienoberfläche ist immer die Demo-GUI; die frühere Auswahl
   *Bedienoberfläche* (Streamdeck) wurde 2026-10-30 entfernt.
 - Welche Umgebungsvariable hinter welcher Option steht:
@@ -63,7 +66,8 @@ Die letzte Auswahl merkt sich das Startmenü in
 
 Das Text-Menü fragt dieselben Punkte nacheinander ab; ENTER nimmt den
 markierten Default. Erste Frage: Simulation oder Echter Roboter. Den
-Handy-Zugang gibt es dort nicht als Frage, nur über `G1_PHONE=1`.
+Handy-Zugang ist auch hier immer dabei (Knopf *📱 Handy*); `G1_PHONE=0`
+schaltet ihn ganz ab.
 
 ```bash
 # Nicht-interaktiv (Sim, Defaults/Env-Overrides):

@@ -156,7 +156,7 @@ Im grafischen Startmenü **Echter Roboter** wählen:
 | Abschnitt | Einstellung |
 |---|---|
 | Verbindung zum G1 | Interface mit `192.168.123.x` (wird vorgeschlagen, grüner Hinweis „Im Roboter-LAN“) |
-| Ausstattung | Inspire-Hände + IPs; RViz; **PS4-Controller für Arme + Hände** (PS4 oder Xbox, siehe unten); Handy-Zugang |
+| Ausstattung | Inspire-Hände + IPs; RViz; **PS4-Controller für Arme + Hände** (PS4 oder Xbox, siehe unten) |
 | Geh-Limits | Default vorwärts 0,4 m/s, seitlich 0,3 m/s, drehen 0,4 rad/s |
 | Erweitert | Modbus-Port, Gamepad-Name, Images neu bauen |
 

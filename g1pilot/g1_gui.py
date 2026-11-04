@@ -793,7 +793,6 @@ class SimFrame(tk.Frame):
         self.v_hands = tk.BooleanVar(value=st.get("hands", True))
         self.v_nav = tk.BooleanVar(value=st.get("nav", False))
         self.v_ps4 = tk.BooleanVar(value=st.get("ps4", False))
-        self.v_phone = tk.BooleanVar(value=st.get("phone", False))
         self.v_rviz = tk.BooleanVar(value=st.get("rviz", False))
         self._rviz_own = None   # eigene RViz-Wahl, solange Navigation RViz erzwingt
         self.v_rt = tk.StringVar(value=st.get("rt", "1.0"))
@@ -820,8 +819,6 @@ class SimFrame(tk.Frame):
                    "Planer + Stationen / AUTO NAV in der Demo-GUI")
         toggle_row(s, "PS4-Controller", self.v_ps4,
                    "PS4 oder Xbox: Arme + Hände, Gehen mit L2/LT; Belegung: docs/11-A-Controller.md")
-        toggle_row(s, "Handy-Zugang (Bluetooth)", self.v_phone,
-                   "Kopplung über 📱 in der Demo-GUI, docs/12-A-Handy.md")
         self._rviz_row = toggle_row(s, "RViz", self.v_rviz,
                                     "Zusatzfenster mit TF/Markern; MuJoCo-Fenster kommt immer")
         self.v_nav.trace_add("write", lambda *_: self._sync())
@@ -862,7 +859,6 @@ class SimFrame(tk.Frame):
             "hands": hands, "nav": self.v_nav.get(),
             "rviz": self.v_rviz.get() if self._rviz_own is None else self._rviz_own,
             "rt": rt, "ps4": self.v_ps4.get(),
-            "phone": self.v_phone.get(),
         })
 
         env = os.environ.copy()
@@ -872,7 +868,9 @@ class SimFrame(tk.Frame):
         env["G1_INSPIRE_HANDS"] = "1" if hands else "0"
         env["G1_ENABLE_NAV"] = "1" if self.v_nav.get() else "0"
         env["G1_PS4_ARMS"] = "1" if self.v_ps4.get() else "0"
-        env["G1_PHONE"] = "1" if self.v_phone.get() else "0"
+        # Handy-Zugang gehoert immer zur Demo-GUI; Bluetooth startet erst beim Klick
+        # auf »📱 Handy« (kein Haken mehr -> ohne Dongle keine Fehlermeldung beim Start).
+        env["G1_PHONE"] = "1"
         # BlueZ ueber den System-D-Bus geht nur ohne Dockers AppArmor-Profil (docker-compose.yml).
         env["G1_SIM_APPARMOR"] = "unconfined" if env["G1_PHONE"] == "1" else "docker-default"
         env["USE_RVIZ"] = "true" if self.v_rviz.get() else "false"
@@ -920,7 +918,6 @@ class RealFrame(tk.Frame):
         self.v_port = tk.StringVar(value=st.get("port", "6000"))
         self.v_joy = tk.StringVar(value=st.get("joy", "Wireless Controller"))
         self.v_ps4 = tk.BooleanVar(value=st.get("ps4", False))
-        self.v_phone = tk.BooleanVar(value=st.get("phone", False))
         self.v_rebuild = tk.BooleanVar(value=False)
         self.v_confirm = tk.BooleanVar(value=False)
 
@@ -957,8 +954,6 @@ class RealFrame(tk.Frame):
         toggle_row(s, "RViz", self.v_rviz, "empfohlen: Arm-Marker + Zustand sichtbar")
         toggle_row(s, "PS4-Controller für Arme + Hände", self.v_ps4,
                    "PS4 oder Xbox; aus = Gehen mit Deadman (bisher, nur PS4)")
-        toggle_row(s, "Handy-Zugang (Bluetooth)", self.v_phone,
-                   "Ansicht, NOT-HALT, Quittieren, Startleiste (docs/12-A-Handy.md)")
         self.v_hands.trace_add("write", lambda *_: self._sync())
 
         # 3) Geh-Limits
@@ -1037,7 +1032,7 @@ class RealFrame(tk.Frame):
             "vy": self.v_vy.get().strip() or "0.3",
             "vyaw": self.v_vyaw.get().strip() or "0.4",
             "joy": self.v_joy.get().strip() or "Wireless Controller",
-            "ps4": self.v_ps4.get(), "phone": self.v_phone.get(),
+            "ps4": self.v_ps4.get(),
         }
         save_settings("real", vals)
 
@@ -1052,7 +1047,7 @@ class RealFrame(tk.Frame):
         env["USE_RVIZ"] = "true" if vals["rviz"] else "false"
         env["JOYSTICK_NAME"] = vals["joy"]
         env["G1_PS4_ARMS"] = "1" if vals["ps4"] else "0"
-        env["G1_PHONE"] = "1" if vals["phone"] else "0"
+        env["G1_PHONE"] = "1"   # Bluetooth erst beim Klick auf »📱 Handy«
         env["G1_MAX_VX"] = vals["vx"]
         env["G1_MAX_VY"] = vals["vy"]
         env["G1_MAX_VYAW"] = vals["vyaw"]

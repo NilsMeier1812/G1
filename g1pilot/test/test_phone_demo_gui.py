@@ -109,6 +109,40 @@ def test_phone_off_by_default(monkeypatch, tmp_path):
         _close(g, node)
 
 
+def test_bluetooth_starts_only_on_click(monkeypatch, tmp_path):
+    from g1pilot.teleoperation.phone import ble_server
+    starts = []
+    dg, g, node, app, *_ = _make(monkeypatch, tmp_path, sim=True)
+    monkeypatch.setattr(ble_server.BleServer, "start", lambda self: starts.append(1) or True)
+    try:
+        g.phone.tick()
+        assert starts == [] and g.phone.ble.state == "aus"
+        assert not g.btn_phone.isHidden()
+        assert "Fehler" not in g.status.text()
+        g.btn_phone.click()
+        assert starts == [1]
+        assert g.phone.dialog is not None and g.phone.dialog.isVisible()
+        # Ohne Dongle: verstaendlicher Satz in Dialog und Statuszeile, Knopf zum Wiederholen.
+        g.phone.ble.state = "Fehler: " + ble_server.NO_BLUEZ
+        g.phone.tick()
+        d = g.phone.dialog
+        assert "USB-Bluetooth-Dongle" in d.lbl_state.text()
+        assert "Fehler" not in d.lbl_state.text()
+        assert not d.btn_retry.isHidden()
+        assert "USB-Bluetooth-Dongle" in g.status.text()
+        d.btn_retry.click()
+        assert starts == [1, 1]
+        d.close()
+    finally:
+        _close(g, node)
+
+
+def test_phone_default_on_without_env(monkeypatch, tmp_path):
+    monkeypatch.delenv("G1_PHONE", raising=False)
+    from g1pilot.teleoperation.phone import link
+    assert link.enabled()
+
+
 def test_button_shows_connection(real):
     dg, g, node, app, *_ = real
     assert not g.btn_phone.isHidden() and "Handy" in g.btn_phone.text()

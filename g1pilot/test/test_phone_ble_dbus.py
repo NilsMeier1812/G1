@@ -238,3 +238,37 @@ def test_choose_adapter_single_dongle_and_explicit():
     assert B.choose_adapter(_bluez_objects(), "00:1a:7d:da:71:13")[0] == "/org/bluez/hci1"
     assert B.choose_adapter(_bluez_objects(), "hci7")[0] is None
     assert B.choose_adapter({}, "auto")[0] is None
+
+
+def test_no_bluez_is_quick_and_clear(bus_address, tmp_path):
+    # Ohne Dongle laeuft bluetoothd nicht: nicht 25 s auf die D-Bus-Aktivierung
+    # warten (TimedOut), sondern gleich ein verstaendlicher Satz.
+    srv = B.BleServer(G.PhoneGateway(store_path=str(tmp_path / "d.json")), bus_address=bus_address)
+    t0 = time.monotonic()
+    srv.start()
+    while not srv.state.startswith("Fehler") and time.monotonic() - t0 < 5.0:
+        time.sleep(0.05)
+    state = srv.state
+    assert time.monotonic() - t0 < 5.0, state
+    assert state == "Fehler: " + B.NO_BLUEZ
+    assert not srv.running
+    # Erneut versuchen startet einen neuen Thread.
+    assert srv.start() is True
+    srv.stop()
+
+
+@pytest.mark.parametrize("step,text,want", [
+    ("BlueZ-Adapter suchen (laeuft bluetoothd?)",
+     "RuntimeError: org.freedesktop.DBus.Error.TimedOut: [\"Failed to activate service "
+     "'org.bluez': timed out (service_start_timeout=25000ms)\"]", "NO_BLUEZ"),
+    ("BlueZ-Adapter suchen", "RuntimeError: org.freedesktop.DBus.Error.ServiceUnknown: "
+     "The name org.bluez was not provided by any .service files", "NO_BLUEZ"),
+    ("BlueZ-Adapter suchen", "RuntimeError: kein Bluetooth-Adapter gefunden", "NO_ADAPTER"),
+])
+def test_explain_known_errors(step, text, want):
+    assert B.explain_error(step, text) == getattr(B, want)
+
+
+def test_explain_unknown_error_keeps_detail():
+    out = B.explain_error("BlueZ-Adapter /org/bluez/hci0", "RuntimeError: kaputt")
+    assert "hci0" in out and "kaputt" in out

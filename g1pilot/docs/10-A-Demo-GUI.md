@@ -91,8 +91,8 @@ die GUI sendet dabei selbst nichts. Details:
 [11-A-Controller.md › Controller und Demo-GUI gekoppelt](11-A-Controller.md#controller-und-demo-gui-gekoppelt).
 
 **Kopfzeile rechts:** *🎮 Belegung* (nur solange ein Controller aktiv ist,
-zeigt die Tastenbelegung), *📱 Handy* (nur mit Handy-Zugang `G1_PHONE=1`,
-Koppeln und Steuerhoheit, siehe [12-A-Handy.md](12-A-Handy.md)) und
+zeigt die Tastenbelegung), *📱 Handy* (immer da; der Klick startet erst
+Bluetooth, dann Koppeln und Steuerhoheit, siehe [12-A-Handy.md](12-A-Handy.md)) und
 *⛶ Vollbild*.
 
 ### 2 · Steuerung (Mitte)

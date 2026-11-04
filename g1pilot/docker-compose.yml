@@ -72,8 +72,8 @@ services:
     image: g1pilot-sim:v1.1.0
     # Handy-Zugang: Dockers AppArmor-Profil »docker-default« verbietet jeden System-D-Bus-Aufruf
     # (journalctl: apparmor="DENIED" ... member="Hello"), BlueZ ist dann unerreichbar.
-    # Das Start-Fenster setzt G1_SIM_APPARMOR=unconfined nur mit Haken »Handy-Zugang«,
-    # sonst bleibt das Profil wie bisher. Der Real-Container ist privileged und betrifft das nicht.
+    # Das Start-Fenster setzt G1_SIM_APPARMOR=unconfined mit der Demo-GUI (Handy-Knopf),
+    # mit dem Streamdeck bleibt das Profil wie bisher. Der Real-Container ist privileged und betrifft das nicht.
     security_opt:
       - apparmor=${G1_SIM_APPARMOR:-docker-default}
     environment:
@@ -112,9 +112,10 @@ services:
       # Bedienoberflaeche ist immer die Demo-GUI (g1pilot/docs/10-A-Demo-GUI.md).
       - G1_GUI_FULLSCREEN=${G1_GUI_FULLSCREEN:-0}
       # Handy-Bedienung ueber Bluetooth LE (nur Demo-GUI, docs/12-A-Handy.md).
-      # 0 = aus (kein Werben, kein Thread). Adapter: hci0 = einziger Dongle (teilt
+      # 1 = Knopf »📱 Handy« in der Demo-GUI; Bluetooth startet erst beim Klick darauf.
+      # 0 = ganz aus. Adapter: hci0 = einziger Dongle (teilt
       # sich den Funk mit dem Controller), hci1 = zweiter Dongle nur fuers Handy.
-      - G1_PHONE=${G1_PHONE:-0}
+      - G1_PHONE=${G1_PHONE:-1}
       - G1_PHONE_BT_ADAPTER=${G1_PHONE_BT_ADAPTER:-auto}
       # Szenen-Bruecke (siehe g1pilot/docs/31-T-Navigation.md): MUSS zum mujoco-sim-Wert oben passen.
       - SIM_SCENE_PORT=${SIM_SCENE_PORT:-47902}
@@ -178,9 +179,10 @@ services:
       # Bedienoberflaeche ist immer die Demo-GUI (docs/10-A-Demo-GUI.md).
       - G1_GUI_FULLSCREEN=${G1_GUI_FULLSCREEN:-0}
       # Handy-Bedienung ueber Bluetooth LE (nur Demo-GUI, docs/12-A-Handy.md).
-      # 0 = aus (kein Werben, kein Thread). Adapter: hci0 = einziger Dongle (teilt
+      # 1 = Knopf »📱 Handy« in der Demo-GUI; Bluetooth startet erst beim Klick darauf.
+      # 0 = ganz aus. Adapter: hci0 = einziger Dongle (teilt
       # sich den Funk mit dem Controller), hci1 = zweiter Dongle nur fuers Handy.
-      - G1_PHONE=${G1_PHONE:-0}
+      - G1_PHONE=${G1_PHONE:-1}
       - G1_PHONE_BT_ADAPTER=${G1_PHONE_BT_ADAPTER:-auto}
       # Inspire-FTP-Haende (Modbus TCP im Roboter-LAN).
       - G1_INSPIRE_HANDS=${G1_INSPIRE_HANDS:-0}

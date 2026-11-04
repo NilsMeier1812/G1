@@ -24,10 +24,17 @@ web/proto.js                      │ handle_line() / on_tx
 | `g1pilot/teleoperation/phone/ble_server.py` | GATT-Server über BlueZ/D-Bus (`dbus-next`), Adapterwahl (`G1_PHONE_BT_ADAPTER=auto`: Dongle ohne gekoppelten Controller) |
 | `g1pilot/teleoperation/phone/gateway.py` | Kopplung, Anmeldung, Sitzung, Rollen, Steuerhoheit, Herzschlag, Posen-Katalog |
 | `g1pilot/teleoperation/phone/protocol.py` | Signaturen, Schlüsselableitung, Zeilenformat (Gegenstück `web/proto.js`) |
-| `g1pilot/teleoperation/phone/link.py` | Gateway ↔ Demo-GUI (Status sammeln, Aktionen ausführen, 📱-Dialog) |
+| `g1pilot/teleoperation/phone/link.py` | Gateway ↔ Demo-GUI (Status sammeln, Aktionen ausführen, 📱-Dialog); startet den BLE-Thread erst beim Klick auf 📱 Handy (`start_bluetooth`) |
 | `g1pilot/teleoperation/phone/web/` | Handy-Seite (`index.html`, `app.js`, `proto.js`, Service Worker `sw.js`, Manifest) |
 | `.github/workflows/phone-pages.yml` (Repo-Wurzel) | veröffentlicht `phone/web/` auf GitHub Pages bei Änderungen auf `main` |
 | `Makefile` → `make phone-web` | Handy-Seite per USB (`adb reverse`, Webserver nur auf `127.0.0.1:8790`) |
+
+**Bluetooth erst beim Klick:** `PhoneLink` baut Gateway und `BleServer` beim Start der Demo-GUI, ruft
+`BleServer.start()` aber erst in `show_dialog()` auf. `_setup()` fragt zuerst `NameHasOwner("org.bluez")`:
+Ohne Dongle läuft `bluetoothd` nicht, und ohne diese Frage würde `GetManagedObjects` 25 s auf die
+D-Bus-Aktivierung warten und mit `TimedOut` enden. `explain_error()` übersetzt bekannte Fehler (kein Adapter,
+kein bluetoothd, kein System-D-Bus, AppArmor) in einen Satz für Dialog und Statuszeile, der technische Text
+geht ins Log. Nach einem Fehler startet *Bluetooth erneut versuchen* den Thread neu.
 
 **Neue Version der Handy-Seite:** `CACHE` in `web/sw.js` **und** `VERSION` in
 `web/app.js` hochzählen (derzeit `v9`). Erst dann bietet die Seite am Handy
