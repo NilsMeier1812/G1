@@ -119,3 +119,28 @@ GREIFEN wählen (der Roboter bleibt stehen). Übersicht aller Halt-Wege:
 | Arme fahren beim Loslaufen in die Lauf-Pose | Sim mit der Standard-Policy `g1_wholebody` (oder real mit `G1_WALK_PARK_ARMS=true`): gewollt. Mit AGILE-Policy (Sim) bzw. real seit 2026-10-19 bleiben die Arme in ihrer Pose. |
 | Real: »Walk« gesperrt „kein Bodenkontakt“ | Füße tragen zu wenig Last (Knie-Last unter 10 Nm) → Kran weiter lockern, siehe [50-A-Echter-Roboter.md](50-A-Echter-Roboter.md#fehlerbehebung). |
 | Real: GEHEN per L2 tut nichts, lange Vibration | G1 steht nicht im Walk-Modus → erst Startleiste »Walk«. |
+| Echter G1 driftet beim Gehen zu einer Seite | Ursachen und Testplan: `/mnt/project-files/analysen/linksdrall_gehen_g1.md`. Messen mit der Geh-Diagnose (unten). Taille gerade halten bzw. dem Onboard-Regler geben: `G1_WAIST_MODE=zero` / `onboard` ([50-A-Echter-Roboter.md](50-A-Echter-Roboter.md), Taillen-Modus). |
+
+## Geh-Diagnose am echten G1 (`walk_diag`)
+
+Nur lesend: sendet nichts an den Roboter (kein RPC, kein `rt/arm_sdk`, kein
+`rt/lowcmd`) und laeuft als eigener Prozess neben dem Stack. Zeichnet mit 50 Hz
+auf: IMU, Beine + Taille (Stellung, Moment, Temperatur, Fehlerbits), Armstellung,
+Funk-Fernbedienung, die Sollwerte des Onboard-Reglers (`rt/lowcmd`, falls
+sichtbar), Onboard-Odometrie (falls ein `*modestate`-Topic sichtbar ist) und die
+Geh-Befehle bzw. den FSM-Zustand aus ROS.
+
+```bash
+# Je Versuch eine Aufnahme (Strg+C beendet), Interface = ROBOT_INTERFACE:
+docker compose exec g1pilot-real python3 -m g1pilot.tools.walk_diag \
+    record enp0s31f6 --label geradeaus_arme_onboard --note "Halle, Langsam"
+# Auswerten (Stand: Lastverteilung/IMU-Neigung; je Geh-Abschnitt Befehl vs. Odometrie,
+# Blickrichtung, Momente und Regelabweichung links/rechts, Temperaturen):
+docker compose exec g1pilot-real python3 -m g1pilot.tools.walk_diag \
+    analyze diag_logs/walk_diag_*_geradeaus_arme_onboard.csv
+```
+
+Die Dateien liegen auf dem Host in `g1pilot/diag_logs/` (CSV + JSON mit Label,
+Limits und G1_-Umgebung). Ungeprueft am G1: ob `rt/lowcmd` und ein Odometrie-Topic
+(`rt/odommodestate`, `rt/sportmodestate`, ...) sichtbar sind -- die Aufnahme nennt
+beim Start alle `rt/`-Topics mit Schreiber; ohne sie fehlen nur die Spalten.

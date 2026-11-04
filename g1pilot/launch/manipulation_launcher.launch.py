@@ -62,6 +62,8 @@ def generate_launch_description():
         DeclareLaunchArgument("kd_waist", default_value="4.0"),
         # E-Stop: Taille gehalten lassen (nur Arme/Haende schlaff). false = alt.
         DeclareLaunchArgument("estop_waist_hold", default_value="true"),
+        # Taillen-Ziel beim ENABLE: hold | zero | onboard (siehe waist_hold.py).
+        DeclareLaunchArgument("waist_mode", default_value="hold"),
         # Hueftdrehung per Controller/GUI (waist_yaw.py): Bereich um die Mitte.
         # Real per bringup_real ueber G1_WAIST_YAW_LIMIT_DEG (Default 105).
         DeclareLaunchArgument("waist_yaw_control", default_value="true"),
@@ -137,6 +139,7 @@ def generate_launch_description():
                 'kp_waist': ParameterValue(LaunchConfiguration("kp_waist"), value_type=float),
                 'kd_waist': ParameterValue(LaunchConfiguration("kd_waist"), value_type=float),
                 'estop_waist_hold': ParameterValue(LaunchConfiguration("estop_waist_hold"), value_type=bool),
+                'waist_mode': ParameterValue(LaunchConfiguration("waist_mode"), value_type=str),
                 'waist_yaw_control': ParameterValue(
                     LaunchConfiguration("waist_yaw_control"), value_type=bool),
                 'waist_yaw_limit_deg': ParameterValue(

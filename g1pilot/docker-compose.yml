@@ -214,6 +214,10 @@ services:
       - G1_WAIST_HOLD=${G1_WAIST_HOLD:-true}
       - G1_WAIST_KP=${G1_WAIST_KP:-150.0}
       - G1_WAIST_KD=${G1_WAIST_KD:-4.0}
+      # Taillen-Ziel beim Uebernehmen der Arme (Linksdrall-Test 2026-10-27):
+      # hold = eingefroren wie beim ENABLE (alt), zero = gerade auf 0,
+      # onboard = 0 und beim GEHEN fuehrt der Onboard-Regler die Taille.
+      - G1_WAIST_MODE=${G1_WAIST_MODE:-hold}
       # NOT-HALT: Taille bleibt gehalten, Beine nur StopMove (kein Damp).
       # Alt-Verhalten: G1_ESTOP_WAIST_HOLD=false und/oder G1_ESTOP_DAMP_LEGS=1.
       - G1_ESTOP_WAIST_HOLD=${G1_ESTOP_WAIST_HOLD:-true}

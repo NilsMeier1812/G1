@@ -62,6 +62,7 @@ G1_ESTOP_DAMP_LEGS=1 G1_MAX_VX=0.3 make real ROBOT_INTERFACE=enp3s0
 | `G1_JOG_REFERENCE` | `command` | Bezug der Jogs: `command`, `start`, `tf` | [11-T](11-T-Controller.md) |
 | `G1_WALK_PARK_ARMS` | `false` | Arme beim Gehen in die Lauf-Pose parken | [30-A](30-A-Stehen-und-Gehen.md) |
 | `G1_WAIST_HOLD` | `true` | Taille per `arm_sdk` halten | [24-T](24-T-Hueftdrehung.md) |
+| `G1_WAIST_MODE` | `hold` | Taille beim Gehen (real): `hold` = halten, `zero` = auf 0, `onboard` = Onboard-Regler (Test Linksdrall) | [50-A](50-A-Echter-Roboter.md) |
 | `G1_WAIST_KP`, `G1_WAIST_KD` | `150.0`, `4.0` | Gains der Taille | [24-T](24-T-Hueftdrehung.md) |
 | `G1_WAIST_YAW` | `1` | Hüftdrehung (`0` = aus) | [24-A](24-A-Hueftdrehung.md) |
 | `G1_WAIST_YAW_LIMIT_DEG` | `105` | Bereich der Hüftdrehung um die Mitte | [24-T](24-T-Hueftdrehung.md) |
