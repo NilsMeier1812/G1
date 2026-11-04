@@ -22,6 +22,9 @@ from PyQt6.QtWidgets import QApplication          # noqa: E402
 
 @pytest.fixture(params=["true", "false"], ids=["sim", "real"])
 def gui(request, monkeypatch):
+    # Handy-Knopf ist seit #44 Default (G1_PHONE=1); hier nicht gebraucht. Mit ihm
+    # lebt die alte GUI samt Timern ueber den Test hinaus und rclpy bricht ab.
+    monkeypatch.setenv("G1_PHONE", "0")
     monkeypatch.setenv("G1_SIM_MODE", request.param)
     rclpy.init()
     app = QApplication.instance() or QApplication([])   # Referenz halten (sonst GC)
