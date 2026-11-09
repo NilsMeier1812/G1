@@ -32,6 +32,7 @@ g1pilot/g1pilot/navigation/scene_bridge.py (ROS-Seite) verwendet.
 Aufruf:
     python3 build_env_scene.py --env scenes/warehouse.xml
     python3 build_env_scene.py --env scenes/warehouse.xml --inspire 1
+    python3 build_env_scene.py --env scenes/warehouse.xml --hands haken
 """
 import argparse
 import hashlib
@@ -646,6 +647,9 @@ def main() -> None:
                     help="Umgebungs-XML (nur Objekte), z.B. scenes/warehouse.xml")
     ap.add_argument("--inspire", default="0", choices=["0", "1"],
                     help="0 = Rubber-Hand-G1, 1 = Inspire-FTP-G1 (Default 0)")
+    ap.add_argument("--hands", default="",
+                    help="Hand-Profil (inspire | rubber | Ordner unter unitree_robots/g1/hands/, "
+                         "z. B. haken). Gewinnt vor --inspire, leer = --inspire entscheidet.")
     ap.add_argument("--out",
                     help="Zieldatei (Default: unitree_robots/g1/scene_env_<name>.xml)")
     args = ap.parse_args()
@@ -657,7 +661,13 @@ def main() -> None:
         sys.exit(f"[build_env_scene] Umgebung nicht gefunden: {env_path}")
     env_dir = env_path.parent
 
-    robot_file = ROBOT_FILES[args.inspire]
+    hands = args.hands.strip().lower()
+    if hands in ("inspire", "rubber"):
+        robot_file = ROBOT_FILES["1" if hands == "inspire" else "0"]
+    elif hands:
+        robot_file = f"g1_29dof_hand_{hands}.xml"   # tools/gen_hand_profile.py
+    else:
+        robot_file = ROBOT_FILES[args.inspire]
     if not (G1_DIR / robot_file).is_file():
         sys.exit(f"[build_env_scene] Robotermodell fehlt: {G1_DIR / robot_file}")
 

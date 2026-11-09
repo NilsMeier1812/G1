@@ -492,7 +492,12 @@ class ArmController(Node):
 
         from ament_index_python.packages import get_package_share_directory
         pkg_share = get_package_share_directory('g1pilot')
-        urdf_path = os.path.join(pkg_share, 'description_files', 'urdf', 'g1_29dof_inspire_ftp.urdf')
+        # URDF je Hand-Profil (Sim: eigene Haende wie die Haken bringen eigenes
+        # URDF mit TCP + Kollisionsgeometrie; real immer das Inspire-URDF).
+        from g1pilot.utils.hand_profile import urdf_path as _hand_urdf_path
+        urdf_path = _hand_urdf_path(os.path.join(pkg_share, 'description_files', 'urdf'),
+                                    log=lambda m: self.get_logger().warn(m))
+        self.get_logger().info(f"Arm-Modell: {os.path.basename(urdf_path)}")
         mesh_dir = os.path.join(pkg_share, 'description_files', 'meshes')
         # Home-Pose je Arm (7 DOF, Reihenfolge:
         #   [shoulder_pitch, shoulder_roll, shoulder_yaw, elbow,

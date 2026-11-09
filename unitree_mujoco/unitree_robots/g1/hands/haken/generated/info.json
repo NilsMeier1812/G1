@@ -1,0 +1,60 @@
+{
+  "profile": "haken",
+  "title": "Box-Haken (gedruckt)",
+  "mass_kg": 0.15,
+  "digest": "6fa7a3f2833987dc",
+  "sides": {
+    "left": {
+      "tcp_wrist_m": [
+        0.174,
+        -0.014,
+        -0.035
+      ],
+      "com_wrist_m": [
+        0.1272,
+        -0.00174,
+        -0.01217
+      ],
+      "bounds_wrist_m": [
+        [
+          0.0415,
+          -0.034,
+          -0.05
+        ],
+        [
+          0.204,
+          0.014,
+          0.025
+        ]
+      ],
+      "n_collision_hulls": 12,
+      "mirrored": true
+    },
+    "right": {
+      "tcp_wrist_m": [
+        0.174,
+        0.014,
+        -0.035
+      ],
+      "com_wrist_m": [
+        0.1272,
+        0.00174,
+        -0.01217
+      ],
+      "bounds_wrist_m": [
+        [
+          0.0415,
+          -0.014,
+          -0.05
+        ],
+        [
+          0.204,
+          0.034,
+          0.025
+        ]
+      ],
+      "n_collision_hulls": 12,
+      "mirrored": false
+    }
+  }
+}

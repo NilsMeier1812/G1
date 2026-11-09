@@ -68,6 +68,8 @@ SCENES_DIR = SCENE_DIR / "scenes"
 LAUNCH_SH = SCENE_DIR / "launch.sh"
 SETUP_SH = SCENE_DIR / "setup.sh"
 SCENE_VENV = SCENE_DIR / ".venv" / "bin" / "python"
+# Hand-Profile (eigene starre Haende fuer die Sim, z. B. die Box-Haken)
+HANDS_DIR = REPO_ROOT / "unitree_mujoco" / "unitree_robots" / "g1" / "hands"
 
 # Dokumente, die aus dem Menue heraus geoeffnet werden koennen. Vollstaendige
 # Uebersicht: docs/README.md. Jedes Thema hat eine Anleitung (Anwender) und
@@ -157,6 +159,31 @@ def docker_ready() -> bool:
         return r.returncode == 0
     except Exception:
         return False
+
+
+def list_hand_profiles() -> list[tuple[str, str]]:
+    """Eigene Hand-Profile [(ordner, anzeigename)] aus unitree_robots/g1/hands/."""
+    out = []
+    if not HANDS_DIR.is_dir():
+        return out
+    for d in sorted(HANDS_DIR.iterdir()):
+        f = d / "hand.yaml"
+        if not f.is_file() or not re.match(r"^[a-z0-9_]+$", d.name):
+            continue
+        try:
+            m = re.search(r"^name:\s*(.+?)\s*(#.*)?$", f.read_text(encoding="utf-8"), re.M)
+        except OSError:
+            m = None
+        out.append((d.name, m.group(1) if m else d.name))
+    return out
+
+
+def hand_choices() -> list[tuple[str, str, str]]:
+    """Auswahl fuer die Sim-Haende im Format von choice_rows."""
+    return [("inspire", "Inspire", "Finger steuerbar, Kraftsensoren; Demo-GUI: Greifen → Hände"),
+            ("rubber", "Rubber", "starre Standard-Hand"),
+            *[(n, title, f"eigenes Hand-Profil (hands/{n}/hand.yaml)")
+              for n, title in list_hand_profiles()]]
 
 
 def list_scenes() -> list[Path]:
@@ -764,7 +791,7 @@ def start_footer(frame, app, text: str, cmd, color: str) -> tk.Button:
 # ════════════════════════════════════════════════════════════════════════
 class SimFrame(tk.Frame):
     """Sim-Start. Aufbau in der Reihenfolge der Entscheidungen:
-    Umgebung -> Lauf-Policy -> Ausstattung -> Erweitert.
+    Umgebung -> Lauf-Policy -> Hände -> Ausstattung -> Erweitert.
     Die Auswahl wird gemerkt (settings), Defaults siehe start.sh (Sim-Zweig)."""
 
     ephemeral = True
@@ -790,7 +817,10 @@ class SimFrame(tk.Frame):
         if policy not in {c[0] for c in WALK_POLICY_CHOICES}:
             policy = DEFAULT_WALK_POLICY
         self.v_policy = tk.StringVar(value=policy)
-        self.v_hands = tk.BooleanVar(value=st.get("hands", True))
+        # Haende: frueher nur Inspire an/aus ("hands"), jetzt Hand-Profil.
+        hand_vals = {c[0] for c in hand_choices()}
+        hp = st.get("hand_profile") or ("inspire" if st.get("hands", True) else "rubber")
+        self.v_hand_profile = tk.StringVar(value=hp if hp in hand_vals else "inspire")
         self.v_nav = tk.BooleanVar(value=st.get("nav", False))
         self.v_ps4 = tk.BooleanVar(value=st.get("ps4", False))
         self.v_rviz = tk.BooleanVar(value=st.get("rviz", False))
@@ -811,10 +841,14 @@ class SimFrame(tk.Frame):
         hint(s, "Stehen ist bei allen gleich (Füße bleiben stehen, Schritte nur beim "
                 "Kippen). Vergleich: docs/30-T-Stehen-und-Gehen.md, Abschnitt „Gangbild“.")
 
-        # 3) Ausstattung
+        # 3) Haende
+        s = section(b, "Hände")
+        choice_rows(s, self.v_hand_profile, hand_choices(), width=20)
+        hint(s, "Eigene Hände (z. B. gedruckte Haken): Ordner unter "
+                "unitree_mujoco/unitree_robots/g1/hands/, siehe README dort.")
+
+        # 4) Ausstattung
         s = section(b, "Ausstattung")
-        toggle_row(s, "Inspire-Hände", self.v_hands,
-                   "Finger steuerbar, Kraftsensoren; Steuerung in der Demo-GUI (Greifen → Hände)")
         toggle_row(s, "Navigation", self.v_nav,
                    "Planer + Stationen / AUTO NAV in der Demo-GUI")
         toggle_row(s, "PS4-Controller", self.v_ps4,
@@ -823,7 +857,7 @@ class SimFrame(tk.Frame):
                                     "Zusatzfenster mit TF/Markern; MuJoCo-Fenster kommt immer")
         self.v_nav.trace_add("write", lambda *_: self._sync())
 
-        # 4) Erweitert
+        # 5) Erweitert
         s = collapsible(b, "Erweitert")
         field_row(s, "Sim-Tempo (1.0 = Echtzeit)", self.v_rt, width=8)
         hint(s, "Kleiner als 1.0 = Zeitlupe (Obergrenze; langsame PCs laufen ohnehin langsamer).")
@@ -853,10 +887,11 @@ class SimFrame(tk.Frame):
             return
         env_name = self.v_env.get()
         env_name = "" if env_name == self.DEFAULT_ENV else env_name
-        hands = self.v_hands.get()
+        hand_profile = self.v_hand_profile.get()
+        hands = hand_profile == "inspire"
         save_settings("sim", {
             "env": env_name, "walk_policy": self.v_policy.get(),
-            "hands": hands, "nav": self.v_nav.get(),
+            "hands": hands, "hand_profile": hand_profile, "nav": self.v_nav.get(),
             "rviz": self.v_rviz.get() if self._rviz_own is None else self._rviz_own,
             "rt": rt, "ps4": self.v_ps4.get(),
         })
@@ -866,6 +901,7 @@ class SimFrame(tk.Frame):
         env["G1_ENV"] = env_name
         env["G1_WALK_POLICY"] = self.v_policy.get()
         env["G1_INSPIRE_HANDS"] = "1" if hands else "0"
+        env["G1_HANDS"] = hand_profile
         env["G1_ENABLE_NAV"] = "1" if self.v_nav.get() else "0"
         env["G1_PS4_ARMS"] = "1" if self.v_ps4.get() else "0"
         # Handy-Zugang gehoert immer zur Demo-GUI; Bluetooth startet erst beim Klick

@@ -92,7 +92,9 @@ class G1IKSolver:
         try:
             if urdf_path is None or mesh_dir is None:
                 pkg_share = get_package_share_directory('g1pilot')
-                urdf_path = urdf_path or os.path.join(pkg_share, 'description_files', 'urdf', 'g1_29dof_inspire_ftp.urdf')
+                if urdf_path is None:
+                    from g1pilot.utils.hand_profile import urdf_path as _hand_urdf_path
+                    urdf_path = _hand_urdf_path(os.path.join(pkg_share, 'description_files', 'urdf'))
                 mesh_dir = mesh_dir or os.path.join(pkg_share, 'description_files', 'meshes')
 
             # Load kinematic + collision models
@@ -232,7 +234,8 @@ class G1IKSolver:
     # shoulder_roll bewegen sich kaum vom Torso weg; shoulder_yaw sitzt
     # konstruktionsbedingt dauerhaft ~2.8 cm am Torso und wuerde mit Marge
     # permanent "kollidieren" -> bewusst NICHT gegen den Torso geprueft.
-    _GATE_ARM_KEYS = ("elbow", "wrist", "base_link", "palm")
+    # hand_tool = starres Werkzeug eines Hand-Profils (z. B. Haken, nur Sim).
+    _GATE_ARM_KEYS = ("elbow", "wrist", "base_link", "palm", "hand_tool")
     _GATE_BODY_GEOMS = (
         "torso_link_0", "head_link_0", "pelvis_contour_link_0", "logo_link_0",
         "left_hip_pitch_link_0", "right_hip_pitch_link_0",

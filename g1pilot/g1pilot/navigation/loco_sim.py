@@ -330,10 +330,10 @@ class LocoSim(Node):
 
     def _load_com_model(self, path):
         if not path:
-            inspire = os.environ.get("G1_INSPIRE_HANDS", "0").strip().lower() in (
-                "1", "true", "yes", "on")
-            path = os.path.join("/unitree_mujoco/unitree_robots/g1",
-                                "g1_29dof_inspire_ftp.xml" if inspire else "g1_29dof.xml")
+            # Robotermodell zum Hand-Profil (G1_HANDS / G1_INSPIRE_HANDS),
+            # damit die Handmasse (Inspire / Rubber / Haken) im Schwerpunkt steckt.
+            from g1pilot.utils.hand_profile import mjcf_file_name
+            path = os.path.join("/unitree_mujoco/unitree_robots/g1", mjcf_file_name())
         self.com_model = None
         try:
             from g1pilot.navigation.com_model import ComModel

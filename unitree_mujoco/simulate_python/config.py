@@ -5,6 +5,17 @@ ROBOT = "g1" # Robot name, "go2", "b2", "b2w", "h1", "go2w", "g1"
 # mit den Inspire-Fingern (passiv, nur Visualisierung; nu bleibt 29 -> Bridge/Loco
 # unveraendert). Default = bisheriges Rubber-Hand-Modell.
 _INSPIRE = str(os.environ.get("G1_INSPIRE_HANDS", "")).strip().lower() in ("1", "true", "yes", "on")
+# Hand-Profil (Env G1_HANDS): inspire | rubber | <eigenes Profil> aus
+# unitree_robots/g1/hands/<profil>/ (z. B. "haken", erzeugt von
+# tools/gen_hand_profile.py -> scene_hand_<profil>.xml). Leer = altes Verhalten
+# ueber G1_INSPIRE_HANDS. Gleiche Regel wie g1pilot/utils/hand_profile.py.
+HAND_PROFILE = os.environ.get("G1_HANDS", "").strip().lower()
+if HAND_PROFILE in ("inspire", "rubber"):
+    _INSPIRE = HAND_PROFILE == "inspire"
+elif HAND_PROFILE:
+    _INSPIRE = False          # eigenes starres Werkzeug: keine Finger, keine Bridge
+else:
+    HAND_PROFILE = "inspire" if _INSPIRE else "rubber"
 # Umgebungs-Auswahl (opt-in via Env G1_ENV): der G1 bleibt immer gleich, nur die
 # Welt drumherum wechselt. start.sh erzeugt zur gewaehlten Umgebung eine
 # kombinierte Szene  scene_env_<name>.xml  (G1 + Umgebung) im g1-Ordner und setzt
@@ -15,7 +26,10 @@ _ENV = os.environ.get("G1_ENV", "").strip()
 if _ENV and _ENV.lower() not in ("default", "standard", "none", "off", "0"):
     _SCENE = "scene_env_" + _ENV + ".xml"
 else:
-    _SCENE = "scene_inspire_ftp.xml" if _INSPIRE else "scene.xml"
+    if HAND_PROFILE not in ("inspire", "rubber"):
+        _SCENE = "scene_hand_" + HAND_PROFILE + ".xml"
+    else:
+        _SCENE = "scene_inspire_ftp.xml" if _INSPIRE else "scene.xml"
 ROBOT_SCENE = "../unitree_robots/" + ROBOT + "/" + _SCENE # Robot scene
 
 # Greifbares Test-Objekt (opt-in via G1_GRASP_TEST=1): legt beim Laden in JEDE

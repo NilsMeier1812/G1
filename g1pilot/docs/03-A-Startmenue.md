@@ -45,7 +45,8 @@ Die letzte Auswahl merkt sich das Startmenü in
 |---|---|---|
 | Umgebung / Verbindung | Szene aus `scene_editor/scenes/` | Netzwerk-Interface (prüft auf 192.168.123.x) |
 | Lauf-Policy | Alt `g1_wholebody` (Standard), AGILE Velocity, AGILE Velocity-Height | — |
-| Ausstattung | Inspire-Hände (Default an), Navigation, **PS4-Controller**, RViz | Inspire-Hände + IPs, RViz (empfohlen), **PS4-Controller für Arme + Hände** |
+| Hände | Inspire (Standard), Rubber oder ein eigenes Hand-Profil wie die Box-Haken ([25-A](25-A-Eigene-Haende.md)) | — |
+| Ausstattung | Navigation, **PS4-Controller**, RViz | Inspire-Hände + IPs, RViz (empfohlen), **PS4-Controller für Arme + Hände** |
 | Geh-Limits | — | vorwärts / seitlich / drehen (Default 0,4 m/s / 0,3 m/s / 0,4 rad/s) |
 | Erweitert (eingeklappt) | Sim-Tempo (1.0 = Echtzeit), Images neu bauen | Modbus-Port, Gamepad-Name (alter Joystick), Images neu bauen |
 | Sicherheit | — | Häkchen „Sicherheitshinweise gelesen, Bereich frei“, sonst bleibt *Starten* grau |

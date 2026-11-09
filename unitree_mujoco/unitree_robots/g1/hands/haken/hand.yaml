@@ -1,0 +1,50 @@
+# Hand-Profil "haken": zwei gedruckte, starre Box-Haken (nur Simulation).
+#
+# Nach jeder Aenderung neu erzeugen (oder die Vorschau laufen lassen, die das
+# beim Speichern automatisch macht):
+#   unitree_mujoco/unitree_robots/g1/tools/hand_tool.sh build haken
+#   unitree_mujoco/unitree_robots/g1/tools/hand_tool.sh preview haken
+# Erklaerung aller Felder: unitree_mujoco/unitree_robots/g1/hands/README.md
+
+name: Box-Haken (gedruckt)        # Anzeige im Startmenue / in der Start-GUI
+
+mesh: G1_Box_Hand_1.stl           # STL im Profilordner (Original aus dem CAD)
+unit: mm                          # Einheit der STL: mm | m
+
+# Masse JE Hand in kg (Haken + Adapter + Schrauben). Bitte wiegen!
+# Geschaetzt: 238 cm3 Volumen, gedruckt ca. 50 % gefuellt PLA.
+mass_kg: 0.15
+color: [0.95, 0.55, 0.10, 1.0]    # RGBA in der Sim
+
+# ── Montage: wie sitzt die STL am Handgelenk-Flansch? ─────────────────────
+# Alle Punkte/Richtungen in STL-Koordinaten (so wie die Datei aus dem CAD kommt).
+# Wurde die STL am Flansch-Ursprung exportiert (siehe hands/flansch_referenz_*.stl),
+# ist origin [0, 0, 0], out [1, 0, 0], palm [0, -1, 0] (links) und nichts zu raten.
+mount:
+  # Punkt der STL, der auf der Flansch-Mitte liegt (Mitte der Steck-Platte).
+  origin: [25.0, 162.5, 14.0]
+  # Richtung in der STL, die vom Flansch WEG zeigt (Verlaengerung des Unterarms).
+  out: [0, -1, 0]
+  # Richtung in der STL, die zur HANDFLAECHE zeigt (dahin, wo die Inspire-Finger
+  # schliessen = Richtung Kiste). Hier: die Seite, auf der die Lippe hochsteht.
+  palm: [0, 0, 1]
+  # Feinjustage im Hand-Frame (x = out, y = palm, z = quer), fuer beide Seiten
+  # gespiegelt gleich: Versatz in mm, Drehung in Grad (um x, y, z).
+  offset_mm: [0.0, 0.0, 0.0]
+  rotate_deg: [0.0, 0.0, 0.0]
+
+# Spiegeln je Seite (an der Ebene aus out und palm). Bei EINER STL fuer beide
+# Seiten ist eine Hand das Spiegelbild der anderen: rechts so wie die STL,
+# links gespiegelt -> beide Lippen sitzen an der Unterkante. Sind beide Drucke
+# identisch (nicht gespiegelt), links auf false setzen.
+mirror:
+  left: true
+  right: false
+
+# Greifpunkt (TCP) in STL-Koordinaten: auf diesen Punkt zielen IK, Jog und
+# Planer (Frame *_hand_point_contact). Hier: Innenecke der Lippe, Mitte.
+tcp: [60.0, 30.0, 28.0]
+
+# Kollisions-Zerlegung (MuJoCo kollidiert nur mit konvexen Teilen).
+collision:
+  max_hulls: 12
