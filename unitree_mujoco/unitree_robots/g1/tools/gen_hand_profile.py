@@ -196,6 +196,11 @@ def decompose(p: dict, cache_dir: Path):
     raw = p["mesh"].read_bytes()
     key = hashlib.sha1(raw + str(p["max_hulls"]).encode()).hexdigest()[:10]
     cdir = cache_dir / f"hulls-{key}"
+    if cache_dir.is_dir():                       # alte Zerlegungen (andere STL) weg
+        import shutil
+        for old in cache_dir.glob("hulls-*"):
+            if old != cdir:
+                shutil.rmtree(old)
     files = sorted(cdir.glob("hull_*.stl"))
     if not files:
         mesh = trimesh.load(str(p["mesh"]), force="mesh")
@@ -246,7 +251,9 @@ def build(name: str, verbose=True) -> dict:
         f.unlink()
 
     src = trimesh.load(str(p["mesh"]), force="mesh")
-    hulls = decompose(p, HANDS_DIR / ".cache")
+    # Zerlegung im Profil ablegen (committet): Neu-Erzeugen nach einer reinen
+    # Lage-Aenderung (Justier-Tool) braucht dann kein vhacdx.
+    hulls = decompose(p, gen / "hulls")
 
     info = {"profile": name, "title": p["title"], "mass_kg": p["mass"],
             "digest": profile_digest(name), "sides": {}}

@@ -985,17 +985,17 @@
   <joint name="left_hand_point_contact_fix_joint" type="fixed">
     <parent link="left_wrist_yaw_link" />
     <child link="left_hand_point_contact" />
-    <origin rpy="0 0 0" xyz="0.174 -0.014 -0.035" />
+    <origin rpy="0 0 0" xyz="0.1615 -0.014 -0.035" />
   </joint>
   <link name="right_hand_point_contact" />
   <joint name="right_hand_point_contact_fix_joint" type="fixed">
     <parent link="right_wrist_yaw_link" />
     <child link="right_hand_point_contact" />
-    <origin rpy="0 0 0" xyz="0.174 0.014 -0.035" />
+    <origin rpy="0 0 0" xyz="0.1615 0.014 -0.035" />
   </joint>
   <link name="left_hand_tool_link">
     <inertial>
-      <origin xyz="0.1271984 -0.001739622 -0.01217467" rpy="0 0 0" />
+      <origin xyz="0.1146984 -0.001739622 -0.01217467" rpy="0 0 0" />
       <mass value="0.15" />
       <inertia ixx="7.210443e-05" iyy="0.0003770753" izz="0.0003351626" ixy="1.221248e-05" ixz="8.082e-05" iyz="-7.909244e-06" />
     </inertial>
@@ -1094,7 +1094,7 @@
   </joint>
   <link name="right_hand_tool_link">
     <inertial>
-      <origin xyz="0.1271984 0.001739622 -0.01217467" rpy="0 0 0" />
+      <origin xyz="0.1146984 0.001739622 -0.01217467" rpy="0 0 0" />
       <mass value="0.15" />
       <inertia ixx="7.210443e-05" iyy="0.0003770753" izz="0.0003351626" ixy="-1.221248e-05" ixz="8.082e-05" iyz="7.909244e-06" />
     </inertial>

@@ -28,15 +28,45 @@ der Lippe.
 
    ```bash
    cd unitree_mujoco/unitree_robots/g1/tools
-   ./hand_tool.sh preview <name>
+   ./hand_tool.sh build <name>
+   ./hand_tool.sh adjust <name>      # einpassen, siehe unten
    ```
 
-   Das öffnet den G1 schwebend im MuJoCo-Viewer. Jedes Speichern von
-   `hand.yaml` oder der STL erzeugt das Modell neu und lädt die Ansicht neu.
+   Alternativ ohne Schieber: `./hand_tool.sh preview <name>` lädt die Ansicht
+   bei jedem Speichern von `hand.yaml` neu.
    Fehlt das Werkzeug-Python, einmal `unitree_mujoco/scene_editor/setup.sh`
    ausführen (installiert trimesh, vhacdx, mujoco).
 4. Die erzeugten Dateien committen (Liste in [25-T](25-T-Eigene-Haende.md#was-erzeugt-wird)).
    Vergisst man das, erzeugt `start.sh` sie beim nächsten Start selbst neu.
+
+## Hand einpassen (Schieber, live)
+
+```bash
+cd unitree_mujoco/unitree_robots/g1/tools
+./hand_tool.sh adjust haken
+```
+
+Öffnet den G1 im MuJoCo-Viewer (Kamera auf der rechten Hand) und daneben ein
+Fenster mit sechs Schiebern. Jede Änderung wirkt sofort auf beide Hände,
+links gespiegelt:
+
+| Schieber | Wirkung |
+|---|---|
+| Versatz x | Hand weiter aus dem Arm heraus (+) oder tiefer hinein (−), mm |
+| Versatz y | Richtung Handfläche (zur Kiste), mm |
+| Versatz z | quer dazu, mm |
+| Drehung um x / y / z | um die Flansch-Mitte, Grad |
+
+- **Unterarm durchsichtig** (Standard an): man sieht, wie tief ein Adapter im
+  Arm steckt.
+- **Kollisions-Teile zeigen**: die konvexen Teile, mit denen MuJoCo rechnet.
+- **Speichern** schreibt das Ergebnis in `hand.yaml` (`mount.offset_mm`,
+  `mount.rotate_deg`), erzeugt das Modell neu (MuJoCo und URDF) und setzt die
+  Schieber auf 0. Das Fenster zeigt laufend, was gespeichert würde.
+
+Danach die geänderten Dateien committen (siehe unten).
+Braucht ein Python mit `tkinter`, `mujoco` und `trimesh`; fehlt `tkinter`,
+sagt das Skript, welches Paket fehlt (z. B. `sudo apt install python3-tk`).
 
 ## Wo sitzt die Hand? (Adapter-Punkt)
 

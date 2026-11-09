@@ -51,13 +51,26 @@ bei Bedarf neu; scheitert das, startet die Sim mit der Rubber-Hand.
 MuJoCo kollidiert ein Mesh nur über seine konvexe Hülle; ein Haken wäre damit
 ein voller Klotz. Darum zerlegt der Generator die STL mit V-HACD
 (`trimesh` + `vhacdx`, wie `scene_editor/build_env_scene.py`) in bis zu
-`collision.max_hulls` konvexe Teile (Cache: `hands/.cache/`, gitignored).
+`collision.max_hulls` konvexe Teile. Die Teile (in STL-Koordinaten) liegen committet in
+`hands/<name>/generated/hulls/`; nach einer reinen Lage-Änderung braucht das
+Neu-Erzeugen darum nur `trimesh`, kein `vhacdx`.
 
 | Wo | Was |
 |---|---|
 | MuJoCo | Teile mit `contype = conaffinity = 2` (Gruppe 3): wie die Inspire-Finger nur gegen greifbare Objekte und Umgebung, nicht gegen Boden/Körper. Optik-Geom ohne Kollision |
 | IK-Kollisions-Gate (`ik_solver.py`) | die Teile sind Collision-Geometrien von `*_hand_tool_link`; `_GATE_ARM_KEYS` enthält dafür `hand_tool` -> Paare gegen Torso/Beine und gegen den anderen Arm |
 | Armplaner (`arm_geometry.py`) | Kugelmodell wird aus denselben Teilen gefittet (Glied `wrist_yaw`), TCP aus dem URDF |
+
+## Justier-Werkzeug
+
+`tools/hand_adjust.py` (über `hand_tool.sh adjust`): Tk-Fenster + passiver
+MuJoCo-Viewer. Die Schieber setzen nur `body_pos`/`body_quat` von
+`*_hand_tool_link` (Korrektur im Hand-Frame, gedreht um die Flansch-Mitte, je
+Seite mit eigenem Hand-Frame, also gespiegelt). Speichern verrechnet die Korrektur
+mit der gespeicherten Montage (`compose`: `offset' = t + R_adj·offset`,
+`R' = R_adj·R`), schreibt nur die beiden Zeilen in `hand.yaml` (Kommentare
+bleiben) und ruft den Generator. Ein Test prüft, dass Live-Lage und neu
+erzeugte Lage übereinstimmen.
 
 ## Masse
 

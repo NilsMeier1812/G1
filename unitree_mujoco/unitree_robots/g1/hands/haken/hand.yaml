@@ -21,8 +21,10 @@ color: [0.95, 0.55, 0.10, 1.0]    # RGBA in der Sim
 # Wurde die STL am Flansch-Ursprung exportiert (siehe hands/flansch_referenz_*.stl),
 # ist origin [0, 0, 0], out [1, 0, 0], palm [0, -1, 0] (links) und nichts zu raten.
 mount:
-  # Punkt der STL, der auf der Flansch-Mitte liegt (Mitte der Steck-Platte).
-  origin: [25.0, 162.5, 14.0]
+  # Punkt der STL, der auf der Flansch-Mitte liegt. Die Steck-Platte (y 150..162.5)
+  # steckt im Arm, also liegt die Flanschflaeche am Ende der Platte (y = 150).
+  # Feinjustage am bequemsten mit:  tools/hand_tool.sh adjust haken
+  origin: [25.0, 150.0, 14.0]
   # Richtung in der STL, die vom Flansch WEG zeigt (Verlaengerung des Unterarms).
   out: [0, -1, 0]
   # Richtung in der STL, die zur HANDFLAECHE zeigt (dahin, wo die Inspire-Finger

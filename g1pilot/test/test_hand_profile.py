@@ -244,3 +244,34 @@ def test_mujoco_hook_carries_object(mj):
         mujoco.mj_step(m, d)
     z = d.xpos[m.body("testbox").id][2]
     assert z > tcp[2] - 0.01, f"Wuerfel durchgefallen (z={z:.3f}, Lippe {tcp[2]:.3f})"
+
+
+@pytest.mark.parametrize("mm,deg", [([0, 0, 0], [0, 0, 0]), ([5, -3, 2], [0, 0, 0]),
+                                    ([0, 0, 0], [10, -20, 30]), ([12.5, 4, -7], [-15, 5, 90])])
+def test_adjust_live_equals_saved(mm, deg):
+    """Justier-Tool: die Live-Verschiebung im Viewer ergibt nach "Speichern"
+    (compose -> hand.yaml -> Generator) genau dieselbe Lage, beide Seiten."""
+    pytest.importorskip("yaml")
+    sys.path.insert(0, TOOLS)
+    import gen_hand_profile as gen
+    import hand_adjust as adj
+    p = gen.load_profile(PROFILE)
+    off, rot = adj.compose(p["offset_mm"], p["rotate_deg"], mm, deg)
+    p2 = dict(p, offset_mm=off, rotate_deg=rot)
+    for side in ("left", "right"):
+        A, b = gen.side_transform(p, side)
+        pos, R = adj.delta_pose(side, mm, deg)
+        A2, b2 = gen.side_transform(p2, side)
+        assert np.allclose(R @ A, A2, atol=1e-5), side
+        assert np.allclose(R @ b + pos, b2, atol=2e-5), side
+
+
+def test_adjust_write_mount_keeps_comments(tmp_path):
+    sys.path.insert(0, TOOLS)
+    import hand_adjust as adj
+    f = tmp_path / "hand.yaml"
+    f.write_text("mount:\n  # Kommentar\n  offset_mm: [0, 0, 0]   # mm\n  rotate_deg: [0.0, 0.0, 0.0]\n")
+    adj.write_mount(f, [1.5, -2, 0], [0, 90, 0])
+    t = f.read_text()
+    assert "offset_mm: [1.5, -2, 0]   # mm" in t and "rotate_deg: [0, 90, 0]" in t
+    assert "# Kommentar" in t
