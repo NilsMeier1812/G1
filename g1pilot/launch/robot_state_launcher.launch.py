@@ -8,8 +8,9 @@ from launch_ros.substitutions import FindPackageShare
 from launch_ros.parameter_descriptions import ParameterValue
 import os
 
+from g1pilot.utils.hand_profile import urdf_path
+
 package_name = "g1pilot"
-urdf_file_name = "g1_29dof_inspire_ftp.urdf"
 
 def generate_launch_description():
     use_sim_time = LaunchConfiguration("use_sim_time")
@@ -21,9 +22,10 @@ def generate_launch_description():
     use_rviz = LaunchConfiguration("use_rviz")
     rviz_config = LaunchConfiguration("rviz_config")
 
-    urdf = os.path.join(
-        get_package_share_directory(package_name), "description_files/urdf", urdf_file_name
-    )
+    # URDF je Hand-Profil (Sim: G1_HANDS=haken -> g1_29dof_hand_haken.urdf; sonst
+    # und am echten Roboter immer g1_29dof_inspire_ftp.urdf wie bisher).
+    urdf = urdf_path(os.path.join(get_package_share_directory(package_name),
+                                  "description_files/urdf"))
     with open(urdf, "r") as infp:
         robot_desc = infp.read()
 

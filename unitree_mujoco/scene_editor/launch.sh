@@ -52,7 +52,7 @@ view_scene() { exec "$PY" -m mujoco.viewer --mjcf="$1"; }
 view_with_g1() {
   local env="$1"
   local out
-  if ! out=$("$PY" build_env_scene.py --env "$env" --inspire "${G1_INSPIRE_HANDS:-0}"); then
+  if ! out=$("$PY" build_env_scene.py --env "$env" --inspire "${G1_INSPIRE_HANDS:-0}" --hands "${G1_HANDS:-}"); then
     echo "Konnte kombinierte Szene nicht erzeugen." >&2; exit 1
   fi
   echo "Kombiniert: $out"

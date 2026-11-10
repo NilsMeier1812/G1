@@ -11,5 +11,6 @@ Unitree-Firmware ([3 · Fortbewegung](3-Fortbewegung.md)).
 | **Inspire-Hände** | Finger einzeln oder auf/zu, Kraft und Tastsinn; Sim-Modell und echte Hände per Modbus | [22-A](22-A-Inspire-Haende.md) | [22-T](22-T-Inspire-Haende.md) |
 | **Posen und Abläufe** | Armstellungen speichern, anfahren, zu Abläufen verketten; am Stück oder Schritt für Schritt | [23-A](23-A-Posen-und-Ablaeufe.md) | [23-T](23-T-Posen-und-Ablaeufe.md) |
 | **Hüftdrehung** | Oberkörper um die Hochachse drehen (Controller R2 + rechter Stick, ±105°), zurück zur Mitte | [24-A](24-A-Hueftdrehung.md) | [24-T](24-T-Hueftdrehung.md) |
+| **Eigene Hände** | Starre Werkzeuge aus dem CAD (z. B. gedruckte Box-Haken) in der Sim statt Inspire/Rubber; Flansch-Referenz, Vorschau, IK/Planer passen sich an | [25-A](25-A-Eigene-Haende.md) | [25-T](25-T-Eigene-Haende.md) |
 
 Alle Gruppen: [README.md](README.md).

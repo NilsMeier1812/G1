@@ -68,6 +68,9 @@ SCENES_DIR = SCENE_DIR / "scenes"
 LAUNCH_SH = SCENE_DIR / "launch.sh"
 SETUP_SH = SCENE_DIR / "setup.sh"
 SCENE_VENV = SCENE_DIR / ".venv" / "bin" / "python"
+# Hand-Profile (eigene starre Haende fuer die Sim, z. B. die Box-Haken)
+HANDS_DIR = REPO_ROOT / "unitree_mujoco" / "unitree_robots" / "g1" / "hands"
+HAND_TOOL_SH = HANDS_DIR.parent / "tools" / "hand_tool.sh"
 
 # Dokumente, die aus dem Menue heraus geoeffnet werden koennen. Vollstaendige
 # Uebersicht: docs/README.md. Jedes Thema hat eine Anleitung (Anwender) und
@@ -157,6 +160,32 @@ def docker_ready() -> bool:
         return r.returncode == 0
     except Exception:
         return False
+
+
+def list_hand_profiles() -> list[tuple[str, str]]:
+    """Eigene Hand-Profile [(ordner, anzeigename)] aus unitree_robots/g1/hands/."""
+    out = []
+    if not HANDS_DIR.is_dir():
+        return out
+    for d in sorted(HANDS_DIR.iterdir()):
+        f = d / "hand.yaml"
+        if not f.is_file() or not re.match(r"^[a-z0-9_]+$", d.name):
+            continue
+        try:
+            m = re.search(r"^name:\s*(.+?)\s*(#.*)?$", f.read_text(encoding="utf-8"), re.M)
+        except OSError:
+            m = None
+        out.append((d.name, m.group(1) if m else d.name))
+    return out
+
+
+# Art der Sim-Haende im Format von choice_rows; bei "custom" kommt die
+# Auswahl des eigenen Hand-Profils dazu (Ordner unter HANDS_DIR).
+HAND_KIND_CHOICES = [
+    ("rubber", "Rubber Hände", "starre Standard-Hand"),
+    ("inspire", "Inspire Hände", "Finger steuerbar, Kraftsensoren; Demo-GUI: Greifen → Hände"),
+    ("custom", "Custom Hände", "eigene starre Hände aus dem CAD, z. B. die gedruckten Haken"),
+]
 
 
 def list_scenes() -> list[Path]:
@@ -764,7 +793,7 @@ def start_footer(frame, app, text: str, cmd, color: str) -> tk.Button:
 # ════════════════════════════════════════════════════════════════════════
 class SimFrame(tk.Frame):
     """Sim-Start. Aufbau in der Reihenfolge der Entscheidungen:
-    Umgebung -> Lauf-Policy -> Ausstattung -> Erweitert.
+    Umgebung -> Lauf-Policy -> Hände -> Ausstattung -> Erweitert.
     Die Auswahl wird gemerkt (settings), Defaults siehe start.sh (Sim-Zweig)."""
 
     ephemeral = True
@@ -790,7 +819,22 @@ class SimFrame(tk.Frame):
         if policy not in {c[0] for c in WALK_POLICY_CHOICES}:
             policy = DEFAULT_WALK_POLICY
         self.v_policy = tk.StringVar(value=policy)
-        self.v_hands = tk.BooleanVar(value=st.get("hands", True))
+        # Haende: Art (rubber | inspire | custom) + bei custom das Profil.
+        # Frueher nur Inspire an/aus ("hands"), dann "hand_profile" -> beides lesen.
+        self._customs = list_hand_profiles()                  # [(ordner, titel)]
+        hp = st.get("hand_profile") or ("inspire" if st.get("hands", True) else "rubber")
+        names = [n for n, _ in self._customs]
+        if hp in ("rubber", "inspire"):
+            kind = hp
+        elif hp in names:
+            kind = "custom"
+        else:
+            kind = "inspire"
+        self.v_hand_kind = tk.StringVar(value=kind)
+        last_custom = hp if hp in names else st.get("hand_custom", "")
+        titles = dict(self._customs)
+        self.v_hand_custom = tk.StringVar(
+            value=titles.get(last_custom) or (self._customs[0][1] if self._customs else ""))
         self.v_nav = tk.BooleanVar(value=st.get("nav", False))
         self.v_ps4 = tk.BooleanVar(value=st.get("ps4", False))
         self.v_rviz = tk.BooleanVar(value=st.get("rviz", False))
@@ -811,10 +855,35 @@ class SimFrame(tk.Frame):
         hint(s, "Stehen ist bei allen gleich (Füße bleiben stehen, Schritte nur beim "
                 "Kippen). Vergleich: docs/30-T-Stehen-und-Gehen.md, Abschnitt „Gangbild“.")
 
-        # 3) Ausstattung
+        # 3) Haende: Rubber / Inspire / Custom (dann Profil + Bearbeitungstool)
+        s = section(b, "Hände")
+        choice_rows(s, self.v_hand_kind, HAND_KIND_CHOICES, width=20)
+        self._custom_slot = slot(s)
+        self._custom_row = tk.Frame(self._custom_slot, bg=CARD)
+        row = tk.Frame(self._custom_row, bg=CARD)
+        row.pack(fill="x", pady=(4, 0))
+        tk.Label(row, text="Custom Hand:", bg=CARD, fg=FG, width=14,
+                 anchor="w").pack(side="left")
+        ttk.Combobox(row, textvariable=self.v_hand_custom,
+                     values=[t for _, t in self._customs], state="readonly",
+                     width=30).pack(side="left")
+        self._edit_btn = tk.Button(row, text="Bearbeiten …", command=self._edit_hand,
+                                   bg=CARD, fg=ACCENT, relief="groove")
+        self._edit_btn.pack(side="left", padx=8)
+        hint(self._custom_row,
+             "Bearbeiten öffnet das Bearbeitungstool: MuJoCo-Ansicht + Schieber für Versatz "
+             "und Drehung, Speichern schreibt hands/<profil>/hand.yaml. Neue Hände: Ordner "
+             "unter unitree_mujoco/unitree_robots/g1/hands/ (Anleitung docs/25-A-Eigene-Haende.md)."
+             if self._customs else
+             "Noch keine eigenen Hände: Ordner mit hand.yaml + STL unter "
+             "unitree_mujoco/unitree_robots/g1/hands/ anlegen (docs/25-A-Eigene-Haende.md).")
+        if not self._customs:
+            set_row_state(self._custom_row, False)
+        self.v_hand_kind.trace_add("write", lambda *_: self._sync_hands())
+        self._sync_hands()
+
+        # 4) Ausstattung
         s = section(b, "Ausstattung")
-        toggle_row(s, "Inspire-Hände", self.v_hands,
-                   "Finger steuerbar, Kraftsensoren; Steuerung in der Demo-GUI (Greifen → Hände)")
         toggle_row(s, "Navigation", self.v_nav,
                    "Planer + Stationen / AUTO NAV in der Demo-GUI")
         toggle_row(s, "PS4-Controller", self.v_ps4,
@@ -823,13 +892,38 @@ class SimFrame(tk.Frame):
                                     "Zusatzfenster mit TF/Markern; MuJoCo-Fenster kommt immer")
         self.v_nav.trace_add("write", lambda *_: self._sync())
 
-        # 4) Erweitert
+        # 5) Erweitert
         s = collapsible(b, "Erweitert")
         field_row(s, "Sim-Tempo (1.0 = Echtzeit)", self.v_rt, width=8)
         hint(s, "Kleiner als 1.0 = Zeitlupe (Obergrenze; langsame PCs laufen ohnehin langsamer).")
         toggle_row(s, "Docker-Images neu bauen", self.v_rebuild,
                    "nur nach Änderungen an Dockerfiles/Abhängigkeiten")
         self._sync()
+
+    def _custom_name(self) -> str:
+        """Ordnername des in der Liste gewaehlten Custom-Profils ('' wenn keins)."""
+        title = self.v_hand_custom.get()
+        return next((n for n, t in self._customs if t == title), "")
+
+    def _hand_profile(self) -> str:
+        """Wert fuer G1_HANDS: rubber | inspire | <custom-profil>."""
+        kind = self.v_hand_kind.get()
+        if kind == "custom":
+            return self._custom_name() or "rubber"
+        return kind
+
+    def _sync_hands(self) -> None:
+        show_row(self._custom_row, self.v_hand_kind.get() == "custom")
+
+    def _edit_hand(self) -> None:
+        name = self._custom_name()
+        if not name:
+            return
+        self.app.start_process(f"Hand bearbeiten — {self.v_hand_custom.get()}",
+                               ["bash", str(HAND_TOOL_SH), "adjust", name],
+                               cwd=HAND_TOOL_SH.parent, env=os.environ.copy(),
+                               stop_note="Schließt das Bearbeitungstool (nicht "
+                                         "Gespeichertes geht verloren).")
 
     def _sync(self) -> None:
         # Navigation braucht RViz (Karte/Ziel-Werkzeug leben dort) -> erzwungen;
@@ -853,10 +947,17 @@ class SimFrame(tk.Frame):
             return
         env_name = self.v_env.get()
         env_name = "" if env_name == self.DEFAULT_ENV else env_name
-        hands = self.v_hands.get()
+        if self.v_hand_kind.get() == "custom" and not self._custom_name():
+            messagebox.showerror("Keine Custom Hand",
+                                 "Es gibt noch keine eigenen Hände (Ordner unter "
+                                 "unitree_mujoco/unitree_robots/g1/hands/).", parent=self)
+            return
+        hand_profile = self._hand_profile()
+        hands = hand_profile == "inspire"
         save_settings("sim", {
             "env": env_name, "walk_policy": self.v_policy.get(),
-            "hands": hands, "nav": self.v_nav.get(),
+            "hands": hands, "hand_profile": hand_profile,
+            "hand_custom": self._custom_name(), "nav": self.v_nav.get(),
             "rviz": self.v_rviz.get() if self._rviz_own is None else self._rviz_own,
             "rt": rt, "ps4": self.v_ps4.get(),
         })
@@ -866,6 +967,7 @@ class SimFrame(tk.Frame):
         env["G1_ENV"] = env_name
         env["G1_WALK_POLICY"] = self.v_policy.get()
         env["G1_INSPIRE_HANDS"] = "1" if hands else "0"
+        env["G1_HANDS"] = hand_profile
         env["G1_ENABLE_NAV"] = "1" if self.v_nav.get() else "0"
         env["G1_PS4_ARMS"] = "1" if self.v_ps4.get() else "0"
         # Handy-Zugang gehoert immer zur Demo-GUI; Bluetooth startet erst beim Klick

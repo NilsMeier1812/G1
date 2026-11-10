@@ -16,6 +16,7 @@ from launch.actions import IncludeLaunchDescription
 import os
 
 from g1pilot.navigation.walk_policy import policy_needs_arm_pose
+from g1pilot.utils.hand_profile import inspire_active
 
 def generate_launch_description():
     pkg_share = FindPackageShare('g1pilot').find('g1pilot')
@@ -33,7 +34,9 @@ def generate_launch_description():
     #  Bridge (HTML-GUIs + DDS rt/inspire/cmd|state, backend='mujoco'). robot_state
     #  gibt die Finger dann an die Bridge ab (publish_hand_joints=false), sonst gaebe
     #  es zwei /joint_states-Quellen fuer dieselben Gelenke.
-    inspire_hands = os.environ.get('G1_INSPIRE_HANDS', '0').strip().lower() in ('1', 'true', 'yes', 'on')
+    #  G1_HANDS (inspire | rubber | eigenes Profil, z. B. haken) gewinnt vor
+    #  G1_INSPIRE_HANDS; eigene Profile sind starr -> keine Bridge, Finger aus.
+    inspire_hands = inspire_active()
 
     #  G1_ENABLE_NAV : "1"/"0" — den g1pilot-Nav-Stack (dijkstra_planner + nav2point)
     #  in der Sim mitstarten. Ersetzt die auf real fehlenden Bausteine durch Sim-Glue:

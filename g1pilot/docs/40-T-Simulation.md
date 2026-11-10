@@ -20,7 +20,7 @@ laufen als UDP über Loopback.
 | Datei | Inhalt |
 |---|---|
 | `unitree_mujoco.py` | Hauptschleife: Physik (1 kHz), Viewer (50 fps), Lockstep, startet die Listener |
-| `config.py` | Szene (`G1_ENV`, `G1_INSPIRE_HANDS`), Zeitschritt, Lockstep, Basis-Halten, Schubs, Ports |
+| `config.py` | Szene (`G1_ENV`, `G1_HANDS`, `G1_INSPIRE_HANDS`), Zeitschritt, Lockstep, Basis-Halten, Schubs, Ports |
 | `unitree_sdk2py_bridge.py` | `rt/lowstate` publizieren, `rt/lowcmd` + `rt/arm_sdk` mischen (Bridge-Merge, [30-T-Stehen-und-Gehen.md](30-T-Stehen-und-Gehen.md#bridge-merge-sim)) |
 | `hold_base.py` | Basis halten: `weld` / `teleport` / `off` (`HOLD_BASE_MODE`) |
 | `push_listener.py` | Schubs per UDP |

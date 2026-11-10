@@ -46,6 +46,7 @@ G1_ESTOP_DAMP_LEGS=1 G1_MAX_VX=0.3 make real ROBOT_INTERFACE=enp3s0
 | Variable | Default | Wirkung | Doku |
 |---|---|---|---|
 | `G1_INSPIRE_HANDS` | `0` (Startmenü: an) | Inspire-Hände (Sim-Modell bzw. Modbus real) | [22-A](22-A-Inspire-Haende.md) |
+| `G1_HANDS` | leer (= über `G1_INSPIRE_HANDS`) | Nur Sim: Hand-Profil `inspire`, `rubber` oder eigenes Profil aus `unitree_robots/g1/hands/` (z. B. `haken`); gewinnt vor `G1_INSPIRE_HANDS`. Real wirkungslos | [25-A](25-A-Eigene-Haende.md) |
 | `G1_HAND_LEFT_HOST`, `G1_HAND_RIGHT_HOST` | `192.168.123.210`, `.211` | IP der Hände | [22-A](22-A-Inspire-Haende.md) |
 | `G1_HAND_PORT` | `6000` | Modbus-TCP-Port | [22-T](22-T-Inspire-Haende.md) |
 

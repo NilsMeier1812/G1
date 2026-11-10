@@ -230,13 +230,61 @@ else
   ask_menu "1) Welche Umgebung laden?" 1 "${G1_ENV:-}" "${_env_menu[@]}"
   if [ "$REPLY_VALUE" = "__default__" ]; then G1_ENV=""; else G1_ENV="$REPLY_VALUE"; fi
 
-  # ── 3) Inspire-FTP-Haende ─────────────────────────────────────────────
-  #   Master-Schalter: waehlt im MuJoCo das Inspire-Finger-Modell UND startet die
-  #   Hand-Bridge (Finger steuerbar, Kraft/Taktil gemessen).
-  ask_menu "3) Inspire-Haende? (Finger steuerbar + Kraftsensoren)" 1 "${G1_INSPIRE_HANDS:-}" \
-    "Ja   — Inspire-Modell + Hand-Bridge|1" \
-    "Nein — starre Haende (Rubber-Hand-Modell)|0"
-  export G1_INSPIRE_HANDS="$REPLY_VALUE"
+  # ── 3) Haende (Hand-Profil G1_HANDS) ──────────────────────────────────
+  #   inspire = Inspire-Finger-Modell + Hand-Bridge (Finger steuerbar, Kraft/Taktil),
+  #   rubber  = starre Standard-Hand, sonst eigene starre Werkzeuge aus
+  #   unitree_mujoco/unitree_robots/g1/hands/<profil>/ (z. B. die Box-Haken).
+  #   Ohne G1_HANDS gilt wie frueher G1_INSPIRE_HANDS (1 = inspire, 0 = rubber).
+  _hand_gen=../unitree_mujoco/unitree_robots/g1/tools/gen_hand_profile.py
+  _hands_cur="${G1_HANDS:-}"
+  if [ -z "$_hands_cur" ] && [ -n "${G1_INSPIRE_HANDS:-}" ]; then
+    _hands_cur=$( [ "$G1_INSPIRE_HANDS" = "1" ] && echo inspire || echo rubber )
+  fi
+  case "$_hands_cur" in
+    ""|inspire|rubber) _hand_kind_cur="$_hands_cur" ;;
+    *)                 _hand_kind_cur=custom ;;
+  esac
+  ask_menu "3) Welche Haende?" 2 "$_hand_kind_cur" \
+    "Rubber Haende  — starre Standard-Hand|rubber" \
+    "Inspire Haende — Finger steuerbar + Kraftsensoren (Hand-Bridge)|inspire" \
+    "Custom Haende  — eigene starre Haende (hands/<profil>, z. B. Box-Haken)|custom"
+  export G1_HANDS="$REPLY_VALUE"
+  if [ "$G1_HANDS" = "custom" ]; then
+    _hand_menu=()
+    while IFS='|' read -r _hp _hn; do
+      [ -n "$_hp" ] && _hand_menu+=("${_hn} (hands/${_hp})|${_hp}")
+    done < <(python3 "$_hand_gen" --list 2>/dev/null)
+    if [ "${#_hand_menu[@]}" -eq 0 ]; then
+      echo -e "${Y}[start] Keine Custom Haende unter unitree_mujoco/unitree_robots/g1/hands/ -> Rubber.${R}"
+      export G1_HANDS=rubber
+    else
+      _custom_cur=""
+      [ "$_hand_kind_cur" = "custom" ] && _custom_cur="$_hands_cur"
+      ask_menu "3a) Welche Custom Hand?" 1 "$_custom_cur" "${_hand_menu[@]}"
+      export G1_HANDS="$REPLY_VALUE"
+      ask_menu "3b) Custom Hand vorher im Bearbeitungstool einpassen?" 1 "" \
+        "Nein — so starten|0" \
+        "Ja   — Bearbeitungstool oeffnen (MuJoCo + Schieber), danach geht es weiter|1"
+      if [ "$REPLY_VALUE" = "1" ]; then
+        bash ../unitree_mujoco/unitree_robots/g1/tools/hand_tool.sh adjust "$G1_HANDS" \
+          || echo -e "${Y}[start] Bearbeitungstool beendet mit Fehler -> starte trotzdem.${R}"
+      fi
+    fi
+  fi
+  if [ "$G1_HANDS" = "inspire" ]; then export G1_INSPIRE_HANDS=1; else export G1_INSPIRE_HANDS=0; fi
+  # Eigenes Profil: Modell aktuell zu hand.yaml/STL? Sonst jetzt neu erzeugen.
+  case "$G1_HANDS" in
+    inspire|rubber) ;;
+    *)
+      if ! python3 "$_hand_gen" --check "$G1_HANDS" >/dev/null 2>&1; then
+        echo -e "${Y}[start] Hand-Profil '${G1_HANDS}' veraltet oder fehlt -> erzeuge neu ...${R}"
+        if ! python3 "$_hand_gen" "$G1_HANDS"; then
+          echo -e "${Y}[start] Hand-Profil '${G1_HANDS}' nicht erzeugbar -> starte mit Rubber-Hand.${R}"
+          export G1_HANDS=rubber
+        fi
+      fi
+      ;;
+  esac
 
   # ── 3c) PS4-Controller fuer den Oberkoerper (Arme + Haende, kein Laufen) ─
   #   Siehe docs/11-A-Controller.md. Braucht /dev/input auf dem Host.
@@ -276,7 +324,8 @@ else
   # ── Umgebung erzeugen (braucht G1_INSPIRE_HANDS, darum erst hier) ───────
   if [ -n "$G1_ENV" ]; then
     if ! python3 ../unitree_mujoco/scene_editor/build_env_scene.py \
-           --env "$_scenes_dir/${G1_ENV}.xml" --inspire "${G1_INSPIRE_HANDS:-0}" >/dev/null; then
+           --env "$_scenes_dir/${G1_ENV}.xml" --inspire "${G1_INSPIRE_HANDS:-0}" \
+           --hands "${G1_HANDS:-}" >/dev/null; then
       echo -e "${Y}[start] Umgebung '${G1_ENV}' konnte nicht erzeugt werden -> Standard.${R}"
       G1_ENV=""
     fi
@@ -299,8 +348,12 @@ else
   _env_lbl=$( [ -n "${G1_ENV}" ] && echo "${G1_ENV} (scene_env_${G1_ENV}.xml)" || echo "Standard (scene.xml)" )
   echo -e "   Umgebung       : ${G}G1_ENV=${G1_ENV:-<default>}${R} ${DIM}(${_env_lbl})${R}"
   echo -e "   RViz           : ${G}USE_RVIZ=${USE_RVIZ}${R}"
-  _hands_lbl=$( [ "${G1_INSPIRE_HANDS}" = "1" ] && echo "Inspire-FTP" || echo "Rubber-Hand" )
-  echo -e "   Haende         : ${G}G1_INSPIRE_HANDS=${G1_INSPIRE_HANDS}${R} ${DIM}(${_hands_lbl})${R}"
+  case "${G1_HANDS}" in
+    inspire) _hands_lbl="Inspire-FTP" ;;
+    rubber)  _hands_lbl="Rubber-Hand" ;;
+    *)       _hands_lbl="eigenes Profil hands/${G1_HANDS}" ;;
+  esac
+  echo -e "   Haende         : ${G}G1_HANDS=${G1_HANDS}${R} ${DIM}(${_hands_lbl})${R}"
   echo -e "   Lauf-Policy    : ${G}G1_WALK_POLICY=${G1_WALK_POLICY}${R}"
   echo -e "   Sim-Tempo      : ${G}SIM_REALTIME_FACTOR=${SIM_REALTIME_FACTOR}${R} ${DIM}(Lockstep, gedeckelt)${R}"
   _nav_lbl=$( [ "${G1_ENABLE_NAV}" = "1" ] && echo "an (dijkstra + nav2point + Sim-Glue)" || echo "aus" )

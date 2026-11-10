@@ -43,6 +43,9 @@ services:
       - SIM_LOCKSTEP=${SIM_LOCKSTEP:-1}
       # Inspire-FTP-Haende laden (1) statt Rubber-Hand. config.py waehlt die Scene.
       - G1_INSPIRE_HANDS=${G1_INSPIRE_HANDS:-0}
+      # Hand-Profil (inspire | rubber | eigenes Profil aus unitree_robots/g1/hands/,
+      # z. B. haken). Gewinnt vor G1_INSPIRE_HANDS; config.py waehlt die Scene.
+      - G1_HANDS=${G1_HANDS:-}
       # Diagnose: 1 = loco_sim loggt alle ~2 s Regeltakt/Neigung/Kommando (sonst nur bei Auffaelligkeit).
       - G1_LOCO_DEBUG=${G1_LOCO_DEBUG:-0}
       # Umgebung: G1 bleibt gleich, nur die Welt wechselt. Leer/"default" =
@@ -100,6 +103,9 @@ services:
       # Inspire-Haende: bringup_sim.launch.py startet dann inspire_hand und setzt
       # robot_state publish_hand_joints:=false (sonst doppelte Finger-/joint_states).
       - G1_INSPIRE_HANDS=${G1_INSPIRE_HANDS:-0}
+      # Hand-Profil (nur Sim): eigenes URDF fuer IK/Planer/RViz, z. B. haken.
+      # Der Real-Service bekommt G1_HANDS bewusst NICHT (bleibt Inspire-URDF).
+      - G1_HANDS=${G1_HANDS:-}
       # Bezug der Controller-/GUI-Jogs (command | start | tf), siehe Real-Service.
       - G1_JOG_REFERENCE=${G1_JOG_REFERENCE:-command}
       # Navigation (g1pilot-Ansatz) in der Sim mitstarten: dijkstra_planner +

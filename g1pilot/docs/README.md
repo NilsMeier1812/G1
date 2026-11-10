@@ -58,6 +58,7 @@ jedem Umbenennen `python3 tools/check_doc_links.py` laufen lassen
 | Inspire-Hände | [22-A-Inspire-Haende.md](22-A-Inspire-Haende.md) | [22-T-Inspire-Haende.md](22-T-Inspire-Haende.md) |
 | Posen und Abläufe | [23-A-Posen-und-Ablaeufe.md](23-A-Posen-und-Ablaeufe.md) | [23-T-Posen-und-Ablaeufe.md](23-T-Posen-und-Ablaeufe.md) |
 | Hüftdrehung | [24-A-Hueftdrehung.md](24-A-Hueftdrehung.md) | [24-T-Hueftdrehung.md](24-T-Hueftdrehung.md) |
+| Eigene Hände (Sim) | [25-A-Eigene-Haende.md](25-A-Eigene-Haende.md) | [25-T-Eigene-Haende.md](25-T-Eigene-Haende.md) |
 
 ## 3 · Fortbewegung
 
