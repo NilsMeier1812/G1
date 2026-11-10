@@ -9,9 +9,14 @@ Gilt **nur für die Simulation**. Am echten Roboter bleibt alles wie bisher
 
 ## Hände auswählen
 
-- **Start-GUI:** Simulation → Abschnitt **Hände** → *Inspire*, *Rubber* oder ein
-  eigenes Profil (z. B. *Box-Haken (gedruckt)*).
-- **Startmenü im Terminal** (`./start.sh`): Frage *3) Welche Hände?*
+- **Start-GUI:** Simulation → Abschnitt **Hände** → *Rubber Hände*, *Inspire Hände*
+  oder *Custom Hände*. Bei *Custom Hände* erscheint darunter die Liste aller
+  eigenen Profile (Ordner unter `hands/`, z. B. *Box-Haken (gedruckt)*) und der
+  Knopf **Bearbeiten …**, der das Bearbeitungstool für das gewählte Profil öffnet
+  (siehe [Hand einpassen](#hand-einpassen-schieber-live)).
+- **Startmenü im Terminal** (`./start.sh`): Frage *3) Welche Hände?* (Rubber /
+  Inspire / Custom), bei Custom danach *3a)* welches Profil und *3b)* ob vorher
+  das Bearbeitungstool aufgehen soll.
 - **Direkt:** `G1_HANDS=haken ./start.sh --yes`
 
 Mit einem eigenen Profil gibt es keine Finger und keine Hand-Bridge (wie bei

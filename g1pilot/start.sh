@@ -240,13 +240,37 @@ else
   if [ -z "$_hands_cur" ] && [ -n "${G1_INSPIRE_HANDS:-}" ]; then
     _hands_cur=$( [ "$G1_INSPIRE_HANDS" = "1" ] && echo inspire || echo rubber )
   fi
-  _hand_menu=("Inspire — Finger steuerbar + Kraftsensoren (Hand-Bridge)|inspire" \
-              "Rubber  — starre Standard-Hand|rubber")
-  while IFS='|' read -r _hp _hn; do
-    [ -n "$_hp" ] && _hand_menu+=("${_hn} — eigenes Hand-Profil (hands/${_hp})|${_hp}")
-  done < <(python3 "$_hand_gen" --list 2>/dev/null)
-  ask_menu "3) Welche Haende?" 1 "$_hands_cur" "${_hand_menu[@]}"
+  case "$_hands_cur" in
+    ""|inspire|rubber) _hand_kind_cur="$_hands_cur" ;;
+    *)                 _hand_kind_cur=custom ;;
+  esac
+  ask_menu "3) Welche Haende?" 2 "$_hand_kind_cur" \
+    "Rubber Haende  — starre Standard-Hand|rubber" \
+    "Inspire Haende — Finger steuerbar + Kraftsensoren (Hand-Bridge)|inspire" \
+    "Custom Haende  — eigene starre Haende (hands/<profil>, z. B. Box-Haken)|custom"
   export G1_HANDS="$REPLY_VALUE"
+  if [ "$G1_HANDS" = "custom" ]; then
+    _hand_menu=()
+    while IFS='|' read -r _hp _hn; do
+      [ -n "$_hp" ] && _hand_menu+=("${_hn} (hands/${_hp})|${_hp}")
+    done < <(python3 "$_hand_gen" --list 2>/dev/null)
+    if [ "${#_hand_menu[@]}" -eq 0 ]; then
+      echo -e "${Y}[start] Keine Custom Haende unter unitree_mujoco/unitree_robots/g1/hands/ -> Rubber.${R}"
+      export G1_HANDS=rubber
+    else
+      _custom_cur=""
+      [ "$_hand_kind_cur" = "custom" ] && _custom_cur="$_hands_cur"
+      ask_menu "3a) Welche Custom Hand?" 1 "$_custom_cur" "${_hand_menu[@]}"
+      export G1_HANDS="$REPLY_VALUE"
+      ask_menu "3b) Custom Hand vorher im Bearbeitungstool einpassen?" 1 "" \
+        "Nein — so starten|0" \
+        "Ja   — Bearbeitungstool oeffnen (MuJoCo + Schieber), danach geht es weiter|1"
+      if [ "$REPLY_VALUE" = "1" ]; then
+        bash ../unitree_mujoco/unitree_robots/g1/tools/hand_tool.sh adjust "$G1_HANDS" \
+          || echo -e "${Y}[start] Bearbeitungstool beendet mit Fehler -> starte trotzdem.${R}"
+      fi
+    fi
+  fi
   if [ "$G1_HANDS" = "inspire" ]; then export G1_INSPIRE_HANDS=1; else export G1_INSPIRE_HANDS=0; fi
   # Eigenes Profil: Modell aktuell zu hand.yaml/STL? Sonst jetzt neu erzeugen.
   case "$G1_HANDS" in
