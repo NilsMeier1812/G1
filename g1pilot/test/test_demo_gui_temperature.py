@@ -58,6 +58,30 @@ def test_gui_real_shows_temperatures(monkeypatch):
         _close(node, g)
 
 
+def test_gui_real_shows_battery(monkeypatch):
+    from g1pilot.utils import g1_battery as g1b
+    from std_msgs.msg import String
+    app, node, g = _gui(monkeypatch, sim=False)
+    try:
+        p = g.temp_panel
+        assert "Akku" in p.batt_tile.text() and "keine Daten" in p.batt_tile.text()
+        bms = NS(soc=12, soh=95, bmsvoltage=[44100, 0, 0], current=1500,
+                 cell_vol=[3390] * 13 + [0] * 27, temperature=[30] + [0] * 11, cycle=7)
+        node._battery(String(data=g1b.build_payload(bms)))
+        p.refresh()
+        assert "12 %" in p.batt_tile.text() and "44.1 V" in p.batt_tile.text()
+        assert g1t.LEVEL_COLOR["crit"] in p.batt_tile.styleSheet()
+        assert "Ladezyklen: 7" in p.batt_tile.toolTip()
+        assert "keine Daten" in p.tiles["max"].text(), "Temperaturen unabhaengig vom Akku"
+        node._battery(String(data="kaputt"))                    # Muell aendert nichts
+        assert node.battery["soc"] == 12
+        node.battery_t = time.monotonic() - 60                  # veraltet
+        p.refresh()
+        assert "keine Daten" in p.batt_tile.text()
+    finally:
+        _close(node, g)
+
+
 def test_gui_sim_hides_temperatures(monkeypatch):
     app, node, g = _gui(monkeypatch, sim=True)
     try:

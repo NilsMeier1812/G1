@@ -84,6 +84,7 @@ TOPICS = {
     "rt/lowstate": ("LowState_", ["mujoco:sim", "g1:real"],
                     ["robot_state", "arm_controller", "loco_sim:sim",
                      "sim_localization:sim", "loco_client:real"], "dds"),
+    "rt/lf/bmsstate": ("BmsState_ (Akku)", ["g1:real"], ["robot_state"], "dds"),
     "rt/lowcmd": ("LowCmd_ (Beine)", ["loco_sim:sim"], ["mujoco:sim"], "dds"),
     "rt/arm_sdk": ("LowCmd_ (Arme, Taille)", ["arm_controller"],
                    ["mujoco:sim", "g1:real"], "dds"),
@@ -176,6 +177,7 @@ TOPICS = {
     "/g1pilot/imu": ("Imu", ["robot_state"], [], "ros"),
     "/g1pilot/motor_state": ("MotorStateList", ["robot_state"], [], "ros"),
     "/g1pilot/temperatures": ("String (JSON)", ["robot_state"], ["gui"], "ros"),
+    "/g1pilot/battery": ("String (JSON)", ["robot_state"], ["gui"], "ros"),
     # ── Szene (Sim) ──
     "/scene_markers": ("MarkerArray", ["scene_bridge:sim"],
                        ["arm_controller", "create_map:sim", "gui"], "ros"),
@@ -321,7 +323,8 @@ VIEWS = {
         "/g1pilot/hand_status", "rt/arm_sdk", "rt/inspire/cmd", "rt/inspire/state"]),
     "zustand": ("Roboterzustand und Bedien-Rueckmeldung", [
         "rt/lowstate", "/joint_states", "/tf", "/g1pilot/imu",
-        "/g1pilot/motor_state", "/g1pilot/temperatures", "/g1pilot/arms/state",
+        "/g1pilot/motor_state", "/g1pilot/temperatures", "/g1pilot/battery",
+        "rt/lf/bmsstate", "/g1pilot/arms/state",
         "/g1pilot/ps4/feedback", "/g1pilot/ps4/device", "/g1pilot/ps4/status",
         "/g1pilot/ps4/walk_status", "/g1pilot/ps4/markers",
         "/g1pilot/teleop_state", "/g1pilot/sequence/next",

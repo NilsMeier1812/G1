@@ -3,7 +3,7 @@
 Quelle (unitree_hg LowState_): je Motor ``temperature[2]`` (zwei Sensoren,
 int16 in Grad C) und ``vol``, dazu ``imu_state.temperature``. Der G1 hat
 29 Koerper-Motoren -> 58 Motor-Sensoren + 1 IMU = 59 Messwerte. (Die Inspire-
-Haende, BMS und Mainboard haben eigene Topics und sind hier nicht enthalten.)
+Haende und Mainboard haben eigene Topics; der Akku (BMS) steht in g1_battery.py.)
 
 Kein ROS, kein Unitree-SDK, kein Qt -> im Testcontainer direkt testbar.
 robot_state.py baut daraus die JSON-Nachricht ``/g1pilot/temperatures``,

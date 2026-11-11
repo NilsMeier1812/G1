@@ -61,6 +61,7 @@ from g1pilot.navigation import scene_markers as sm
 from g1pilot.utils.window_style import DarkStyle, set_app_identity
 from g1pilot.utils.common import is_sim_mode
 from g1pilot.utils import g1_temperature as g1t
+from g1pilot.utils import g1_battery as g1b
 from g1pilot.utils import push_charge
 from g1pilot.utils.push_charge import PushCharger
 from g1pilot.teleoperation.sim_autostart import SimAutoStart
@@ -224,6 +225,10 @@ class DemoNode(GuiNode):
         self.temps = None
         self.temps_t = None
         self.create_subscription(String, "/g1pilot/temperatures", self._temperatures, 10)
+        # Akku des echten G1 (robot_state aus rt/lf/bmsstate, reiner Lesepfad).
+        self.battery = None
+        self.battery_t = None
+        self.create_subscription(String, g1b.TOPIC_ROS, self._battery, 10)
         # Info-Zeile (nur Anzeige): Onboard-Modus des echten G1 (loco_client)
         # und Auswahl/Tempo des PS4-Controllers (ps4_arm_teleop). Beide latched.
         self.onboard = self.onboard_t = None
@@ -389,6 +394,11 @@ class DemoNode(GuiNode):
         if data is not None:
             self.temps, self.temps_t = data, time.monotonic()
 
+    def _battery(self, msg: String):
+        data = g1b.parse_payload(msg.data)
+        if data is not None:
+            self.battery, self.battery_t = data, time.monotonic()
+
     def _hand_status(self, msg: String):
         try:
             data = json.loads(msg.data)
@@ -416,14 +426,16 @@ class DemoNode(GuiNode):
 
 # ── Bereich 1: Modus-Kachel ──────────────────────────────────────────────
 class TempPanel(QFrame):
-    """Real: Temperaturen des G1. Links der heisseste Motor, daneben je Gruppe
-    (Bein L/R, Taille, Arm L/R) das Maximum, farbig nach Schwelle. Klick =
-    Tabelle aller 29 Motoren (beide Sensoren) + IMU."""
+    """Real: Akku und Temperaturen des G1. Ganz links der Akku-Ladestand
+    (rt/lf/bmsstate), dann der heisseste Motor, daneben je Gruppe (Bein L/R,
+    Taille, Arm L/R) das Maximum, farbig nach Schwelle. Klick = Tabelle aller
+    29 Motoren (beide Sensoren) + IMU."""
 
     def __init__(self, node):
         super().__init__()
         self.node = node
         self.warn, self.crit = g1t.thresholds()
+        self.batt_warn, self.batt_crit = g1b.thresholds()
         self.setObjectName("temp")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setStyleSheet("QFrame#temp { background:#1b1b1b; border:1px solid #333;"
@@ -431,6 +443,16 @@ class TempPanel(QFrame):
         lay = QHBoxLayout(self)
         lay.setContentsMargins(10, 6, 10, 6)
         lay.setSpacing(8)
+        self.batt_tile = QLabel()
+        self.batt_tile.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.batt_tile.setMinimumWidth(84)
+        self.batt_tile.setFixedHeight(56)
+        lay.addWidget(self.batt_tile)
+        self._paint(self.batt_tile, "Akku", "–", "", "none")
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.VLine)
+        sep.setStyleSheet("color:#333;")
+        lay.addWidget(sep)
         cap = QLabel("TEMP.\nMOTOREN")
         cap.setStyleSheet("color:#777; font-size:11px; font-weight:700;")
         lay.addWidget(cap)
@@ -457,7 +479,22 @@ class TempPanel(QFrame):
         tile.setStyleSheet(f"background:{g1t.LEVEL_COLOR[lvl]}; color:white;"
                            " border-radius:6px;")
 
+    def refresh_battery(self):
+        data = self.node.battery
+        if data is None or g1b.is_stale(self.node.battery_t, time.monotonic()):
+            self._paint(self.batt_tile, "Akku", "–", "keine Daten", "none")
+            self.batt_tile.setToolTip(f"Keine Akkudaten vom Roboter "
+                                      f"(robot_state, {g1b.TOPIC_DDS}).")
+            return
+        soc = data["soc"]
+        self._paint(self.batt_tile, "Akku", f"{soc:.0f} %", g1b.subtitle(data),
+                    g1b.level(soc, self.batt_warn, self.batt_crit))
+        self.batt_tile.setToolTip(
+            g1b.details(data) + f"\n\nGelb ab {self.batt_warn:.0f} %, rot ab "
+            f"{self.batt_crit:.0f} % (Annahme, anpassbar: G1_BATT_WARN / G1_BATT_CRIT).")
+
     def refresh(self):
+        self.refresh_battery()
         data = self.node.temps
         if data is None or g1t.is_stale(self.node.temps_t, time.monotonic()):
             for key, tile in self.tiles.items():

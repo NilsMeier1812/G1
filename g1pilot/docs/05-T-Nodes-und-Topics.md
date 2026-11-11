@@ -63,7 +63,7 @@ die Pose aus der MuJoCo-Ground-Truth.
 
 ### Roboterzustand und Bedien-Rückmeldung
 
-`rt/lowstate` → `/joint_states`, IMU, Temperaturen; Statusmeldungen
+`rt/lowstate` → `/joint_states`, IMU, Temperaturen; `rt/lf/bmsstate` → Akku; Statusmeldungen
 zwischen Controller und Demo-GUI (gemeinsamer Zustand, Abläufe).
 
 ![Roboterzustand und Bedien-Rückmeldung](images/ros_graph_zustand.svg)

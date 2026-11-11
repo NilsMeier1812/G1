@@ -36,7 +36,7 @@ case "${1:-}" in
                  test_demo_gui_controller_sync test_arm_mirror test_waist_yaw test_demo_gui_waist" ;;
   gui)        T="test_demo_gui_controller_sync test_demo_gui_fullscreen test_demo_gui_ground_precheck
                  test_demo_gui_jog_hold test_demo_gui_real_quit test_demo_gui_temperature
-                 test_gui_external_estop test_status_line test_g1_temperature test_shared_state
+                 test_gui_external_estop test_status_line test_g1_temperature test_g1_battery test_shared_state
                  test_window_icons test_phone_demo_gui test_demo_gui_waist
                  test_sequences test_demo_gui_sequences" ;;
   haende)     T="test_inspire_modbus_backend" ;;

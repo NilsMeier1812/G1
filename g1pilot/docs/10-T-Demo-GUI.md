@@ -27,6 +27,7 @@ die Demo-GUI ist seitdem die einzige Bedienoberfläche.
 | `g1pilot/teleoperation/hand_jog.py` | Jog-Rechnung »Hand bewegen« (gemeinsam mit dem Controller) |
 | `g1pilot/teleoperation/phone/link.py` | Anbindung des Handy-Gateways an die GUI-Methoden, siehe [12-T-Handy.md](12-T-Handy.md) |
 | `g1pilot/utils/g1_temperature.py` | Temperaturen aufbereiten (Gruppen, Schwellen, heißester Motor) |
+| `g1pilot/utils/g1_battery.py` | Akku aufbereiten (`rt/lf/bmsstate`: Ladestand, Spannung, Schwellen) |
 | `g1pilot/utils/push_charge.py` | aufladbarer Schubs (Haltedauer → Kraft), gemeinsam mit `loco_sim` |
 | `g1pilot/utils/window_style.py` | dunkles Fenster-Design, Fenster-Icon und `WM_CLASS` |
 | `launch/teleoperation_launcher.launch.py` | startet `demo_gui` |
@@ -50,6 +51,7 @@ die Demo-GUI ist seitdem die einzige Bedienoberfläche.
 | liest | `/g1pilot/arm_command/status`, `/g1pilot/pose_store/save/status` | Ablauf-Schritte, Speichern quittiert |
 | liest | `/g1pilot/onboard_state` | Onboard-Modus des echten G1 (Startleiste, Bodenkontakt) |
 | liest | `/g1pilot/temperatures` | Temperatur-Kacheln (real) |
+| liest | `/g1pilot/battery` | Akku-Kachel (real) |
 | liest | `/g1pilot/nav_status` | AUTO-NAV-Zustand |
 | liest | `/g1pilot/waist/state` | Anzeige Hüfte |
 | liest | `/g1pilot/ps4/status`, `/g1pilot/ps4/walk_status`, `/g1pilot/ps4/device` | Controller-Anzeige |
@@ -78,7 +80,8 @@ Die Watcher starten `./start.sh`, `make sim` und `make real`.
 | `test/test_demo_gui_jog_hold.py` | »Hand bewegen«: Halte-Ziel beim Loslassen |
 | `test/test_demo_gui_real_quit.py` | »Real beenden«: Reihenfolge, Abbruch durch NOT-HALT |
 | `test/test_demo_gui_sequences.py` | Abläufe in der GUI |
-| `test/test_demo_gui_temperature.py`, `test/test_g1_temperature.py` | Temperatur-Kacheln und Aufbereitung |
+| `test/test_demo_gui_temperature.py`, `test/test_g1_temperature.py` | Temperatur- und Akku-Kacheln, Aufbereitung Temperaturen |
+| `test/test_g1_battery.py` | Aufbereitung Akku (Einheiten, Plausibilität, Schwellen) |
 | `test/test_demo_gui_waist.py` | Anzeige Hüfte, Knopf Hüfte Mitte |
 | `test/test_gui_external_estop.py` | NOT-HALT von außen (Controller) |
 | `test/test_status_line.py` | Texte der Info-Zeile |

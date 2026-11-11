@@ -118,6 +118,7 @@ G1_ESTOP_DAMP_LEGS=1 G1_MAX_VX=0.3 make real ROBOT_INTERFACE=enp3s0
 | `G1_DEMO_CATEGORY` | `Demo` | vorgeschlagene Kategorie beim Pose speichern (auch `demo_sequence.py`) | [10-A](10-A-Demo-GUI.md) |
 | `G1_SAFE_POSE` | `Sichere_Pose` | gespeicherte Pose hinter dem Knopf »Sichere Pose« | [10-A](10-A-Demo-GUI.md) |
 | `G1_TEMP_WARN`, `G1_TEMP_CRIT` | `60`, `75` °C | Schwellen der Temperaturanzeige | [10-A](10-A-Demo-GUI.md) |
+| `G1_BATT_WARN`, `G1_BATT_CRIT` | `30`, `15` % | Schwellen der Akkuanzeige (gelb/rot bis zu diesem Ladestand) | [10-A](10-A-Demo-GUI.md) |
 
 Nur in Tests bzw. Testskripten benutzt (nicht für den Betrieb): Namen wie
 `G1_CHROMIUM`, `G1_PHONE_SHOTS`, `G1_TEST_DIR` ([60-A-Tests.md](60-A-Tests.md)).
