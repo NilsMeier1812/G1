@@ -27,7 +27,7 @@ case "${1:-}" in
                  test_phone_gateway test_phone_demo_gui test_waist_yaw test_demo_gui_sequences" ;;
   arm)        T="test_arm_controller_real test_ik_servo_async test_jog_reference_real
                  test_waist_hold test_waist_yaw test_demo_gui_jog_hold test_ps4_arm_teleop test_arm_mirror" ;;
-  planer)     T="test_arm_planner test_arm_controller_real test_hand_profile" ;;
+  planer)     T="test_arm_planner test_arm_controller_real test_hand_profile test_hand_new" ;;
   loco)       T="test_loco_client_real test_loco_client_ps4_walk test_ground_contact test_joy_mux test_waist_yaw
                  test_joystick_legacy test_status_line test_demo_gui_ground_precheck
                  test_demo_gui_temperature test_walk_diag" ;;
@@ -40,7 +40,7 @@ case "${1:-}" in
                  test_window_icons test_phone_demo_gui test_demo_gui_waist
                  test_sequences test_demo_gui_sequences" ;;
   haende)     T="test_inspire_modbus_backend" ;;
-  sim)        T="test_walk_policy test_loco_sim_health test_push_charge test_sim_autostart test_hand_profile" ;;
+  sim)        T="test_walk_policy test_loco_sim_health test_push_charge test_sim_autostart test_hand_profile test_hand_new" ;;
   handy)      T="test_phone_gateway test_phone_demo_gui test_phone_ble_dbus test_phone_protocol_js
                  test_phone_web_e2e" ;;
   schnell)    T=""

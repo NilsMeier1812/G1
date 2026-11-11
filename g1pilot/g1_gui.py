@@ -71,6 +71,7 @@ SCENE_VENV = SCENE_DIR / ".venv" / "bin" / "python"
 # Hand-Profile (eigene starre Haende fuer die Sim, z. B. die Box-Haken)
 HANDS_DIR = REPO_ROOT / "unitree_mujoco" / "unitree_robots" / "g1" / "hands"
 HAND_TOOL_SH = HANDS_DIR.parent / "tools" / "hand_tool.sh"
+NEW_HAND = "➕ Neue Hand anlegen …"          # letzter Eintrag der Custom-Liste
 
 # Dokumente, die aus dem Menue heraus geoeffnet werden koennen. Vollstaendige
 # Uebersicht: docs/README.md. Jedes Thema hat eine Anleitung (Anwender) und
@@ -834,7 +835,7 @@ class SimFrame(tk.Frame):
         last_custom = hp if hp in names else st.get("hand_custom", "")
         titles = dict(self._customs)
         self.v_hand_custom = tk.StringVar(
-            value=titles.get(last_custom) or (self._customs[0][1] if self._customs else ""))
+            value=titles.get(last_custom) or (self._customs[0][1] if self._customs else NEW_HAND))
         self.v_nav = tk.BooleanVar(value=st.get("nav", False))
         self.v_ps4 = tk.BooleanVar(value=st.get("ps4", False))
         self.v_rviz = tk.BooleanVar(value=st.get("rviz", False))
@@ -864,22 +865,21 @@ class SimFrame(tk.Frame):
         row.pack(fill="x", pady=(4, 0))
         tk.Label(row, text="Custom Hand:", bg=CARD, fg=FG, width=14,
                  anchor="w").pack(side="left")
-        ttk.Combobox(row, textvariable=self.v_hand_custom,
-                     values=[t for _, t in self._customs], state="readonly",
-                     width=30).pack(side="left")
+        # Liste beim Aufklappen neu lesen: eine eben angelegte Hand steht gleich drin
+        self._hand_box = ttk.Combobox(row, textvariable=self.v_hand_custom,
+                                      values=self._custom_values(), state="readonly",
+                                      width=30, postcommand=self._refresh_customs)
+        self._hand_box.pack(side="left")
         self._edit_btn = tk.Button(row, text="Bearbeiten …", command=self._edit_hand,
                                    bg=CARD, fg=ACCENT, relief="groove")
         self._edit_btn.pack(side="left", padx=8)
         hint(self._custom_row,
              "Bearbeiten öffnet das Bearbeitungstool: MuJoCo-Ansicht + Schieber für Versatz "
-             "und Drehung, Speichern schreibt hands/<profil>/hand.yaml. Neue Hände: Ordner "
-             "unter unitree_mujoco/unitree_robots/g1/hands/ (Anleitung docs/25-A-Eigene-Haende.md)."
-             if self._customs else
-             "Noch keine eigenen Hände: Ordner mit hand.yaml + STL unter "
-             "unitree_mujoco/unitree_robots/g1/hands/ anlegen (docs/25-A-Eigene-Haende.md).")
-        if not self._customs:
-            set_row_state(self._custom_row, False)
+             "und Drehung, Speichern schreibt hands/<profil>/hand.yaml. »Neue Hand anlegen«: "
+             "3D-Datei (STL, OBJ, …) wählen, das Tool schlägt vor, wie sie am Handgelenk "
+             "sitzt, danach geht es im Bearbeitungstool weiter (docs/25-A-Eigene-Haende.md).")
         self.v_hand_kind.trace_add("write", lambda *_: self._sync_hands())
+        self.v_hand_custom.trace_add("write", lambda *_: self._sync_hands())
         self._sync_hands()
 
         # 4) Ausstattung
@@ -900,6 +900,13 @@ class SimFrame(tk.Frame):
                    "nur nach Änderungen an Dockerfiles/Abhängigkeiten")
         self._sync()
 
+    def _custom_values(self) -> list[str]:
+        return [t for _, t in self._customs] + [NEW_HAND]
+
+    def _refresh_customs(self) -> None:
+        self._customs = list_hand_profiles()
+        self._hand_box.configure(values=self._custom_values())
+
     def _custom_name(self) -> str:
         """Ordnername des in der Liste gewaehlten Custom-Profils ('' wenn keins)."""
         title = self.v_hand_custom.get()
@@ -914,8 +921,16 @@ class SimFrame(tk.Frame):
 
     def _sync_hands(self) -> None:
         show_row(self._custom_row, self.v_hand_kind.get() == "custom")
+        new = self.v_hand_custom.get() == NEW_HAND
+        self._edit_btn.configure(text="Anlegen …" if new else "Bearbeiten …")
 
     def _edit_hand(self) -> None:
+        if self.v_hand_custom.get() == NEW_HAND:
+            self.app.start_process("Neue Hand anlegen", ["bash", str(HAND_TOOL_SH), "new"],
+                                   cwd=HAND_TOOL_SH.parent, env=os.environ.copy(),
+                                   stop_note="Schließt »Neue Hand anlegen« bzw. das "
+                                             "Bearbeitungstool danach.")
+            return
         name = self._custom_name()
         if not name:
             return
@@ -949,8 +964,8 @@ class SimFrame(tk.Frame):
         env_name = "" if env_name == self.DEFAULT_ENV else env_name
         if self.v_hand_kind.get() == "custom" and not self._custom_name():
             messagebox.showerror("Keine Custom Hand",
-                                 "Es gibt noch keine eigenen Hände (Ordner unter "
-                                 "unitree_mujoco/unitree_robots/g1/hands/).", parent=self)
+                                 "Bitte eine eigene Hand auswählen oder erst mit "
+                                 "»Neue Hand anlegen« → »Anlegen …« eine anlegen.", parent=self)
             return
         hand_profile = self._hand_profile()
         hands = hand_profile == "inspire"

@@ -5,6 +5,7 @@
 #   einmalig  unitree_mujoco/scene_editor/setup.sh
 #
 #   ./hand_tool.sh list                 Profile auflisten
+#   ./hand_tool.sh new [datei]          Neue Hand anlegen (Datei waehlen, Montage-Vorschlaege)
 #   ./hand_tool.sh build   <profil>     Modell (MuJoCo + URDF) neu erzeugen
 #   ./hand_tool.sh adjust  <profil>     Einpassen mit Schiebern (live), Speichern -> hand.yaml
 #   ./hand_tool.sh preview <profil>     Vorschau; hand.yaml speichern = neu laden
@@ -40,7 +41,15 @@ case "$cmd" in
       exit 1
     fi
     exec "$PY" hand_adjust.py "$@" ;;
+  new)
+    if ! pick_tk_python; then
+      echo "Kein Python mit tkinter + mujoco + trimesh gefunden." >&2
+      echo "  sudo apt install python3-tk   (Version passend zu ../../../scene_editor/.venv)" >&2
+      echo "  oder ohne Fenster: $PY hand_new.py --create <datei> --name <name>" >&2
+      exit 1
+    fi
+    exec "$PY" hand_new.py "$@" ;;
   preview)  exec "$PY" hand_preview.py "$@" ;;
   snapshot) exec "$PY" hand_preview.py "$1" --snapshot "${2:-hand_${1}_vorschau.png}" ;;
-  *) sed -n '2,14p' "$0"; exit 1 ;;
+  *) sed -n '2,15p' "$0"; exit 1 ;;
 esac
