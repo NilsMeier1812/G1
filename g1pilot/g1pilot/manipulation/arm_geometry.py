@@ -10,8 +10,9 @@ arm_controller. Ersetzt die fruehere Ja/Nein-Pruefung mit fester 3-cm-Marge
   * Jeder Arm (Oberarm ab shoulder_yaw, Ellbogen, Unterarm, Handgelenk, Hand
     inkl. Finger in Neutralstellung) ist durch ~40 Kugeln angenaehert. Die
     Kugeln werden beim Start aus den Kollisions-Meshes der URDF gefittet
-    (k-means auf den Mesh-Vertices, Radius = groesster Abstand eines Vertex
-    zur Kugelmitte -> die Kugel umschliesst ihren Mesh-Anteil).
+    (k-means auf Vertices + abgetasteten Dreiecksflaechen der Meshes, Radius
+    = groesster Abstand eines Punkts zur Kugelmitte -> die Kugeln
+    umschliessen die Mesh-Oberflaeche bis auf ~1 mm, nicht nur die Ecken).
   * Koerper (Torso, Kopf, Becken, Huefte, Knie) ebenfalls als Kugeln; die
     Lage haengt von Beinen/Taille ab und wird je Planung EINMAL gesetzt
     (set_base) -- die Arme bewegen den Koerper nicht.
@@ -54,6 +55,11 @@ BODY_GEOMS = (
 # erreichen (Schulter ~0.3 m + Arm/Hand < 1 m); Rest = Puffer fuer Roboter-
 # bewegung zwischen zwei /scene_markers-Updates.
 REACH_RADIUS = 1.5
+# Kugel-Fit: Flaechen der Kollisions-Meshes werden mit diesem Punktabstand
+# abgetastet (m), der k-means-Fit selbst laeuft auf hoechstens
+# FIT_MAX_POINTS gleichmaessig ausgeduennten Punkten.
+SURFACE_STEP = 0.005
+FIT_MAX_POINTS = 2000
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -71,18 +77,54 @@ def _fps(points, k, rng):
     return points[chosen].copy()
 
 
-def fit_spheres(points, r_max, k_max=24, seed=0):
+def _voxel_first(points, v):
+    """Index des ersten Punkts je Wuerfel der Kantenlaenge v (sortiert)."""
+    k = np.floor((points - points.min(0)) / v).astype(np.int64)
+    m = k.max(0) + 1
+    _, first = np.unique((k[:, 0] * m[1] + k[:, 1]) * m[2] + k[:, 2], return_index=True)
+    return np.sort(first)
+
+
+def _thin(points, n_max):
+    """Duennt eine Punktwolke gleichmaessig auf <= n_max Punkte aus (ein Punkt
+    je Voxel, Voxel wachsen bis es passt). Deterministisch; anders als eine
+    Zufallsauswahl bleibt die Wolke ueberall gleich dicht."""
+    if len(points) <= n_max:
+        return points
+    extent = float(np.max(points.max(0) - points.min(0))) or 1e-3
+    v = extent / n_max ** (1.0 / 3.0)
+    while True:
+        first = _voxel_first(points, v)
+        if len(first) <= n_max:
+            return points[first]
+        v *= 1.15
+
+
+def _assign(points, centers, chunk=50000):
+    """Naechste Kugelmitte je Punkt und Abstand dazu (blockweise, spart RAM)."""
+    lab = np.empty(len(points), dtype=int)
+    dist = np.empty(len(points))
+    for a in range(0, len(points), chunk):
+        d = np.linalg.norm(points[a:a + chunk, None, :] - centers[None], axis=2)
+        lab[a:a + chunk] = np.argmin(d, axis=1)
+        dist[a:a + chunk] = d[np.arange(len(d)), lab[a:a + chunk]]
+    return lab, dist
+
+
+def fit_spheres(points, r_max, k_max=24, seed=0, n_fit=FIT_MAX_POINTS):
     """Kugeln, die die Punktwolke `points` (n,3) UMSCHLIESSEN (jeder Punkt
     liegt in mindestens einer Kugel), mit Radius <= r_max wo moeglich.
     k-means mit FPS-Start; k wird erhoeht, bis der groesste Radius passt.
+    Die k-means-Schritte laufen auf hoechstens n_fit gleichmaessig
+    ausgeduennten Punkten, die Radien aber immer ueber ALLE Punkte (jeder
+    Punkt zaehlt fuer seine naechste Mitte) -- kein Punkt faellt heraus.
     Rueckgabe (centers (k,3), radii (k,))."""
-    pts = np.asarray(points, dtype=float)
+    full = np.asarray(points, dtype=float)
     rng = np.random.default_rng(seed)
-    if len(pts) > 2000:
-        pts = pts[rng.choice(len(pts), 2000, replace=False)]
+    pts = _thin(full, n_fit)
+    mid = _thin(full, 10 * n_fit)     # Radien-Pruefung je k (schneller als full)
     extent = float(np.linalg.norm(pts.max(0) - pts.min(0)))
     k = max(1, int(np.ceil(extent / (2.0 * r_max))))
-    best = None
     while True:
         k_eff = min(k, len(pts))
         centers = _fps(pts, k_eff, rng)
@@ -94,15 +136,17 @@ def fit_spheres(points, r_max, k_max=24, seed=0):
             if np.allclose(new, centers, atol=1e-5):
                 break
             centers = new
-        d = np.linalg.norm(pts[:, None, :] - centers[None], axis=2)
-        lab = np.argmin(d, axis=1)
-        radii = np.array([d[lab == i, i].max() if np.any(lab == i) else 0.0
-                          for i in range(k_eff)])
-        keep = radii > 0.0
-        best = (centers[keep], radii[keep])
+        lab, dist = _assign(mid, centers)
+        radii = np.zeros(k_eff)
+        np.maximum.at(radii, lab, dist)
         if radii.max() <= r_max or k_eff >= k_max or k_eff >= len(pts):
-            return best
+            break
         k += max(1, k // 4)
+    if len(full) > len(mid):
+        lab, dist = _assign(full, centers)
+        np.maximum.at(radii, lab, dist)
+    keep = radii > 0.0
+    return centers[keep], radii[keep]
 
 
 def _cylinder_points(radius, length, n=64):
@@ -113,15 +157,79 @@ def _cylinder_points(radius, length, n=64):
     return np.concatenate([np.column_stack([ring, np.full(n, z)]) for z in zs])
 
 
-def _geometry_points(geom):
-    """Vertices einer coal-Geometrie (Mesh/Convex), Zylinder/Kugel gesampelt."""
+_BARY = {}
+
+
+def _bary_grid(n):
+    """Baryzentrische Gitterpunkte (u, v) eines in n x n Teildreiecke
+    unterteilten Dreiecks (inkl. Ecken und Kanten)."""
+    g = _BARY.get(n)
+    if g is None:
+        u, v = np.meshgrid(np.arange(n + 1), np.arange(n + 1))
+        m = (u + v) <= n
+        g = _BARY[n] = (u[m] / n, v[m] / n)
+    return g
+
+
+def _triangles(g):
+    """Dreiecke (m,3) Vertex-Indizes einer coal-Geometrie oder None.
+    Convex: polygons(i); BVH-Mesh: tri_indices(i)."""
+    for count, getter in (("num_polygons", "polygons"), ("num_tris", "tri_indices")):
+        n, fn = getattr(g, count, None), getattr(g, getter, None)
+        if n is None or fn is None:
+            continue
+        try:
+            n = int(n() if callable(n) else n)
+            tris = []
+            for i in range(n):
+                t = fn(i)
+                if t.size() != 3:
+                    return None
+                tris.append((t[0], t[1], t[2]))
+            return np.array(tris, dtype=int) if tris else None
+        except Exception:
+            return None
+    return None
+
+
+def surface_points(vertices, tris, step=SURFACE_STEP):
+    """Punkte auf den Dreiecksflaechen: jedes Dreieck wird so unterteilt, dass
+    keine Teilkante laenger als `step` ist. Die Eckpunkte sind enthalten."""
+    P = np.asarray(vertices, dtype=float)
+    if tris is None or not len(tris):
+        return P
+    A, B, C = P[tris[:, 0]], P[tris[:, 1]], P[tris[:, 2]]
+    edge = np.max([_norm(B - A), _norm(C - A), _norm(C - B)], axis=0)
+    ns = np.maximum(1, np.ceil(edge / step).astype(int))
+    out = [P]
+    for n in np.unique(ns):
+        if n == 1:          # kurze Kanten: nur die Ecken, die sind schon in P
+            continue
+        sel = ns == n
+        u, v = _bary_grid(int(n))
+        a, ab, ac = A[sel], B[sel] - A[sel], C[sel] - A[sel]
+        out.append((a[:, None] + u[None, :, None] * ab[:, None]
+                    + v[None, :, None] * ac[:, None]).reshape(-1, 3))
+    out = np.concatenate(out)
+    # Nachbardreiecke teilen Kanten -> viele doppelte Punkte; ein Punkt je
+    # 0,5-mm-Wuerfel reicht (Fehler <= 0,43 mm).
+    return out[_voxel_first(out, 0.0005)]
+
+
+def _geometry_points(geom, step=SURFACE_STEP):
+    """Punkte einer coal-Geometrie fuer den Kugel-Fit: bei Mesh/Convex die
+    Vertices PLUS die Dreiecksflaechen (Abstand <= step) -- nur Vertices
+    reichen nicht, grobe Hulls (V-HACD) haben wenige, weit auseinander-
+    liegende Ecken und die Flaechen dazwischen ragten aus den Kugeln.
+    Zylinder/Kugel gesampelt."""
     name = type(geom).__name__
     if name == "Cylinder":
         return _cylinder_points(float(geom.radius), 2.0 * float(geom.halfLength))
     if name == "Sphere":
         r = float(geom.radius)
         return np.array([[r, 0, 0], [-r, 0, 0], [0, r, 0], [0, -r, 0], [0, 0, r], [0, 0, -r]])
-    for g in (geom, getattr(geom, "convex", None)):
+    cands = [geom, getattr(geom, "convex", None)]
+    for g in cands:
         if g is None:
             continue
         for getter in ("points", "vertices"):
@@ -131,12 +239,13 @@ def _geometry_points(geom):
             try:
                 pts = np.asarray(fn(), dtype=float)
                 if pts.ndim == 2 and pts.shape[1] == 3 and len(pts):
-                    return pts
+                    return surface_points(pts, _triangles(g), step)
             except Exception:
                 pass
     try:
         geom.buildConvexRepresentation(False)
-        return np.asarray(geom.convex.points(), dtype=float)
+        c = geom.convex
+        return surface_points(np.asarray(c.points(), dtype=float), _triangles(c), step)
     except Exception:
         return None
 
