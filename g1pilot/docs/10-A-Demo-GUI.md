@@ -228,6 +228,12 @@ entfernt):
   …“, „Arbeitsplatz 1 · Schritt 2/5: …“, „Fertig.“ oder „Abgebrochen (failed) …“.
 - **NOT-HALT** ist immer sichtbar, rund und rot. Beide Kacheln werden danach inaktiv. Was er genau auslöst:
   [51-A-Notaus.md](51-A-Notaus.md).
+- **Akku** (nur echter G1, ganz links unten): Ladestand in Prozent, darunter
+  die Spannung; gelb bis 30 %, rot bis 15 % (`G1_BATT_WARN` / `G1_BATT_CRIT`,
+  Annahme). Tooltip: Zustand (SOH), Strom, Zellspannungen, Akku-Temperatur,
+  Ladezyklen. Quelle ist das BMS-Topic `rt/lf/bmsstate`, weitergereicht von
+  `robot_state` (`/g1pilot/battery`), reiner Lesepfad. »keine Daten«, wenn
+  länger als 5 s nichts kam.
 - **Temperaturen** (nur echter G1, links unten, „TEMP. MOTOREN“): heißester
   Motor und je eine Kachel für Bein L/R, Taille, Arm L/R mit dem Höchstwert,
   gelb ab 60 °C, rot ab 75 °C (`G1_TEMP_WARN` / `G1_TEMP_CRIT`). Klick öffnet

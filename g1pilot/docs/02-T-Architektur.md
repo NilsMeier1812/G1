@@ -17,7 +17,7 @@ Freiheitsgrade (Beine, Taille, zwei 7-DOF-Arme).
 .
 ├── g1pilot/                     ROS-2-Package + Docker/Compose/Makefile (Hauptprojekt)
 │   ├── g1pilot/
-│   │   ├── state/                Roboterzustand -> /joint_states, /tf, IMU, Temperaturen
+│   │   ├── state/                Roboterzustand -> /joint_states, /tf, IMU, Temperaturen, Akku
 │   │   ├── manipulation/         IK, Arm-Regelung, Planer, Positionsspeicher, Arm-API, Hüfte, Hände
 │   │   ├── navigation/           Locomotion (Sim), Loco-Client (Real), Bodenkontakt, autonome Navigation
 │   │   ├── teleoperation/        Demo-GUI, PS4/Xbox-Controller, Handy (phone/), Abläufe
@@ -74,6 +74,7 @@ Netz (`192.168.123.210`/`.211`).
   | `rt/lowstate` | `LowState_` | Roboter → Stack | Gelenk-q/dq/τ, IMU; (Sim) Fußkraft + Basis-v in `reserve[]` |
   | `rt/lowcmd` | `LowCmd_` | Stack → Roboter | Bein-/Taillen-Befehle (`loco_sim`/`loco_client`) |
   | `rt/arm_sdk` | `LowCmd_` | Stack → Roboter | Arm-Befehle (`arm_controller`), gewichtet gemischt mit dem Onboard-Regler |
+  | `rt/lf/bmsstate` | `BmsState_` | Roboter → Stack | Akku: Ladestand, Spannung, Strom, Zellen (nur real) |
   | `rt/sportmodestate` | `SportModeState_` | Roboter → Stack | Odometrie (Sim: Ground Truth) |
   | `rt/wirelesscontroller` | `WirelessController_` | Roboter → Stack | Gamepad-Zustand |
   | `rt/inspire/cmd`\|`state` | intern | beidseitig | Inspire-Hand-Finger (nur Sim-Backend `mujoco`) |
@@ -148,7 +149,7 @@ Auf dem echten Roboter übernimmt dieselbe Logik die G1-Firmware.
 
 | Node (`ros2 run g1pilot ...`) | Datei | Aufgabe |
 |---|---|---|
-| `robot_state` | `state/robot_state.py` | `rt/lowstate` → `/joint_states`, IMU, TF, Motor-Telemetrie |
+| `robot_state` | `state/robot_state.py` | `rt/lowstate` → `/joint_states`, IMU, TF, Motor-Telemetrie; `rt/lf/bmsstate` → Akku |
 | `arm_controller` | `manipulation/arm_controller.py` | Arm-IK, Sicherheitsgates, Positionsspeicher, `rt/arm_sdk` |
 | `arm_api` | `manipulation/arm_api.py` | HTTP/JSON-Brücke für externe Projekte |
 | `interactive_marker` | `manipulation/interactive_marker.py` | RViz-Marker für Arm-Zielposen |

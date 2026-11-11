@@ -15,10 +15,11 @@ from tf2_ros import TransformBroadcaster
 from astroviz_interfaces.msg import MotorState, MotorStateList
 
 from unitree_sdk2py.core.channel import ChannelSubscriber
-from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_
+from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_, BmsState_
 
 from g1pilot.utils.common import init_dds
 from g1pilot.utils import g1_temperature
+from g1pilot.utils import g1_battery
 
 
 class G1JointIndex:
@@ -115,6 +116,10 @@ class RobotState(Node):
         # als JSON (g1_temperature.build_payload), 2 Hz -> Anzeige der Demo-GUI.
         self.temp_pub = self.create_publisher(String, f"{self.ns}/temperatures", qos_profile)
         self._temp_last = 0.0
+        # Akku (nur Lesen aus rt/lf/bmsstate, eigenes DDS-Topic des G1-BMS):
+        # Ladestand/Spannung als JSON (g1_battery.build_payload), max. 1 Hz.
+        self.batt_pub = self.create_publisher(String, g1_battery.TOPIC_ROS, qos_profile)
+        self._batt_last = 0.0
         self.tf_broadcaster = TransformBroadcaster(self)
 
         self.joint_indices = sorted(_joint_index_to_ros_name.keys())
@@ -138,6 +143,13 @@ class RobotState(Node):
             init_dds(interface, self.get_logger())
             self.subscriber_low_state = ChannelSubscriber("rt/lowstate", LowState_)
             self.subscriber_low_state.Init(self.callback_lowstate)
+            # Akku: optional -- fehlt das Topic oder klappt das Abo nicht,
+            # bleibt die Anzeige auf »keine Daten«, alles andere laeuft weiter.
+            try:
+                self.subscriber_bms = ChannelSubscriber(g1_battery.TOPIC_DDS, BmsState_)
+                self.subscriber_bms.Init(self.callback_bms)
+            except Exception as e:  # noqa: BLE001
+                self.get_logger().warn(f"Akku-Abo {g1_battery.TOPIC_DDS} fehlgeschlagen: {e}")
         else:
             self.create_timer(0.05, self._sim_tick)
 
@@ -206,6 +218,18 @@ class RobotState(Node):
             self.temp_pub.publish(String(data=payload))
         except Exception as e:  # noqa: BLE001
             self.get_logger().warn(f"Temperatur-Aufbereitung fehlgeschlagen: {e}",
+                                   throttle_duration_sec=10.0)
+
+    def callback_bms(self, msg: BmsState_):
+        """Akku mit max. 1 Hz weiterreichen; Fehler nur loggen."""
+        t = time.monotonic()
+        if t - self._batt_last < 1.0:
+            return
+        self._batt_last = t
+        try:
+            self.batt_pub.publish(String(data=g1_battery.build_payload(msg)))
+        except Exception as e:  # noqa: BLE001
+            self.get_logger().warn(f"Akku-Aufbereitung fehlgeschlagen: {e}",
                                    throttle_duration_sec=10.0)
 
     def _sim_tick(self):
