@@ -11,6 +11,8 @@ Startmenü und in der Start-GUI unter **Hände**.
 ```bash
 cd ../tools
 ./hand_tool.sh list
+./hand_tool.sh new [datei.stl]    # neue Hand anlegen: Datei waehlen, Montage-Vorschlaege
+./hand_tool.sh adjust haken       # einpassen mit Schiebern
 ./hand_tool.sh preview haken      # Vorschau, hand.yaml speichern = neu laden
 ./hand_tool.sh build haken        # nur neu erzeugen
 ```

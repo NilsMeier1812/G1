@@ -78,6 +78,43 @@ mit der gespeicherten Montage (`compose`: `offset' = t + R_adj·offset`,
 bleiben) und ruft den Generator. Ein Test prüft, dass Live-Lage und neu
 erzeugte Lage übereinstimmen.
 
+## Montage-Erkennung
+
+`tools/hand_detect.py` (nur numpy + trimesh, kein scipy) rät für eine neue Datei
+`mount.origin`, `out`, `palm` und `tcp`; `tools/hand_new.py` zeigt die Vorschläge
+und legt das Profil an.
+
+1. **Achsen:** CAD-Teile liegen meist achsparallel, also die STL-Achsen. Liegt
+   das Teil schräg (Achsen > 10° gedreht und darin deutlich kompakter), die
+   eigenen Achsen aus den größten ebenen Flächen (Normale mit der meisten
+   Fläche + die meiste Fläche senkrecht dazu), bei organischen Formen die
+   Hauptachsen der Voxel.
+2. **Voxel:** gefülltes Gitter, 64 Zellen entlang der längsten Seite.
+3. Je Richtung `out` (6 Kandidaten) Punkte für: Länge entlang `out`
+   (Gewicht 2), schmales Arm-Ende (Umriss der ersten 8 % gegen den
+   Gesamtumriss), breitere Spitze.
+4. **Flansch-Punkt:** ab dem Arm-Ende die erste Stelle in den ersten 40 % der
+   Länge, ab der der Querschnitt dauerhaft (3 Scheiben) anders ist: ≥ 10 % mehr
+   Voxel oder ein Umriss, der sich um ≥ 15 % (und ≥ 2 Voxel) ändert. Dort liegt
+   die Flanschfläche, die Platte davor steckt im Arm. Sonst das Ende selbst.
+   Quer: Mitte des Umrisses am Arm-Ende.
+5. Je `palm` (4 Kandidaten): wie weit die Spitze (letzte 25 %) über den
+   Grundkörper (hinter der Platte bis 50 %) hinausragt; ragt nichts, kleiner
+   Bonus für die flache Seite.
+6. **TCP:** auf der Handflächen-Seite des Grundkörpers, 80 % der Länge vom
+   Arm-Ende, quer in der Mitte.
+
+Ausgegeben werden die besten Kombinationen (out, palm), sortiert. Die
+Vorschau-Bilder baut `hand_new.py --analyse` in einem eigenen Prozess per
+`MjSpec` im Speicher (G1 ohne Rubber-Hand + Mesh nach `side_transform`, ohne
+Zerlegung); Tk zeigt sie im Fenster. Erst **Anlegen** schreibt in `hands/` und
+ruft `hand_tool.sh build` (venv mit vhacdx); danach ersetzt sich der Prozess
+durch `hand_adjust.py`.
+
+Bei den Box-Haken liefert die Erkennung origin (25,4 / 149,8 / 14,0) mm statt
+der eingepassten (25 / 150 / 14), `out` = −y; `palm` +z (eingepasst) ist
+Vorschlag 2, Vorschlag 1 ist +x (die Spitze ragt auch zur Seite heraus).
+
 ## Masse
 
 `mass_kg` je Hand, Trägheit aus dem Mesh bei gleichmäßiger Dichte. Das Inertial
@@ -103,3 +140,8 @@ von `*_wrist_yaw_link` bleibt wie im Basismodell (genau wie beim Inspire-Modell)
 (keine Finger-Aktoren, Kollisions-Bits, Masse), TCP in MJCF = URDF, Gate und
 Planer-Kugeln decken den Haken ab, Schwerpunkt-Modell lädt, Physik-Probe
 (Würfel bleibt auf der Lippe liegen).
+
+`test/test_hand_new.py`: Erkennung bei den Haken (auch schräg gedreht) und bei
+einem künstlichen Werkzeug mit Platte und Kralle (gerade und zufällig gedreht),
+Einheit, Anlegen aus STL und OBJ (in einem tmp-Ordner), Aufräumen bei kaputter
+Datei, Vorschau-Modell legt die Hand wie der Generator.
