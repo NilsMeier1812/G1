@@ -61,6 +61,12 @@ Neu-Erzeugen darum nur `trimesh`, kein `vhacdx`.
 | IK-Kollisions-Gate (`ik_solver.py`) | die Teile sind Collision-Geometrien von `*_hand_tool_link`; `_GATE_ARM_KEYS` enthält dafür `hand_tool` -> Paare gegen Torso/Beine und gegen den anderen Arm |
 | Armplaner (`arm_geometry.py`) | Kugelmodell wird aus denselben Teilen gefittet (Glied `wrist_yaw`), TCP aus dem URDF |
 
+Die V-HACD-Teile haben nur wenige, weit auseinanderliegende Eckpunkte. Der
+Kugel-Fit im Armplaner tastet darum die Dreiecksflächen jedes Teils mit
+höchstens 5 mm Punktabstand ab und umschließt alle diese Punkte (vorher nur
+die Eckpunkte: Flächen ragten bis 28 mm aus den Kugeln, jetzt ≤ 1,3 mm; Test
+`test_planner_spheres_cover_hook_surfaces`).
+
 ## Justier-Werkzeug
 
 `tools/hand_adjust.py` (über `hand_tool.sh adjust`): Tk-Fenster + passiver

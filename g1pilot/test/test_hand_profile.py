@@ -212,6 +212,22 @@ def test_planner_spheres_cover_hook(ik):
         assert np.isclose(sp["tcp"][0], geom.spheres[side]["tcp"][0])
 
 
+def test_planner_spheres_cover_hook_surfaces(ik):
+    """Die V-HACD-Teile des Hakens haben wenige, weit auseinanderliegende
+    Ecken; die Kugeln muessen trotzdem die FLAECHEN umschliessen (<= 2 mm
+    Ueberstand), sonst fuehrt der Planer den Haken enger an Objekte als
+    clearance/floor vorgeben."""
+    sys.path.insert(0, os.path.dirname(__file__))
+    from sphere_coverage import hand_surface_gap
+    from g1pilot.manipulation.arm_geometry import ArmGeometry, HAND_LINK_MIN
+    geom = ArmGeometry(ik.model, ik.collision_model)
+    for side in ("left", "right"):
+        gaps = hand_surface_gap(ik.model, ik.collision_model, geom, side, HAND_LINK_MIN)
+        assert any("hand_tool" in n for n in gaps)
+        worst = max(gaps, key=gaps.get)
+        assert gaps[worst] <= 0.002, (side, worst, gaps[worst])
+
+
 def test_com_model_loads():
     pytest.importorskip("pinocchio")
     from g1pilot.navigation.com_model import ComModel

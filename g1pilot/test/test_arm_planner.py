@@ -7,6 +7,7 @@ die Tests uebersprungen. Szene: Tisch vor dem Roboter (Oberkante 2 cm ueber
 dem Becken) mit Greif-Box -- entspricht Arbeitsplatz 1.
 """
 import os
+import sys
 import time
 
 import numpy as np
@@ -115,6 +116,19 @@ def test_fk_matches_pinocchio(models):
         fk = geom.fk(q7[None], ["left"])["left"]
         # wrist_yaw-Frame-Orientierung stimmt mit pinocchio ueberein
         assert np.allclose(fk["R6"][0], M.rotation, atol=1e-6)
+
+
+def test_hand_spheres_cover_surfaces(models):
+    """Die Umgebungs-Kugeln der Hand umschliessen die FLAECHEN jedes Hand-
+    Kollisionsteils (nicht nur die Eckpunkte): hoechstens 2 mm Ueberstand."""
+    sys.path.insert(0, os.path.dirname(__file__))
+    from sphere_coverage import hand_surface_gap
+    ik, geom, _ = models
+    for side in ("left", "right"):
+        gaps = hand_surface_gap(ik.model, ik.collision_model, geom, side, HAND_LINK_MIN)
+        assert gaps
+        worst = max(gaps, key=gaps.get)
+        assert gaps[worst] <= 0.002, (side, worst, gaps[worst])
 
 
 def test_distance_gradient(models):
