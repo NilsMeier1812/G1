@@ -291,12 +291,17 @@ Pinocchio-basierter, gedämpfter Pseudo-Inverse-Löser mit:
 
 Grundlage von Planer und Laufzeit-Gate gegen die Umgebung. Beim Start
 werden aus den Kollisions-Meshes der Arme Kugeln angepasst (k-means-
-Überdeckung, `fit_spheres`):
+Überdeckung, `fit_spheres`). Grundlage sind die Eckpunkte **und** die mit
+≤ 5 mm Punktabstand abgetasteten Dreiecksflächen (`SURFACE_STEP`); k-means
+läuft auf höchstens 2000 gleichmäßig ausgedünnten Punkten, die Radien
+umschließen aber alle Punkte. Nur Eckpunkte reichten nicht: Flächen grober
+Hulls ragten bis 1,5 cm (Inspire) bzw. 2,8 cm (Haken) heraus, jetzt ≤ 1,3 mm.
 
 - **fein** für den Abstand zu Objekten: Hand (Handballen + Finger in
-  Neutralstellung) Radius ≤ 2,2 cm, Arm ≤ 4 cm, 87 Kugeln je Arm,
+  Neutralstellung) Radius ≤ 2,2 cm (bei Erreichen der Kugel-Obergrenze bis
+  ~3 cm), Arm ≤ 4 cm, 92 Kugeln je Arm,
 - **grob** (≤ 5 cm, ab Ellbogen, 16 Kugeln) für die Selbstkollision im Planer,
-- Körper (Rumpf, Becken, Beine) ~39 Kugeln ≤ 9 cm.
+- Körper (Rumpf, Becken, Beine) ~33 Kugeln ≤ 9 cm.
 
 Die Vorwärtskinematik der 7er-Ketten ist vektorisiert (viele
 Konfigurationen auf einmal, gegen pinocchio geprüft). Objekte aus
