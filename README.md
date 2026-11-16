@@ -71,6 +71,7 @@ gibt es eine **Anleitung** (`-A-`) für Anwender und meist ein
 | [4 Simulation](g1pilot/docs/4-Simulation.md) | [Simulation](g1pilot/docs/40-A-Simulation.md) |
 | [5 Echter Roboter](g1pilot/docs/5-Echter-Roboter.md) | [Echter Roboter](g1pilot/docs/50-A-Echter-Roboter.md), [Notaus](g1pilot/docs/51-A-Notaus.md) |
 | [6 Entwicklung](g1pilot/docs/6-Entwicklung.md) | [Tests](g1pilot/docs/60-A-Tests.md), [Werkzeuge](g1pilot/docs/61-A-Werkzeuge.md) |
+| [7 Evaluation](g1pilot/docs/7-Evaluation.md) | [Code-Vergleich](g1pilot/docs/70-A-Code-Vergleich-Sim-Real.md), [Echtzeitfaktor](g1pilot/docs/71-A-Echtzeitfaktor.md), [Gelenkwinkel](g1pilot/docs/72-A-Gelenkwinkel-Aufzeichnung.md), [Not-Halt-Messung](g1pilot/docs/73-A-Nothalt-Messung.md), [Armplaner-Messreihe](g1pilot/docs/74-A-Armplaner-Messreihe.md), [Erweiterungsbeispiel](g1pilot/docs/75-A-Erweiterungsbeispiel.md) |
 
 Verlinkt sind die Anleitungen; das Technik-Dokument zum selben Thema hat
 dieselbe Nummer mit `-T-` statt `-A-`. Namensschema und vollständige

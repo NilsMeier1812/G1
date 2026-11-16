@@ -1,3 +1,5 @@
+import os
+
 import mujoco
 import numpy as np
 import pygame
@@ -115,6 +117,11 @@ class UnitreeSdk2Bridge:
         # die Regelrate an die Sim-Uhr gekoppelt, nicht an die Wall-Clock.
         self.cmd_seq = 0
         self.state_seq = 0
+        # Messpunkt fuer die Evaluation (V4, g1pilot/docs/71-A-Echtzeitfaktor.md):
+        # G1_EVAL_SIM_TIME=1 schreibt die Sim-Zeit [ms] in rt/lowstate.tick (sonst
+        # ungenutzt, bleibt 0). Standard AUS -- aendert am Verhalten nichts.
+        self.eval_sim_time = str(os.environ.get("G1_EVAL_SIM_TIME", "")).strip().lower() in (
+            "1", "true", "yes", "on")
         # Lockstep nur im Loco-Modus (off) sinnvoll. Im Lockstep publiziert die
         # Sim-Schleife den lowstate INLINE nach den decimation-Schritten -> der
         # 500-Hz-RecurrentThread wuerde Zwischenzustaende senden und wird deaktiviert.
@@ -608,6 +615,8 @@ class UnitreeSdk2Bridge:
                 self.low_state.wireless_remote[12:16] = packs[2]
                 self.low_state.wireless_remote[20:24] = packs[3]
 
+            if self.eval_sim_time:
+                self.low_state.tick = int(round(self.mj_data.time * 1000.0)) & 0xFFFFFFFF
             self.low_state_puber.Write(self.low_state)
             # Lockstep: markiert "frischer State publiziert" fuer den Controller-Takt.
             self.state_seq += 1

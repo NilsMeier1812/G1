@@ -97,7 +97,20 @@ Umgebungen bauen: [`unitree_mujoco/scene_editor/README.md`](../../unitree_mujoco
 | Tests | [60-A-Tests.md](60-A-Tests.md) | |
 | Werkzeuge (Make, Diagnose, Messskripte, Link-Prüfung) | [61-A-Werkzeuge.md](61-A-Werkzeuge.md) | |
 
-Gruppen 7–9 sind frei.
+## 7 · Evaluation
+
+Übersicht: [7-Evaluation.md](7-Evaluation.md)
+
+| Thema | Anleitung | Technik |
+|---|---|---|
+| V1 Code-Vergleich Simulation/Realbetrieb | [70-A-Code-Vergleich-Sim-Real.md](70-A-Code-Vergleich-Sim-Real.md) | |
+| V4 Echtzeitfaktor und Takttreue | [71-A-Echtzeitfaktor.md](71-A-Echtzeitfaktor.md) | |
+| V7 Gelenkwinkel aufzeichnen und vergleichen | [72-A-Gelenkwinkel-Aufzeichnung.md](72-A-Gelenkwinkel-Aufzeichnung.md) | |
+| V8 Not-Halt, Ausfall, Zielsprung | [73-A-Nothalt-Messung.md](73-A-Nothalt-Messung.md) | |
+| V6 Messreihe Armplaner | [74-A-Armplaner-Messreihe.md](74-A-Armplaner-Messreihe.md) | |
+| Erweiterungsbeispiel (Arm-API) | [75-A-Erweiterungsbeispiel.md](75-A-Erweiterungsbeispiel.md) | |
+
+Gruppen 8–9 sind frei.
 
 ## Aufbau der Dokumente
 

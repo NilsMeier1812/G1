@@ -55,6 +55,8 @@ services:
       # Szenen-Bruecke (Umgebungs-Objekte -> RViz/Nav/IK, siehe g1pilot/docs/31-T-Navigation.md):
       # UDP-Port MUSS mit g1pilot-sim uebereinstimmen (unten dieselbe Variable).
       - SIM_SCENE_PORT=${SIM_SCENE_PORT:-47902}
+      # Messwerkzeug V4 (docs/71-A-Echtzeitfaktor.md): 1 = Sim-Zeit in rt/lowstate.tick. Standard aus.
+      - G1_EVAL_SIM_TIME=${G1_EVAL_SIM_TIME:-0}
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ../unitree_mujoco:/unitree_mujoco:ro   # Mountet dein lokales Repo!
