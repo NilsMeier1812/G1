@@ -134,7 +134,10 @@ damit die Zuordnung ohne Lesen klar ist.
 
 In der Titelzeile neben „GREIFEN“ schaltet ein Umschalter **ARME | HÄNDE**
 zwischen zwei Seiten um (beides braucht viel Platz, darum nie gleichzeitig).
-Beim Wechsel in GREIFEN ist ARME aktiv. Eine Linie in Modusfarbe trennt die
+Beim Wechsel in GREIFEN ist ARME aktiv. **HÄNDE** ist nur mit Inspire-Händen
+bedienbar: In der Sim mit Rubber- oder Custom-Händen (starr, `G1_HANDS`) ist der
+Knopf ausgegraut, der Tooltip nennt den Grund. Am echten G1 ist er immer frei.
+Eine Linie in Modusfarbe trennt die
 Titelzeile vom Inhalt (auch bei GEHEN).
 
 *Seite ARME*
