@@ -131,7 +131,7 @@ von `*_wrist_yaw_link` bleibt wie im Basismodell (genau wie beim Inspire-Modell)
 | `robot_state_launcher.launch.py` | URDF für robot_state_publisher/RViz |
 | `arm_controller.py`, `ik_solver.py` | URDF für IK, Gate, Planer-Prozess, IK-Prozess |
 | `loco_sim.py` | MJCF fürs Schwerpunkt-Modell |
-| `start.sh`, `g1_gui.py` | Auswahl, setzt `G1_HANDS` und passend `G1_INSPIRE_HANDS` |
+| `start.sh`, `start_gui/views.py` | Auswahl, setzt `G1_HANDS` und passend `G1_INSPIRE_HANDS` |
 
 ## Tests
 

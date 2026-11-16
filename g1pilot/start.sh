@@ -3,9 +3,9 @@
 #  start.sh — Start-Menue fuer den G1-Stack (Sim UND Real).
 #
 #  Standard: OHNE Argumente oeffnet sich das grafische Startmenue (g1_gui.py,
-#  Tkinter) — Sim/Real/Umgebungen komplett per Klick, kein Terminal noetig.
+#  PyQt6) — Sim/Real/Umgebungen komplett per Klick, kein Terminal noetig.
 #  Die GUI ruft am Ende genau dieses Skript mit --yes + Env-Vars auf. Fehlt
-#  Tkinter/Display, kommt automatisch das Text-Menue unten. Erzwingen mit
+#  PyQt6/Display, kommt automatisch das Text-Menue unten. Erzwingen mit
 #  --menu (Text) oder G1_NO_GUI=1.
 #
 #  Text-Menue — gleicher Aufbau und gleiche Defaults wie die GUI.
@@ -49,16 +49,27 @@ for a in "$@"; do
 done
 
 # ── Grafisches Startmenue (Standard) ────────────────────────────────────
-#  Ohne Argumente und mit erreichbarem Tkinter startet die GUI (g1_gui.py).
+#  Ohne Argumente und mit PyQt6 + Display startet die GUI (g1_gui.py, PyQt6).
 #  Sie sammelt alle Optionen und ruft dann ihrerseits 'start.sh --yes' auf —
-#  daher wird die GUI nur im interaktiven Ur-Aufruf gezoegert. Fehlt Tkinter
-#  oder ein Display, faellt es lautlos auf das Text-Menue unten zurueck.
+#  daher wird die GUI nur im interaktiven Ur-Aufruf gezeigt. Fehlt PyQt6 oder
+#  ein Display, faellt es auf das Text-Menue unten zurueck (mit Hinweis).
 #  Erzwingen: --menu (Text) bzw. das Setzen von G1_NO_GUI=1.
 if [ "$ASSUME_YES" != "1" ] && [ "$FORCE_MENU" != "1" ] && \
    [ "${G1_NO_GUI:-0}" != "1" ] && [ "${#PASSTHRU[@]}" -eq 0 ]; then
   if command -v python3 >/dev/null 2>&1 && \
-     python3 -c 'import tkinter' >/dev/null 2>&1; then
-    exec python3 "$(dirname "$0")/g1_gui.py"
+     python3 -c 'import PyQt6.QtWidgets' >/dev/null 2>&1; then
+    if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+      python3 "$(dirname "$0")/g1_gui.py"
+      rc=$?
+      # 0 = normal beendet, 130 = Strg+C: fertig. Sonst (z. B. Qt-Plugin fehlt)
+      # weiter mit dem Text-Menue, damit man nicht ohne Menue dasteht.
+      if [ "$rc" = "0" ] || [ "$rc" = "130" ]; then exit "$rc"; fi
+      echo "[start.sh] Grafisches Startmenue ist abgebrochen (Code $rc) -> Text-Menue." >&2
+    fi
+  else
+    echo "[start.sh] Grafisches Startmenue braucht PyQt6 auf dem Host:" >&2
+    echo "           sudo apt install python3-pyqt6 libqt6svg6" >&2
+    echo "           Bis dahin: Text-Menue." >&2
   fi
 fi
 

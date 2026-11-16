@@ -13,8 +13,9 @@ cd g1pilot
 ```
 
 Ohne Argumente öffnet `start.sh` das grafische Startmenü (`g1_gui.py`,
-Tkinter). Fehlt Tkinter oder ein Display, fällt es automatisch auf das
-Text-Menü zurück (erzwingbar mit `--menu` oder `G1_NO_GUI=1`). Beide
+PyQt6, Code in `start_gui/`). Fehlt PyQt6 auf dem Host, sagt `start.sh`
+das (`sudo apt install python3-pyqt6 libqt6svg6`) und nimmt das Text-Menü;
+ohne Display ebenso (erzwingbar mit `--menu` oder `G1_NO_GUI=1`). Beide
 sammeln nur Optionen und rufen am Ende `start.sh --yes` mit den passenden
 Umgebungsvariablen auf.
 
@@ -27,8 +28,8 @@ Das Startmenü zeigt drei Karten:
 | **Umgebungen** | Sim-Szenen anlegen, bearbeiten, mit dem G1 ansehen ([40-A-Simulation.md](40-A-Simulation.md#umgebungen)) |
 
 Darunter: laufende Prozesse (Ansehen, Stoppen, Entfernen), *Alle Stacks
-stoppen*, das Menü **Dokumentation ▾** (öffnet die Dokumente aus
-`docs/`) und *Beenden*.
+stoppen* und *Beenden*. Oben rechts öffnet **📖 Dokumentation** (oder `F1`)
+den Doku-Viewer, siehe [unten](#doku-viewer).
 
 Alles läuft in einem Fenster; Menü, Optionsseiten und Log-Ansicht werden
 ausgetauscht. Startet man einen Stack, erscheint dessen Docker-Ausgabe live
@@ -43,15 +44,18 @@ Die letzte Auswahl merkt sich das Startmenü in
 
 | Abschnitt | Simulation | Echter Roboter |
 |---|---|---|
-| Umgebung / Verbindung | Szene aus `scene_editor/scenes/` | Netzwerk-Interface (prüft auf 192.168.123.x) |
+| Umgebung / Verbindung | Kachel mit Vorschaubild je Szene aus `scene_editor/scenes/` (siehe [Vorschaubilder](#vorschaubilder-der-umgebungen)); Kachel **+ Neue Umgebung** führt zu *Umgebungen* | Netzwerk-Interface (prüft auf 192.168.123.x) |
 | Lauf-Policy | Alt `g1_wholebody` (Standard), AGILE Velocity, AGILE Velocity-Height | — |
-| Hände | Rubber Hände, Inspire Hände (Standard) oder Custom Hände; bei Custom Auswahl des Profils (z. B. Box-Haken) und Knopf **Bearbeiten …** fürs Bearbeitungstool; Eintrag **➕ Neue Hand anlegen …** + **Anlegen …** für eine neue Hand aus einer 3D-Datei ([25-A](25-A-Eigene-Haende.md)) | — |
-| Ausstattung | Navigation, **PS4-Controller**, RViz | Inspire-Hände + IPs, RViz (empfohlen), **PS4-Controller für Arme + Hände** |
+| Hände | Karten Rubber, Inspire (Standard) oder Custom; bei Custom Auswahl des Profils (z. B. Box-Haken) und Knopf **Bearbeiten …** fürs Bearbeitungstool; Eintrag **➕ Neue Hand anlegen …** + **Anlegen …** für eine neue Hand aus einer 3D-Datei ([25-A](25-A-Eigene-Haende.md)) | — |
+| Ausstattung (Schalter) | Navigation, **Controller (PS4 / Xbox)**, RViz | Inspire-Hände + IPs, RViz (empfohlen), **Controller (PS4 / Xbox) für Arme + Hände** |
 | Geh-Limits | — | vorwärts / seitlich / drehen (Default 0,4 m/s / 0,3 m/s / 0,4 rad/s) |
 | Erweitert (eingeklappt) | Sim-Tempo (1.0 = Echtzeit), Images neu bauen | Modbus-Port, Gamepad-Name (alter Joystick), Images neu bauen |
 | Sicherheit | — | Häkchen „Sicherheitshinweise gelesen, Bereich frei“, sonst bleibt *Starten* grau |
 
-- **PS4-Controller** gilt auch für den Xbox-Controller
+- Unten links fasst eine Zeile die Auswahl zusammen (z. B. *scene_A5 · Alt
+  (Standard) · Inspire · Navigation*), **? Hilfe** oben rechts öffnet die
+  passende Anleitung im Doku-Viewer.
+- **Controller** gilt für PS4 und Xbox
   ([11-A-Controller.md](11-A-Controller.md)). Aus = alter Joystick-Modus
   ([13-A-Alter-Joystick.md](13-A-Alter-Joystick.md#alter-joystick-modus-ohne-schalter-ps4-controller)).
 - **Handy-Zugang** ist keine Option mehr: Die Demo-GUI hat oben immer den Knopf
@@ -62,6 +66,39 @@ Die letzte Auswahl merkt sich das Startmenü in
   *Bedienoberfläche* (Streamdeck) wurde 2026-10-30 entfernt.
 - Welche Umgebungsvariable hinter welcher Option steht:
   [04-T-Umgebungsvariablen.md](04-T-Umgebungsvariablen.md).
+
+## Vorschaubilder der Umgebungen
+
+Die Kacheln zeigen ein Bild jeder Umgebung (schräg von oben, ohne G1; die
+Standard-Kachel zeigt den G1 im Standard-Gelände). Die Bilder liegen in
+`unitree_mujoco/scene_editor/scenes/thumbs/` und sind im Repo eingecheckt.
+Ist eine Umgebung neu oder hat sich ihre XML geändert, rendert das
+Startmenü das Bild beim Öffnen und nach jedem Scene-Editor-Lauf im
+Hintergrund neu (unten rechts steht dann *Vorschaubilder werden erzeugt …*).
+Dafür braucht es das `scene_editor/.venv` (dort ist MuJoCo installiert);
+ohne zeigt die Kachel den Anfangsbuchstaben.
+
+Von Hand, z. B. nach Änderungen an Meshes (die prüft der Hash nicht):
+
+```bash
+cd unitree_mujoco/scene_editor
+.venv/bin/python render_thumbs.py --all     # oder: Umgebungen → Vorschaubilder neu erzeugen
+```
+
+## Doku-Viewer
+
+**📖 Dokumentation** im Startmenü, `F1` oder **? Hilfe** auf den
+Optionsseiten öffnen ein eigenes Fenster mit allen Dokumenten aus `docs/`,
+gerendert (Überschriften, Tabellen, Code, Bilder). Links:
+
+- Baum nach dem Doku-Schema (Gruppe → Anleitung / Technik, Technik grau).
+  Neue Dateien `GT-X-Name.md` erscheinen automatisch.
+- *Doku durchsuchen* filtert nach Titel **und** Inhalt.
+- Links auf andere Dokumente und Abschnitte (`#anker`) öffnen im Viewer,
+  Web-Links im Browser, Links auf Code-Dateien mit dem System-Programm.
+- `‹` / `›` bzw. `Alt+←` / `Alt+→` wie im Browser, `Strg+F` sucht im
+  Dokument, `F5` lädt neu (nach Änderungen an der Datei), *Als Datei öffnen*
+  öffnet die `.md` im Texteditor.
 
 ## Text-Menü und ohne Menü
 
@@ -130,7 +167,9 @@ Details: `resource/icons/README.md`.
 
 | Symptom | Ursache / Abhilfe |
 |---|---|
-| `./start.sh` zeigt nur das Text-Menü | `python3-tk` fehlt auf dem Host: `sudo apt install python3-tk`. |
+| `./start.sh` zeigt nur das Text-Menü | PyQt6 fehlt auf dem Host (`start.sh` meldet das): `sudo apt install python3-pyqt6 libqt6svg6`. |
+| Doku-Viewer zeigt Diagramme nicht | `libqt6svg6` fehlt (SVG-Unterstützung von Qt). |
+| Umgebungs-Kachel ohne Bild | `scene_editor/.venv` fehlt (*Umgebungen → Setup*), oder Rendern fehlgeschlagen: Ausgabe von `render_thumbs.py` im Terminal, aus dem `start.sh` lief. |
 | Real: *Starten* bleibt grau | Sicherheits-Häkchen setzen. |
 | Real: „Keine 192.168.123.x-Adresse auf diesem Interface“ | Kabel/IP prüfen, siehe [50-A-Echter-Roboter.md](50-A-Echter-Roboter.md#b--netzwerk-ersteinrichtung). |
 | *Sim beenden* meldet, es gehe nur mit `make stop` | Stack wurde ohne Watcher gestartet (`make sim-bg` oder `docker compose` direkt). |

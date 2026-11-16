@@ -40,13 +40,16 @@ Zwei Betriebsarten:
 ```bash
 sudo apt update
 sudo apt install -y git x11-xserver-utils ca-certificates curl \
-  python3-tk python3-venv
+  python3-pyqt6 libqt6svg6 python3-tk python3-venv
 ```
 
-`python3-tk` und `python3-venv` laufen auf dem **Host**, nicht im Container:
+Diese Pakete laufen auf dem **Host**, nicht im Container:
 
-- `python3-tk` — grafisches Startmenü von `./start.sh`. Fehlt es, startet
-  ohne Fehlermeldung das Text-Menü.
+- `python3-pyqt6` + `libqt6svg6` — grafisches Startmenü von `./start.sh`
+  mit eingebautem Doku-Viewer (`libqt6svg6` zeigt die SVG-Bilder der Doku).
+  Fehlt PyQt6, sagt `start.sh` das und startet das Text-Menü.
+- `python3-tk` — Bearbeitungstool für eigene Hände (Schieber, siehe
+  [25-A-Eigene-Haende.md](25-A-Eigene-Haende.md)).
 - `python3-venv` — virtualenv für den Umgebungs-Builder / Scene-Editor
   (Schritt 5b). Ohne das Paket bricht `python3 -m venv` ab
   (`No module named 'ensurepip'`) und hinterlässt ein kaputtes `.venv`
@@ -166,7 +169,7 @@ curl -sI https://github.com | head -1    # erwartet: HTTP/2 200
 ```
 
 ```bash
-# System-Pakete inkl. python3-tk + python3-venv (Schritt 1 oben).
+# System-Pakete inkl. python3-pyqt6 + python3-venv (Schritt 1 oben).
 # Docker-Engine NATIV in der WSL-Distro installieren (Schritte 1-3 oben).
 # Native Engine statt Docker-Desktop-Integration, damit Host-Networking
 # ohne Tricks funktioniert.
@@ -304,7 +307,7 @@ erreichbar, sowie aus dem grafischen Startmenü über den Menüpunkt
 | Kein MuJoCo-/RViz-Fenster | `DISPLAY` gesetzt? `xhost +local:docker` gelaufen (macht `make`/`start.sh` automatisch)? |
 | Build bricht mit Netzwerkfehlern ab | Docker-Build lädt ROS-2-Pakete aus dem Internet — Firewall/Proxy prüfen. Unter WSL2 mit VPN: [WSL2-Netzwerk](#wsl2-netzwerk-vpn-uni-wlan-roboter). |
 | `apt install` hängt bei `Ign:` / `curl` Timeout (WSL2) | WSL kommt nicht am VPN vorbei ins Internet → [WSL2-Netzwerk](#wsl2-netzwerk-vpn-uni-wlan-roboter). |
-| `./start.sh` zeigt nur das Text-Menü | `python3-tk` fehlt auf dem Host: `sudo apt install python3-tk`. |
+| `./start.sh` zeigt nur das Text-Menü | PyQt6 fehlt auf dem Host (`start.sh` sagt das): `sudo apt install python3-pyqt6 libqt6svg6`. |
 | `setup.sh`: `No matching distribution found for mujoco-scene-editor` / `Requires-Python <3.13` | Host-Python zu neu (Ubuntu 26.04: 3.14) → Python 3.12 per uv, siehe Schritt 5b. |
 | `setup.sh`: `No module named 'ensurepip'` | `sudo apt install python3-venv`, dann `rm -rf .venv && ./setup.sh`. |
 | Greif-Objekte fliegen weg, ständig `[scene-reset]` | `trimesh`/`vhacdx` fehlen im `scene_editor/.venv` → Schritt 5b. |

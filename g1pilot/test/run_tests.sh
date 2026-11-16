@@ -38,7 +38,7 @@ case "${1:-}" in
                  test_demo_gui_jog_hold test_demo_gui_real_quit test_demo_gui_temperature
                  test_gui_external_estop test_status_line test_g1_temperature test_g1_battery test_shared_state
                  test_window_icons test_phone_demo_gui test_demo_gui_waist
-                 test_sequences test_demo_gui_sequences" ;;
+                 test_sequences test_demo_gui_sequences test_start_gui" ;;
   haende)     T="test_inspire_modbus_backend" ;;
   sim)        T="test_walk_policy test_loco_sim_health test_push_charge test_sim_autostart test_hand_profile test_hand_new" ;;
   handy)      T="test_phone_gateway test_phone_demo_gui test_phone_ble_dbus test_phone_protocol_js
