@@ -48,6 +48,14 @@ Ablauf-Schritt verweist auf eine Pose ({"pose": name}) ODER eine Bewegung
 rechnet das Ziel aus der aktuellen Hand und schickt es als kartesisches
 Ziel (arm_command type=pose, geplant wie jede Pose).
 
+CONTROLLER-SCHNELLWAHL ("quickslots"): R2 halten + Steuerkreuz zweimal
+druecken waehlt einen von 16 Plaetzen (ps4_arm_teleop), R2 loslassen faehrt
+die zugeordnete Pose an (/g1pilot/pose_store/goto, geplant). Schluessel =
+"<erste>-<zweite>" Richtung, z. B. "down-up"; Wert = Pose-Name (Verweis wie
+in Ablaeufen -- eine geloeschte Pose bleibt als Verweis stehen und wird
+beim Ausloesen abgelehnt, ein neu gespeicherter gleicher Name greift wieder).
+Zugeordnet wird im Fenster »Posen & Ablaeufe« der Demo-GUI.
+
 Dateiformat (Version 3):
     {"version": 3,
      "categories": ["Allgemein", "Greifen"],
@@ -55,7 +63,8 @@ Dateiformat (Version 3):
      "sequences": {"<ablauf>": {"steps": [{"pose": "<name>", "wait_s": 0.0},
                                           {"move": "<bewegung>", "wait_s": 0.0}]}},
      "moves": {"<bewegung>": {"dx": 0.0, "dy": 0.0, "dz": 0.05,
-                              "sides": ["left", "right"]}}}
+                              "sides": ["left", "right"]}},
+     "quickslots": {"down-up": "<name>"}}
 Version 1 (flaches {name: eintrag}) und Version 2 (ohne "sequences") werden
 transparent gelesen. Fehlt "sequences", werden die Ablaeufe aus den
 Kategorien "Ablauf <Name>" abgeleitet (Posen in Namensreihenfolge, wie die
@@ -98,6 +107,23 @@ MAX_WAIT_S = 600.0
 # 5 statt 0.05 darf nie ein Ziel werden).
 MAX_MOVE_M = 0.30
 MOVE_SIDES = ("left", "right")
+# Controller-Schnellwahl: Steuerkreuz-Richtungen (Reihenfolge = Anzeige).
+QUICK_DIRS = ("up", "right", "down", "left")   # im Uhrzeigersinn (Nils)
+QUICK_COMBOS = tuple(f"{a}-{b}" for a in QUICK_DIRS for b in QUICK_DIRS)
+
+
+def quick_combo(first, second) -> str:
+    """("down", "up") -> "down-up" (ValueError bei unbekannter Richtung)."""
+    if first not in QUICK_DIRS or second not in QUICK_DIRS:
+        raise ValueError(f"Unbekannte Richtung: {first!r}/{second!r}")
+    return f"{first}-{second}"
+
+
+def _clean_quickslots(raw) -> dict:
+    if not isinstance(raw, dict):
+        return {}
+    return {k: v.strip() for k, v in raw.items()
+            if k in QUICK_COMBOS and isinstance(v, str) and v.strip()}
 
 
 def default_store_path() -> Path:
@@ -220,7 +246,7 @@ class PoseStore:
         raw = self._read_raw()
         if not raw:
             return {"version": SCHEMA_VERSION, "categories": [], "poses": {}, "sequences": {},
-                    "moves": {}}
+                    "moves": {}, "quickslots": {}}
         if isinstance(raw.get("poses"), dict):
             cats = [c for c in raw.get("categories", []) if isinstance(c, str)]
             poses = {k: v for k, v in raw["poses"].items() if isinstance(v, dict)}
@@ -238,11 +264,12 @@ class PoseStore:
                 except (AttributeError, ValueError):
                     pass    # kaputter Eintrag: lieber weglassen als falsch fahren
             return {"version": SCHEMA_VERSION, "categories": cats, "poses": poses,
-                    "sequences": seqs, "moves": moves}
+                    "sequences": seqs, "moves": moves,
+                    "quickslots": _clean_quickslots(raw.get("quickslots"))}
         # Version 1: flaches {name: eintrag} ohne Kategorien.
         poses = {k: v for k, v in raw.items() if isinstance(v, dict)}
         return {"version": SCHEMA_VERSION, "categories": [], "poses": poses,
-                "sequences": legacy_sequences(poses), "moves": {}}
+                "sequences": legacy_sequences(poses), "moves": {}, "quickslots": {}}
 
     def _save(self, doc: dict) -> None:
         out = {
@@ -251,6 +278,8 @@ class PoseStore:
             "poses": doc.get("poses", {}),
             "sequences": doc.get("sequences", {}),
             "moves": doc.get("moves", {}),
+            "quickslots": {k: doc.get("quickslots", {})[k] for k in QUICK_COMBOS
+                           if k in doc.get("quickslots", {})},
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
@@ -483,3 +512,27 @@ class PoseStore:
             self._save(doc)
             return True
         return False
+
+    # ── Controller-Schnellwahl ───────────────────────────────────────────
+    def list_quickslots(self) -> dict:
+        """-> {"down-up": pose, ...} nur belegte Plaetze."""
+        return dict(self._load()["quickslots"])
+
+    def quickslot(self, combo: str):
+        """-> Pose-Name des Platzes oder None (leer)."""
+        return self._load()["quickslots"].get(combo)
+
+    def set_quickslot(self, combo: str, pose) -> None:
+        """Platz belegen (pose = Name) oder leeren (pose = None/"").
+        Dieselbe Pose darf auf mehreren Plaetzen liegen."""
+        if combo not in QUICK_COMBOS:
+            raise ValueError(f"Unbekannter Schnellwahl-Platz: {combo!r}")
+        pose = (pose or "").strip()
+        doc = self._load()
+        if pose:
+            if pose not in doc["poses"]:
+                raise ValueError(f"Pose »{pose}« gibt es nicht.")
+            doc["quickslots"][combo] = pose
+        elif doc["quickslots"].pop(combo, None) is None:
+            return
+        self._save(doc)

@@ -113,6 +113,14 @@ def controller_label(device):
     return "Xbox" if (device or {}).get("kind") == "xbox" else "PS4"
 
 
+_ARROW = {"up": "↑", "down": "↓", "left": "←", "right": "→"}
+
+
+def _arrows(combo):
+    """"down-up" -> "↓↑" (Pose-Schnellwahl)."""
+    return "".join(_ARROW.get(d, "?") for d in str(combo).split("-") if d)
+
+
 def ps4_text(status, age_s, sim=False, walk=None, device=None):
     """-> (Text, Farbe) oder None (kein PS4-Arm-Modus aktiv).
     walk = /g1pilot/ps4/walk_status (ps4_walk), device = /g1pilot/ps4/device."""
@@ -144,8 +152,20 @@ def ps4_text(status, age_s, sim=False, walk=None, device=None):
         speed = f" ({walk['speed']})" if walk.get("speed") else ""
         return (f"{c}: GEHEN – L2 halten = laufen{speed}, R2 = Greifen",
                 _hex(COLORS["walk"]))
+    quick = status.get("quick") if status.get("waist_mode") else None
+    if quick and quick.get("combo"):
+        arrows = _arrows(quick["combo"])
+        if quick.get("name"):
+            return (f"{c}: SCHNELLWAHL {arrows} = »{quick['name']}« – R2 loslassen fährt an, "
+                    "Kreuz verwirft", GREEN)
+        return f"{c}: SCHNELLWAHL {arrows} ist leer – nichts zugeordnet", AMBER
+    if quick and quick.get("first"):
+        return (f"{c}: SCHNELLWAHL {_arrows(quick['first'])} … zweite Richtung drücken",
+                _hex(COLORS["waist"]))
     if status.get("waist_mode"):
         return f"{c}: HÜFTE – rechter Stick links/rechts dreht, R3 = Mitte", _hex(COLORS["waist"])
+    if status.get("qs_busy"):
+        return f"{c}: SCHNELLWAHL-POSE fährt – Sticks gesperrt, Kreuz = Stopp", AMBER
     sel = status.get("selection", "")
     label = SELECTION_LABEL.get(sel, sel.upper())
     mode = MODE_LABEL.get(status.get("mode"), status.get("mode", ""))
@@ -235,6 +255,9 @@ PS4_HELP = (
     ("R2 drücken", "Modus GREIFEN (Arme übernehmen – auch nach NOT-HALT)"),
     ("R2 halten + rechter Stick links/rechts", "HÜFTE drehen (Oberkörper links/rechts, Arme drehen mit)"),
     ("R2 halten + R3", "Hüfte zurück zur Mitte"),
+    ("R2 halten + Steuerkreuz 2× (z. B. ↓ ↑)",
+     "POSE-SCHNELLWAHL: einer von 16 Plätzen, R2 loslassen = anfahren (geplant), "
+     "Kreuz = verwerfen · Zuordnung im Fenster »Posen & Abläufe«"),
     ("PS", "NOT-HALT"),
     ("R1 + L1 + PS (2 s halten)", "VOLL-NOTAUS: ganzer G1 in Damp (vibriert, loslassen = Abbruch)"),
 )
@@ -256,8 +279,9 @@ PS4_HELP_GROUPS = (
       "Rechter Stick", "L1 / R1", "Kreis / Viereck", "Kreuz")),
     ("Modus und Gehen", "footprints", "walk", ("L2 drücken", "L2 halten", "R2 drücken")),
     ("Hüfte", "rotate-cw", "waist", ("R2 halten + rechter Stick links/rechts", "R2 halten + R3")),
-    ("Abläufe und Grundstellung", "play", "seq", ("L3 (linken Stick drücken)",
-                                                  "Share (1 s halten)")),
+    ("Abläufe, Posen und Grundstellung", "play", "seq", (
+        "R2 halten + Steuerkreuz 2× (z. B. ↓ ↑)", "L3 (linken Stick drücken)",
+        "Share (1 s halten)")),
     ("Sicherheit", "octagon-alert", "safety", ("PS", "R1 + L1 + PS (2 s halten)", "Options")),
 )
 

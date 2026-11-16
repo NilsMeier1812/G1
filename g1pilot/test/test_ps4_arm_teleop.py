@@ -1327,3 +1327,132 @@ def test_seq_busy_locks_sticks_but_not_stop():
     a, b = joy(LY=0.8)
     lg.update(a, b, 0.3)
     assert "right" in lg.twist(a)
+
+
+# ── Pose-Schnellwahl: R2 halten + Steuerkreuz zweimal (Nils 2026-11-16) ────
+def _dpad(lg, t, btn, **axes):
+    """Steuerkreuz-Taste druecken + loslassen bei gehaltenem R2."""
+    out = trig(lg, t, [btn], R2_AXIS=1.0, **axes)
+    out += trig(lg, t + 0.05, [], R2_AXIS=1.0, **axes)
+    return out
+
+
+def test_quick_combo_fires_only_on_r2_release():
+    lg = _grasp()
+    trig(lg, 0.0, R2_AXIS=1.0)
+    assert lg.waist_mode
+    sel = lg.selection
+    assert ("qs_first", "down") in _dpad(lg, 0.1, L.DPAD_DOWN)
+    assert lg.quick_status() == {"first": "down", "combo": None, "name": None}
+    assert "SCHNELLWAHL ↓" in lg.label()
+    assert ("qs_combo", "down-up") in _dpad(lg, 0.3, L.DPAD_UP)
+    lg.qs_name = "Greifen"                                  # setzt der Node
+    assert "↓↑ = »Greifen«" in lg.label() and lg.status()["quick"]["combo"] == "down-up"
+    assert lg.selection == sel, "Steuerkreuz waehlt im Hueft-Modus keine Hand"
+    # noch gehalten: nichts faehrt, auch nicht nach langer Zeit
+    assert lg.quick_expire(5.0) == []
+    out = trig(lg, 5.1)                                     # R2 los
+    assert ("waist", "end") in out and ("quickslot", "down-up") in out
+    assert lg.quick_status() is None
+    assert ("quickslot", "down-up") not in trig(lg, 5.2)    # nur einmal
+
+
+def test_quick_first_expires_and_new_press_restarts():
+    lg = _grasp(quick_timeout_s=1.5)
+    trig(lg, 0.0, R2_AXIS=1.0)
+    _dpad(lg, 0.1, L.DPAD_LEFT)
+    assert lg.quick_expire(1.0) == []
+    assert lg.quick_expire(1.7) == [("qs_reset", "timeout")]
+    assert lg.quick_status() is None
+    # zweite Richtung zu spaet (ohne Tick dazwischen): zaehlt als neue erste
+    _dpad(lg, 2.0, L.DPAD_LEFT)
+    out = _dpad(lg, 4.0, L.DPAD_RIGHT)
+    assert ("qs_reset", "timeout") in out and ("qs_first", "right") in out
+    # nach fertiger Wahl beginnt ein weiterer Druck eine neue Wahl
+    _dpad(lg, 4.2, L.DPAD_UP)
+    assert lg.qs_combo == "right-up"
+    assert ("qs_first", "down") in _dpad(lg, 4.4, L.DPAD_DOWN) and lg.qs_combo is None
+    assert ("quickslot", "right-up") not in trig(lg, 4.6)   # unfertig -> nichts
+
+
+def test_quick_cross_discards_and_diagonal_ignored():
+    lg = _grasp()
+    trig(lg, 0.0, R2_AXIS=1.0)
+    _dpad(lg, 0.1, L.DPAD_DOWN)
+    _dpad(lg, 0.2, L.DPAD_DOWN)
+    out = trig(lg, 0.3, [L.CROSS], R2_AXIS=1.0)
+    assert ("qs_reset", "cross") in out and ("cancel",) in out
+    assert ("quickslot", "down-down") not in trig(lg, 0.4)
+    # Diagonale: zwei Richtungen zugleich -> nichts
+    trig(lg, 1.0, R2_AXIS=1.0)
+    assert not [c for c in trig(lg, 1.1, [L.DPAD_UP, L.DPAD_RIGHT], R2_AXIS=1.0)
+                if c[0].startswith("qs_")]
+    trig(lg, 1.2, [L.DPAD_UP], R2_AXIS=1.0)
+    assert not [c for c in trig(lg, 1.3, [L.DPAD_UP, L.DPAD_RIGHT], R2_AXIS=1.0)
+                if c[0].startswith("qs_")], "Daumen rollt ueber die Diagonale"
+    assert lg.quick_status() is None
+
+
+def test_quick_not_fired_when_waist_ends_otherwise():
+    # GUI-Kachel GEHEN bei gehaltenem R2: Hueft-Modus endet, R2 noch gedrueckt
+    lg = _grasp()
+    trig(lg, 0.0, R2_AXIS=1.0)
+    _dpad(lg, 0.1, L.DPAD_DOWN)
+    _dpad(lg, 0.2, L.DPAD_UP)
+    lg.set_robot_mode("walk")
+    out = trig(lg, 0.3, R2_AXIS=1.0) + trig(lg, 0.4)
+    assert not any(c[0] == "quickslot" for c in out)
+    # L2 (Gehen) dazu
+    lg = _grasp()
+    trig(lg, 0.0, R2_AXIS=1.0)
+    _dpad(lg, 0.1, L.DPAD_DOWN)
+    _dpad(lg, 0.2, L.DPAD_UP)
+    out = trig(lg, 0.3, R2_AXIS=1.0, L2_AXIS=1.0) + trig(lg, 0.4)
+    assert not any(c[0] == "quickslot" for c in out)
+
+
+@pytest.mark.parametrize("how", ["ps", "lock", "gui_estop"])
+def test_quick_discarded_by_estop_and_lock(how):
+    lg = _grasp()
+    trig(lg, 0.0, R2_AXIS=1.0)
+    _dpad(lg, 0.1, L.DPAD_DOWN)
+    _dpad(lg, 0.2, L.DPAD_UP)
+    if how == "ps":
+        trig(lg, 0.3, [L.PS], R2_AXIS=1.0)
+    elif how == "lock":
+        trig(lg, 0.3, [L.OPTIONS], R2_AXIS=1.0)
+    else:
+        lg.latch_estop()
+        trig(lg, 0.3, R2_AXIS=1.0)
+    assert lg.quick_status() is None
+    lg.clear_estop()
+    if how == "lock":
+        trig(lg, 0.4, [L.OPTIONS])
+    out = trig(lg, 0.5) + trig(lg, 0.6)
+    assert not any(c[0] == "quickslot" for c in out)
+
+
+def test_quick_seq_busy_and_qs_busy():
+    lg = _grasp()
+    trig(lg, 0.0, R2_AXIS=1.0)
+    _dpad(lg, 0.1, L.DPAD_LEFT)
+    _dpad(lg, 0.2, L.DPAD_LEFT)
+    lg.seq_busy = True                                       # Ablauf der GUI faehrt
+    out = trig(lg, 0.3)
+    assert ("qs_reset", "busy") in out and not any(c[0] == "quickslot" for c in out)
+    lg.seq_busy = False
+    lg.qs_busy = True                                        # Schnellwahl-Pose faehrt
+    assert lg.twist(joy(LY=1.0)[0]) == {}
+    assert "SCHNELLWAHL-POSE" in lg.label() and lg.status()["qs_busy"]
+    lg.qs_busy = False
+    assert lg.twist(joy(LY=1.0)[0]) != {}
+
+
+def test_quick_disabled_and_dpad_without_r2_selects_hand():
+    lg = _grasp(quick_timeout_s=0.0)
+    trig(lg, 0.0, R2_AXIS=1.0)
+    assert not [c for c in _dpad(lg, 0.1, L.DPAD_DOWN) if c[0].startswith("qs_")]
+    trig(lg, 0.2)
+    lg = _grasp()
+    press(lg, L.DPAD_LEFT, 1.0)
+    assert lg.selection == "left" and lg.quick_status() is None

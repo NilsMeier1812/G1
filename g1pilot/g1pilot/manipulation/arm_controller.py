@@ -2205,6 +2205,10 @@ class ArmController(Node):
             "limit_deg": math.degrees(wy.limit),
             "moving": bool(owner and wy.moving(now)),
             "centering": bool(wy.centering),
+            # Dreht/zentriert/laeuft nach -> neue Fahrten wuerden abgelehnt
+            # ("Huefte dreht gerade"); der Controller wartet damit auf die
+            # Schnellwahl-Pose.
+            "busy": bool(self._waist_busy()),
             "pending": self._wyaw_pending[0] if self._wyaw_pending else "",
             # Darf gegangen werden? (loco_client sperrt Move() sonst.) Nur der
             # SOLLWERT zaehlt: beim Laufen schwankt die gemessene Taille, und
@@ -2917,6 +2921,11 @@ class ArmController(Node):
         not_ready = self._arms_not_ready_reason()
         if not_ready:
             self.get_logger().warn(f"POSE ANFAHREN '{name}' ignoriert: {not_ready}")
+            # Endzustand melden: der Controller (Schnellwahl) vibriert dann
+            # sofort statt nach seiner Wartezeit; Ablaeufe ignorieren Endzustaende
+            # vor "accepted" ohnehin.
+            self._publish_cmd_status(ac.ST_REJECTED, reason=not_ready, req_id="",
+                                     source="pose_store")
             return
         entry = self._pose_store.get(name)
         if entry is None:

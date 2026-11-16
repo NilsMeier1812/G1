@@ -224,3 +224,22 @@ def test_ps4_help_groups_cover_every_key():
         assert sorted(rows) == sorted(sl.ps4_help(st))
         assert all(icon for _t, icon, _c, _g in groups)
     assert [t for t, *_ in sl.ps4_help_groups()][-1] == "Sicherheit"   # nichts unter »Weitere«
+
+
+def test_ps4_quickslot_texts_and_help():
+    base = {"selection": "right", "mode": "move", "speed": "Normal", "connected": True,
+            "waist_mode": True}
+    t, _ = sl.ps4_text(dict(base, quick={"first": "down", "combo": None}), 0.1)
+    assert "SCHNELLWAHL ↓" in t and "zweite Richtung" in t
+    t, c = sl.ps4_text(dict(base, quick={"first": "down", "combo": "down-up",
+                                         "name": "Greifen"}), 0.1)
+    assert "↓↑ = »Greifen«" in t and "R2 loslassen" in t and c == sl.GREEN
+    t, c = sl.ps4_text(dict(base, quick={"first": "left", "combo": "left-left"}), 0.1)
+    assert "leer" in t and c == sl.AMBER
+    t, _ = sl.ps4_text(dict(base, quick=None), 0.1)
+    assert "HÜFTE" in t
+    t, _ = sl.ps4_text(dict(base, waist_mode=False, qs_busy=True), 0.1)
+    assert "SCHNELLWAHL-POSE fährt" in t
+    keys = [k for _, _, _, rows in sl.ps4_help_groups() for k, _ in rows]
+    assert any("Steuerkreuz 2×" in k for k in keys)
+    assert all(title != "Weitere" for title, *_ in sl.ps4_help_groups())

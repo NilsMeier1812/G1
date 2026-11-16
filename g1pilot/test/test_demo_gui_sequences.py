@@ -406,3 +406,56 @@ def test_save_dialog_sequence_field():
     assert d.result_data()["sequence"] is None
     d.cb_sequence.setCurrentText("Ganz neu")
     assert d.result_data()["sequence"] == "Ganz neu"
+
+
+# ── Controller-Schnellwahl: Reiter im Fenster »Posen & Abläufe« ─────────────
+def test_editor_quickslot_grid_assign_highlight(gui):
+    dg, g, node, sent, strs, states, store = gui
+    g.open_sequence_editor()
+    ed = g.seq_editor
+    assert ed.tabs.count() == 2 and "Schnellwahl" in ed.tabs.tabText(1)
+    panel = ed.quick
+    assert len(panel.cells) == 16 and set(panel.rows) == {"up", "down", "left", "right"}
+    cell = panel.cells["down-up"]
+    assert cell.current() is None and cell.property("state") == "empty"
+    # Kategorie-Zeilen sind nicht waehlbar, Posen schon
+    names = [cell.box.itemData(i) for i in range(cell.box.count())]
+    assert {"Sichere_Pose", "Hand_vor", "Greifen"} <= set(names)
+    cell.box.setCurrentIndex(cell.box.findData("Greifen"))
+    assert store.quickslot("down-up") == "Greifen"
+    assert panel.cells["down-up"].property("state") == "set"
+    assert "1 von 16" in panel.status.text()
+    # leeren
+    panel.cells["down-up"].box.setCurrentIndex(0)
+    assert store.quickslot("down-up") is None
+    # geloeschte Pose: rot "(fehlt)"
+    store.set_quickslot("left-left", "Hand_vor")
+    store.delete("Hand_vor")
+    ed.reload()
+    c2 = panel.cells["left-left"]
+    assert c2.property("state") == "missing" and "(fehlt)" in c2.box.currentText()
+    # Controller waehlt gerade: Zeile, dann Feld leuchten
+    panel.highlight({"first": "left", "combo": None})
+    assert all(c.property("state") == "row" for c in panel.rows["left"])
+    assert panel.cells["up-up"].property("state") == "empty"
+    panel.highlight({"first": "left", "combo": "left-left"})
+    assert c2.property("state") == "live"
+    assert panel.cells["left-up"].property("state") == "empty"
+    panel.highlight(None)
+    assert c2.property("state") == "missing"
+
+
+def test_gui_shows_controller_quickslot_in_status(gui):
+    import time as _t
+    dg, g, node, sent, strs, states, store = gui
+    g.open_sequence_editor()
+    node.ps4 = {"selection": "right", "mode": "move", "speed": "Normal", "connected": True,
+                "waist_mode": True, "quick": {"first": "down", "combo": "down-up",
+                                              "name": "Greifen"}}
+    node.ps4_t = _t.monotonic()
+    g._refresh_info()
+    assert "↓↑ = »Greifen«" in g.status.text()
+    assert g.seq_editor.quick.cells["down-up"].property("state") == "live"
+    g.status.setText("anderes")
+    g._refresh_info()                         # unveraendert: Statuszeile bleibt
+    assert g.status.text() == "anderes"

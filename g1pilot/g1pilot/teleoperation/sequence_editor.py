@@ -16,6 +16,9 @@ Reihenfolge stellt man hier ein -- kein Umbenennen, keine Kopien.
           RELATIVEN BEWEGUNGEN (z. B. »Box anheben« = Haende 5 cm hoch, egal
           wo sie gerade sind): neu, bearbeiten, loeschen, hinzufuegen
 
+Zweiter Reiter »Controller-Schnellwahl« (quickslot_panel.py): Posen auf die
+16 Plaetze R2 halten + Steuerkreuz zweimal legen.
+
 Jede Aenderung wird sofort gespeichert. Das Fenster ist nicht modal: man
 kann nebenher die Hand bewegen (Jog, Controller) und dann die Stellung als
 Schritt uebernehmen. Bewegt wird nur ueber die Methoden der Demo-GUI
@@ -27,11 +30,12 @@ from PyQt6.QtWidgets import (
     QDialog, QHBoxLayout, QVBoxLayout, QGridLayout, QLabel, QListWidget,
     QListWidgetItem, QPushButton, QTreeWidget, QTreeWidgetItem, QInputDialog,
     QMessageBox, QDoubleSpinBox, QAbstractItemView, QGroupBox, QFormLayout,
-    QLineEdit, QCheckBox, QDialogButtonBox,
+    QLineEdit, QCheckBox, QDialogButtonBox, QTabWidget, QWidget,
 )
 
 from g1pilot.manipulation.pose_store import MAX_MOVE_M, clean_move
 from g1pilot.utils import ui_icons
+from g1pilot.teleoperation.quickslot_panel import QuickSlotPanel
 from g1pilot.teleoperation.sequence_runner import pretty_pose_name, step_name
 
 MOVES_GROUP = "Relative Bewegungen"
@@ -55,8 +59,17 @@ class SequenceEditor(QDialog):
         self._loading = False
 
         root = QVBoxLayout(self)
+        self.tabs = QTabWidget()
+        root.addWidget(self.tabs, 1)
+        page = QWidget()
+        page_lay = QVBoxLayout(page)
         cols = QHBoxLayout()
-        root.addLayout(cols, 1)
+        page_lay.addLayout(cols, 1)
+        self.tabs.addTab(page, ui_icons.icon("play", "#dddddd", 16), "Abläufe und Posen")
+        # Reiter 2: Posen auf die 16 Controller-Plaetze legen (R2 + Steuerkreuz 2x).
+        self.quick = QuickSlotPanel(gui)
+        self.tabs.addTab(self.quick, ui_icons.icon("gamepad-2", "#dddddd", 16),
+                         "Controller-Schnellwahl")
 
         # ── Ablaeufe ────────────────────────────────────────────────────
         box_seq = QGroupBox("Abläufe")
@@ -140,7 +153,7 @@ class SequenceEditor(QDialog):
                            "oder mit den Pfeil-Knöpfen. Änderungen werden sofort gespeichert.")
         self.hint.setWordWrap(True)
         self.hint.setStyleSheet("color:#999;")
-        root.addWidget(self.hint)
+        page_lay.addWidget(self.hint)
 
         self.seq_list.currentItemChanged.connect(lambda *_: self._load_steps())
         self.btn_new.clicked.connect(self._new)
@@ -234,6 +247,7 @@ class SequenceEditor(QDialog):
         self.pose_tree.expandAll()
         self._loading = False
         self._load_steps()
+        self.quick.reload()
 
     def _load_steps(self):
         if self._loading:
