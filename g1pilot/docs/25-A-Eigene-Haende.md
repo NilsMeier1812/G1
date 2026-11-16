@@ -26,23 +26,49 @@ der Lippe.
 
 ## Eine neue Hand anlegen
 
-1. Ordner `unitree_mujoco/unitree_robots/g1/hands/<name>/` anlegen (`<name>`
-   nur aus a–z, 0–9 und `_`) und die STL hineinlegen.
-2. `hand.yaml` aus `hands/haken/` kopieren und anpassen (Felder siehe unten).
-3. Modell erzeugen und ansehen:
+Am einfachsten in der **Start-GUI**: Simulation → **Hände** → *Custom Hände* →
+in der Liste **➕ Neue Hand anlegen …** wählen → Knopf **Anlegen …**. Im
+Terminal-Startmenü ist es der letzte Punkt bei *3a)*, direkt:
+`unitree_mujoco/unitree_robots/g1/tools/hand_tool.sh new [datei]`.
 
-   ```bash
-   cd unitree_mujoco/unitree_robots/g1/tools
-   ./hand_tool.sh build <name>
-   ./hand_tool.sh adjust <name>      # einpassen, siehe unten
-   ```
-
-   Alternativ ohne Schieber: `./hand_tool.sh preview <name>` lädt die Ansicht
-   bei jedem Speichern von `hand.yaml` neu.
-   Fehlt das Werkzeug-Python, einmal `unitree_mujoco/scene_editor/setup.sh`
-   ausführen (installiert trimesh, vhacdx, mujoco).
-4. Die erzeugten Dateien committen (Liste in [25-T](25-T-Eigene-Haende.md#was-erzeugt-wird)).
+1. **Datei wählen** (STL, OBJ, PLY, OFF, GLB oder 3MF) und einen Namen geben. Der
+   Ordner `hands/<name>/` wird aus dem Namen gebildet (steht daneben).
+2. Das Fenster **rät die Montage** und zeigt bis zu vier **Vorschläge** als Bild:
+   links beide Hände von vorn, rechts die rechte Hand von nah. Blaue Scheibe =
+   Flansch am Handgelenk, grüner Punkt = Greifpunkt (TCP), der Unterarm ist
+   durchsichtig. Darunter steht, woran der Vorschlag es festmacht.
+   - **Einheit** (mm/m) wird aus der Größe geraten, **Masse** aus dem Volumen
+     (PLA, 50 % Füllung). Beides kann man ändern, die Masse bitte nachwiegen.
+   - **Linke Hand gespiegelt**: an, wenn eine Datei für beide Seiten gilt.
+3. Vorschlag anklicken → **Anlegen und Bearbeitungstool öffnen**. Das legt
+   `hands/<name>/` mit der Datei (andere Formate als STL) und einer kommentierten
+   `hand.yaml` an, erzeugt das Modell (MuJoCo + URDF, Kollisions-Zerlegung) und
+   öffnet gleich das [Bearbeitungstool](#hand-einpassen-schieber-live) zum
+   Feinjustieren.
+4. Die neuen Dateien committen (Liste in [25-T](25-T-Eigene-Haende.md#was-erzeugt-wird)).
    Vergisst man das, erzeugt `start.sh` sie beim nächsten Start selbst neu.
+
+Wie die Erkennung rät (Kurzfassung, Details in
+[25-T](25-T-Eigene-Haende.md#montage-erkennung)): Das Werkzeug ragt entlang
+seiner **längsten Achse** aus dem Arm. Arm-Seite ist das **schmalere Ende**; wird
+der Querschnitt dahinter deutlich anders (Steckplatte → Körper), steckt die
+Platte im Arm und der Flansch liegt am Absatz. **Handfläche** ist die Seite, zu
+der die Spitze herausragt (Lippe, Kralle), sonst die flache Seite. Bei den
+Box-Haken trifft Vorschlag 2 die eingepasste Montage genau.
+
+Ohne Fenster (z. B. per SSH):
+
+```bash
+cd unitree_mujoco/unitree_robots/g1/tools
+python3 hand_detect.py meine_hand.stl                 # nur Vorschläge anzeigen
+python3 hand_new.py --create meine_hand.stl --name "Meine Hand" --pick 2
+```
+
+Von Hand geht es weiterhin: Ordner `hands/<name>/` (nur a–z, 0–9, `_`) mit STL
+und einer `hand.yaml` (Vorlage `hands/haken/hand.yaml`, Felder siehe unten),
+dann `./hand_tool.sh build <name>`. Fehlt das Werkzeug-Python, einmal
+`unitree_mujoco/scene_editor/setup.sh` ausführen (installiert trimesh, vhacdx,
+mujoco); für die Fenster braucht es zusätzlich `tkinter` (`sudo apt install python3-tk`).
 
 ## Hand einpassen (Schieber, live)
 
@@ -139,4 +165,4 @@ der Flansch an der richtigen Stelle sitzt.
 - In der Vorschau: blaue Achsen = Flansch, grüne Achsen = TCP. Taste **3**
   blendet die Kollisions-Teile ein.
 - `./hand_tool.sh snapshot <name>` speichert drei Ansichten als Bild.
-- Test: `g1pilot/test/run_tests.sh sim` (enthält `test_hand_profile.py`).
+- Test: `g1pilot/test/run_tests.sh sim` (enthält `test_hand_profile.py` und `test_hand_new.py`).

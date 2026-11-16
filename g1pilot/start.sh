@@ -250,24 +250,43 @@ else
     "Custom Haende  — eigene starre Haende (hands/<profil>, z. B. Box-Haken)|custom"
   export G1_HANDS="$REPLY_VALUE"
   if [ "$G1_HANDS" = "custom" ]; then
-    _hand_menu=()
-    while IFS='|' read -r _hp _hn; do
-      [ -n "$_hp" ] && _hand_menu+=("${_hn} (hands/${_hp})|${_hp}")
-    done < <(python3 "$_hand_gen" --list 2>/dev/null)
-    if [ "${#_hand_menu[@]}" -eq 0 ]; then
-      echo -e "${Y}[start] Keine Custom Haende unter unitree_mujoco/unitree_robots/g1/hands/ -> Rubber.${R}"
+    _hand_tool=../unitree_mujoco/unitree_robots/g1/tools/hand_tool.sh
+    _custom_cur=""
+    [ "$_hand_kind_cur" = "custom" ] && _custom_cur="$_hands_cur"
+    _hand_created=0
+    while true; do
+      _hand_menu=(); _hand_def=1; _i=0
+      while IFS='|' read -r _hp _hn; do
+        [ -z "$_hp" ] && continue
+        _i=$((_i+1)); _hand_menu+=("${_hn} (hands/${_hp})|${_hp}")
+        [ "$_hp" = "$_custom_cur" ] && _hand_def=$_i
+      done < <(python3 "$_hand_gen" --list 2>/dev/null)
+      _hand_menu+=("Neue Hand anlegen ... (3D-Datei waehlen, Montage wird vorgeschlagen)|__new__")
+      ask_menu "3a) Welche Custom Hand?" "$_hand_def" "$_custom_cur" "${_hand_menu[@]}"
+      [ "$REPLY_VALUE" != "__new__" ] && break
+      if [ "$ASSUME_YES" = "1" ]; then REPLY_VALUE=""; break; fi
+      # Fenster: Datei waehlen, Vorschlag waehlen, danach Bearbeitungstool
+      _before=$(python3 "$_hand_gen" --list 2>/dev/null | cut -d'|' -f1)
+      bash "$_hand_tool" new \
+        || echo -e "${Y}[start] Neue Hand anlegen abgebrochen oder fehlgeschlagen.${R}"
+      _new=$(comm -13 <(echo "$_before" | sort) \
+                      <(python3 "$_hand_gen" --list 2>/dev/null | cut -d'|' -f1 | sort) | head -1)
+      if [ -n "$_new" ]; then _custom_cur="$_new"; _hand_created=1; fi
+      echo
+    done
+    if [ -z "$REPLY_VALUE" ]; then
+      echo -e "${Y}[start] Keine Custom Hand gewaehlt -> Rubber.${R}"
       export G1_HANDS=rubber
     else
-      _custom_cur=""
-      [ "$_hand_kind_cur" = "custom" ] && _custom_cur="$_hands_cur"
-      ask_menu "3a) Welche Custom Hand?" 1 "$_custom_cur" "${_hand_menu[@]}"
       export G1_HANDS="$REPLY_VALUE"
-      ask_menu "3b) Custom Hand vorher im Bearbeitungstool einpassen?" 1 "" \
-        "Nein — so starten|0" \
-        "Ja   — Bearbeitungstool oeffnen (MuJoCo + Schieber), danach geht es weiter|1"
-      if [ "$REPLY_VALUE" = "1" ]; then
-        bash ../unitree_mujoco/unitree_robots/g1/tools/hand_tool.sh adjust "$G1_HANDS" \
-          || echo -e "${Y}[start] Bearbeitungstool beendet mit Fehler -> starte trotzdem.${R}"
+      if [ "$_hand_created" = "0" ] || [ "$G1_HANDS" != "$_custom_cur" ]; then
+        ask_menu "3b) Custom Hand vorher im Bearbeitungstool einpassen?" 1 "" \
+          "Nein — so starten|0" \
+          "Ja   — Bearbeitungstool oeffnen (MuJoCo + Schieber), danach geht es weiter|1"
+        if [ "$REPLY_VALUE" = "1" ]; then
+          bash "$_hand_tool" adjust "$G1_HANDS" \
+            || echo -e "${Y}[start] Bearbeitungstool beendet mit Fehler -> starte trotzdem.${R}"
+        fi
       fi
     fi
   fi
