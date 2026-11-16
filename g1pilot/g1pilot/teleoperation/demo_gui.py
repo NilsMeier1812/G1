@@ -830,11 +830,14 @@ class WalkPanel(QWidget):
         arrows = {
             "fwd": ("arrow-up", "", 0, 1), "back": ("arrow-down", "", 2, 1),
             "left": ("arrow-left", "", 1, 0), "right": ("arrow-right", "", 1, 2),
-            "turn_l": ("rotate-ccw", "drehen", 0, 0), "turn_r": ("rotate-cw", "drehen", 0, 2),
+            "turn_l": ("rotate-ccw", "", 0, 0), "turn_r": ("rotate-cw", "", 0, 2),
         }
+        tips = {"fwd": "vorwärts", "back": "rückwärts", "left": "seitlich links",
+                "right": "seitlich rechts", "turn_l": "links drehen", "turn_r": "rechts drehen"}
         for key, (ic, txt, r, c) in arrows.items():
             b = big_button(txt, font=16, height=90)
-            ui_icons.set_icon(b, ic, "#ffffff", 40 if not txt else 28)
+            ui_icons.set_icon(b, ic, "#ffffff", 40)
+            b.setToolTip(f"{tips[key]} (gedrückt halten)")
             b.setFixedWidth(110)
             b.pressed.connect(lambda k=key: self.held.add(k))
             b.released.connect(lambda k=key: self.held.discard(k))
@@ -1579,19 +1582,89 @@ class DemoGUI(QWidget):
         self._start_armed_n += 1
 
     def _ps4_help(self):
-        rows = "".join(f"<tr><td style='padding:3px 14px 3px 0'><b>{k}</b></td><td>{v}</td></tr>"
-                       for k, v in status_line.ps4_help(self.node.ps4))
+        """Fenster »Controller-Belegung«: Tasten als Chips, nach Bereichen in Karten."""
+        from g1pilot.teleoperation import dialog_style as DS
         label = status_line.controller_label(self.node.ps4dev)
-        box = QMessageBox(self)
-        box.setWindowTitle(f"{label}-Controller: Belegung")
-        box.setTextFormat(Qt.TextFormat.RichText)
-        note = ("<p>Xbox: Tasten nach Position wie PS4 (A = Kreuz, B = Kreis, X = Viereck, "
-                "Y = Dreieck, LB/RB = L1/R1, LT/RT = L2/R2, View = Share, Menu = Options, "
-                "Xbox-Taste = PS).</p>" if label == "Xbox" else "")
-        box.setText(f"<table>{rows}</table>{note}<p>Modus, Hand-Auswahl und Tempo sind "
-                    "mit dieser GUI gekoppelt: was am Controller gewählt wird, zeigt die "
-                    "GUI und umgekehrt.</p>")
-        box.open()
+        colors = {"manip": MODE_COLOR[MANIP], "walk": MODE_COLOR[WALK], "waist": "#ab47bc",
+                  "seq": "#66bb6a", "safety": "#ef5350", "other": DS.FG}
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"{label}-Controller: Belegung")
+        dlg.setStyleSheet(DS.DIALOG_CSS)
+        dlg.resize(1080, 760)
+        outer = QVBoxLayout(dlg)
+        outer.setContentsMargins(20, 18, 20, 16)
+        outer.setSpacing(12)
+        head = QHBoxLayout()
+        head.setSpacing(14)
+        head.addWidget(DS.icon_box("gamepad-2", DS.ACCENT, 24, 46))
+        col = QVBoxLayout()
+        col.setSpacing(2)
+        t = QLabel(f"{label}-Controller: Belegung")
+        t.setStyleSheet("font-size:20px; font-weight:800;")
+        col.addWidget(t)
+        name = (self.node.ps4dev or {}).get("name", "")
+        sub = QLabel((f"{name} · " if name else "") + "Modus, Hand-Auswahl und Tempo sind mit "
+                     "dieser GUI gekoppelt: was am Controller gewählt wird, zeigt die GUI "
+                     "und umgekehrt.")
+        sub.setWordWrap(True)
+        sub.setStyleSheet(f"color:{DS.MUTED}; font-size:13px;")
+        col.addWidget(sub)
+        head.addLayout(col, 1)
+        outer.addLayout(head)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        body = QWidget()
+        body.setObjectName("dbody")
+        grid = QGridLayout(body)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setSpacing(12)
+        groups = status_line.ps4_help_groups(self.node.ps4)
+        cols = [[], []]
+        h = [0, 0]
+        for g in groups:                     # in die kuerzere Spalte
+            i = 0 if h[0] <= h[1] else 1
+            cols[i].append(g)
+            h[i] += len(g[3]) + 2
+        for c, gs in enumerate(cols):
+            vb = QVBoxLayout()
+            vb.setSpacing(12)
+            for title, icon, ck, rows in gs:
+                box, cl = DS.card(title, icon, colors.get(ck, DS.FG))
+                rg = QGridLayout()
+                rg.setHorizontalSpacing(14)
+                rg.setVerticalSpacing(8)
+                for r, (key, what) in enumerate(rows):
+                    rg.addWidget(DS.key_chip(key, colors.get(ck, DS.ACCENT)), r, 0,
+                                 Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+                    w = QLabel(what)
+                    w.setWordWrap(True)
+                    w.setStyleSheet("font-size:14px;")
+                    rg.addWidget(w, r, 1)
+                rg.setColumnStretch(1, 1)
+                cl.addLayout(rg)
+                vb.addWidget(box)
+            vb.addStretch(1)
+            grid.addLayout(vb, 0, c)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+        scroll.setWidget(body)
+        outer.addWidget(scroll, 1)
+        if label == "Xbox":
+            note = QLabel("Xbox: Tasten nach Position wie PS4 (A = Kreuz, B = Kreis, X = Viereck, "
+                          "Y = Dreieck, LB/RB = L1/R1, LT/RT = L2/R2, View = Share, "
+                          "Menu = Options, Xbox-Taste = PS).")
+            note.setWordWrap(True)
+            note.setStyleSheet(f"color:{DS.MUTED}; font-size:13px;")
+            outer.addWidget(note)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        close = QPushButton("Schließen")
+        close.clicked.connect(dlg.close)
+        row.addWidget(close)
+        outer.addLayout(row)
+        self._pad_dialog = dlg               # Referenz halten (nicht modal)
+        dlg.show()
 
     @staticmethod
     def _small_button(text):

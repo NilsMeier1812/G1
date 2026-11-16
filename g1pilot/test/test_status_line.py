@@ -214,3 +214,13 @@ def test_ps4_text_locked():
     # NOT-HALT hat Vorrang vor der Sperre
     assert "NOT-HALT" in sl.ps4_text(dict(st, estop=True), 0.1)[0]
     assert "sperren" in dict(sl.ps4_help())["Options"]
+
+
+def test_ps4_help_groups_cover_every_key():
+    """Belegungs-Fenster: jede Taste genau einmal, PS-Text folgt ps_estop."""
+    for st in (None, {"ps_estop": False}):
+        groups = sl.ps4_help_groups(st)
+        rows = [r for _t, _i, _c, g in groups for r in g]
+        assert sorted(rows) == sorted(sl.ps4_help(st))
+        assert all(icon for _t, icon, _c, _g in groups)
+    assert [t for t, *_ in sl.ps4_help_groups()][-1] == "Sicherheit"   # nichts unter »Weitere«

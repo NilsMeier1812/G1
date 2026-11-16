@@ -249,6 +249,35 @@ def ps4_help(status=None):
     return rows
 
 
+# Gruppen fuer das Belegungs-Fenster: (Titel, Icon, Farbschluessel, Tasten).
+PS4_HELP_GROUPS = (
+    ("Hand wählen und bewegen", "hand", "manip",
+     ("Steuerkreuz links / rechts", "Steuerkreuz hoch / runter", "Dreieck", "Linker Stick",
+      "Rechter Stick", "L1 / R1", "Kreis / Viereck", "Kreuz")),
+    ("Modus und Gehen", "footprints", "walk", ("L2 drücken", "L2 halten", "R2 drücken")),
+    ("Hüfte", "rotate-cw", "waist", ("R2 halten + rechter Stick links/rechts", "R2 halten + R3")),
+    ("Abläufe und Grundstellung", "play", "seq", ("L3 (linken Stick drücken)",
+                                                  "Share (1 s halten)")),
+    ("Sicherheit", "octagon-alert", "safety", ("PS", "R1 + L1 + PS (2 s halten)", "Options")),
+)
+
+
+def ps4_help_groups(status=None):
+    """Belegung gruppiert: [(Titel, Icon, Farbschluessel, [(Taste, Wirkung)])].
+    Tasten ohne Gruppe landen unter »Weitere« (nichts geht verloren)."""
+    rows = ps4_help(status)
+    left = dict(rows)
+    out = []
+    for title, icon, color, keys in PS4_HELP_GROUPS:
+        g = [(k, left.pop(k)) for k in keys if k in left]
+        if g:
+            out.append((title, icon, color, g))
+    rest = [(k, v) for k, v in rows if k in left]
+    if rest:
+        out.append(("Weitere", "gamepad-2", "other", rest))
+    return out
+
+
 def waist_text(state, age_s):
     """Hueftdrehung (arm_controller -> /g1pilot/waist/state) -> (Text, Farbe)
     oder None (keine Daten, Hueftdrehung aus)."""

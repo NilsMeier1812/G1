@@ -104,7 +104,7 @@ damit die Zuordnung ohne Lesen klar ist.
 
 - **Knopf** (`VirtualJoystick` aus `gui_base.py`): ziehen = laufen,
   loslassen = stehen.
-- **Pfeiltasten** (vor, zurück, links, rechts) und **drehen** (links/rechts herum): *gedrückt halten* = laufen,
+- **Pfeiltasten** (vor, zurück, links, rechts) und die beiden **Dreh-Pfeile** (links/rechts herum, nur Icon): *gedrückt halten* = laufen,
   loslassen = sofort 0. Das ist bewusst ein Tot-Mann-Prinzip: Ein einzelner Klick
   löst kein Dauerlaufen aus.
 - **Tempo** Langsam (0.3) / Normal (0.6) als Faktor auf die normierte

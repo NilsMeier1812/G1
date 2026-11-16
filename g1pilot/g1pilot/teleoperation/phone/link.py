@@ -28,10 +28,12 @@ import time
 
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget, QListWidgetItem,
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
+    QListWidgetItem, QScrollArea, QWidget,
 )
 
-from g1pilot.utils.ui_icons import set_icon
+from g1pilot.utils.ui_icons import icon, set_icon
+from g1pilot.teleoperation import dialog_style as DS
 from g1pilot.teleoperation import status_line
 from g1pilot.teleoperation.phone import gateway as G
 
@@ -447,59 +449,124 @@ class PhoneLink:
 
 
 class PhoneDialog(QDialog):
-    """Kopplung, Geraeteliste, Bedienung zurueckholen."""
+    """Kopplung, Geraeteliste, Bedienung zurueckholen (Karten-Look, dialog_style)."""
 
     def __init__(self, link):
         super().__init__(link.gui)
         self.link = link
         self.setWindowTitle("Handy-Zugang")
-        self.setMinimumWidth(520)
-        lay = QVBoxLayout(self)
+        self.setMinimumWidth(560)
+        self.setStyleSheet(DS.DIALOG_CSS)
+        self.resize(600, 860)
+        # Inhalt in einer Scroll-Flaeche: kleine Bildschirme scrollen statt zu quetschen
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        body = QWidget()
+        body.setObjectName("dbody")
+        scroll.setWidget(body)
+        outer.addWidget(scroll)
+        lay = QVBoxLayout(body)
+        lay.setContentsMargins(20, 18, 20, 18)
+        lay.setSpacing(12)
+
+        head = QHBoxLayout()
+        head.setSpacing(14)
+        head.addWidget(DS.icon_box("smartphone", DS.ACCENT, 24, 46))
+        col = QVBoxLayout()
+        col.setSpacing(2)
+        t = QLabel("Handy-Zugang")
+        t.setStyleSheet("font-size:20px; font-weight:800;")
+        col.addWidget(t)
+        s = QLabel("Android-Handy per Bluetooth: ansehen oder bedienen. "
+                   "NOT-HALT geht vom Handy immer.")
+        s.setWordWrap(True)
+        s.setStyleSheet(f"color:{DS.MUTED}; font-size:13px;")
+        col.addWidget(s)
+        head.addLayout(col, 1)
+        lay.addLayout(head)
+
+        # Verbindung
+        box, cl = DS.card("Verbindung", "bluetooth", DS.ACCENT)
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        self.state_dot = DS.dot(DS.MUTED)
+        row.addWidget(self.state_dot, 0, Qt.AlignmentFlag.AlignTop)
         self.lbl_state = QLabel()
         self.lbl_state.setWordWrap(True)
-        self.lbl_state.setStyleSheet("color:#ddd; font-size:15px;")
-        lay.addWidget(self.lbl_state)
+        self.lbl_state.setStyleSheet("font-size:14px;")
+        row.addWidget(self.lbl_state, 1)
+        cl.addLayout(row)
+        btns = QHBoxLayout()
         self.btn_retry = QPushButton("Bluetooth erneut versuchen")
+        set_icon(self.btn_retry, "refresh-cw", DS.FG, 16)
         self.btn_retry.clicked.connect(lambda: (link.start_bluetooth(), self.refresh()))
         self.btn_retry.setVisible(False)
-        lay.addWidget(self.btn_retry)
-        self.btn_revoke = QPushButton("Bedienung zurückholen")
+        btns.addWidget(self.btn_retry)
+        self.btn_revoke = DS.kind(QPushButton("Bedienung zurückholen"), "warn")
+        set_icon(self.btn_revoke, "rotate-ccw", DS.FG, 16)
+        self.btn_revoke.setToolTip("Das Handy darf danach nur noch ansehen (und NOT-HALT).")
         self.btn_revoke.clicked.connect(lambda: (link.gw.revoke_control(), self.refresh()))
-        lay.addWidget(self.btn_revoke)
+        btns.addWidget(self.btn_revoke)
+        btns.addStretch(1)
+        cl.addLayout(btns)
+        lay.addWidget(box)
 
-        lay.addWidget(QLabel("Neues Handy koppeln:"))
+        # Koppeln
+        box, cl = DS.card("Neues Handy koppeln", "plus", DS.OK,
+                          "Code erscheint hier und wird am Handy eingegeben.")
         row = QHBoxLayout()
-        self.btn_pair_op = QPushButton("Als Bediener koppeln")
+        row.setSpacing(10)
+        self.btn_pair_op = DS.kind(QPushButton("Als Bediener koppeln"), "primary")
+        set_icon(self.btn_pair_op, "smartphone", "#ffffff", 16)
         self.btn_pair_view = QPushButton("Nur Ansicht koppeln")
+        set_icon(self.btn_pair_view, "eye", DS.FG, 16)
         self.btn_pair_op.clicked.connect(lambda: self._pair(G.ROLE_OPERATE))
         self.btn_pair_view.clicked.connect(lambda: self._pair(G.ROLE_VIEW))
-        row.addWidget(self.btn_pair_op)
-        row.addWidget(self.btn_pair_view)
-        lay.addLayout(row)
+        row.addWidget(self.btn_pair_op, 1)
+        row.addWidget(self.btn_pair_view, 1)
+        cl.addLayout(row)
         self.lbl_code = QLabel("")
         self.lbl_code.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_code.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.lbl_code.setStyleSheet("color:#ffb300; font-size:34px; font-weight:800;"
-                                    "font-family:monospace; padding:10px;")
-        lay.addWidget(self.lbl_code)
+        self.lbl_code.setStyleSheet(
+            f"color:{DS.WARN}; font-size:32px; font-weight:800; font-family:monospace;"
+            "letter-spacing:3px; padding:12px; background:#16181b; border:1px dashed #5c4a1a;"
+            "border-radius:12px;")
+        self.lbl_code.setMinimumHeight(76)
+        self.lbl_code.setVisible(False)
+        cl.addWidget(self.lbl_code)
         self.lbl_hint = QLabel("")
         self.lbl_hint.setWordWrap(True)
-        self.lbl_hint.setStyleSheet("color:#aaa;")
-        lay.addWidget(self.lbl_hint)
+        self.lbl_hint.setStyleSheet(f"color:{DS.MUTED}; font-size:13px;")
+        cl.addWidget(self.lbl_hint)
+        lay.addWidget(box)
 
-        lay.addWidget(QLabel("Gekoppelte Handys:"))
+        # Geraete
+        box, cl = DS.card("Gekoppelte Handys", "shield-check", DS.FG)
         self.list = QListWidget()
-        lay.addWidget(self.list)
-        self.btn_remove = QPushButton("Ausgewähltes Handy entfernen")
+        self.list.setFixedHeight(130)
+        cl.addWidget(self.list)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        self.btn_remove = DS.kind(QPushButton("Ausgewähltes Handy entfernen"), "ghost")
+        set_icon(self.btn_remove, "trash-2", DS.BAD, 16)
         self.btn_remove.clicked.connect(self._remove)
-        lay.addWidget(self.btn_remove)
+        row.addWidget(self.btn_remove)
+        cl.addLayout(row)
+        lay.addWidget(box)
+
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.refresh)
+        lay.addStretch(1)
         self._timer.start(500)
 
     def _pair(self, role):
         code = self.link.gw.start_pairing(role)
         self.lbl_code.setText(code)
+        self.lbl_code.setVisible(True)
         self.lbl_hint.setText(
             f"Code am Handy eingeben (Rolle: {G.ROLE_TITLE[role]}). Gilt "
             f"{int(G.PAIRING_TIMEOUT_S)} s und nur einmal. Der Code geht nie über Funk.")
@@ -521,7 +588,9 @@ class PhoneDialog(QDialog):
             ble = "sucht Bluetooth-Adapter …"
         lines = [f"Bluetooth: {ble}"]
         self.btn_retry.setVisible(failed)
-        self.lbl_state.setStyleSheet("color:%s; font-size:15px;" % ("#ffb300" if failed else "#ddd"))
+        self.lbl_state.setStyleSheet("color:%s; font-size:14px;" % (DS.WARN if failed else DS.FG))
+        DS.set_dot(self.state_dot, DS.WARN if failed else DS.OK if ctl else
+                   DS.ACCENT if connected else DS.MUTED)
         if connected:
             lines.append(f"Verbunden: {name} ({G.ROLE_TITLE[role]})"
                          + (" — bedient gerade" if ctl else ""))
@@ -531,6 +600,7 @@ class PhoneDialog(QDialog):
         self.btn_revoke.setEnabled(ctl)
         if not gw.pairing_active and self.lbl_code.text():
             self.lbl_code.setText("")
+            self.lbl_code.setVisible(False)
             self.lbl_hint.setText("Kopplung beendet.")
         devs = gw.list_devices()
         keys = [d["dev"] for d in devs]
@@ -538,6 +608,8 @@ class PhoneDialog(QDialog):
         if keys != shown:
             self.list.clear()
             for d in devs:
-                it = QListWidgetItem(f"{d['name']}  ({G.ROLE_TITLE[d['role']]})")
+                it = QListWidgetItem(f"{d['name']}   ·   {G.ROLE_TITLE[d['role']]}")
+                it.setIcon(icon("smartphone" if d["role"] == G.ROLE_OPERATE else "eye",
+                                DS.MUTED, 18))
                 it.setData(Qt.ItemDataRole.UserRole, d["dev"])
                 self.list.addItem(it)
