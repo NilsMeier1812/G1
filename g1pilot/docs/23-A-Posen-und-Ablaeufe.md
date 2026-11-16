@@ -24,7 +24,7 @@ Messung.
 
 | Wo | Wie |
 |---|---|
-| Demo-GUI | GREIFEN → Erweitert ▸ → **Pose speichern …** (Kategorie `Demo` vorausgewählt, `G1_DEMO_CATEGORY`), oder im Fenster **Posen & Abläufe** „Aktuelle Stellung speichern“ |
+| Demo-GUI | GREIFEN → Erweitert → **Pose speichern …** (Kategorie `Demo` vorausgewählt, `G1_DEMO_CATEGORY`), oder im Fenster **Posen & Abläufe** „Aktuelle Stellung speichern“ |
 | Handy | **Pose speichern …** (Name, Kategorie, Komponenten, optional *An Ablauf anhängen*), siehe [12-A-Handy.md](12-A-Handy.md#posen) |
 | Kommandozeile | `ros2 topic pub --once /g1pilot/pose_store/save …`, siehe [20-A-Arm-Manipulation.md](20-A-Arm-Manipulation.md) |
 | Arm-API | `POST /arm/save`, siehe [21-A-Arm-API.md](21-A-Arm-API.md) |
@@ -35,7 +35,7 @@ Dialog die Pose an einen gewählten Ablauf an.
 
 ## Pose anfahren
 
-Demo-GUI: GREIFEN → Erweitert ▸ → **Pose anfahren …** oder im Fenster
+Demo-GUI: GREIFEN → Erweitert → **Pose anfahren …** oder im Fenster
 Posen & Abläufe *Anfahren*. Handy: **Pose anfahren …** (mit Schieber).
 Die feste Pose **Sichere Pose** (Arme hoch,
 Ellbogen hinten) hat in Demo-GUI und Handy einen eigenen Knopf; ihr Name ist
@@ -83,7 +83,7 @@ python3 -m g1pilot.tools.install_example_sequences
 | Modus | Verhalten |
 |---|---|
 | **Am Stück** | nach jedem erreichten Schritt (+ Pause des Schritts) sofort weiter |
-| **Schritt für Schritt** | hält nach jedem Schritt an, weiter mit **Weiter ▶** (Demo-GUI), am Handy oder mit **L3** am Controller |
+| **Schritt für Schritt** | hält nach jedem Schritt an, weiter mit **Weiter** (Demo-GUI), am Handy oder mit **L3** am Controller |
 
 Start: **real Schritt für Schritt, Sim am Stück** (`G1_SEQUENCE_MODE=auto|step`).
 Der Umschalter gilt für Demo-GUI, Handy und Controller gemeinsam und wirkt

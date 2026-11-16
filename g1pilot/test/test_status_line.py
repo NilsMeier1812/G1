@@ -153,7 +153,7 @@ def test_start_walk_button_follows_ground_contact():
     st = {"fsm": 500, "walk_fsm": 501, "fsm_mode": None}
     assert sl.start_buttons(st, 0.1)["walk"] == (True, True)
     assert sl.walk_button_label(st, 0.1) == "Walk"
-    assert sl.walk_button_label(ok, 0.1) == "Walk\nBodenkontakt ✓"
+    assert sl.walk_button_label(ok, 0.1) == "Walk\nBodenkontakt ok"
     assert sl.walk_button_label(no, 0.1) == "Walk\nkein Bodenkontakt"
     assert sl.walk_button_label(unk, 0.1) == "Walk"
     assert sl.walk_button_label(no, 10.0) == "Walk"               # veraltet
@@ -162,7 +162,7 @@ def test_start_walk_button_follows_ground_contact():
 
 def test_onboard_text_shows_ground_contact():
     t, c = sl.onboard_text({"fsm": 4, "name": "Preparation", "fsm_mode": 0}, 0.1)
-    assert t == "G1: Preparation (FSM 4) · Bodenkontakt ✓ (FSM-Mode 0) – »Walk« möglich" and c == sl.GREEN
+    assert t == "G1: Preparation (FSM 4) · Bodenkontakt ok (FSM-Mode 0) – »Walk« möglich" and c == sl.GREEN
     t, c = sl.onboard_text({"fsm": 4, "name": "Preparation", "fsm_mode": 2}, 0.1)
     assert "kein Bodenkontakt (FSM-Mode 2)" in t and "gesperrt" in t and c == sl.RED
     t, c = sl.onboard_text({"fsm": 4, "name": "Preparation"}, 0.1)
@@ -178,7 +178,7 @@ def test_walk_tile_hint():
     assert sl.walk_tile_hint({"fsm": 501}, 10.0) == "gesperrt · keine Daten vom G1"
     assert sl.walk_tile_hint({"fsm": 501}, 0.1) is None          # GEHEN geht
     assert sl.walk_tile_hint({"fsm": 500}, 0.1) is None
-    assert sl.walk_tile_hint({"fsm": 4, "fsm_mode": 0}, 0.1) == "erst »Walk« · Bodenkontakt ✓"
+    assert sl.walk_tile_hint({"fsm": 4, "fsm_mode": 0}, 0.1) == "erst »Walk« · Bodenkontakt ok"
     assert sl.walk_tile_hint({"fsm": 4, "fsm_mode": 2}, 0.1) == "gesperrt · kein Bodenkontakt"
     assert sl.walk_tile_hint({"fsm": 4}, 0.1) == "erst »Walk« (Startleiste)"
     assert sl.walk_tile_hint({"fsm": 1}, 0.1) == "gesperrt · G1 nicht im Walk"
@@ -196,7 +196,7 @@ def test_ground_from_knee_load_field():
     t, c = sl.onboard_text(hang, 0.1)
     assert "kein Bodenkontakt (Knie-Last 0.3/0.2 Nm" in t and c == sl.RED
     t, c = sl.onboard_text(stand, 0.1)
-    assert "Bodenkontakt ✓ (Knie-Last 6.6/6.5 Nm) – »Walk« möglich" in t and c == sl.GREEN
+    assert "Bodenkontakt ok (Knie-Last 6.6/6.5 Nm) – »Walk« möglich" in t and c == sl.GREEN
     assert sl.walk_button_label(hang, 0.1) == "Walk\nkein Bodenkontakt"
     assert sl.walk_tile_hint(hang, 0.1) == "gesperrt · kein Bodenkontakt"
     # nicht messbar -> ebenfalls gesperrt

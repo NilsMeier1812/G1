@@ -66,7 +66,7 @@ class ConsoleView(QWidget):
         head.setStyleSheet(f"QWidget#bar{{background:{T.SURFACE};border-bottom:1px solid {T.LINE};}}")
         hl = QHBoxLayout(head)
         hl.setContentsMargins(16, 10, 16, 10)
-        hl.addWidget(button("‹  Menü", "ghost", app.show_menu))
+        hl.addWidget(button("Menü", "ghost", app.show_menu, icon="chevron-left"))
         t = label(title)
         f = t.font()
         f.setPointSizeF(13)
@@ -208,7 +208,7 @@ class ConsoleView(QWidget):
             sb.setValue(sb.maximum())
 
     def _set_status(self, text: str, color: str) -> None:
-        self._status.setText(f"● {text}")
+        self._status.setText(text)
         self._status.setStyleSheet(f"color:{color}; font-weight:600;")
 
     def _finalize(self, rc: int | None = None) -> None:

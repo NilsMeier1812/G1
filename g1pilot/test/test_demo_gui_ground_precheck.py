@@ -68,9 +68,9 @@ def test_ground_contact_ok_enables_walk_with_confirmation(gui):
     _onboard(node, fsm=4, fsm_mode=0)
     g._refresh_info()
     b = g.start_btns["walk"]
-    assert b.isEnabled() and b.text() == "Walk\nBodenkontakt ✓"
-    assert "Bodenkontakt ✓" in g.info_onboard.text()
-    assert g.tiles[dg.WALK].text().endswith("erst »Walk« · Bodenkontakt ✓")
+    assert b.isEnabled() and b.text() == "Walk\nBodenkontakt ok"
+    assert "Bodenkontakt ok" in g.info_onboard.text()
+    assert g.tiles[dg.WALK].text().endswith("erst »Walk« · Bodenkontakt ok")
     # Rueckfrage bleibt; der 2-Hz-Refresh ueberschreibt sie nicht
     g._start_step("walk")
     assert b.text().startswith("Kran gelockert?") and requests == []
@@ -78,7 +78,7 @@ def test_ground_contact_ok_enables_walk_with_confirmation(gui):
     assert b.text().startswith("Kran gelockert?")
     g._start_step("walk")
     assert requests == ["walk"]
-    assert b.text() == "Walk\nBodenkontakt ✓"
+    assert b.text() == "Walk\nBodenkontakt ok"
 
 
 def test_ground_lost_while_armed_disarms(gui):
@@ -119,9 +119,9 @@ def test_walk_tile_normal_in_walk_and_follows_state(gui):
     g.request_mode(dg.WALK)
     assert g.tiles[dg.WALK].text().endswith("wechselt …")
     node.on_walk_ready(True)
-    assert g.tiles[dg.WALK].text().endswith("● AKTIV")
+    assert g.tiles[dg.WALK].text().endswith("AKTIV")
     g._refresh_info()
-    assert g.tiles[dg.WALK].text().endswith("● AKTIV")
+    assert g.tiles[dg.WALK].text().endswith("AKTIV")
     # GREIFEN-Kachel bekommt nie einen Bodenkontakt-Hinweis
     _onboard(node, fsm=4, fsm_mode=2)
     g._refresh_info()
@@ -162,7 +162,7 @@ def test_real_crane_case_knee_load(gui):
     assert requests == []
     _onboard(node, fsm=4, fsm_mode=0, ground=True, ground_why="Knie-Last 6.6/6.5 Nm")
     g._refresh_info()
-    assert b.isEnabled() and b.text() == "Walk\nBodenkontakt ✓"
+    assert b.isEnabled() and b.text() == "Walk\nBodenkontakt ok"
     _onboard(node, fsm=4, fsm_mode=0, ground=False, ground_why="Knie-Last 0.1/0.1 Nm")
     g._refresh_info()
     assert not b.isEnabled()                      # kein Latch nach einmal »ok«

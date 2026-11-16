@@ -14,6 +14,38 @@ from PyQt6.QtWidgets import (QAbstractButton, QButtonGroup, QFrame, QGridLayout,
 
 from . import theme as T
 
+try:   # Bedien-Icons (Lucide-SVG) aus dem g1pilot-Paket
+    from g1pilot.utils import ui_icons
+except Exception:  # pragma: no cover - Paketpfad fehlt
+    ui_icons = None
+
+
+def icon_label(name: str, color: str = T.FG, size: int = 20, box: int = 0,
+               bg: str = "") -> QLabel:
+    """QLabel mit einem Icon (optional in einem runden Kasten)."""
+    lbl = QLabel()
+    if ui_icons is not None:
+        lbl.setPixmap(ui_icons.pixmap(name, color, size))
+    lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    if box:
+        lbl.setFixedSize(box, box)
+    if bg:
+        lbl.setStyleSheet(f"background:{bg}; border-radius:{max(6, box // 4)}px;")
+    return lbl
+
+
+def set_icon(btn, name: str, color: str = T.FG, size: int = 18) -> None:
+    if ui_icons is not None:
+        ui_icons.set_icon(btn, name, color, size)
+
+
+def dot(color: str, size: int = 9) -> QLabel:
+    """Runder Status-Punkt (gezeichnet, kein Zeichen)."""
+    d = QLabel()
+    d.setFixedSize(size, size)
+    d.setStyleSheet(f"background:{color}; border-radius:{size // 2}px;")
+    return d
+
 
 def label(text: str, role: str = "", wrap: bool = False, rich: bool = False) -> QLabel:
     lbl = QLabel(text)
@@ -27,10 +59,15 @@ def label(text: str, role: str = "", wrap: bool = False, rich: bool = False) -> 
     return lbl
 
 
-def button(text: str, kind: str = "", on_click=None) -> QPushButton:
+def button(text: str, kind: str = "", on_click=None, icon: str = "",
+           icon_color: str = "") -> QPushButton:
     b = QPushButton(text)
     if kind:
         b.setProperty("kind", kind)
+    if icon:
+        col = icon_color or {"success": "#08240f", "danger": "#ffffff",
+                             "primary": "#ffffff"}.get(kind, T.FG)
+        set_icon(b, icon, col, 18)
     b.setCursor(Qt.CursorShape.PointingHandCursor)
     if on_click is not None:
         b.clicked.connect(lambda _=False: on_click())
@@ -198,11 +235,7 @@ class ChoiceCard(QPushButton):
         lay.setContentsMargins(14, 11, 14, 11)
         lay.setSpacing(12)
         if icon:
-            ic = QLabel(icon)
-            ic.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            ic.setFixedSize(40, 40)
-            ic.setStyleSheet(f"background:{T.BG}; border-radius:10px; font-size:18pt;")
-            lay.addWidget(ic)
+            lay.addWidget(icon_label(icon, T.FG, 22, box=40, bg=T.BG))
         col = QVBoxLayout()
         col.setSpacing(2)
         self.title_lbl = label(title)
@@ -235,14 +268,16 @@ class ChoiceGroup(QWidget):
 
     changed = pyqtSignal(str)
 
-    def __init__(self, choices, value: str, icons: dict | None = None, columns: int = 0):
+    def __init__(self, choices, value: str, icons: dict | None = None, columns: int = 3):
         super().__init__()
         self._group = QButtonGroup(self)
         self._group.setExclusive(True)
         lay = QGridLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(12)
-        cols = columns or len(choices)
+        # Hoechstens `columns` nebeneinander, mehr Optionen brechen um
+        # (z. B. weitere Lauf-Policies) statt die Karten zu quetschen.
+        cols = max(1, min(columns or len(choices), len(choices)))
         self.cards: dict[str, ChoiceCard] = {}
         for i, (v, title, text) in enumerate(choices):
             c = ChoiceCard(v, title, text, (icons or {}).get(v, ""))
@@ -290,6 +325,23 @@ def rounded_top(pix: QPixmap, w: int, h: int, radius: int = 10) -> QPixmap:
     return out
 
 
+def paint_check(p: QPainter, x: float, y: float) -> None:
+    """Runder Haken (Auswahl-Markierung) mit linker oberer Ecke x, y (24 px)."""
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    r = QRectF(x, y, 24, 24)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor(T.ACCENT))
+    p.drawEllipse(r)
+    p.setPen(QPen(QColor("white"), 2.4, Qt.PenStyle.SolidLine,
+                  Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+    path = QPainterPath()
+    path.moveTo(x + 7, y + 12.5)
+    path.lineTo(x + 10.5, y + 16)
+    path.lineTo(x + 17, y + 8.5)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawPath(path)
+
+
 class SceneCard(QPushButton):
     """Kachel: Vorschaubild oben, Name + Kurzbeschreibung darunter, Haken wenn gewaehlt."""
 
@@ -304,6 +356,7 @@ class SceneCard(QPushButton):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._pix: QPixmap | None = None
         self._title = title
+        self.summary = text
         lay = QVBoxLayout(self)
         lay.setContentsMargins(2, 2, 2, 10)
         lay.setSpacing(2)
@@ -322,6 +375,8 @@ class SceneCard(QPushButton):
         lay.addWidget(s)
         for w in self.findChildren(QLabel):
             w.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        # Haken liegt im Bild (das Bild-Label wuerde einen gemalten Haken verdecken)
+        self.toggled.connect(lambda _on: self._render_img())
         self.set_thumb(thumb)
 
     def set_thumb(self, thumb: Path | None) -> None:
@@ -343,6 +398,10 @@ class SceneCard(QPushButton):
             p.drawText(img.rect(), Qt.AlignmentFlag.AlignCenter,
                        (self._title[:1] or "?").upper())
             p.end()
+        if self.isChecked():
+            p = QPainter(img)
+            paint_check(p, img.width() - 34, 10)
+            p.end()
         self._img.setPixmap(img)
 
     def resizeEvent(self, e) -> None:
@@ -351,25 +410,6 @@ class SceneCard(QPushButton):
 
     def sizeHint(self) -> QSize:
         return QSize(240, self.IMG_H + 62)
-
-    def paintEvent(self, e) -> None:
-        super().paintEvent(e)
-        if self.isChecked():
-            p = QPainter(self)
-            p.setRenderHint(QPainter.RenderHint.Antialiasing)
-            r = QRectF(self.width() - 36, 12, 24, 24)
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor(T.ACCENT))
-            p.drawEllipse(r)
-            p.setPen(QPen(QColor("white"), 2.4, Qt.PenStyle.SolidLine,
-                          Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
-            x, y = r.x(), r.y()
-            path = QPainterPath()
-            path.moveTo(x + 7, y + 12.5)
-            path.lineTo(x + 10.5, y + 16)
-            path.lineTo(x + 17, y + 8.5)
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawPath(path)
 
 
 class AddCard(QPushButton):
@@ -392,12 +432,15 @@ class AddCard(QPushButton):
         pen = QPen(QColor(T.ACCENT if hover else "#3a4250"), 2, Qt.PenStyle.DashLine)
         p.setPen(pen)
         p.drawRoundedRect(QRectF(self.rect()).adjusted(1, 1, -1, -1), 12, 12)
-        p.setPen(QColor(T.FG if hover else T.MUTED))
+        col = T.FG if hover else T.MUTED
+        if ui_icons is not None:
+            pm = ui_icons.pixmap("plus", col, 26)
+            if not pm.isNull():
+                s = 26
+                p.drawPixmap(int((self.width() - s) / 2), int(self.height() / 2 - s - 4),
+                             s, s, pm)
+        p.setPen(QColor(col))
         f = QFont(self.font())
-        f.setPointSize(20)
-        p.setFont(f)
-        r = self.rect().adjusted(0, -20, 0, -20)
-        p.drawText(r, Qt.AlignmentFlag.AlignCenter, "+")
         f.setPointSize(10)
         p.setFont(f)
         p.drawText(self.rect().adjusted(0, 26, 0, 26), Qt.AlignmentFlag.AlignCenter, self._text)
@@ -423,12 +466,22 @@ class TileGrid(QWidget):
         self._lay.setSpacing(14)
         self._cols = 0
 
-    def set_items(self, items: list[QWidget]) -> None:
+    def set_items(self, items: list[QWidget], delete: bool = True) -> None:
+        """Kacheln setzen. delete=False: alte Kacheln nur ausblenden (der Aufrufer
+        behaelt sie, z. B. zum Filtern/Einklappen)."""
+        keep = set(map(id, items))
         for w in self._items:
             self._lay.removeWidget(w)
-            w.setParent(None)
-            w.deleteLater()
+            if id(w) in keep:
+                continue
+            if delete:
+                w.setParent(None)
+                w.deleteLater()
+            else:
+                w.hide()
         self._items = list(items)
+        for w in self._items:
+            w.show()
         self._cols = 0
         self._relayout(self.width() or 900)
 
@@ -461,7 +514,7 @@ class Collapsible(QWidget):
         self._btn = QToolButton()
         self._btn.setText(f"  {title}")
         self._btn.setCheckable(True)
-        self._btn.setArrowType(Qt.ArrowType.RightArrow)
+        set_icon(self._btn, "chevron-right", T.MUTED, 16)
         self._btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self._btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn.setStyleSheet(f"QToolButton{{border:none;color:{T.MUTED};"
@@ -474,7 +527,7 @@ class Collapsible(QWidget):
         lay.addWidget(self.body)
 
     def _toggle(self, on: bool) -> None:
-        self._btn.setArrowType(Qt.ArrowType.DownArrow if on else Qt.ArrowType.RightArrow)
+        set_icon(self._btn, "chevron-down" if on else "chevron-right", T.MUTED, 16)
         self.body.setVisible(on)
 
     def is_open(self) -> bool:

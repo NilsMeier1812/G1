@@ -275,7 +275,8 @@ def test_editor_relative_moves(gui, monkeypatch):
     ed._select_item({"move": "Box anheben"})
     ed.btn_add.click()
     assert store.get_sequence("Kiste")[1] == {"move": "Box anheben", "wait_s": 0.0}
-    assert "↕ Box anheben" in ed.step_list.item(1).text()
+    assert "2. Box anheben" in ed.step_list.item(1).text()
+    assert not ed.step_list.item(1).icon().isNull()      # Icon statt Emoji
     # Umbenennen ueber »Bearbeiten …« zieht den Schritt mit
     def rename(dlg):
         assert dlg.spins["dz"].value() == pytest.approx(5.0)
@@ -284,7 +285,7 @@ def test_editor_relative_moves(gui, monkeypatch):
     monkeypatch.setattr(se.MoveDialog, "exec", rename)
     ed.btn_edit_move.click()
     assert store.get_sequence("Kiste")[1]["move"] == "Anheben"
-    assert "↕ Anheben" in ed.step_list.item(1).text()
+    assert "2. Anheben" in ed.step_list.item(1).text()
     # Ungueltig (0 cm) -> Dialog meldet und bleibt offen
     warned = []
     monkeypatch.setattr(se.QMessageBox, "warning", lambda *a: warned.append(a[2]))

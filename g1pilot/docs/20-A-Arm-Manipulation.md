@@ -102,7 +102,7 @@ Gehen halten.
 Der Positionsspeicher merkt sich beliebige Kombinationen aus linkem Arm,
 rechtem Arm, linker Hand, rechter Hand unter einem Namen, gruppiert in
 Kategorien ("Ordner"). Hier, was die Funktionen tun (in der Demo-GUI
-unter GREIFEN → Erweitert ▸); Abläufe, relative Bewegungen und die genaue
+unter GREIFEN → Erweitert); Abläufe, relative Bewegungen und die genaue
 Bedienung in Demo-GUI und Handy stehen in
 [23-A-Posen-und-Ablaeufe.md](23-A-Posen-und-Ablaeufe.md).
 

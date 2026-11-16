@@ -6,7 +6,7 @@ Handys mit DENSELBEN Methoden ausfuehren wie die Knoepfe der PC-GUI, Status
 fuers Handy zusammenstellen, Kopplung/Steuerhoheit am PC.
 
 In der Demo-GUI immer dabei (G1_PHONE=0 schaltet es ganz ab). Bluetooth
-startet aber erst, wenn jemand oben auf »📱 Handy« klickt: ohne Dongle gibt es
+startet aber erst, wenn jemand oben auf »Handy« klickt: ohne Dongle gibt es
 beim normalen Start keine Fehlermeldung, und erst der Klick sucht den
 BlueZ-Adapter. Fehlt er, steht im Handy-Fenster ein verstaendlicher Hinweis
 und »Bluetooth erneut versuchen«.
@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget, QListWidgetItem,
 )
 
+from g1pilot.utils.ui_icons import set_icon
 from g1pilot.teleoperation import status_line
 from g1pilot.teleoperation.phone import gateway as G
 
@@ -53,7 +54,7 @@ def _env_flag(name, default):
 
 def attach(gui, start_ble=False):
     """In DemoGUI.__init__ aufgerufen. -> PhoneLink oder None (aus).
-    Bluetooth startet erst beim Klick auf »📱 Handy« (start_bluetooth)."""
+    Bluetooth startet erst beim Klick auf »Handy« (start_bluetooth)."""
     if not enabled():
         return None
     return PhoneLink(gui, start_ble=start_ble)
@@ -74,7 +75,7 @@ class PhoneLink:
         self._phone_motion = False      # Bewegung vom Handy gestartet, laeuft evtl. noch
         self._ble_state = None
         self.dialog = None
-        self._ble_wanted = False         # erst nach Klick auf »📱 Handy«
+        self._ble_wanted = False         # erst nach Klick auf »Handy«
         if start_ble:
             self.start_bluetooth()
         self._tick_timer = QTimer(gui)
@@ -99,7 +100,7 @@ class PhoneLink:
         self._ble_wanted = True
         self._ble_state = None          # Fehler danach wieder in der Statuszeile
         if not self.ble.running:
-            self.gui._status("📱 Handy-Bluetooth: suche Bluetooth-Adapter …", "#4fc3f7")
+            self.gui._status("Handy-Bluetooth: suche Bluetooth-Adapter …", "#4fc3f7")
             self.ble.start()
         self._update_button()
 
@@ -122,9 +123,9 @@ class PhoneLink:
         if self._ble_wanted and self.ble.state != self._ble_state:
             self._ble_state = self.ble.state
             if self._ble_state.startswith("Fehler"):
-                g._status(f"📱 Handy-Bluetooth: {self._ble_state[len('Fehler: '):]}", "#ffb300")
+                g._status(f"Handy-Bluetooth: {self._ble_state[len('Fehler: '):]}", "#ffb300")
             elif self._ble_state.startswith("wirbt"):
-                g._status(f"📱 Handy-Bluetooth bereit: {self._ble_state}", "#4fc3f7")
+                g._status(f"Handy-Bluetooth bereit: {self._ble_state}", "#4fc3f7")
             if self.dialog is not None:
                 self.dialog.refresh()
         self._update_button()
@@ -136,7 +137,7 @@ class PhoneLink:
             g._cancel()
             text += " Vom Handy gestartete Bewegung abgebrochen."
         color = "#ef5350" if kind in ("control_lost", "disconnected", "pair_failed") else "#4fc3f7"
-        g._status(f"📱 {text}", color)
+        g._status(f"Handy: {text}", color)
         if self.dialog is not None:
             self.dialog.refresh()
 
@@ -144,14 +145,15 @@ class PhoneLink:
         connected, name, role, ctl = self.gw.state()
         b = self.gui.btn_phone
         if ctl:
-            text, color = f"📱 {name} bedient", "#ffb300"
+            text, color = f"{name} bedient", "#ffb300"
         elif connected:
-            text, color = f"📱 {name}", "#4fc3f7"
+            text, color = f"{name}", "#4fc3f7"
         else:
-            text, color = "📱 Handy", None
+            text, color = "Handy", None
         if text != b.text():
             b.setText(text)
             b.setStyleSheet(self._btn_css + (f" QPushButton {{ color:{color}; }}" if color else ""))
+            set_icon(b, "smartphone", color or "#dddddd", 16)
         b.setToolTip(f"Handy-Zugang (Bluetooth): {self.ble.state}" if self._ble_wanted
                      else "Handy-Zugang: Klick startet Bluetooth und zeigt die Kopplung")
 
@@ -165,9 +167,9 @@ class PhoneLink:
         self.gw.result(cid, ok, text)
         self.gui.node.get_logger().info(f"Handy »{who}«: {action} {arg or ''} -> {text}")
         if action != "estop":       # NOT-HALT setzt seine eigene Statuszeile
-            self.gui._status(f"📱 {who}: {text}", "#4fc3f7" if ok else "#ffb300")
+            self.gui._status(f"Handy »{who}«: {text}", "#4fc3f7" if ok else "#ffb300")
         else:
-            self.gui._status(f"📱 NOT-HALT vom Handy »{who}« — Roboter ist weich geschaltet.",
+            self.gui._status(f"NOT-HALT vom Handy »{who}« — Roboter ist weich geschaltet.",
                              "#ef5350")
 
     def _do_estop(self, _arg):
@@ -366,7 +368,7 @@ class PhoneLink:
             "sm": g.seq.mode,
         }
         if g.seq.active:
-            # Ablauf: Zustand, Name, Schritt i/n (Handy: »Weiter ▶« beim Warten).
+            # Ablauf: Zustand, Name, Schritt i/n (Handy: »Weiter« beim Warten).
             st["seq"] = {"s": g.seq.state, "n": (g.seq.label or "")[:40],
                          "i": g.seq.index + 1, "t": g.seq.total}
         if not g.sim_mode:

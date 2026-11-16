@@ -5,16 +5,20 @@ import os
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QPainter, QColor
-from PyQt6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QFrame, QHBoxLayout,
+from PyQt6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QHBoxLayout,
                              QInputDialog, QLineEdit, QMessageBox, QPushButton,
                              QScrollArea, QSizePolicy, QVBoxLayout, QWidget)
 
 from . import core
 from . import theme as T
 from .widgets import (AddCard, ChoiceGroup, Collapsible, FieldRow, RowList, SceneCard,
-                      TileGrid, ToggleRow, button, card, label, section_title)
+                      TileGrid, ToggleRow, button, card, dot, icon_label, label,
+                      section_title, set_icon)
 
-NEW_HAND = "➕ Neue Hand anlegen …"          # letzter Eintrag der Custom-Liste
+NEW_HAND = "Neue Hand anlegen …"            # letzter Eintrag der Custom-Liste
+# Ab so vielen Umgebungen gibt es Suche + eingeklappte Ansicht (2 Reihen).
+ENV_FILTER_FROM = 7
+ENV_COLLAPSED = 7
 DEFAULT_ENV_LABEL = "Standard"
 
 
@@ -44,7 +48,8 @@ class Page(QWidget):
         hl = QHBoxLayout(head)
         hl.setContentsMargins(20, 14, 20, 14)
         hl.setSpacing(16)
-        hl.addWidget(button("‹  Menü", "ghost", app.show_menu), 0, Qt.AlignmentFlag.AlignTop)
+        hl.addWidget(button("Menü", "ghost", app.show_menu, icon="chevron-left"), 0,
+                     Qt.AlignmentFlag.AlignTop)
         col = QVBoxLayout()
         col.setSpacing(0)
         h = label(title, "h1")
@@ -54,7 +59,8 @@ class Page(QWidget):
         col.addWidget(label(subtitle, "sub"))
         hl.addLayout(col, 1)
         if self.help_doc:
-            hb = button("?  Hilfe", "ghost", lambda: app.open_doc(self.help_doc))
+            hb = button("Hilfe", "ghost", lambda: app.open_doc(self.help_doc),
+                        icon="circle-help")
             hb.setToolTip("Passende Anleitung im Doku-Viewer öffnen")
             hl.addWidget(hb, 0, Qt.AlignmentFlag.AlignTop)
         outer.addWidget(head)
@@ -85,7 +91,7 @@ class Page(QWidget):
         lbl.linkActivated.connect(self.app.handle_link)
         self.body.addWidget(lbl)
 
-    def footer(self, text: str, kind: str, on_click) -> QPushButton:
+    def footer(self, text: str, kind: str, on_click, icon: str = "") -> QPushButton:
         self.body.addStretch(1)
         foot = QWidget()
         foot.setObjectName("bar")
@@ -97,7 +103,7 @@ class Page(QWidget):
         self.summary.setWordWrap(True)
         fl.addWidget(self.summary, 1)
         fl.addWidget(button("Abbrechen", "ghost", self.app.show_menu))
-        btn = button(text, kind, on_click)
+        btn = button(text, kind, on_click, icon=icon)
         fl.addWidget(btn)
         self._outer.addWidget(foot)
         return btn
@@ -120,7 +126,7 @@ class HandCombo(QComboBox):
 # ════════════════════════════════════════════════════════════════════════
 class SimView(Page):
     help_doc = "03-A-Startmenue.md#optionen"
-    HAND_ICONS = {"rubber": "✋", "inspire": "🖐", "custom": "🪝"}
+    HAND_ICONS = {"rubber": "hand", "inspire": "bot", "custom": "anchor"}
 
     def __init__(self, app):
         super().__init__(app, "Simulation", "MuJoCo + Whole-Body-Policy — gefahrlos testen.")
@@ -148,14 +154,27 @@ class SimView(Page):
         for c in self.env_cards.values():
             self.env_group.addButton(c)
         self.env_cards[self._env].setChecked(True)
+        self._env_text = {k: f"{k} {c.summary}".lower() for k, c in self.env_cards.items()}
         self.env_group.buttonClicked.connect(lambda b: self._sync_summary())
-        add = AddCard("Neue Umgebung")
-        add.setToolTip("Umgebungen anlegen und bearbeiten (Scene-Editor)")
-        add.clicked.connect(app.open_scenes)
-        items.append(add)
+        self.env_add = AddCard("Neue Umgebung")
+        self.env_add.setToolTip("Umgebungen anlegen und bearbeiten (Scene-Editor)")
+        self.env_add.clicked.connect(app.open_scenes)
+        # Viele Umgebungen: Suchfeld + eingeklappt auf 2 Reihen, "Alle anzeigen".
+        self._env_expanded = False
+        self.env_search = QLineEdit()
+        self.env_search.setPlaceholderText(f"{len(scenes) + 1} Umgebungen durchsuchen …")
+        self.env_search.setClearButtonEnabled(True)
+        self.env_search.textChanged.connect(lambda _t: self._apply_env_view())
+        self.env_search.setVisible(len(scenes) + 1 >= ENV_FILTER_FROM)
+        self.body.addWidget(self.env_search)
         self.env_grid = TileGrid()
-        self.env_grid.set_items(items)
         self.body.addWidget(self.env_grid)
+        self.env_more = button("", "ghost", self._toggle_env_expanded)
+        row = QHBoxLayout()
+        row.addWidget(self.env_more)
+        row.addStretch(1)
+        self.body.addLayout(row)
+        self._apply_env_view()
         self.hint("Der G1 bleibt gleich, nur die Welt wechselt. Vorschaubilder erzeugt das "
                   "Startmenü selbst, sobald eine Umgebung neu ist oder sich ändert.")
 
@@ -237,10 +256,47 @@ class SimView(Page):
         self.body.addWidget(adv)
         self.advanced = adv
 
-        self.start_btn = self.footer("▶  Simulation starten", "success", self._start)
+        self.start_btn = self.footer("Simulation starten", "success", self._start, icon="play")
         self._sync_hands()
         self._sync()
         app.thumbs_changed.connect(self._reload_thumbs)
+
+    # ── Umgebungen: Suche + Einklappen ───────────────────────────────────
+    def visible_envs(self) -> list[str]:
+        """Welche Kacheln gerade gezeigt werden (Reihenfolge wie im Raster)."""
+        q = self.env_search.text().strip().lower() if not self.env_search.isHidden() else ""
+        keys = [k for k in self.env_cards if not q or q in self._env_text[k]
+                or (k == "" and q in DEFAULT_ENV_LABEL.lower())]
+        if q or self._env_expanded or len(keys) <= ENV_COLLAPSED + 1:
+            return keys
+        shown = keys[:ENV_COLLAPSED]
+        sel = self.env_name()
+        if sel not in shown:          # gewaehlte Umgebung immer sichtbar
+            shown[-1] = sel
+        return shown
+
+    def _apply_env_view(self) -> None:
+        keys = self.visible_envs()
+        items = [self.env_cards[k] for k in keys]
+        if not self.env_search.text().strip():
+            items.append(self.env_add)
+        self.env_grid.set_items(items, delete=False)
+        total = len(self.env_cards)
+        q = self.env_search.text().strip()
+        if q:
+            self.env_more.setVisible(False)
+        elif total > ENV_COLLAPSED + 1:
+            self.env_more.setVisible(True)
+            self.env_more.setText("Weniger anzeigen" if self._env_expanded
+                                  else f"Alle {total} Umgebungen anzeigen")
+            set_icon(self.env_more, "chevron-down" if not self._env_expanded
+                     else "chevron-right", T.MUTED, 16)
+        else:
+            self.env_more.setVisible(False)
+
+    def _toggle_env_expanded(self) -> None:
+        self._env_expanded = not self._env_expanded
+        self._apply_env_view()
 
     # ── Haende ───────────────────────────────────────────────────────────
     def _fill_customs(self, select_title: str = "") -> None:
@@ -465,7 +521,7 @@ class RealView(Page):
         self.body.addSpacing(10)
         self.body.addWidget(gate)
 
-        self.start_btn = self.footer("Echten Roboter starten", "danger", self._start)
+        self.start_btn = self.footer("Echten Roboter starten", "danger", self._start, icon="power")
         self.start_btn.setEnabled(False)
         self.confirm.toggled.connect(self._sync_confirm)
         self._sync_lan()
@@ -478,10 +534,10 @@ class RealView(Page):
     def _sync_lan(self) -> None:
         ip = dict(self._nics).get(self._iface(), "")
         if ip.startswith("192.168.123."):
-            self.lan.setText(f"●  Im Roboter-LAN ({ip}).")
+            self.lan.setText(f"Im Roboter-LAN ({ip}).")
             self.lan.setStyleSheet(f"color:{T.GREEN};")
         else:
-            self.lan.setText("●  Keine 192.168.123.x-Adresse auf diesem Interface — "
+            self.lan.setText("Keine 192.168.123.x-Adresse auf diesem Interface — "
                              "Kabel/IP prüfen (Roboter-LAN).")
             self.lan.setStyleSheet(f"color:{T.AMBER};")
         self.summary.setText(f"Interface: {self._iface() or '—'}") if hasattr(self, "summary") \
@@ -548,24 +604,30 @@ class ScenesView(Page):
         self.section("Vorhandene Umgebungen")
         self.group = QButtonGroup(self)
         self.group.setExclusive(True)
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Umgebungen durchsuchen …")
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(lambda _t: self._apply_filter())
+        self.body.addWidget(self.search)
         self.grid = TileGrid()
         self.body.addWidget(self.grid)
         self.cards: dict[str, SceneCard] = {}
         self._reload_scenes()
         tools = QHBoxLayout()
-        tools.addWidget(button("Liste aktualisieren", "ghost", self._reload_scenes))
+        tools.addWidget(button("Liste aktualisieren", "ghost", self._reload_scenes,
+                               icon="refresh-cw"))
         tools.addWidget(button("Vorschaubilder neu erzeugen", "ghost",
-                               lambda: app.refresh_thumbs(force=True)))
+                               lambda: app.refresh_thumbs(force=True), icon="box"))
         tools.addStretch(1)
         self.body.addLayout(tools)
 
         self.section("Aktion für die gewählte Umgebung")
         act = QHBoxLayout()
         act.setSpacing(10)
-        for text, cmd, kind in (("Im Editor bearbeiten", "edit", "primary"),
-                                ("Mit G1 ansehen", "with-g1", "primary"),
-                                ("Nur Umgebung ansehen", "view", "")):
-            b = button(text, kind, lambda c=cmd: self._run_scene(c))
+        for text, cmd, kind, ic in (("Im Editor bearbeiten", "edit", "primary", "square-pen"),
+                                    ("Mit G1 ansehen", "with-g1", "primary", "bot"),
+                                    ("Nur Umgebung ansehen", "view", "", "eye")):
+            b = button(text, kind, lambda c=cmd: self._run_scene(c), icon=ic)
             b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             act.addWidget(b)
         self.body.addLayout(act)
@@ -578,7 +640,8 @@ class ScenesView(Page):
         c, cl = card()
         row = QHBoxLayout()
         row.addWidget(button("Leere Umgebung im Editor", "primary",
-                             lambda: self._run_cmd(["new"], "Neue Umgebung", browser=True)))
+                             lambda: self._run_cmd(["new"], "Neue Umgebung", browser=True),
+                             icon="plus"))
         row.addWidget(button("Aus Text-Prompt generieren", "", self._run_prompt))
         row.addStretch(1)
         cl.addLayout(row)
@@ -592,6 +655,9 @@ class ScenesView(Page):
         sel = self.selected_scene()
         for b in list(self.group.buttons()):
             self.group.removeButton(b)
+        for c in self.cards.values():      # auch per Filter ausgeblendete loeschen
+            c.setParent(None)
+            c.deleteLater()
         self.cards = {}
         self._scenes = core.list_scenes()
         items = []
@@ -608,6 +674,16 @@ class ScenesView(Page):
             keep = sel.stem if sel is not None and sel.stem in self.cards else \
                 next(iter(self.cards))
             self.cards[keep].setChecked(True)
+        self.search.setVisible(len(self.cards) >= ENV_FILTER_FROM)
+        self._apply_filter()
+
+    def _apply_filter(self) -> None:
+        q = self.search.text().strip().lower() if self.search.isVisible() else ""
+        if not self.cards:
+            return
+        shown = [c for k, c in self.cards.items()
+                 if not q or q in f"{k} {c.summary}".lower()]
+        self.grid.set_items(shown, delete=False)
 
     def _update_thumbs(self) -> None:
         for name, c in self.cards.items():
@@ -668,13 +744,9 @@ class Tile(QPushButton):
         lay = QHBoxLayout(self)
         lay.setContentsMargins(26, 18, 18, 18)
         lay.setSpacing(16)
-        ic = label(symbol)
-        ic.setFixedSize(48, 48)
-        ic.setAlignment(Qt.AlignmentFlag.AlignCenter)
         c = QColor(color)
-        ic.setStyleSheet(f"background:rgba({c.red()},{c.green()},{c.blue()},40); color:{color};"
-                         f" border-radius:12px; font-size:18pt; font-weight:700;")
-        lay.addWidget(ic)
+        lay.addWidget(icon_label(symbol, color, 24, box=48,
+                                 bg=f"rgba({c.red()},{c.green()},{c.blue()},40)"))
         col = QVBoxLayout()
         col.setSpacing(2)
         t = label(title)
@@ -685,9 +757,7 @@ class Tile(QPushButton):
         col.addWidget(t)
         col.addWidget(label(text, "sub", wrap=True))
         lay.addLayout(col, 1)
-        arrow = label("›")
-        arrow.setStyleSheet(f"color:{T.MUTED}; font-size:20pt;")
-        lay.addWidget(arrow)
+        lay.addWidget(icon_label("chevron-right", T.MUTED, 22))
         for w in self.findChildren(QWidget):
             w.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
 
@@ -739,7 +809,8 @@ class MenuView(QWidget):
         col.addWidget(h)
         col.addWidget(label("Was soll gestartet werden?", "sub"))
         head.addLayout(col, 1)
-        head.addWidget(button("📖  Dokumentation", "ghost", lambda: app.open_doc("")),
+        head.addWidget(button("Dokumentation", "ghost", lambda: app.open_doc(""),
+                              icon="book-open"),
                        0, Qt.AlignmentFlag.AlignTop)
         b.addLayout(head)
         b.addSpacing(10)
@@ -747,11 +818,11 @@ class MenuView(QWidget):
         self.tiles = {}
         for key, title, text, color, sym, cb in (
                 ("sim", "Simulation", "MuJoCo + Whole-Body-Policy — gefahrlos testen",
-                 T.GREEN, "▶", app.open_sim),
+                 T.GREEN, "play", app.open_sim),
                 ("real", "Echter Roboter", "G1 per LAN — Loco + Arme + Hände "
-                 "(der Roboter bewegt sich!)", T.RED, "⚠", app.open_real),
+                 "(der Roboter bewegt sich!)", T.RED, "triangle-alert", app.open_real),
                 ("scenes", "Umgebungen", "Szenen anlegen, bearbeiten und mit dem G1 ansehen",
-                 T.ACCENT, "▦", app.open_scenes)):
+                 T.ACCENT, "layout-grid", app.open_scenes)):
             t = Tile(title, text, color, sym)
             t.clicked.connect(lambda _=False, c=cb: c())
             b.addWidget(t)
@@ -765,9 +836,7 @@ class MenuView(QWidget):
                 row = QWidget()
                 rl = QHBoxLayout(row)
                 rl.setContentsMargins(0, 8, 0, 8)
-                dot = label("●")
-                dot.setStyleSheet(f"color:{T.GREEN if c.is_running() else T.MUTED};")
-                rl.addWidget(dot)
+                rl.addWidget(dot(T.GREEN if c.is_running() else T.MUTED))
                 rl.addWidget(label(f"{c.view_title}"), 1)
                 rl.addWidget(label(c.state(), "muted"))
                 rl.addWidget(button("Ansehen", "ghost", lambda x=c: app.show_console(x)))

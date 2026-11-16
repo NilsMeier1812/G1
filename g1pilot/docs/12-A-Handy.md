@@ -40,10 +40,10 @@ Hintergrund und Abwägung (WLAN, Bildschirmspiegelung, App): Analysebericht
 
    *Ohne Internet:* Handy per USB (USB-Debugging an), am PC im Ordner `g1pilot` `make phone-web`, am Handy
    `http://localhost:8790/index.html` öffnen. Der Webserver lauscht nur auf `127.0.0.1`.
-2. **Starten** mit der Demo-GUI. Ein Haken im Start-Fenster ist nicht nötig: Der Knopf **📱 Handy** ist immer
+2. **Starten** mit der Demo-GUI. Ein Haken im Start-Fenster ist nicht nötig: Der Knopf **Handy** ist immer
    da, aber Bluetooth startet erst, wenn du darauf klickst. Ohne Dongle gibt es beim normalen Start also keine
    Fehlermeldung. Fehlt der Adapter beim Klick, steht es im Handy-Fenster, mit **Bluetooth erneut versuchen**.
-3. **Koppeln:** In der Demo-GUI oben **📱 Handy** → **Als Bediener koppeln** (oder **Nur Ansicht koppeln**).
+3. **Koppeln:** In der Demo-GUI oben **Handy** → **Als Bediener koppeln** (oder **Nur Ansicht koppeln**).
    Es erscheint ein 16-stelliger Code, 2 Minuten gültig und nur einmal. Am Handy Name und Code eingeben, dann
    **Verbinden & koppeln** und in der Chrome-Auswahl „G1 REAL“ bzw. „G1 SIM“ wählen.
 
@@ -57,7 +57,7 @@ Der Code geht nie über Funk. Aus ihm leiten PC und Handy getrennt denselben Ger
    G1 folgt eine Zeile mit den Temperaturen (Max und je Gruppe, gelb ab 60 °C, rot ab 75 °C wie in der
    PC-GUI).
 3. Zum Bedienen oben **Bedienen** tippen (wird zu **Abgeben**). Die PC-GUI zeigt dann oben
-   „📱 *Name* bedient“.
+   „*Name* bedient“.
 4. Alles, was den Roboter bewegt oder umschaltet, bestätigst du mit einem **Schieber ganz nach rechts**. Tippen
    allein reicht nicht. Über dem Schieber steht, was passiert. Ausnahmen sind Hände öffnen/schließen und
    **Bewegung stoppen** (einfaches Tippen).
@@ -71,11 +71,11 @@ Der Code geht nie über Funk. Aus ihm leiten PC und Handy getrennt denselben Ger
 | Bildschirm aus, App gewechselt, Tab im Hintergrund | Handy gibt die Bedienung sofort ab; nach 4 s ohne Herzschlag endet die Sitzung. Zurück: **Mit G1 verbinden** tippen. |
 | Kein Herzschlag vom Handy für 2 s (Funk weg, Akku leer) | PC entzieht die Bedienung. **Ein vom Handy gestarteter Ablauf, die Sichere Pose und die Grundstellung werden abgebrochen.** |
 | Keine Nachricht für 4 s | Sitzung beendet, PC-GUI meldet „Handy getrennt“. |
-| PC-GUI: 📱 → **Bedienung zurückholen** | Handy ist sofort wieder nur Ansicht. |
+| PC-GUI: Handy → **Bedienung zurückholen** | Handy ist sofort wieder nur Ansicht. |
 
 **Handy-Seite v9:** automatisches Wiederverbinden (v7/v8) wieder entfernt, es führte zu ständigem Trennen. Herunterziehen zum Neuladen bleibt abgeschaltet.
 
-Am PC kannst du unter **📱 Handy** Geräte entfernen. Ein entferntes Handy muss neu koppeln.
+Am PC kannst du unter **Handy** Geräte entfernen. Ein entferntes Handy muss neu koppeln.
 
 ### Posen
 
@@ -92,7 +92,7 @@ Im Modus GREIFEN:
   Umsortieren gehen nur am PC.
 - **Abläufe** sind dieselben wie in der PC-GUI (Fenster „Posen & Abläufe“). Darüber wählst du
   **Am Stück** oder **Schritt für Schritt** (gilt für PC, Handy und Controller gemeinsam). Wartet ein
-  Ablauf auf Bestätigung, erscheint oben unter „Bewegung stoppen“ der grüne Knopf **Weiter ▶ (n/m)**;
+  Ablauf auf Bestätigung, erscheint oben unter „Bewegung stoppen“ der grüne Knopf **Weiter (n/m)**;
   am Controller geht es auch mit L3 weiter. Zusammenstellen geht nur am PC.
 
 Die Posenliste kommt nur auf Anfrage aufs Handy (bei jeder Änderung neu, der PC prüft alle 2 s).
@@ -117,7 +117,7 @@ Gehen und Arm-/Hand-Jog, Kategorien anlegen, „Real/Sim beenden“, Parameter, 
 
 | Variable | Default | Bedeutung |
 |---|---|---|
-| `G1_PHONE` | `1` | `1` = Knopf 📱 Handy in der Demo-GUI (Bluetooth erst beim Klick), `0` = ganz aus. |
+| `G1_PHONE` | `1` | `1` = Knopf Handy in der Demo-GUI (Bluetooth erst beim Klick), `0` = ganz aus. |
 | `G1_PHONE_BT_ADAPTER` | `auto` | Adapter fürs Handy: `auto` = der Dongle ohne gekoppelten Controller, sonst `hciN` oder die MAC des Dongles. |
 | `G1_PHONE_BT_NAME` | `G1 SIM` / `G1 REAL` | Name beim Werben. |
 | `G1_PHONE_BT_ENCRYPT` | `0` | `1` = zusätzlich Android-Bluetooth-Kopplung verlangen (die Sicherheit hängt nicht davon ab). |
@@ -133,7 +133,7 @@ Gehen und Arm-/Hand-Jog, Kategorien anlegen, „Real/Sim beenden“, Parameter, 
    Falls der neue `Powered: no` zeigt: `bluetoothctl select <MAC-neu>` und `power on`.
 3. Nichts einstellen: Mit `G1_PHONE_BT_ADAPTER=auto` nimmt der PC fürs Handy den Dongle, an dem
    **kein** Controller gekoppelt ist. Das klappt auch, wenn Linux die Nummern `hci0`/`hci1` nach einem
-   Neustart vertauscht. Der 📱-Dialog zeigt den gewählten Adapter, z. B. `wirbt als »G1 REAL« (hci1, ohne Controller)`.
+   Neustart vertauscht. Der Handy-Dialog zeigt den gewählten Adapter, z. B. `wirbt als »G1 REAL« (hci1, ohne Controller)`.
 4. Am Handy einmal Bluetooth aus- und einschalten (es merkt sich sonst den alten Adapter) und neu
    verbinden. Koppeln musst du nicht neu, der Geräteschlüssel hängt nicht am Dongle.
 5. Einen **neuen** Controller koppelst du vorher bewusst am alten Dongle:
@@ -149,7 +149,7 @@ Willst du es fest einstellen, schreib `G1_PHONE_BT_ADAPTER=<MAC-neu>` in die Dat
   Den technischen Fehler schreibt die GUI ins Log.
 - **Anderer Bluetooth-Fehler:** Läuft `bluetoothd` auf dem Host? Ist der Adapter an (`bluetoothctl show`,
   `bluetoothctl power on`)? Stimmt `G1_PHONE_BT_ADAPTER`?
-- **Chrome findet „G1 …“ nicht:** Bluetooth und Standort am Handy an? Hast du in der GUI auf 📱 Handy geklickt (erst dann wirbt der PC)? Bei geändertem
+- **Chrome findet „G1 …“ nicht:** Bluetooth und Standort am Handy an? Hast du in der GUI auf Handy geklickt (erst dann wirbt der PC)? Bei geändertem
   Dienst einmal Bluetooth am Handy aus- und einschalten (Android merkt sich alte Dienste).
 - **Controller hakt, seit das Handy verbunden ist:** Das ist der geteilte Dongle. Abhilfe ist ein zweiter
   Dongle (`hci1`), über ein kurzes USB-Verlängerungskabel und nicht direkt neben dem ersten.

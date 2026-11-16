@@ -233,6 +233,68 @@ def test_sim_custom_hand_list(win):
     assert not v.custom_box.isVisibleTo(v)
 
 
+def test_sim_many_environments_scale(win, monkeypatch, tmp_path):
+    """20 Umgebungen: Suchfeld, eingeklappt (7 + »Neue Umgebung«), gewaehlte
+    Umgebung bleibt sichtbar, »Alle anzeigen« klappt auf, Suche filtert."""
+    from start_gui import views
+    scenes = []
+    for i in range(20):
+        x = tmp_path / f"halle_{i:02d}.xml"
+        x.write_text("<mujoco><worldbody/></mujoco>")
+        scenes.append(x)
+    monkeypatch.setattr(core, "list_scenes", lambda *a, **k: scenes)
+    win.open_sim()
+    v = win.current
+    assert not v.env_search.isHidden()
+    shown = v.visible_envs()
+    assert len(shown) == views.ENV_COLLAPSED and not v.env_more.isHidden()
+    assert "21" in v.env_more.text()
+    # gewaehlte Umgebung ausserhalb der ersten Reihen bleibt sichtbar
+    v.env_cards["halle_15"].click()
+    v._apply_env_view()
+    assert "halle_15" in v.visible_envs() and len(v.visible_envs()) == views.ENV_COLLAPSED
+    v.env_more.click()
+    assert len(v.visible_envs()) == 21
+    v.env_more.click()
+    v.env_search.setText("halle_1")
+    assert v.visible_envs() == [f"halle_{i}" for i in range(10, 20)]
+    assert v.env_more.isHidden()
+    v.env_search.setText("standard")
+    assert v.visible_envs() == [""]
+
+
+def test_gui_sources_have_no_emoji():
+    """Keine Emoji-/Symbol-Glyphen in den Oberflaechen (Icons kommen aus
+    resource/icons/ui). Pfeile im Fliesstext (→) sind erlaubt."""
+    import re
+    bad = re.compile("[\U0001F000-\U0001FFFF\u2600-\u27BF\u2B00-\u2BFF\u25A0-\u25FF"
+                     "\u2300-\u23FF\uFE0F\uFF0B]")
+    here = Path(__file__).resolve().parents[1]
+    tools = here.parent / "unitree_mujoco" / "unitree_robots" / "g1" / "tools"
+    files = (list((here / "start_gui").glob("*.py"))
+             + [here / "g1pilot" / "teleoperation" / f for f in (
+                 "demo_gui.py", "hand_panel.py", "sequence_editor.py", "status_line.py",
+                 "gui_base.py", "sequence_runner.py")]
+             + [here / "g1pilot" / "teleoperation" / "phone" / f for f in (
+                 "link.py", "web/app.js", "web/index.html")]
+             + [tools / "hand_new.py", tools / "hand_adjust.py", tools / "hand_qt.py"])
+    hits = []
+    for f in files:
+        for n, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+            code = line.split("#", 1)[0] if f.suffix == ".py" else line
+            if bad.search(code):
+                hits.append(f"{f.name}:{n}: {line.strip()[:80]}")
+    assert hits == []
+
+
+def test_ui_icons_render(win):
+    from g1pilot.utils import ui_icons
+    assert {"play", "smartphone", "gamepad-2", "check", "chevron-right"} <= set(ui_icons.names())
+    pm = ui_icons.pixmap("play", "#ff0000", 24)
+    assert not pm.isNull() and pm.width() >= 24
+    assert ui_icons.pixmap("gibt-es-nicht").isNull()
+
+
 def test_real_view_gate(win, monkeypatch):
     from start_gui.views import RealView
     v = RealView(win, nics=[("wlp2s0", "10.0.0.5/24"), ("enp0s31f6", "192.168.123.222/24")])

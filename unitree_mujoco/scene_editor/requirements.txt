@@ -16,3 +16,7 @@ yourdfpy
 # unzerlegte Huelle zurueck -- keine sichtbare Fehlermeldung.
 trimesh
 vhacdx
+
+# PyQt6: Fenster der Hand-Werkzeuge (tools/hand_new.py, hand_adjust.py) im
+# Aussehen des Startmenues. Die Werkzeuge laufen mit diesem venv.
+PyQt6>=6.4

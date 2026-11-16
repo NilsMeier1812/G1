@@ -162,8 +162,10 @@ class DocsWindow(QWidget):
         bl = QHBoxLayout(bar)
         bl.setContentsMargins(12, 8, 12, 8)
         bl.setSpacing(8)
-        self.back_btn = button("‹", "ghost", self.back)
-        self.fwd_btn = button("›", "ghost", self.forward)
+        self.back_btn = button("", "ghost", self.back, icon="chevron-left")
+        self.fwd_btn = button("", "ghost", self.forward, icon="chevron-right")
+        self.back_btn.setToolTip("Zurück (Alt+←)")
+        self.fwd_btn.setToolTip("Vor (Alt+→)")
         for b in (self.back_btn, self.fwd_btn):
             b.setFixedWidth(40)
         bl.addWidget(self.back_btn)

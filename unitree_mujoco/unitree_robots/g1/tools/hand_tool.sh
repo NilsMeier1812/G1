@@ -18,15 +18,28 @@ cd "$(dirname "$0")"
 VENV_PY="../../../scene_editor/.venv/bin/python"
 PY="python3"
 if [[ -x "$VENV_PY" ]]; then PY="$VENV_PY"; fi
-# Fuer "adjust" braucht es zusaetzlich tkinter: das venv-Python nehmen, wenn es
-# tkinter hat, sonst ein System-Python mit mujoco + trimesh + tkinter.
-pick_tk_python() {
+# Fuer "new"/"adjust" braucht es zusaetzlich PyQt6 (Fenster wie das Startmenue).
+# Fehlt es im Szenen-Editor-venv, wird es dort einmalig nachinstalliert; sonst
+# ein System-Python mit PyQt6 + mujoco + trimesh.
+has_gui() { "$1" -c "import PyQt6.QtWidgets, mujoco, trimesh, yaml" 2>/dev/null; }
+pick_gui_python() {
   local c
+  if [[ -x "$VENV_PY" ]] && ! has_gui "$VENV_PY" \
+     && "$VENV_PY" -c "import mujoco, trimesh, yaml" 2>/dev/null; then
+    echo ">> Einmalig: PyQt6 ins Szenen-Editor-venv installieren ..." >&2
+    "$VENV_PY" -m pip install -q "PyQt6>=6.4" >&2 || true
+  fi
   for c in "$PY" python3 python3.12 python3.11 python3.10; do
     command -v "$c" >/dev/null 2>&1 || [[ -x "$c" ]] || continue
-    if "$c" -c "import tkinter, mujoco, trimesh, yaml" 2>/dev/null; then PY="$c"; return 0; fi
+    if has_gui "$c"; then PY="$c"; return 0; fi
   done
   return 1
+}
+no_gui() {
+  echo "Kein Python mit PyQt6 + mujoco + trimesh gefunden." >&2
+  echo "  einmalig: ../../../scene_editor/setup.sh   (installiert auch PyQt6)" >&2
+  echo "  $1" >&2
+  exit 1
 }
 
 cmd="${1:-}"; shift || true
@@ -34,20 +47,10 @@ case "$cmd" in
   list)     exec "$PY" gen_hand_profile.py --list ;;
   build)    exec "$PY" gen_hand_profile.py "$@" ;;
   adjust)
-    if ! pick_tk_python; then
-      echo "Kein Python mit tkinter + mujoco + trimesh gefunden." >&2
-      echo "  sudo apt install python3-tk   (Version passend zu ../../../scene_editor/.venv)" >&2
-      echo "  oder ohne Schieber: ./hand_tool.sh preview $*" >&2
-      exit 1
-    fi
+    pick_gui_python || no_gui "oder ohne Schieber: ./hand_tool.sh preview $*"
     exec "$PY" hand_adjust.py "$@" ;;
   new)
-    if ! pick_tk_python; then
-      echo "Kein Python mit tkinter + mujoco + trimesh gefunden." >&2
-      echo "  sudo apt install python3-tk   (Version passend zu ../../../scene_editor/.venv)" >&2
-      echo "  oder ohne Fenster: $PY hand_new.py --create <datei> --name <name>" >&2
-      exit 1
-    fi
+    pick_gui_python || no_gui "oder ohne Fenster: $PY hand_new.py --create <datei> --name <name>"
     exec "$PY" hand_new.py "$@" ;;
   preview)  exec "$PY" hand_preview.py "$@" ;;
   snapshot) exec "$PY" hand_preview.py "$1" --snapshot "${2:-hand_${1}_vorschau.png}" ;;

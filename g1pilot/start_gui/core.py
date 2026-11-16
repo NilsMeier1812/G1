@@ -273,7 +273,7 @@ def sim_launch(*, env_name: str, policy: str, hand_profile: str, nav: bool,
     env["G1_ENABLE_NAV"] = "1" if nav else "0"
     env["G1_PS4_ARMS"] = "1" if ps4 else "0"
     # Handy-Zugang gehoert immer zur Demo-GUI; Bluetooth startet erst beim Klick
-    # auf »📱 Handy« (kein Haken -> ohne Dongle keine Fehlermeldung beim Start).
+    # auf »Handy« (kein Haken -> ohne Dongle keine Fehlermeldung beim Start).
     env["G1_PHONE"] = "1"
     # BlueZ ueber den System-D-Bus geht nur ohne Dockers AppArmor-Profil.
     env["G1_SIM_APPARMOR"] = "unconfined" if env["G1_PHONE"] == "1" else "docker-default"
@@ -300,7 +300,7 @@ def real_launch(vals: dict, *, rebuild: bool, base_env: dict | None = None) -> L
     env["USE_RVIZ"] = "true" if vals["rviz"] else "false"
     env["JOYSTICK_NAME"] = vals["joy"]
     env["G1_PS4_ARMS"] = "1" if vals["ps4"] else "0"
-    env["G1_PHONE"] = "1"   # Bluetooth erst beim Klick auf »📱 Handy«
+    env["G1_PHONE"] = "1"   # Bluetooth erst beim Klick auf »Handy«
     env["G1_MAX_VX"] = vals["vx"]
     env["G1_MAX_VY"] = vals["vy"]
     env["G1_MAX_VYAW"] = vals["vyaw"]

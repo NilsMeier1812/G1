@@ -236,6 +236,28 @@ function releaseWakeLock() {
 }
 
 // ── Oberflaeche ──────────────────────────────────────────────────────────
+// Strich-Icons (Lucide, ISC, wie resource/icons/ui) statt Emojis.
+const ICONS = {
+  "play": '<polygon points="6 3 20 12 6 21 6 3"/>',
+  "chevron-right": '<path d="m9 18 6-6-6-6"/>',
+  "arrow-up-down": '<path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/>',
+  "square": '<rect width="18" height="18" x="3" y="3" rx="2"/>',
+};
+function svgIcon(name, after) {
+  const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  s.setAttribute("viewBox", "0 0 24 24");
+  s.setAttribute("class", after ? "ic after" : "ic");
+  s.setAttribute("aria-hidden", "true");
+  s.innerHTML = ICONS[name] || "";
+  return s;
+}
+// Text mit Icon davor (after = Icon dahinter, z. B. »Weiter >«).
+function setIconText(el, name, text, after) {
+  el.textContent = "";
+  if (!after) el.appendChild(svgIcon(name));
+  el.appendChild(document.createTextNode(text));
+  if (after) el.appendChild(svgIcon(name, true));
+}
 function setPill(text, cls) { const p = $("pill"); p.textContent = text; p.className = "pill " + (cls || ""); }
 const show = (id, on) => $(id).classList.toggle("hidden", !on);
 
@@ -287,7 +309,7 @@ function render() {
   const seq = st.seq || null;
   const waiting = !!seq && seq.s === "waiting";
   show("btnSeqNext", operator && waiting);
-  if (waiting) $("btnSeqNext").textContent = `Weiter ▶  (${seq.i + 1}/${seq.t}${seq.n ? " · " + seq.n : ""})`;
+  if (waiting) setIconText($("btnSeqNext"), "chevron-right", `Weiter  (${seq.i + 1}/${seq.t}${seq.n ? " · " + seq.n : ""})`, true);
 
   const can = operator && ctl && ok;
   show("controls", operator && ctl);
@@ -329,7 +351,7 @@ function renderPad(pad) {
     el.style.borderTopColor = color || "#444";
   };
   const art = pad.k === "arm" ? pad.jm : PAD_ART[pad.k] || "–";
-  tile("tileArt", `🎮 ${pad.n || "Controller"}`, art, pad.c);
+  tile("tileArt", pad.n || "Controller", art, pad.c);
   tile("tileSpeed", pad.k === "walking" || pad.k === "walkmode" ? "Geh-Tempo" : "Tempo", pad.sp, pad.c);
   tile("tileHand", "Hand", pad.k === "arm" ? pad.sel : "–", pad.c);
   const line = pad.k === "off" || pad.k === "estop" || pad.k === "walking";
@@ -383,7 +405,7 @@ function renderSeqs(seqs, can) {
     box.innerHTML = "";
     for (const name of seqs) {
       const b = document.createElement("button");
-      b.textContent = `▶ ${name} …`;
+      setIconText(b, "play", `${name} …`);
       b.addEventListener("click", () => confirmAction(`Ablauf »${name}«`,
         "Die Arme bewegen sich. Bricht die Verbindung ab, wird der Ablauf gestoppt.", () => cmd("seq", name)));
       box.appendChild(b);
@@ -419,11 +441,11 @@ function openPoseList() {
   if (moves.length) {
     const h = document.createElement("div");
     h.className = "cat";
-    h.textContent = "↕ Relative Bewegungen";
+    setIconText(h, "arrow-up-down", "Relative Bewegungen");
     list.appendChild(h);
     for (const name of moves) {
       const b = document.createElement("button");
-      b.textContent = `↕ ${name}`;
+      setIconText(b, "arrow-up-down", name);
       b.addEventListener("click", () => {
         show("poseSheet", false);
         confirmAction(`Bewegung »${name}«`,
@@ -584,7 +606,7 @@ $("btnHome").addEventListener("click", () => confirmAction("Grundstellung",
 
 // Version der Handy-Seite; muss zu CACHE in sw.js passen. Kein Auto-Update: eine neue Version
 // wartet im Hintergrund, bis hier »Aktualisieren« getippt wird.
-const VERSION = "v9";
+const VERSION = "v10";
 $("version").textContent = `Handy-Seite ${VERSION}`;
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then((reg) => {

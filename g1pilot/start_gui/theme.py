@@ -79,6 +79,11 @@ QPushButton#tile {{ background: {CARD}; border: 1px solid transparent; border-ra
                     padding: 0; text-align: left; }}
 QPushButton#tile:hover {{ background: {CARD_HI}; border-color: {LINE}; }}
 
+QPushButton#seg {{ background: {CARD_HI}; border: 1px solid {LINE}; border-radius: 8px;
+                   padding: 6px 16px; min-width: 34px; }}
+QPushButton#seg:checked {{ background: {ACCENT}; border-color: {ACCENT}; color: white;
+                           font-weight: 600; }}
+
 QLineEdit, QComboBox {{ background: {CARD_HI}; border: 1px solid {LINE}; border-radius: 8px;
                         padding: 6px 10px; selection-background-color: {ACCENT}; }}
 QLineEdit:focus, QComboBox:focus {{ border-color: {ACCENT}; }}
@@ -86,6 +91,14 @@ QLineEdit:disabled {{ color: #5d6470; background: {CARD}; }}
 QComboBox::drop-down {{ border: none; width: 26px; }}
 QComboBox QAbstractItemView {{ background: {CARD_HI}; border: 1px solid {LINE};
                                selection-background-color: {ACCENT}; outline: none; }}
+
+QDoubleSpinBox, QSpinBox {{ background: {CARD_HI}; border: 1px solid {LINE}; border-radius: 8px;
+                             padding: 5px 8px; selection-background-color: {ACCENT}; }}
+QDoubleSpinBox:focus, QSpinBox:focus {{ border-color: {ACCENT}; }}
+QSlider::groove:horizontal {{ height: 4px; background: {LINE}; border-radius: 2px; }}
+QSlider::handle:horizontal {{ background: {FG}; width: 16px; height: 16px; margin: -6px 0;
+                              border-radius: 8px; }}
+QSlider::handle:horizontal:hover {{ background: {ACCENT}; }}
 
 QCheckBox {{ spacing: 10px; background: transparent; }}
 QCheckBox::indicator {{ width: 20px; height: 20px; border-radius: 6px;
@@ -118,3 +131,20 @@ QToolTip {{ background: {CARD_HI}; color: {FG}; border: 1px solid {LINE}; paddin
 QStatusBar {{ background: {SURFACE}; color: {MUTED}; border-top: 1px solid {LINE}; }}
 QStatusBar QLabel {{ color: {MUTED}; padding: 0 8px; }}
 """
+
+
+def apply(app) -> None:
+    """Fusion-Stil, dunkle Palette und Stylesheet auf eine QApplication legen
+    (Startmenue, Doku-Viewer, Hand-Werkzeuge)."""
+    from PyQt6.QtGui import QColor, QPalette
+
+    app.setStyle("Fusion")
+    pal = app.palette()
+    R = QPalette.ColorRole
+    for role, c in ((R.Window, BG), (R.Base, CARD_HI), (R.Text, FG), (R.WindowText, FG),
+                    (R.Button, CARD_HI), (R.ButtonText, FG), (R.Highlight, ACCENT),
+                    (R.HighlightedText, "#ffffff"), (R.Link, ACCENT), (R.LinkVisited, ACCENT),
+                    (R.ToolTipBase, CARD_HI), (R.ToolTipText, FG), (R.PlaceholderText, MUTED)):
+        pal.setColor(role, QColor(c))
+    app.setPalette(pal)
+    app.setStyleSheet(stylesheet())

@@ -62,7 +62,7 @@ Die letzte Auswahl merkt sich das Startmenü in
   ([11-A-Controller.md](11-A-Controller.md)). Aus = alter Joystick-Modus
   ([13-A-Alter-Joystick.md](13-A-Alter-Joystick.md#alter-joystick-modus-ohne-schalter-ps4-controller)).
 - **Handy-Zugang** ist keine Option mehr: Die Demo-GUI hat oben immer den Knopf
-  *📱 Handy*, und erst der Klick darauf startet Bluetooth
+  *Handy*, und erst der Klick darauf startet Bluetooth
   ([12-A-Handy.md](12-A-Handy.md)). Ohne Dongle gibt es beim Start also keine
   Fehlermeldung.
 - Die Bedienoberfläche ist immer die Demo-GUI; die frühere Auswahl
@@ -107,7 +107,7 @@ gerendert (Überschriften, Tabellen, Code, Bilder). Links:
 
 Das Text-Menü fragt dieselben Punkte nacheinander ab; ENTER nimmt den
 markierten Default. Erste Frage: Simulation oder Echter Roboter. Den
-Handy-Zugang ist auch hier immer dabei (Knopf *📱 Handy*); `G1_PHONE=0`
+Handy-Zugang ist auch hier immer dabei (Knopf *Handy*); `G1_PHONE=0`
 schaltet ihn ganz ab.
 
 ```bash

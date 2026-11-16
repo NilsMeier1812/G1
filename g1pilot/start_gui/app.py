@@ -7,8 +7,8 @@ import sys
 import threading
 from pathlib import Path
 
-from PyQt6.QtCore import QObject, QProcess, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QIcon, QKeySequence, QPalette, QShortcut
+from PyQt6.QtCore import QObject, QProcess, QTimer, pyqtSignal
+from PyQt6.QtGui import QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (QApplication, QLabel, QMainWindow, QMessageBox,
                              QStackedWidget)
 
@@ -241,22 +241,7 @@ def make_app(argv=None) -> QApplication:
     app.setDesktopFileName(APP_ID)
     if core.START_ICON.is_file():
         app.setWindowIcon(QIcon(str(core.START_ICON)))
-    app.setStyle("Fusion")
-    pal = app.palette()
-    for role, c in ((QPalette.ColorRole.Window, T.BG), (QPalette.ColorRole.Base, T.CARD_HI),
-                    (QPalette.ColorRole.Text, T.FG), (QPalette.ColorRole.WindowText, T.FG),
-                    (QPalette.ColorRole.Button, T.CARD_HI),
-                    (QPalette.ColorRole.ButtonText, T.FG),
-                    (QPalette.ColorRole.Highlight, T.ACCENT),
-                    (QPalette.ColorRole.HighlightedText, "#ffffff"),
-                    (QPalette.ColorRole.Link, T.ACCENT),
-                    (QPalette.ColorRole.LinkVisited, T.ACCENT),
-                    (QPalette.ColorRole.ToolTipBase, T.CARD_HI),
-                    (QPalette.ColorRole.ToolTipText, T.FG),
-                    (QPalette.ColorRole.PlaceholderText, T.MUTED)):
-        pal.setColor(role, QColor(c))
-    app.setPalette(pal)
-    app.setStyleSheet(T.stylesheet())
+    T.apply(app)
     return app
 
 

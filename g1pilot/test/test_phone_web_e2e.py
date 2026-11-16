@@ -295,7 +295,7 @@ def test_phone_grasp_view_poses_and_controller(server, browser, tmp_path):
 
 
 def test_phone_sequence_step_mode_next(server, browser, tmp_path):
-    """Ablauf »Schritt für Schritt«: »Weiter ▶« erscheint nur beim Warten und
+    """Ablauf »Schritt für Schritt«: »Weiter« erscheint nur beim Warten und
     schickt seq_next; Modus-Knoepfe schicken seq_mode."""
     gw = G.PhoneGateway(store_path=str(tmp_path / "d.json"))
     br = Bridge(gw)
@@ -337,7 +337,7 @@ def test_phone_sequence_step_mode_next(server, browser, tmp_path):
     assert "on" in page.get_attribute("#btnSeqStep", "class")
     assert not page.is_visible("#btnSeqNext")                              # faehrt noch
     status["seq"] = {"s": "waiting", "n": "Kiste", "i": 1, "t": 3}
-    status["txt"] = "Kiste · Schritt 1/3: erreicht. Weiter mit »Weiter ▶« oder L3"
+    status["txt"] = "Kiste · Schritt 1/3: erreicht. Weiter mit »Weiter« oder L3"
     assert pump(1500, lambda: page.is_visible("#btnSeqNext"))
     assert "2/3" in page.inner_text("#btnSeqNext")
     if SHOT_DIR:

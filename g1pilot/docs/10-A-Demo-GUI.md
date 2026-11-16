@@ -18,7 +18,7 @@ ergeben. Die Demo-GUI reduziert die Bedienung auf **eine Entscheidung zur Zeit**
 │ 1 · MODUS                                                        │
 │ ┌──────────────────────────┐  ┌──────────────────────────┐       │
 │ │          GEHEN           │  │         GREIFEN          │       │
-│ │  antippen zum Wechseln   │  │        ● AKTIV           │       │
+│ │  antippen zum Wechseln   │  │          AKTIV           │       │
 │ └──────────────────────────┘  └──────────────────────────┘       │
 │        (grau, inaktiv)          (orange, weißer Rand)            │
 ├──────────────────────────────────────────────────────────────────┤
@@ -27,9 +27,9 @@ ergeben. Die Demo-GUI reduziert die Bedienung auf **eine Entscheidung zur Zeit**
 │  GREIFEN              [ ARME | HÄNDE ]                           │
 │  ──────────────────────────────────────────────────────────────  │
 │   Abläufe: [ Arbeitsplatz 1 ] [ Arbeitsplatz 2 ]                 │
-│   [Am Stück|Schritt für Schritt] [ Weiter ▶ ] [Posen & Abläufe…] │
+│   [Am Stück|Schritt für Schritt] [ Weiter > ] [Posen & Abläufe…] │
 │   [Sichere Pose]   [Grundstellung]   [Bewegung stoppen]          │
-│   Erweitert ▸   (Pose anfahren … / Pose speichern … / Marker)    │
+│   Erweitert >   (Pose anfahren … / Pose speichern … / Marker)    │
 │                                                                  │
 │  GEHEN:                                                          │
 │     ( Knopf )        [⟲] [▲] [⟳]          Tempo                  │
@@ -52,7 +52,7 @@ Zwei große Kacheln, **genau eine** ist aktiv:
 
 Jede Kachel hat drei klar unterscheidbare Zustände:
 
-- **aktiv**: Vollfarbe, weißer Rand, Text „● AKTIV“
+- **aktiv**: Vollfarbe, weißer Rand, Text „AKTIV“
 - **wechselt …**: gestrichelter Rand in Modusfarbe. Das gibt es nur beim Wechsel
   zu GEHEN, weil die Arme erst in die Lauf-Pose fahren. Bestätigt wird der Wechsel
   durch `/g1pilot/arms/walk_ready`, spätestens nach 6 s (Timeout, wie in
@@ -69,7 +69,7 @@ Preparation (FSM 4); steht er schon (Preparation/Walk), schaltet Start nichts um
 Danach ist der Knopf grau (*Gestartet ✓*), nach einem NOT-HALT wieder frei
 (*NOT-HALT quittieren*). Der Controller-Zustand steht nicht mehr als eigene
 Zeile in der GUI (Modus, Hand und Tempo zeigt die GUI selbst); solange ein
-Controller aktiv ist, zeigt *🎮 Belegung* oben rechts die Tastenbelegung.
+Controller aktiv ist, zeigt *Belegung* oben rechts die Tastenbelegung.
 In der Sim startet die GUI automatisch in GREIFEN und
 wiederholt die Anforderung, bis arm_controller und loco_sim sie bestätigt
 haben ([40-T-Simulation.md › Auto-Start](40-T-Simulation.md#auto-start-greifen)).
@@ -78,7 +78,7 @@ haben ([40-T-Simulation.md › Auto-Start](40-T-Simulation.md#auto-start-greifen
 wechselt, brauchen einen zweiten Tipp innerhalb weniger Sekunden („Wirklich
 Damp? nochmal tippen“, „Kran gelockert? nochmal tippen“). *Walk* zeigt schon vor
 dem Klick die Bodenkontakt-Prüfung (Knie-Last aus `rt/lowstate`): »Walk
-Bodenkontakt ✓« oder gesperrt mit „kein Bodenkontakt“; die GEHEN-Kachel zeigt
+Bodenkontakt ok« oder gesperrt mit „kein Bodenkontakt“; die GEHEN-Kachel zeigt
 dann „gesperrt · kein Bodenkontakt“. Die Info-Zeile daneben zeigt den
 Onboard-Modus des G1, z. B. „G1: Walk mit Taille (FSM 501)“, und bei einem
 abgelehnten Befehl den RPC-Fehlercode. Details:
@@ -90,10 +90,10 @@ bewegen« und Geh-Tempo teilen sich GUI und Controller
 die GUI sendet dabei selbst nichts. Details:
 [11-A-Controller.md › Controller und Demo-GUI gekoppelt](11-A-Controller.md#controller-und-demo-gui-gekoppelt).
 
-**Kopfzeile rechts:** *🎮 Belegung* (nur solange ein Controller aktiv ist,
-zeigt die Tastenbelegung), *📱 Handy* (immer da; der Klick startet erst
+**Kopfzeile rechts:** *Belegung* (nur solange ein Controller aktiv ist,
+zeigt die Tastenbelegung), *Handy* (immer da; der Klick startet erst
 Bluetooth, dann Koppeln und Steuerhoheit, siehe [12-A-Handy.md](12-A-Handy.md)) und
-*⛶ Vollbild*.
+*Vollbild*.
 
 ### 2 · Steuerung (Mitte)
 
@@ -104,7 +104,7 @@ damit die Zuordnung ohne Lesen klar ist.
 
 - **Knopf** (`VirtualJoystick` aus `gui_base.py`): ziehen = laufen,
   loslassen = stehen.
-- **Pfeiltasten** ▲▼◀▶ und **⟲/⟳ drehen**: *gedrückt halten* = laufen,
+- **Pfeiltasten** (vor, zurück, links, rechts) und **drehen** (links/rechts herum): *gedrückt halten* = laufen,
   loslassen = sofort 0. Das ist bewusst ein Tot-Mann-Prinzip: Ein einzelner Klick
   löst kein Dauerlaufen aus.
 - **Tempo** Langsam (0.3) / Normal (0.6) als Faktor auf die normierte
@@ -155,7 +155,7 @@ Titelzeile vom Inhalt (auch bei GEHEN).
 - **Am Stück | Schritt für Schritt** (Umschalter unter den Ablauf-Knöpfen):
   *Am Stück* fährt nach jedem `reached` (+ optionaler Pause des Schritts)
   sofort weiter. *Schritt für Schritt* hält nach jedem Schritt an; weiter geht
-  es erst mit **Weiter ▶** (GUI), am Handy oder mit **L3** am PS4-/Xbox-
+  es erst mit **Weiter** (GUI), am Handy oder mit **L3** am PS4-/Xbox-
   Controller (Controller vibriert kurz, sobald der Ablauf wartet). Der
   Umschalter wirkt auch während eines Ablaufs ab dem nächsten Schritt; so
   hält man einen Ablauf am Stück an. Start: **real Schritt für Schritt, Sim
@@ -198,7 +198,7 @@ Titelzeile vom Inhalt (auch bei GEHEN).
   („Hüfte 12° links“) und hat den Knopf **Hüfte Mitte**. Gedreht wird mit
   dem Controller (R2 halten + rechter Stick), siehe
   [24-A-Hueftdrehung.md](24-A-Hueftdrehung.md).
-- **Erweitert ▸** (eingeklappt) enthält die bisherigen Einzelfunktionen für den
+- **Erweitert** (eingeklappt) enthält die bisherigen Einzelfunktionen für den
   Betreuer: Pose anfahren (Dialog), Pose speichern (Dialog, Kategorie `Demo`
   vorausgewählt) und Marker folgen. Die Dialoge liegen in `gui_base.py`.
 
@@ -214,7 +214,7 @@ entfernt):
   ein Finger-Befehl aktiviert die Hand bei Bedarf selbst.
 - **Kraftzonen**: Handskizze je Hand mit den 17 Taktil-Zonen als Heatmap
   (Spitzenwert je Zone, Nulllage = erste Daten).
-- **Erweitert ▸** (eingeklappt): Auswahl **Griffkraft** (setzt das Kraft-Limit
+- **Erweitert** (eingeklappt): Auswahl **Griffkraft** (setzt das Kraft-Limit
   aller Finger: Sanft 300 g, Mittel 800 g, Fest 1500 g) und **Tempo**
   (Langsam/Normal/Schnell), dazu „Kraftzonen nullen“ (aktuelle Taktil-Werte
   als Nulllage). Einzelne Kraft-Limits je Finger gibt es in der Demo-GUI nicht.
@@ -293,7 +293,7 @@ wie bisher nach Namen).
 liegt in einem Scrollbereich, damit die Mindesthöhe des Fensters klein bleibt
 (~600 px; vorher ~1160 px, höher als ein 1080er-Schirm: der Fenstermanager bot
 dann kein Maximieren an und auch das Vollbild blieb größer als der Schirm).
-Ab ca. 1000 px Höhe passt alles ohne Scrollen. Knopf *⛶ Vollbild* oben rechts
+Ab ca. 1000 px Höhe passt alles ohne Scrollen. Knopf *Vollbild* oben rechts
 in der Zeile „1 · MODUS“, im Vollbild heißt er *Vollbild beenden*. Tasten: **F11**
 schaltet um, **Esc** verlässt das Vollbild. Funktioniert auch ohne Titelleiste
 des Fenstermanagers (Roboter-Rechner). `G1_GUI_FULLSCREEN=1` startet die

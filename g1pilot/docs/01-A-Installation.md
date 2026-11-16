@@ -40,7 +40,7 @@ Zwei Betriebsarten:
 ```bash
 sudo apt update
 sudo apt install -y git x11-xserver-utils ca-certificates curl \
-  python3-pyqt6 libqt6svg6 python3-tk python3-venv
+  python3-pyqt6 libqt6svg6 python3-venv
 ```
 
 Diese Pakete laufen auf dem **Host**, nicht im Container:
@@ -49,8 +49,6 @@ Diese Pakete laufen auf dem **Host**, nicht im Container:
   mit eingebautem Doku-Viewer (`libqt6svg6` zeigt die SVG-Bilder der Doku).
   Fehlt PyQt6, bietet `start.sh` an, es selbst nachzuinstallieren
   (Ubuntu 24.04 per apt, 22.04 per pip in `g1pilot/.venv-gui`; sonst Text-Menü).
-- `python3-tk` — Bearbeitungstool für eigene Hände (Schieber, siehe
-  [25-A-Eigene-Haende.md](25-A-Eigene-Haende.md)).
 - `python3-venv` — virtualenv für den Umgebungs-Builder / Scene-Editor
   (Schritt 5b). Ohne das Paket bricht `python3 -m venv` ab
   (`No module named 'ensurepip'`) und hinterlässt ein kaputtes `.venv`

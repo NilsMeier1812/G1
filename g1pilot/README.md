@@ -23,9 +23,9 @@ sudo usermod -aG docker $USER
 docker --version
 docker run hello-world
 
-# Host-Pakete: PyQt6 (grafisches Startmenü von ./start.sh), Tkinter
-# (Hand-Werkzeug) und venv (Umgebungs-Builder / Scene-Editor)
-sudo apt install -y python3-pyqt6 libqt6svg6 python3-tk python3-venv
+# Host-Pakete: PyQt6 (grafisches Startmenü von ./start.sh) und venv
+# (Umgebungs-Builder / Scene-Editor / Hand-Werkzeuge)
+sudo apt install -y python3-pyqt6 libqt6svg6 python3-venv
 python3 -c 'import PyQt6.QtWidgets; print("PyQt6 ok")'
 
 # Umgebungs-Builder einrichten (trimesh + vhacdx für build_env_scene.py)

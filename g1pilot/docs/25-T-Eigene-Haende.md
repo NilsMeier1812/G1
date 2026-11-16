@@ -69,8 +69,12 @@ die Eckpunkte: Flächen ragten bis 28 mm aus den Kugeln, jetzt ≤ 1,3 mm; Test
 
 ## Justier-Werkzeug
 
-`tools/hand_adjust.py` (über `hand_tool.sh adjust`): Tk-Fenster + passiver
-MuJoCo-Viewer. Die Schieber setzen nur `body_pos`/`body_quat` von
+`tools/hand_adjust.py` (über `hand_tool.sh adjust`): Schieber-Fenster (PyQt6,
+eigener Prozess `--panel`, JSON-Zeilen über stdin/stdout) + passiver
+MuJoCo-Viewer. GLFW und Qt vertragen sich unter X11 nicht in einem Prozess.
+Aussehen und Bausteine teilen beide Hand-Werkzeuge mit dem Startmenü
+(`tools/hand_qt.py` legt `g1pilot/` auf `sys.path` und nutzt
+`start_gui/theme.py`, `start_gui/widgets.py`, `g1pilot/utils/ui_icons.py`). Die Schieber setzen nur `body_pos`/`body_quat` von
 `*_hand_tool_link` (Korrektur im Hand-Frame, gedreht um die Flansch-Mitte, je
 Seite mit eigenem Hand-Frame, also gespiegelt). Speichern verrechnet die Korrektur
 mit der gespeicherten Montage (`compose`: `offset' = t + R_adj·offset`,
@@ -107,7 +111,7 @@ und legt das Profil an.
 Ausgegeben werden die besten Kombinationen (out, palm), sortiert. Die
 Vorschau-Bilder baut `hand_new.py --analyse` in einem eigenen Prozess per
 `MjSpec` im Speicher (G1 ohne Rubber-Hand + Mesh nach `side_transform`, ohne
-Zerlegung); Tk zeigt sie im Fenster. Erst **Anlegen** schreibt in `hands/` und
+Zerlegung); das Qt-Fenster zeigt sie als Karten. Erst **Anlegen** schreibt in `hands/` und
 ruft `hand_tool.sh build` (venv mit vhacdx); danach ersetzt sich der Prozess
 durch `hand_adjust.py`.
 

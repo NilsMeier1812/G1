@@ -53,6 +53,9 @@ setup(
         # Fenster-Icons (Dock/Taskleiste), siehe g1pilot/utils/window_style.py
         (f'share/{package_name}/resource/icons',
             expand(['resource/icons/*.png', 'resource/icons/*.svg'])),
+        # Bedien-Icons (Lucide, ISC) statt Emojis, siehe g1pilot/utils/ui_icons.py
+        (f'share/{package_name}/resource/icons/ui',
+            expand(['resource/icons/ui/*.svg', 'resource/icons/ui/LICENSE'])),
 
         # Lauf-Policy fuer loco_sim (Default): NVIDIA WBC-AGILE Velocity-G1-History.
         (f'share/{package_name}/policies/agile_velocity_g1',

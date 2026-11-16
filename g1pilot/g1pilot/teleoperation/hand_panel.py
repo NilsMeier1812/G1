@@ -28,6 +28,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QRectF, QTimer
 from PyQt6.QtGui import QPainter, QColor, QPen, QBrush
 
+from g1pilot.utils import ui_icons
+
 SIDES = ("left", "right")
 SIDE_TITLE = {"left": "LINKE HAND", "right": "RECHTE HAND"}
 SIDE_SHORT = {"left": "Links", "right": "Rechts"}
@@ -263,7 +265,12 @@ class HandCard(QFrame):
         title.setStyleSheet(title.styleSheet() + "font-weight:800;")
         head.setSpacing(8)
         head.addWidget(title)
-        self.conn = _caption("● –", 12, "#666")
+        # Verbindungs-Punkt (gemalt, kein Emoji) + Text
+        self.conn_dot = QLabel()
+        self.conn_dot.setFixedSize(9, 9)
+        self._set_dot("#666")
+        head.addWidget(self.conn_dot, alignment=Qt.AlignmentFlag.AlignVCenter)
+        self.conn = _caption("–", 12, "#666")
         head.addWidget(self.conn)
         head.addStretch(1)
         self.btn_open = _btn("Öffnen", "#2e7d32", font=15, height=44)
@@ -315,16 +322,19 @@ class HandCard(QFrame):
         for i, fc in self.fingers.items():
             fc.set_target(MAX_ANGLE if action == "open" else CLOSED[i], user=True)
 
+    def _set_dot(self, color):
+        self.conn_dot.setStyleSheet(f"background:{color}; border-radius:4px; border:none;")
+
     def set_connected(self, online, real=None):
         if not online:
-            self.conn.setText("● keine Daten")
-            self.conn.setStyleSheet("color:#ef5350; font-size:12px; background:transparent;")
+            text, color = "keine Daten", "#ef5350"
         elif real is False:
-            self.conn.setText("● nicht verbunden")
-            self.conn.setStyleSheet("color:#ffb300; font-size:12px; background:transparent;")
+            text, color = "nicht verbunden", "#ffb300"
         else:
-            self.conn.setText("● verbunden")
-            self.conn.setStyleSheet("color:#66bb6a; font-size:12px; background:transparent;")
+            text, color = "verbunden", "#66bb6a"
+        self.conn.setText(text)
+        self.conn.setStyleSheet(f"color:{color}; font-size:12px; background:transparent;")
+        self._set_dot(color)
 
     def update_state(self, st, baseline):
         aa, as_ = st.get("angle_act", []), st.get("angle_set", [])
@@ -385,7 +395,8 @@ class HandPanel(QWidget):
         lay.addLayout(hands, 1)
 
         # Erweitert (eingeklappt): Griffkraft, Tempo, Kraftzonen nullen
-        self.btn_expert = QPushButton("Erweitert ▸")
+        self.btn_expert = QPushButton("Erweitert")
+        ui_icons.set_icon(self.btn_expert, "chevron-right", "#888888", 16)
         self.btn_expert.setCheckable(True)
         self.btn_expert.setStyleSheet("QPushButton{background:transparent;color:#888;"
                                       "border:none;font-size:14px;text-align:left;}")
@@ -439,7 +450,8 @@ class HandPanel(QWidget):
 
     def _toggle_expert(self, on):
         self.expert.setVisible(on)
-        self.btn_expert.setText("Erweitert ▾" if on else "Erweitert ▸")
+        ui_icons.set_icon(self.btn_expert, "chevron-down" if on else "chevron-right",
+                          "#888888", 16)
 
     # ── Befehle ─────────────────────────────────────────────────────────
     def _cmd(self, **cmd):

@@ -20,7 +20,7 @@ Oberkörper ein Stück nach links oder rechts (nur die Taille, Gelenk
 - **R2 gedrückt halten** (im Modus GREIFEN) **+ rechter Stick links/rechts**:
   Hüfte dreht, proportional zum Ausschlag, höchstens **15 °/s**. Stick
   links = nach links drehen (aus Sicht des Roboters). LED weiß, Demo-GUI
-  „HÜFTE – rechter Stick ◀/▶ dreht, R3 = Mitte“.
+  „HÜFTE – rechter Stick links/rechts dreht, R3 = Mitte“.
 - **R2 loslassen** = Hüfte steht sofort (Totmann wie L2 beim Gehen; bleibt
   der Strom aus, z. B. Funkabriss, hält der arm_controller nach 0,3 s an).
 - **R2 halten + R3** (rechten Stick drücken): Hüfte fährt sanft zur Mitte.
@@ -68,7 +68,7 @@ Abschalten: `G1_WAIST_YAW=0` (real) bzw. Parameter `waist_yaw_control:=false`
   „Hüfte 30° rechts – dreht“ oder „… – fährt zur Mitte vor GEHEN“. Daneben
   der Knopf **Hüfte Mitte** (grau, wenn die Hüfte schon in der Mitte steht
   oder keine Daten kommen). Bei gehaltenem R2 zeigt die Info-Zeile
-  „HÜFTE – rechter Stick ◀/▶ dreht, R3 = Mitte“.
+  „HÜFTE – rechter Stick links/rechts dreht, R3 = Mitte“.
 - **Handy:** Die Controller-Kachel zeigt „Hüfte“, solange R2 gehalten wird.
 - **»Hand bewegen«** in der Demo-GUI joggt bei gedrehter Hüfte im
   Oberkörper-Bezug wie der Controller.
