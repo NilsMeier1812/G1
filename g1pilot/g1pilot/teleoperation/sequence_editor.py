@@ -11,7 +11,7 @@ Reihenfolge stellt man hier ein -- kein Umbenennen, keine Kopien.
   Mitte   Schritte des gewaehlten Ablaufs: verschieben (auch ziehen),
           entfernen, Pause danach (nur »am Stueck«), »Aktuelle Stellung als
           Schritt …« (speichern + anhaengen in einem Zug)
-  rechts  gespeicherte Posen nach Kategorie: »← Hinzufügen« (Doppelklick),
+  rechts  gespeicherte Posen nach Kategorie: »Hinzufügen« (Doppelklick),
           anfahren, loeschen, aktuelle Stellung speichern; darueber die
           RELATIVEN BEWEGUNGEN (z. B. »Box anheben« = Haende 5 cm hoch, egal
           wo sie gerade sind): neu, bearbeiten, loeschen, hinzufuegen
@@ -22,7 +22,7 @@ Schritt uebernehmen. Bewegt wird nur ueber die Methoden der Demo-GUI
 (run_sequence/run_poses -> geplantes POSE ANFAHREN im arm_controller).
 """
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QIcon
 from PyQt6.QtWidgets import (
     QDialog, QHBoxLayout, QVBoxLayout, QGridLayout, QLabel, QListWidget,
     QListWidgetItem, QPushButton, QTreeWidget, QTreeWidgetItem, QInputDialog,
@@ -31,9 +31,11 @@ from PyQt6.QtWidgets import (
 )
 
 from g1pilot.manipulation.pose_store import MAX_MOVE_M, clean_move
+from g1pilot.utils import ui_icons
 from g1pilot.teleoperation.sequence_runner import pretty_pose_name, step_name
 
-MOVES_GROUP = "↕ Relative Bewegungen"
+MOVES_GROUP = "Relative Bewegungen"
+MOVE_ICON = "arrow-up-down"      # Kennzeichen relativer Bewegungen (Baum + Schritte)
 
 ROLE = Qt.ItemDataRole.UserRole
 
@@ -69,7 +71,8 @@ class SequenceEditor(QDialog):
         for i, b in enumerate((self.btn_new, self.btn_rename, self.btn_copy, self.btn_del_seq)):
             g.addWidget(b, i // 2, i % 2)
         ls.addLayout(g)
-        self.btn_run = QPushButton("▶ Ablauf starten")
+        self.btn_run = QPushButton("Ablauf starten")
+        ui_icons.set_icon(self.btn_run, "play", "#dddddd", 16)
         self.btn_run.setMinimumHeight(40)
         ls.addWidget(self.btn_run)
         cols.addWidget(box_seq, 3)
@@ -82,8 +85,12 @@ class SequenceEditor(QDialog):
         self.step_list.setDefaultDropAction(Qt.DropAction.MoveAction)
         lm.addWidget(self.step_list, 1)
         row = QHBoxLayout()
-        self.btn_up = QPushButton("▲")
-        self.btn_down = QPushButton("▼")
+        self.btn_up = QPushButton()
+        self.btn_down = QPushButton()
+        ui_icons.set_icon(self.btn_up, "chevron-up", "#dddddd", 18)
+        ui_icons.set_icon(self.btn_down, "chevron-down", "#dddddd", 18)
+        self.btn_up.setToolTip("Schritt nach oben")
+        self.btn_down.setToolTip("Schritt nach unten")
         self.btn_remove = QPushButton("Entfernen")
         for b in (self.btn_up, self.btn_down, self.btn_remove):
             row.addWidget(b)
@@ -97,7 +104,8 @@ class SequenceEditor(QDialog):
         self.spin_wait.setSuffix(" s")
         prow.addWidget(self.spin_wait)
         lm.addLayout(prow)
-        self.btn_teach = QPushButton("＋ Aktuelle Stellung als Schritt …")
+        self.btn_teach = QPushButton("Aktuelle Stellung als Schritt …")
+        ui_icons.set_icon(self.btn_teach, "plus", "#dddddd", 16)
         self.btn_teach.setMinimumHeight(40)
         lm.addWidget(self.btn_teach)
         cols.addWidget(self.box_steps, 4)
@@ -108,7 +116,8 @@ class SequenceEditor(QDialog):
         self.pose_tree = QTreeWidget()
         self.pose_tree.setHeaderHidden(True)
         lp.addWidget(self.pose_tree, 1)
-        self.btn_add = QPushButton("← Hinzufügen")
+        self.btn_add = QPushButton("Hinzufügen")
+        ui_icons.set_icon(self.btn_add, "arrow-left", "#dddddd", 16)
         self.btn_add.setMinimumHeight(40)
         lp.addWidget(self.btn_add)
         prow2 = QHBoxLayout()
@@ -128,7 +137,7 @@ class SequenceEditor(QDialog):
         cols.addWidget(box_pose, 4)
 
         self.hint = QLabel("Doppelklick auf eine Pose hängt sie an. Reihenfolge per Ziehen "
-                           "oder ▲/▼. Änderungen werden sofort gespeichert.")
+                           "oder mit den Pfeil-Knöpfen. Änderungen werden sofort gespeichert.")
         self.hint.setWordWrap(True)
         self.hint.setStyleSheet("color:#999;")
         root.addWidget(self.hint)
@@ -196,6 +205,7 @@ class SequenceEditor(QDialog):
         keep_item = self._selected_item()
         self.pose_tree.clear()
         top = QTreeWidgetItem([MOVES_GROUP])
+        top.setIcon(0, ui_icons.icon(MOVE_ICON, "#dddddd", 16))
         top.setFlags(top.flags() & ~Qt.ItemFlag.ItemIsSelectable)
         top.setToolTip(0, "Verschieben die Hände relativ zur aktuellen Stellung.")
         for n, mv in moves.items():
@@ -255,11 +265,13 @@ class SequenceEditor(QDialog):
             if "move" in st:
                 mv = self._moves.get(st["move"])
                 missing = mv is None
-                text = f"{i + 1}. ↕ {st['move']}"
+                text = f"{i + 1}. {st['move']}"
+                it.setIcon(ui_icons.icon(MOVE_ICON, "#dddddd", 16))
                 if mv is not None:
                     text += f"   ({move_text(mv)})"
             else:
                 missing = st["pose"] not in self._known
+                it.setIcon(QIcon())
                 text = f"{i + 1}. {pretty_pose_name(st['pose'])}"
                 if pretty_pose_name(st["pose"]) != st["pose"].replace("_", " "):
                     text += f"   ({st['pose']})"

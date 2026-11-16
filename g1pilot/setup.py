@@ -13,7 +13,7 @@ def expand(patterns):
 setup(
     name=package_name,
     version='0.0.0',
-    packages=find_packages(exclude=['test']),
+    packages=find_packages(exclude=['test', 'start_gui', 'start_gui.*']),  # start_gui = Host-Startmenue
     data_files=[
         ('share/ament_index/resource_index/packages', [f'resource/{package_name}']),
         (f'share/{package_name}', ['package.xml']),
@@ -53,6 +53,9 @@ setup(
         # Fenster-Icons (Dock/Taskleiste), siehe g1pilot/utils/window_style.py
         (f'share/{package_name}/resource/icons',
             expand(['resource/icons/*.png', 'resource/icons/*.svg'])),
+        # Bedien-Icons (Lucide, ISC) statt Emojis, siehe g1pilot/utils/ui_icons.py
+        (f'share/{package_name}/resource/icons/ui',
+            expand(['resource/icons/ui/*.svg', 'resource/icons/ui/LICENSE'])),
 
         # Lauf-Policy fuer loco_sim (Default): NVIDIA WBC-AGILE Velocity-G1-History.
         (f'share/{package_name}/policies/agile_velocity_g1',

@@ -9,8 +9,9 @@ Ablauf im Fenster:
      Modell erzeugen (gen_hand_profile.py), danach oeffnet das Bearbeitungstool
      (hand_adjust.py) zum Feinjustieren.
 
-Die Vorschau-Bilder rendert ein eigener Prozess (MuJoCo-OpenGL und Tk vertragen
-sich unter X11 nicht in einem Prozess, siehe hand_adjust.py).
+Fenster mit PyQt6 im Aussehen des Startmenues (hand_qt.py). Die Vorschau-Bilder
+rendert ein eigener Prozess (MuJoCo-OpenGL und die GUI vertragen sich unter X11
+nicht in einem Prozess, siehe hand_adjust.py).
 
   python3 hand_new.py [datei]                         Fenster
   python3 hand_new.py --create datei --name "Titel" [--pick 1] [--slug x] [--no-build]
@@ -256,7 +257,7 @@ def render_suggestion(mesh, s, unit, mirror_left, out_png):
     try:
         from PIL import Image
         Image.fromarray(img).save(out_png)
-    except ImportError:                    # ohne Pillow: PPM, kann Tk auch
+    except ImportError:                    # ohne Pillow: PPM, kann Qt auch
         out_png = str(out_png)[:-4] + ".ppm"
         with open(out_png, "wb") as fh:
             fh.write(f"P6 {img.shape[1]} {img.shape[0]} 255\n".encode() + img.tobytes())
@@ -284,187 +285,369 @@ def analyse(path, out_dir, unit=None, mirror_left=True, n=4, render=True):
 
 
 # ══════════════════════════════════════════════════════════════════════
-# Fenster
+# Fenster (PyQt6, Aussehen wie das Startmenue: hand_qt.py)
 # ══════════════════════════════════════════════════════════════════════
-FILETYPES = [("3D-Modelle", " ".join(f"*{e} *{e.upper()}" for e in det.MESH_TYPES)),
-             ("Alle Dateien", "*")]
+FILE_FILTER = ("3D-Modelle (" + " ".join(f"*{e} *{e.upper()}" for e in det.MESH_TYPES)
+               + ");;Alle Dateien (*)")
+
+
+def build_wizard(initial=None):
+    """Fenster bauen (ohne exec) -> Widget. Nach dem Schliessen steht in
+    w.next_slug das neue Profil (dann weiter im Bearbeitungstool)."""
+    from PyQt6.QtCore import QObject, QSize, Qt, QTimer, pyqtSignal
+    from PyQt6.QtGui import QColor, QFont, QPainter, QPixmap
+    from PyQt6.QtWidgets import (QButtonGroup, QFileDialog, QFrame, QHBoxLayout, QLabel,
+                                 QLineEdit, QMessageBox, QPushButton, QScrollArea,
+                                 QSizePolicy, QVBoxLayout, QWidget)
+
+    from start_gui import theme as T
+    from start_gui import widgets as W
+
+    class Bridge(QObject):
+        analysed = pyqtSignal(object)
+        built = pyqtSignal(str, int, str)
+
+    class SuggestionCard(QPushButton):
+        """Vorschlag: Bild (beide Haende | rechte Hand), Titel, Begruendung."""
+
+        IMG_H = 190
+
+        def __init__(self, i, s):
+            super().__init__()
+            self.index = i
+            self.setObjectName("choice")
+            self.setCheckable(True)
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            img = s.get("image") or ""
+            pm = QPixmap(img) if img else QPixmap()
+            self._pix = None if pm.isNull() else pm
+            self._err = s.get("image_error", "")
+            lay = QVBoxLayout(self)
+            lay.setContentsMargins(2, 2, 2, 10)
+            lay.setSpacing(2)
+            self._img = QLabel()
+            self._img.setFixedHeight(self.IMG_H)
+            self._img.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lay.addWidget(self._img)
+            t = W.label(f"Vorschlag {i + 1}" + ("  ·  wahrscheinlichster" if i == 0 else ""))
+            f = t.font()
+            f.setWeight(QFont.Weight.DemiBold)
+            t.setFont(f)
+            t.setContentsMargins(12, 6, 12, 0)
+            lay.addWidget(t)
+            why = W.label(s.get("why", ""), "hint", wrap=True)
+            why.setContentsMargins(12, 0, 12, 0)
+            lay.addWidget(why)
+            for w in self.findChildren(QLabel):
+                w.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            self.toggled.connect(lambda _on: self._render())
+
+        def sizeHint(self):
+            return QSize(420, self.IMG_H + 80)
+
+        def _render(self):
+            w = max(120, self.width() - 4)
+            out = W.rounded_top(None, w, self.IMG_H)
+            p = QPainter(out)
+            p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            if self._pix is not None:
+                sc = self._pix.scaled(w, self.IMG_H, Qt.AspectRatioMode.KeepAspectRatio,
+                                      Qt.TransformationMode.SmoothTransformation)
+                p.drawPixmap((w - sc.width()) // 2, (self.IMG_H - sc.height()) // 2, sc)
+            else:
+                p.setPen(QColor(T.MUTED))
+                p.drawText(out.rect().adjusted(12, 0, -12, 0),
+                           Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,
+                           "Kein Vorschaubild" + (f": {self._err[:90]}" if self._err else ""))
+            if self.isChecked():                 # Haken oben rechts wie im Startmenue
+                W.paint_check(p, out.width() - 34, 10)
+            p.end()
+            self._img.setPixmap(out)
+
+        def resizeEvent(self, e):
+            super().resizeEvent(e)
+            self._render()
+
+
+    class Wizard(QWidget):
+        def __init__(self):
+            super().__init__()
+            self.setWindowTitle("Neue Hand anlegen")
+            self.resize(980, 860)
+            self.res = None
+            self.busy = False
+            self.again = False
+            self.unit = ""                        # "" = raten lassen
+            self.mass_auto = None
+            self.next_slug = None
+            self.tmp = tempfile.mkdtemp(prefix="hand_new_")
+            self.bridge = Bridge()
+            self.bridge.analysed.connect(self._done)
+            self.bridge.built.connect(self._built)
+
+            root = QVBoxLayout(self)
+            root.setContentsMargins(0, 0, 0, 0)
+            root.setSpacing(0)
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.Shape.NoFrame)
+            body = QWidget()
+            lay = QVBoxLayout(body)
+            lay.setContentsMargins(28, 22, 28, 18)
+            lay.setSpacing(8)
+            scroll.setWidget(body)
+            root.addWidget(scroll, 1)
+
+            head = QHBoxLayout()
+            head.setSpacing(14)
+            head.addWidget(W.icon_label("hand", T.FG, 26, box=48, bg=T.CARD))
+            col = QVBoxLayout()
+            col.setSpacing(2)
+            col.addWidget(W.label("Neue Hand anlegen", "h1"))
+            col.addWidget(W.label("3D-Datei wählen, Montage-Vorschlag aussuchen, danach "
+                                  "im Bearbeitungstool fein einpassen.", "sub", wrap=True))
+            head.addLayout(col, 1)
+            lay.addLayout(head)
+
+            lay.addWidget(W.section_title("Datei"))
+            rows = W.RowList()
+            fbox = QWidget()
+            fl = QHBoxLayout(fbox)
+            fl.setContentsMargins(0, 0, 0, 0)
+            fl.setSpacing(8)
+            self.file_lbl = W.label("noch keine Datei", "muted")
+            self.file_lbl.setMinimumWidth(260)
+            self.file_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            fl.addWidget(self.file_lbl, 1)
+            fl.addWidget(W.button("Datei wählen …", "", self.choose, icon="folder-open"))
+            self.file_path = str(initial or "")
+            rows.add(W.FieldRow("3D-Datei", fbox, "STL, OBJ, PLY, 3MF …"))
+            self.ed_title = QLineEdit()
+            self.ed_title.setPlaceholderText("z. B. Box-Haken")
+            self.ed_title.setMinimumWidth(320)
+            self.ed_title.textChanged.connect(self._sync_slug)
+            self.name_row = W.FieldRow("Name", self.ed_title, "Ordner: –")
+            self.slug_lbl = self.name_row.findChildren(QLabel)[1]   # Hinweiszeile
+            rows.add(self.name_row)
+            seg = QWidget()
+            sl = QHBoxLayout(seg)
+            sl.setContentsMargins(0, 0, 0, 0)
+            sl.setSpacing(6)
+            self.unit_group = QButtonGroup(self)
+            self.unit_btns = {}
+            for u in ("mm", "m"):
+                b = QPushButton(u)
+                b.setObjectName("seg")
+                b.setCheckable(True)
+                b.setCursor(Qt.CursorShape.PointingHandCursor)
+                b.clicked.connect(lambda _=False, uu=u: self._set_unit(uu))
+                self.unit_group.addButton(b)
+                sl.addWidget(b)
+                self.unit_btns[u] = b
+            self.unit_btns["mm"].setChecked(True)
+            rows.add(W.FieldRow("Einheit der Datei", seg, "wird beim Laden geraten"))
+            self.ed_mass = QLineEdit()
+            self.ed_mass.setFixedWidth(90)
+            self.ed_mass.setAlignment(Qt.AlignmentFlag.AlignRight)
+            rows.add(W.FieldRow("Masse je Hand", self.ed_mass,
+                                f"geschätzt aus dem Volumen als PLA mit {INFILL * 100:.0f} % "
+                                "Füllung, bitte wiegen", "kg"))
+            self.mirror = W.ToggleRow("Linke Hand gespiegelt",
+                                      "Eine Datei für beide Seiten: links ist das Spiegelbild.",
+                                      True)
+            self.mirror.toggled.connect(lambda _on: self.start_analyse())
+            rows.add(self.mirror)
+            lay.addWidget(rows)
+
+            lay.addWidget(W.section_title("Montage-Vorschläge"))
+            lay.addWidget(W.label("Links beide Hände von vorn, rechts die rechte Hand von nah. "
+                                  "Blaue Scheibe = Flansch am Handgelenk, grüner Punkt = "
+                                  "Greifpunkt.", "hint", wrap=True))
+            self.empty = W.label("Erst eine 3D-Datei wählen.", "muted")
+            self.empty.setContentsMargins(0, 12, 0, 12)
+            lay.addWidget(self.empty)
+            self.grid = W.TileGrid(min_w=380)
+            lay.addWidget(self.grid)
+            self.pick_group = QButtonGroup(self)
+            self.pick_group.setExclusive(True)
+            self.cards = []
+            lay.addStretch(1)
+
+            bar = QFrame()
+            bar.setObjectName("bar")
+            bl = QHBoxLayout(bar)
+            bl.setContentsMargins(24, 12, 24, 12)
+            bl.setSpacing(10)
+            self.status = W.label("Datei wählen.", "muted", wrap=True)
+            bl.addWidget(self.status, 1)
+            bl.addWidget(W.button("Abbrechen", "ghost", self.close))
+            self.btn_ok = W.button("Anlegen und einpassen", "primary", self.create,
+                                   icon="check")
+            self.btn_ok.setEnabled(False)
+            bl.addWidget(self.btn_ok)
+            root.addWidget(W.hline("barline"))
+            root.addWidget(bar)
+
+            if self.file_path:
+                self._show_file()
+                self.ed_title.setText(Path(self.file_path).stem.replace("_", " "))
+                QTimer.singleShot(100, self.start_analyse)
+
+        # ── Eingaben ────────────────────────────────────────────────────
+        def _show_file(self):
+            self.file_lbl.setText(self.file_path or "noch keine Datei")
+            self.file_lbl.setProperty("role", "" if self.file_path else "muted")
+            self.file_lbl.style().unpolish(self.file_lbl)
+            self.file_lbl.style().polish(self.file_lbl)
+
+        def _sync_slug(self, text):
+            t = text.strip()
+            self.slug_lbl.setText(
+                f"Ordner: hands/{free_slug(slugify(t))}/" if t else "Ordner: –")
+
+        def _set_unit(self, u):
+            self.unit = u
+            self.start_analyse()
+
+        def choose(self):
+            f, _ = QFileDialog.getOpenFileName(self, "3D-Datei der Hand",
+                                               str(Path(self.file_path).parent)
+                                               if self.file_path else str(Path.home()),
+                                               FILE_FILTER)
+            if not f:
+                return
+            self.file_path = f
+            self.unit = ""
+            self._show_file()
+            if not self.ed_title.text().strip():
+                self.ed_title.setText(Path(f).stem.replace("_", " "))
+            self.start_analyse()
+
+        # ── Analyse (eigener Prozess: MuJoCo-Render) ────────────────────
+        def start_analyse(self):
+            if not self.file_path:
+                return
+            if self.busy:
+                self.again = True                 # nach dem laufenden Durchgang neu
+                return
+            self.busy = True
+            self.btn_ok.setEnabled(False)
+            self.status.setText("Erkenne Montage und rendere Vorschläge …")
+            cmd = [sys.executable, str(Path(__file__).resolve()), "--analyse", self.file_path,
+                   "--out", self.tmp, "--mirror-left", "1" if self.mirror.isChecked() else "0"]
+            if self.unit:
+                cmd += ["--unit", self.unit]
+
+            def work():
+                try:
+                    pr = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                    res = json.loads(pr.stdout.strip().splitlines()[-1]) if pr.returncode == 0 \
+                        else {"error": (pr.stderr or pr.stdout).strip()[-800:]}
+                except Exception as e:
+                    res = {"error": str(e)}
+                self.bridge.analysed.emit(res)
+            threading.Thread(target=work, daemon=True).start()
+
+        def _done(self, res):
+            self.busy = False
+            if self.again:
+                self.again = False
+                self.start_analyse()
+                return
+            if "error" in res:
+                self.status.setText("Fehler: " + res["error"])
+                return
+            self.show_result(res)
+
+        def show_result(self, res):
+            self.res = res
+            self.unit = res["unit"]
+            self.unit_btns[res["unit"]].setChecked(True)
+            if not self.ed_mass.text().strip() or self.mass_auto == self.ed_mass.text():
+                self.ed_mass.setText(str(res["mass"]))
+                self.mass_auto = self.ed_mass.text()
+            old = self.pick()
+            for c in self.cards:
+                self.pick_group.removeButton(c)
+            self.cards = [SuggestionCard(i, s) for i, s in enumerate(res["suggestions"])]
+            for c in self.cards:
+                self.pick_group.addButton(c)
+            if self.cards:
+                self.cards[old if old < len(self.cards) else 0].setChecked(True)
+            self.grid.set_items(self.cards)
+            self.empty.setVisible(not self.cards)
+            ex = " × ".join(f"{x:g}" for x in res["extents"])
+            self.status.setText(f"Größe {ex} {res['unit']}. Vorschlag wählen; danach im "
+                                "Bearbeitungstool fein einpassen.")
+            self.btn_ok.setEnabled(bool(self.cards))
+
+        def pick(self):
+            for c in self.cards:
+                if c.isChecked():
+                    return c.index
+            return 0
+
+        # ── Anlegen ─────────────────────────────────────────────────────
+        def create(self):
+            res = self.res
+            title = self.ed_title.text().strip()
+            if not res or not title:
+                QMessageBox.warning(self, "Neue Hand", "Bitte Datei wählen und einen Namen geben.")
+                return
+            try:
+                mass = float(self.ed_mass.text().replace(",", "."))
+                assert mass > 0
+            except Exception:
+                QMessageBox.warning(self, "Neue Hand", "Masse: Zahl > 0 in kg.")
+                return
+            i = self.pick()
+            try:
+                slug = create_profile(Path(self.file_path), title, res["suggestions"][i],
+                                      unit=res["unit"], mirror_left=self.mirror.isChecked(),
+                                      mass=mass, pick=i + 1, unit_guess=res["unit_guess"])
+            except Exception as e:
+                QMessageBox.warning(self, "Neue Hand", str(e))
+                return
+            self.btn_ok.setEnabled(False)
+            self.status.setText(f"hands/{slug}/ angelegt. Erzeuge Modell (Kollisions-Zerlegung, "
+                                "dauert etwas) …")
+
+            def work():
+                # ueber hand_tool.sh: nimmt das Szenen-Editor-venv (vhacdx fuer die Zerlegung)
+                pr = subprocess.run(["bash", str(HERE / "hand_tool.sh"), "build", slug],
+                                    capture_output=True, text=True)
+                self.bridge.built.emit(slug, pr.returncode, (pr.stderr or pr.stdout))
+                if pr.returncode == 0:
+                    print(pr.stdout, flush=True)
+            threading.Thread(target=work, daemon=True).start()
+
+        def _built(self, slug, rc, out):
+            if rc != 0:
+                self.status.setText("Erzeugen fehlgeschlagen: " + out[-600:])
+                return
+            print(f"Neue Hand: hands/{slug}/ -> Bearbeitungstool", flush=True)
+            self.next_slug = slug
+            self.close()
+
+        def closeEvent(self, e):
+            shutil.rmtree(self.tmp, ignore_errors=True)
+            super().closeEvent(e)
+
+    return Wizard()
 
 
 def run_wizard(initial=None):
-    import tkinter as tk
-    from tkinter import filedialog, messagebox, ttk
-
-    root = tk.Tk()
-    root.title("Neue Hand anlegen")
-    root.geometry("+40+40")
-    st = {"res": None, "busy": False, "imgs": [], "tmp": tempfile.mkdtemp(prefix="hand_new_")}
-    v_file = tk.StringVar(value=str(initial or ""))
-    v_title = tk.StringVar()
-    v_slug = tk.StringVar()
-    v_unit = tk.StringVar(value="mm")
-    v_mass = tk.StringVar()
-    v_mirror = tk.BooleanVar(value=True)
-    v_pick = tk.IntVar(value=0)
-    v_status = tk.StringVar(value="Datei wählen.")
-
-    top = ttk.Frame(root, padding=10)
-    top.pack(fill="x")
-    ttk.Label(top, text="Datei:").grid(row=0, column=0, sticky="w")
-    ttk.Entry(top, textvariable=v_file, width=56, state="readonly").grid(row=0, column=1, sticky="we")
-    ttk.Button(top, text="Datei wählen …", command=lambda: choose()).grid(row=0, column=2, padx=6)
-    ttk.Label(top, text="Name:").grid(row=1, column=0, sticky="w", pady=4)
-    ttk.Entry(top, textvariable=v_title, width=56).grid(row=1, column=1, sticky="we")
-    ttk.Label(top, textvariable=v_slug, foreground="#666").grid(row=1, column=2, sticky="w", padx=6)
-    opts = ttk.Frame(top)
-    opts.grid(row=2, column=1, sticky="w", pady=4)
-    ttk.Label(opts, text="Einheit:").pack(side="left")
-    for u in ("mm", "m"):
-        ttk.Radiobutton(opts, text=u, value=u, variable=v_unit,
-                        command=lambda: start_analyse()).pack(side="left", padx=2)
-    ttk.Label(opts, text="   Masse je Hand (kg):").pack(side="left")
-    ttk.Entry(opts, textvariable=v_mass, width=6).pack(side="left")
-    ttk.Checkbutton(opts, text="  Linke Hand gespiegelt (eine Datei für beide)",
-                    variable=v_mirror, command=lambda: start_analyse()).pack(side="left")
-    top.columnconfigure(1, weight=1)
-
-    ttk.Label(root, text="Vorschläge (links beide Hände von vorn, rechts die rechte Hand; "
-                         "blaue Scheibe = Flansch am Handgelenk, grüner Punkt = Greifpunkt):",
-              padding=(10, 0)).pack(anchor="w")
-    grid = ttk.Frame(root, padding=10)
-    grid.pack(fill="both", expand=True)
-    bottom = ttk.Frame(root, padding=10)
-    bottom.pack(fill="x")
-    ttk.Label(bottom, textvariable=v_status, wraplength=560).pack(side="left")
-    b_ok = ttk.Button(bottom, text="Anlegen und Bearbeitungstool öffnen", command=lambda: create())
-    b_ok.pack(side="right")
-    ttk.Button(bottom, text="Abbrechen", command=root.destroy).pack(side="right", padx=6)
-    b_ok.state(["disabled"])
-
-    def sync_slug(*_):
-        t = v_title.get().strip()
-        v_slug.set(f"→ hands/{free_slug(slugify(t))}/" if t else "")
-    v_title.trace_add("write", sync_slug)
-
-    def choose():
-        f = filedialog.askopenfilename(parent=root, title="3D-Datei der Hand",
-                                       filetypes=FILETYPES)
-        if f:
-            v_file.set(f)
-            v_unit.set("")
-            if not v_title.get().strip():
-                v_title.set(Path(f).stem.replace("_", " "))
-            start_analyse()
-
-    def start_analyse():
-        if not v_file.get() or st["busy"]:
-            return
-        st["busy"] = True
-        b_ok.state(["disabled"])
-        v_status.set("Erkenne Montage und rendere Vorschläge …")
-        cmd = [sys.executable, str(Path(__file__).resolve()), "--analyse", v_file.get(),
-               "--out", st["tmp"], "--mirror-left", "1" if v_mirror.get() else "0"]
-        if v_unit.get():
-            cmd += ["--unit", v_unit.get()]
-
-        def work():
-            try:
-                pr = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-                res = json.loads(pr.stdout.strip().splitlines()[-1]) if pr.returncode == 0 \
-                    else {"error": (pr.stderr or pr.stdout).strip()[-800:]}
-            except Exception as e:
-                res = {"error": str(e)}
-            root.after(0, lambda: done(res))
-        threading.Thread(target=work, daemon=True).start()
-
-    def done(res):
-        st["busy"] = False
-        if "error" in res:
-            v_status.set("Fehler: " + res["error"])
-            return
-        st["res"] = res
-        v_unit.set(res["unit"])
-        if not v_mass.get().strip() or st.get("mass_auto") == v_mass.get():
-            v_mass.set(str(res["mass"]))
-            st["mass_auto"] = v_mass.get()
-        show(res)
-        ex = " × ".join(f"{x:g}" for x in res["extents"])
-        v_status.set(f"Größe {ex} {res['unit']}. Vorschlag wählen; danach im "
-                     "Bearbeitungstool fein einpassen.")
-        b_ok.state(["!disabled"])
-
-    def show(res):
-        for w in grid.winfo_children():
-            w.destroy()
-        st["imgs"] = []
-        if v_pick.get() >= len(res["suggestions"]):
-            v_pick.set(0)
-        for i, s in enumerate(res["suggestions"]):
-            card = ttk.Frame(grid, padding=4, relief="groove")
-            card.grid(row=i // 2, column=i % 2, padx=4, pady=4, sticky="n")
-            if s.get("image"):
-                img = tk.PhotoImage(file=s["image"])
-                st["imgs"].append(img)
-                tk.Label(card, image=img).pack()
-            else:
-                ttk.Label(card, text="(kein Bild: " + s.get("image_error", "?")[:80] + ")").pack()
-            ttk.Radiobutton(card, text=f"Vorschlag {i + 1}" + ("  (wahrscheinlichster)" if i == 0
-                                                                 else ""),
-                            value=i, variable=v_pick).pack(anchor="w")
-            ttk.Label(card, text=s["why"], foreground="#555", wraplength=2 * THUMB[0]).pack(
-                anchor="w")
-
-    def create():
-        res = st["res"]
-        title = v_title.get().strip()
-        if not res or not title:
-            messagebox.showerror("Neue Hand", "Bitte Datei wählen und einen Namen geben.",
-                                 parent=root)
-            return
-        try:
-            mass = float(v_mass.get().replace(",", "."))
-            assert mass > 0
-        except Exception:
-            messagebox.showerror("Neue Hand", "Masse: Zahl > 0 in kg.", parent=root)
-            return
-        i = v_pick.get()
-        try:
-            slug = create_profile(Path(v_file.get()), title, res["suggestions"][i],
-                                  unit=res["unit"], mirror_left=v_mirror.get(), mass=mass,
-                                  pick=i + 1, unit_guess=res["unit_guess"])
-        except Exception as e:
-            messagebox.showerror("Neue Hand", str(e), parent=root)
-            return
-        b_ok.state(["disabled"])
-        v_status.set(f"hands/{slug}/ angelegt. Erzeuge Modell (Kollisions-Zerlegung, "
-                     "dauert etwas) …")
-
-        def work():
-            # ueber hand_tool.sh: nimmt das Szenen-Editor-venv (vhacdx fuer die Zerlegung)
-            pr = subprocess.run(["bash", str(HERE / "hand_tool.sh"), "build", slug],
-                                capture_output=True, text=True)
-            root.after(0, lambda: built(slug, pr))
-        threading.Thread(target=work, daemon=True).start()
-
-    def built(slug, pr):
-        if pr.returncode != 0:
-            v_status.set("Erzeugen fehlgeschlagen: " + (pr.stderr or pr.stdout)[-600:])
-            return
-        print(pr.stdout, flush=True)
-        print(f"Neue Hand: hands/{slug}/ -> Bearbeitungstool", flush=True)
-        st["next"] = slug
-        root.destroy()
-
-    if initial:
-        v_title.set(Path(initial).stem.replace("_", " "))
-        v_unit.set("")
-        root.after(100, start_analyse)
-    root.mainloop()
-    shutil.rmtree(st["tmp"], ignore_errors=True)
-    if st.get("next"):
+    import hand_qt
+    app = hand_qt.make_app("g1-hand-tool")
+    w = build_wizard(initial)
+    w.show()
+    app.exec()
+    if w.next_slug:
         # gleich weiter im Bearbeitungstool (selber Prozess -> die Konsole der
         # Start-GUI zeigt es weiter an, "Stoppen" schliesst es)
         adj = str(HERE / "hand_adjust.py")
-        os.execv(sys.executable, [sys.executable, adj, st["next"]])
+        os.execv(sys.executable, [sys.executable, adj, w.next_slug])
     return 0
 
 
@@ -499,12 +682,10 @@ def main(argv=None):
         if not a.no_build:
             gen.build(slug)
         return 0
-    try:
-        import tkinter  # noqa: F401
-    except ImportError:
-        v = f"{sys.version_info.major}.{sys.version_info.minor}"
-        sys.exit(f"tkinter fehlt fuer Python {v}: sudo apt install python{v}-tk "
-                 "(oder ohne Fenster: hand_new.py --create <datei> --name <name>)")
+    import hand_qt
+    if not hand_qt.have_qt():
+        sys.exit(hand_qt.QT_MISSING.format(py=sys.executable)
+                 + " Ohne Fenster: hand_new.py --create <datei> --name <name>")
     return run_wizard(a.file)
 
 

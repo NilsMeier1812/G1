@@ -102,7 +102,7 @@ G1_ESTOP_DAMP_LEGS=1 G1_MAX_VX=0.3 make real ROBOT_INTERFACE=enp3s0
 
 | Variable | Default | Wirkung | Doku |
 |---|---|---|---|
-| `G1_PHONE` | `1` | Knopf *📱 Handy* in der Demo-GUI, Bluetooth startet erst beim Klick; `0` = ganz aus | [12-A](12-A-Handy.md) |
+| `G1_PHONE` | `1` | Knopf *Handy* in der Demo-GUI, Bluetooth startet erst beim Klick; `0` = ganz aus | [12-A](12-A-Handy.md) |
 | `G1_PHONE_BT_ADAPTER` | `auto` | Bluetooth-Adapter | [12-A](12-A-Handy.md) |
 | `G1_PHONE_BT_NAME` | `G1 SIM` / `G1 REAL` | angezeigter Name | [12-A](12-A-Handy.md) |
 | `G1_PHONE_BT_ENCRYPT` | `0` | BLE-Kopplung verlangen | [12-A](12-A-Handy.md) |

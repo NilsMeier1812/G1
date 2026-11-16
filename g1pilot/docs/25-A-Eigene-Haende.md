@@ -68,7 +68,8 @@ Von Hand geht es weiterhin: Ordner `hands/<name>/` (nur a–z, 0–9, `_`) mit S
 und einer `hand.yaml` (Vorlage `hands/haken/hand.yaml`, Felder siehe unten),
 dann `./hand_tool.sh build <name>`. Fehlt das Werkzeug-Python, einmal
 `unitree_mujoco/scene_editor/setup.sh` ausführen (installiert trimesh, vhacdx,
-mujoco); für die Fenster braucht es zusätzlich `tkinter` (`sudo apt install python3-tk`).
+mujoco und PyQt6 für die Fenster). Ein älteres venv ohne PyQt6 ergänzt
+`hand_tool.sh` beim ersten Öffnen eines Fensters selbst (`pip install PyQt6`).
 
 ## Hand einpassen (Schieber, live)
 
@@ -96,8 +97,10 @@ links gespiegelt:
   Schieber auf 0. Das Fenster zeigt laufend, was gespeichert würde.
 
 Danach die geänderten Dateien committen (siehe unten).
-Braucht ein Python mit `tkinter`, `mujoco` und `trimesh`; fehlt `tkinter`,
-sagt das Skript, welches Paket fehlt (z. B. `sudo apt install python3-tk`).
+Beide Fenster (Neue Hand anlegen, Hand einpassen) sind PyQt6 im Aussehen des
+Startmenüs. Der MuJoCo-Viewer läuft als eigener Prozess daneben. Braucht ein
+Python mit `PyQt6`, `mujoco` und `trimesh`; das Szenen-Editor-venv bringt alles
+mit.
 
 ## Wo sitzt die Hand? (Adapter-Punkt)
 

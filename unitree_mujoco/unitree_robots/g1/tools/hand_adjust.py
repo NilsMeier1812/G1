@@ -14,8 +14,9 @@ Achsen (Hand-Frame, gleich fuer beide Seiten):
 Drehungen wirken um die Flansch-Mitte.
 
 Hilfen im Fenster: Unterarm durchsichtig (sieht man, wie tief ein Adapter im
-Arm steckt), Kollisions-Teile zeigen. Die Schieber laufen in einem eigenen
-Prozess (Tk und der MuJoCo-Viewer vertragen sich unter X11 nicht in einem).
+Arm steckt), Kollisions-Teile zeigen. Die Schieber (PyQt6, Aussehen wie das Startmenue)
+laufen in einem eigenen Prozess (Qt/Tk und der MuJoCo-Viewer vertragen sich
+unter X11 nicht in einem).
 
 Aufruf:  tools/hand_tool.sh adjust haken
 """
@@ -108,106 +109,216 @@ def write_mount(yaml_path: Path, offset_mm, rotate_deg):
 # ══════════════════════════════════════════════════════════════════════
 # Viewer-Prozess  <->  Schieber-Fenster (eigener Prozess)
 # ══════════════════════════════════════════════════════════════════════
-# MuJoCo-Viewer (GLFW, eigener Render-Thread) und Tk im selben Prozess greifen
+# MuJoCo-Viewer (GLFW, eigener Render-Thread) und die GUI im selben Prozess greifen
 # aus zwei Threads auf X11 zu -> "X Error" bzw. eingefrorenes Bild. Darum laeuft
 # das Schieber-Fenster als eigener Prozess und spricht per JSON-Zeilen ueber
 # stdin/stdout mit dem Viewer-Prozess.
 
-def run_panel(name):
-    """Schieber-Fenster. Schickt bei jeder Aenderung den Zustand, liest Status."""
-    import json
-    import queue
-    import threading
-    import tkinter as tk
+def build_panel(name, send):
+    """Schieber-Fenster (PyQt6, Aussehen wie das Startmenue). send(dict) geht an
+    den Viewer-Prozess. Rueckgabe: Widget mit .on_message(dict)."""
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtGui import QFont
+    from PyQt6.QtWidgets import (QDoubleSpinBox, QHBoxLayout, QLabel, QSlider,
+                                 QVBoxLayout, QWidget)
 
-    root = tk.Tk()
-    root.title(f"Hand einpassen: {name}")
-    root.geometry("-20+40")          # oben rechts, neben dem MuJoCo-Fenster
-    vars_ = [tk.DoubleVar(value=0.0) for _ in SLIDERS]
-    v_glass = tk.BooleanVar(value=True)
-    v_col = tk.BooleanVar(value=False)
-    status = tk.StringVar(value="Viewer startet ...")
-    inbox = queue.Queue()
+    from start_gui import theme as T
+    from start_gui import widgets as W
+
+    class SliderRow(QWidget):
+        """Titel | Schieber | Zahlenfeld | Einheit; Schieber und Feld gekoppelt."""
+
+        def __init__(self, title, unit, rng, res, on_change):
+            super().__init__()
+            self.scale = round(1.0 / res)
+            lay = QHBoxLayout(self)
+            lay.setContentsMargins(0, 6, 0, 6)
+            lay.setSpacing(12)
+            t = W.label(title)
+            t.setFixedWidth(150)
+            lay.addWidget(t)
+            self.slider = QSlider(Qt.Orientation.Horizontal)
+            self.slider.setRange(int(-rng * self.scale), int(rng * self.scale))
+            self.slider.setMinimumWidth(240)
+            lay.addWidget(self.slider, 1)
+            self.spin = QDoubleSpinBox()
+            self.spin.setRange(-rng, rng)
+            self.spin.setSingleStep(res)
+            self.spin.setDecimals(1)
+            self.spin.setFixedWidth(92)
+            self.spin.setAlignment(Qt.AlignmentFlag.AlignRight)
+            self.spin.setKeyboardTracking(False)
+            self.spin.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
+            lay.addWidget(self.spin)
+            u = W.label(unit, "muted")
+            u.setFixedWidth(34)
+            lay.addWidget(u)
+            self.slider.valueChanged.connect(
+                lambda v: self.spin.setValue(v / self.scale))
+            self.spin.valueChanged.connect(self._from_spin)
+            self.spin.valueChanged.connect(lambda _v: on_change())
+
+        def _from_spin(self, v):
+            self.slider.blockSignals(True)
+            self.slider.setValue(int(round(v * self.scale)))
+            self.slider.blockSignals(False)
+
+        def value(self):
+            return float(self.spin.value())
+
+        def set_value(self, v):
+            self.spin.setValue(v)
+
+    class Panel(QWidget):
+        def __init__(self):
+            super().__init__()
+            self.setWindowTitle(f"Hand einpassen: {name}")
+            self.resize(620, 720)
+            self._last = None
+            self._loading = True
+            root = QVBoxLayout(self)
+            root.setContentsMargins(24, 20, 24, 18)
+            root.setSpacing(8)
+
+            head = QHBoxLayout()
+            head.setSpacing(14)
+            head.addWidget(W.icon_label("move", T.FG, 24, box=46, bg=T.CARD))
+            col = QVBoxLayout()
+            col.setSpacing(2)
+            col.addWidget(W.label(f"Hand einpassen: {name}", "h1"))
+            col.addWidget(W.label("Korrektur relativ zur gespeicherten Lage. Wirkt sofort im "
+                                  "MuJoCo-Fenster, links gespiegelt.", "sub", wrap=True))
+            head.addLayout(col, 1)
+            root.addLayout(head)
+
+            self.rows = []
+            for title, group in (("Versatz", SLIDERS[:3]), ("Drehung um die Flansch-Mitte",
+                                                             SLIDERS[3:])):
+                root.addWidget(W.section_title(title))
+                lst = W.RowList()
+                for label, unit, _i, rng, res in group:
+                    text = (label.replace("Versatz ", "").replace("Drehung um ", "um ")
+                            .replace("Handflaeche", "Handfläche"))
+                    r = SliderRow(text,
+                                  "Grad" if unit == "Grad" else unit, rng, res, self.push)
+                    self.rows.append(r)
+                    lst.add(r)
+                root.addWidget(lst)
+
+            root.addWidget(W.section_title("Ansicht"))
+            lst = W.RowList()
+            self.glass = W.ToggleRow("Unterarm durchsichtig",
+                                     "Zeigt, wie tief ein Adapter im Arm steckt.", True)
+            self.col = W.ToggleRow("Kollisions-Teile zeigen",
+                                   "Konvexe Teile, mit denen Sim und Planer rechnen.", False)
+            for t in (self.glass, self.col):
+                t.toggled.connect(lambda _on: self.push())
+                lst.add(t)
+            root.addWidget(lst)
+
+            btns = QHBoxLayout()
+            btns.setSpacing(10)
+            btns.addWidget(W.button("Korrektur auf 0", "ghost", self.reset, icon="rotate-ccw"))
+            btns.addStretch(1)
+            self.btn_save = W.button("Speichern (hand.yaml)", "primary",
+                                     lambda: send({"cmd": "save"}), icon="save")
+            btns.addWidget(self.btn_save)
+            root.addSpacing(6)
+            root.addLayout(btns)
+
+            self.status = QLabel("Viewer startet …")
+            self.status.setObjectName("statusbox")
+            self.status.setWordWrap(True)
+            self.status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            f = QFont("monospace")
+            f.setStyleHint(QFont.StyleHint.Monospace)
+            self.status.setFont(f)
+            self.status.setStyleSheet(f"QLabel#statusbox{{background:{T.CONSOLE_BG};"
+                                      f"border:1px solid {T.LINE};border-radius:10px;"
+                                      f"padding:10px;color:#d7dbe0;}}")
+            root.addWidget(self.status)
+            root.addStretch(1)
+            self._loading = False
+
+        def state(self):
+            v = [r.value() for r in self.rows]
+            return {"mm": v[:3], "deg": v[3:], "glass": self.glass.isChecked(),
+                    "col": self.col.isChecked()}
+
+        def push(self):
+            if self._loading:
+                return
+            st = self.state()
+            if st != self._last:
+                self._last = st
+                send(st)
+
+        def reset(self):
+            self._loading = True
+            for r in self.rows:
+                r.set_value(0.0)
+            self._loading = False
+            self.push()
+
+        def on_message(self, msg):
+            if msg.get("reset"):
+                self.reset()
+            if "status" in msg:
+                self.status.setText(msg["status"])
+
+        def closeEvent(self, e):
+            send({"cmd": "quit"})
+            super().closeEvent(e)
+
+    return Panel()
+
+
+def run_panel(name):
+    """Eigener Prozess: Schieber-Fenster, JSON-Zeilen ueber stdin/stdout."""
+    import json
+    import threading
+
+    import hand_qt
+    from PyQt6.QtCore import QObject, QTimer, pyqtSignal
+
+    app = hand_qt.make_app("g1-hand-tool")
+
+    class Inbox(QObject):
+        line = pyqtSignal(object)
 
     def send(msg):
         try:
             sys.stdout.write(json.dumps(msg) + "\n")
             sys.stdout.flush()
         except (BrokenPipeError, OSError):
-            root.destroy()
+            app.quit()
 
-    def values():
-        out = []
-        for v in vars_:
-            try:
-                out.append(float(v.get()))
-            except (ValueError, tk.TclError):
-                out.append(0.0)
-        return out
+    panel = build_panel(name, send)
+    inbox = Inbox()
 
-    last = [None]
-
-    def push_state(*_):
-        st = {"mm": values()[:3], "deg": values()[3:], "glass": v_glass.get(), "col": v_col.get()}
-        if st != last[0]:
-            last[0] = st
-            send(st)
-
-    f = tk.Frame(root, padx=10, pady=8)
-    f.pack(fill="both", expand=True)
-    tk.Label(f, text="Korrektur relativ zur gespeicherten Lage\n"
-                     "(wirkt sofort im MuJoCo-Fenster, links gespiegelt)",
-             justify="left").pack(anchor="w")
-    for var, (label, unit, _i, rng, res) in zip(vars_, SLIDERS):
-        row = tk.Frame(f)
-        row.pack(fill="x", pady=1)
-        tk.Label(row, text=f"{label} [{unit}]", width=24, anchor="w").pack(side="left")
-        tk.Scale(row, variable=var, from_=-rng, to=rng, resolution=res, orient="horizontal",
-                 length=260, showvalue=False).pack(side="left")
-        tk.Spinbox(row, textvariable=var, from_=-rng, to=rng, increment=res,
-                   width=7).pack(side="left", padx=4)
-        var.trace_add("write", push_state)
-    opts = tk.Frame(f)
-    opts.pack(fill="x", pady=(6, 2))
-    tk.Checkbutton(opts, text="Unterarm durchsichtig", variable=v_glass,
-                   command=push_state).pack(side="left")
-    tk.Checkbutton(opts, text="Kollisions-Teile zeigen", variable=v_col,
-                   command=push_state).pack(side="left", padx=8)
-    btns = tk.Frame(f)
-    btns.pack(fill="x", pady=6)
-    tk.Button(btns, text="Speichern (hand.yaml)", command=lambda: send({"cmd": "save"})).pack(side="left")
-    tk.Button(btns, text="Korrektur auf 0",
-              command=lambda: [v.set(0.0) for v in vars_]).pack(side="left", padx=6)
-    tk.Label(f, textvariable=status, justify="left", fg="#555").pack(anchor="w")
+    def on_line(msg):
+        if msg is None:                        # Viewer-Prozess weg
+            app.quit()
+        else:
+            panel.on_message(msg)
+    inbox.line.connect(on_line)
 
     def reader():
         for line in sys.stdin:
-            inbox.put(line)
-        inbox.put(None)
+            try:
+                inbox.line.emit(json.loads(line))
+            except ValueError:
+                pass
+        inbox.line.emit(None)
 
     threading.Thread(target=reader, daemon=True).start()
-
-    def poll():
-        try:
-            while True:
-                line = inbox.get_nowait()
-                if line is None:                       # Viewer-Prozess weg
-                    root.destroy()
-                    return
-                msg = json.loads(line)
-                if msg.get("reset"):
-                    for v in vars_:
-                        v.set(0.0)
-                if "status" in msg:
-                    status.set(msg["status"])
-        except queue.Empty:
-            pass
-        root.after(50, poll)
-
-    root.protocol("WM_DELETE_WINDOW", lambda: (send({"cmd": "quit"}), root.destroy()))
-    root.after(50, poll)
-    root.after(100, push_state)
-    root.mainloop()
+    # oben rechts, neben dem MuJoCo-Fenster
+    scr = app.primaryScreen().availableGeometry() if app.primaryScreen() else None
+    if scr is not None:
+        panel.move(scr.right() - panel.width() - 20, scr.top() + 40)
+    panel.show()
+    QTimer.singleShot(100, panel.push)
+    app.exec()
 
 
 class Adjuster:
@@ -377,12 +488,10 @@ def main():
     if a.profile not in gen.list_profiles():
         sys.exit(f"Profil '{a.profile}' nicht gefunden (verfuegbar: "
                  f"{', '.join(gen.list_profiles())}).")
-    try:
-        import tkinter  # noqa: F401
-    except ImportError:
-        v = f"{sys.version_info.major}.{sys.version_info.minor}"
-        sys.exit(f"tkinter fehlt fuer Python {v}: sudo apt install python{v}-tk "
-                 "(oder ohne Schieber: hand_tool.sh preview <profil>)")
+    import hand_qt
+    if not hand_qt.have_qt():
+        sys.exit(hand_qt.QT_MISSING.format(py=sys.executable)
+                 + " Ohne Schieber: hand_tool.sh preview <profil>")
     if a.panel:
         run_panel(a.profile)
         return 0

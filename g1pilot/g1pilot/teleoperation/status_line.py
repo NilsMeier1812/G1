@@ -98,7 +98,7 @@ def onboard_text(state, age_s, walk_requested=False):
             f"FSM-Mode {state.get('fsm_mode')}" if "ground" not in state else "")
         why = f" ({why})" if why else ""
         if ground:
-            return text + f" · Bodenkontakt ✓{why} – »Walk« möglich", GREEN
+            return text + f" · Bodenkontakt ok{why} – »Walk« möglich", GREEN
         if ground is False:
             return (text + f" · kein Bodenkontakt{why}"
                     " – »Walk« gesperrt, Kran lockern"), RED
@@ -145,7 +145,7 @@ def ps4_text(status, age_s, sim=False, walk=None, device=None):
         return (f"{c}: GEHEN – L2 halten = laufen{speed}, R2 = Greifen",
                 _hex(COLORS["walk"]))
     if status.get("waist_mode"):
-        return f"{c}: HÜFTE – rechter Stick ◀/▶ dreht, R3 = Mitte", _hex(COLORS["waist"])
+        return f"{c}: HÜFTE – rechter Stick links/rechts dreht, R3 = Mitte", _hex(COLORS["waist"])
     sel = status.get("selection", "")
     label = SELECTION_LABEL.get(sel, sel.upper())
     mode = MODE_LABEL.get(status.get("mode"), status.get("mode", ""))
@@ -190,7 +190,7 @@ def walk_button_label(state, age_s):
         return START_LABEL["walk"]
     ground = ground_contact(state)
     if ground:
-        return "Walk\nBodenkontakt ✓"
+        return "Walk\nBodenkontakt ok"
     if ground is False:
         return "Walk\nkein Bodenkontakt"
     return START_LABEL["walk"]
@@ -209,7 +209,7 @@ def walk_tile_hint(state, age_s):
     if fsm == 4:
         ground = ground_contact(state)
         if ground:
-            return "erst »Walk« · Bodenkontakt ✓"
+            return "erst »Walk« · Bodenkontakt ok"
         if ground is False:
             return "gesperrt · kein Bodenkontakt"
         return "erst »Walk« (Startleiste)"
@@ -218,8 +218,8 @@ def walk_tile_hint(state, age_s):
 
 # Belegung (wie ps4_arm_teleop / docs/11-A-Controller.md).
 PS4_HELP = (
-    ("Steuerkreuz ◀ / ▶", "Hand LINKS / RECHTS auswählen"),
-    ("Steuerkreuz ▲ / ▼", "BEIDE Hände / BEIDE gespiegelt"),
+    ("Steuerkreuz links / rechts", "Hand LINKS / RECHTS auswählen"),
+    ("Steuerkreuz hoch / runter", "BEIDE Hände / BEIDE gespiegelt"),
     ("Dreieck", "Umschalten Verschieben ↔ Drehen"),
     ("Linker Stick", "Verschieben: vor/zurück + links/rechts · Drehen: kippen + schwenken"),
     ("Rechter Stick", "Verschieben: hoch/runter · Drehen: rollen"),
@@ -228,12 +228,12 @@ PS4_HELP = (
     ("Kreuz", "STOPP: Hand hält sofort an, Bewegung abbrechen"),
     ("Options", "Controller sperren / entsperren (zum Ablegen; PS und Voll-Notaus wirken weiter)"),
     ("Share (1 s halten)", "Grundstellung"),
-    ("L3 (linken Stick drücken)", "Ablauf »Schritt für Schritt«: nächster Schritt (Weiter ▶)"),
+    ("L3 (linken Stick drücken)", "Ablauf »Schritt für Schritt«: nächster Schritt (»Weiter«)"),
     ("L2 drücken", "Modus GEHEN (Arm-Tasten gesperrt, LED blau)"),
     ("L2 halten", "GEHEN: linker Stick vor/seitlich, rechter Stick drehen, "
-                  "▲/▼ Geh-Tempo (nur im Walk-Modus)"),
+                  "Steuerkreuz hoch/runter Geh-Tempo (nur im Walk-Modus)"),
     ("R2 drücken", "Modus GREIFEN (Arme übernehmen – auch nach NOT-HALT)"),
-    ("R2 halten + rechter Stick ◀/▶", "HÜFTE drehen (Oberkörper links/rechts, Arme drehen mit)"),
+    ("R2 halten + rechter Stick links/rechts", "HÜFTE drehen (Oberkörper links/rechts, Arme drehen mit)"),
     ("R2 halten + R3", "Hüfte zurück zur Mitte"),
     ("PS", "NOT-HALT"),
     ("R1 + L1 + PS (2 s halten)", "VOLL-NOTAUS: ganzer G1 in Damp (vibriert, loslassen = Abbruch)"),
@@ -247,6 +247,35 @@ def ps4_help(status=None):
         i = [k for k, _ in rows].index("PS")
         rows[i] = ("PS", "STOPP wie Kreuz (kein NOT-HALT)")
     return rows
+
+
+# Gruppen fuer das Belegungs-Fenster: (Titel, Icon, Farbschluessel, Tasten).
+PS4_HELP_GROUPS = (
+    ("Hand wählen und bewegen", "hand", "manip",
+     ("Steuerkreuz links / rechts", "Steuerkreuz hoch / runter", "Dreieck", "Linker Stick",
+      "Rechter Stick", "L1 / R1", "Kreis / Viereck", "Kreuz")),
+    ("Modus und Gehen", "footprints", "walk", ("L2 drücken", "L2 halten", "R2 drücken")),
+    ("Hüfte", "rotate-cw", "waist", ("R2 halten + rechter Stick links/rechts", "R2 halten + R3")),
+    ("Abläufe und Grundstellung", "play", "seq", ("L3 (linken Stick drücken)",
+                                                  "Share (1 s halten)")),
+    ("Sicherheit", "octagon-alert", "safety", ("PS", "R1 + L1 + PS (2 s halten)", "Options")),
+)
+
+
+def ps4_help_groups(status=None):
+    """Belegung gruppiert: [(Titel, Icon, Farbschluessel, [(Taste, Wirkung)])].
+    Tasten ohne Gruppe landen unter »Weitere« (nichts geht verloren)."""
+    rows = ps4_help(status)
+    left = dict(rows)
+    out = []
+    for title, icon, color, keys in PS4_HELP_GROUPS:
+        g = [(k, left.pop(k)) for k in keys if k in left]
+        if g:
+            out.append((title, icon, color, g))
+    rest = [(k, v) for k, v in rows if k in left]
+    if rest:
+        out.append(("Weitere", "gamepad-2", "other", rest))
+    return out
 
 
 def waist_text(state, age_s):

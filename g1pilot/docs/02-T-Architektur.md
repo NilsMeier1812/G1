@@ -28,7 +28,7 @@ Freiheitsgrade (Beine, Taille, zwei 7-DOF-Arme).
 │   ├── policies/                 RL-Lauf-Policies (ONNX) + deploy.yaml: g1_wholebody (Standard), agile_velocity_g1, agile_velocity_height_g1
 │   ├── data/arm_poses.json       gespeicherte Posen und Abläufe (versioniert)
 │   ├── test/                     Unit- und Integrationstests (run_tests.sh)
-│   ├── start.sh, g1_gui.py       Startmenü (Text / grafisch)
+│   ├── start.sh, g1_gui.py       Startmenü (Text / grafisch, Code in start_gui/)
 │   └── docs/                     diese Dokumentation
 ├── unitree_mujoco/               MuJoCo-Simulation (Unitree-Original, angepasst)
 │   └── simulate_python/

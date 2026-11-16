@@ -37,7 +37,7 @@ denn das Unitree-SDK braucht die Netzwerkkarte direkt, und DDS kommt durch die
 WSL2-NAT nicht zuverlässig. Keine GPU nötig.
 
 1. **Pakete und Docker** wie in [01-A-Installation.md](01-A-Installation.md)
-   Schritte 1–3 (System-Pakete inkl. `python3-tk` für das grafische
+   Schritte 1–3 (System-Pakete inkl. `python3-pyqt6` für das grafische
    Startmenü, Docker Engine + Compose-Plugin, Docker ohne `sudo`). Danach
    einmal ab- und wieder anmelden. Für das Prüfen der Hände zusätzlich
    `sudo apt install netcat-openbsd` (für `nc`).
@@ -171,7 +171,7 @@ starten**. Die Docker-Ausgabe läuft im Startmenü-Fenster mit.
 - **aus** (`G1_PS4_ARMS=0`): alter Weg, nur PS4. Der Controller steuert
   ausschließlich das Gehen (Deadman Button 8 + Sticks), keine Arme.
 
-Ohne grafisches Menü (kein `python3-tk`, SSH): `./start.sh --menu` fragt
+Ohne grafisches Menü (kein PyQt6, SSH): `./start.sh --menu` fragt
 dasselbe im Terminal ab und verlangt zum Schluss die Eingabe `REAL`. Ganz
 ohne Rückfragen:
 ```bash
@@ -303,7 +303,7 @@ Der G1 hängt am Kran, die zweite Person hat die Unitree-Fernbedienung.
    Controller wenig bewegen, dann den NOT-HALT einmal testen (Arme sacken
    gedämpft) und mit **Start** quittieren.
 4. **Kran lockern**, bis die Füße tragen. Die Startleiste zeigt dann
-   „Bodenkontakt ✓ – »Walk« möglich“ mit der gemessenen Knie-Last.
+   „Bodenkontakt ok – »Walk« möglich“ mit der gemessenen Knie-Last.
 5. **Walk** in der Startleiste, zweiter Klick bestätigt „Kran gelockert?“.
    Info-Zeile: „G1: Walk mit Taille (FSM 501)“.
 6. **GEHEN**: mit dem Joystick der GUI oder mit dem Controller (L2 halten +
@@ -493,8 +493,8 @@ Seit 2026-10-16 (Review des Real-Ablaufs):
   **Vorab-Anzeige (2026-10-20):** In Preparation liest `loco_client` beim
   Abgleich (2 Hz) den FSM-Mode mit und meldet ihn als `fsm_mode` im
   `onboard_state`. Schon vor dem Klick zeigt der Knopf »Walk
-  Bodenkontakt ✓« bzw. »Walk kein Bodenkontakt« (dann gesperrt), die
-  Info-Zeile „Bodenkontakt ✓ – »Walk« möglich" bzw. „kein Bodenkontakt
+  Bodenkontakt ok« bzw. »Walk kein Bodenkontakt« (dann gesperrt), die
+  Info-Zeile „Bodenkontakt ok – »Walk« möglich" bzw. „kein Bodenkontakt
   (FSM-Mode …) – »Walk« gesperrt" und die Kachel GEHEN den Grund. Nur
   Anzeige: beim Klick prüft `loco_client` den Mode wie bisher noch einmal.
   Mode unbekannt (nicht lesbar, älterer `loco_client`) → »Walk« wie bisher frei.

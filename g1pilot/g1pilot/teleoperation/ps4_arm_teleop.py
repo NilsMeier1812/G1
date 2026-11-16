@@ -50,7 +50,7 @@ Belegung (Details: g1pilot/docs/11-A-Controller.md):
                (Bis 2026-10: Arme uebernehmen -- das macht jetzt R2.)
   Share (1 s halten)  Grundstellung
   L3 (linken Stick druecken)  Ablauf »Schritt für Schritt«: naechster Schritt
-               (wie »Weiter ▶« in der Demo-GUI). Kurze Vibration, sobald ein
+               (wie »Weiter« in der Demo-GUI). Kurze Vibration, sobald ein
                Ablauf wartet; Kreuz bricht ihn ab, PS (NOT-HALT) sowieso.
                Solange ein Ablauf-Schritt / eine Pose der GUI faehrt, bewegen
                die Sticks die Haende nicht (ein Hand-Ziel braeche die Fahrt ab).

@@ -14,7 +14,7 @@ geschickt wird:
 
   am Stueck            nach 'reached' (+ Pause wait_s des Schritts) sofort weiter
   Schritt fuer Schritt nach 'reached' warten, bis jemand bestaetigt
-                       (GUI-Knopf »Weiter ▶«, Handy, Controller L3)
+                       (GUI-Knopf »Weiter«, Handy, Controller L3)
 
 Den Modus darf man waehrend des Ablaufs umschalten; er gilt ab dem naechsten
 Schritt (so haelt man einen Ablauf »am Stueck« an: auf Schritt umschalten).
@@ -222,7 +222,7 @@ class SequenceRunner:
         self.state = WAITING
         nxt = pretty_pose_name(step_name(self.steps[self.index + 1]))
         self._on_change(self, "waiting",
-                        f"{self.prefix()}erreicht. Weiter mit »Weiter ▶« oder L3 "
+                        f"{self.prefix()}erreicht. Weiter mit »Weiter« oder L3 "
                         f"(nächster: {nxt}).")
 
     def _send_next(self):

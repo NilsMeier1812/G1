@@ -23,10 +23,10 @@ sudo usermod -aG docker $USER
 docker --version
 docker run hello-world
 
-# Host-Pakete: Tkinter (grafisches Startmenü von ./start.sh) und venv
-# (Umgebungs-Builder / Scene-Editor)
-sudo apt install -y python3-tk python3-venv
-python3 -c 'import tkinter; print(tkinter.TkVersion)'
+# Host-Pakete: PyQt6 (grafisches Startmenü von ./start.sh) und venv
+# (Umgebungs-Builder / Scene-Editor / Hand-Werkzeuge)
+sudo apt install -y python3-pyqt6 libqt6svg6 python3-venv
+python3 -c 'import PyQt6.QtWidgets; print("PyQt6 ok")'
 
 # Umgebungs-Builder einrichten (trimesh + vhacdx für build_env_scene.py)
 cd ../unitree_mujoco/scene_editor && ./setup.sh && cd -
@@ -36,10 +36,10 @@ Hinweise:
 
 - Snap-Docker (`sudo snap remove docker`) bitte vorher entfernen — er macht
   häufig Pfad- und Rechteprobleme.
-- Tkinter (`python3-tk`) ist nicht im Docker-Image enthalten, sondern wird
-  auf dem Host gebraucht. Fehlt es, startet `./start.sh` ohne Fehlermeldung
-  das Text-Menü statt der GUI. Das gilt auch unter WSL2: Das Display kommt
-  dort über WSLg, Tkinter muss aber trotzdem installiert werden.
+- PyQt6 (`python3-pyqt6`) wird auf dem Host gebraucht, nicht im
+  Docker-Image. Fehlt es, sagt `./start.sh` das und startet das Text-Menü
+  statt der GUI. Das gilt auch unter WSL2: Das Display kommt dort über
+  WSLg, PyQt6 muss aber trotzdem installiert werden.
 - Ohne `scene_editor/.venv` mit `trimesh`/`vhacdx` baut `start.sh`
   Umgebungen ohne Fehlermeldung mit groben Kollisionshüllen (Greif-Objekte
   fliegen weg). Nach dem Verschieben des Repos das `.venv` neu anlegen:

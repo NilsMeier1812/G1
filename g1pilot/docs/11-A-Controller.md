@@ -59,7 +59,7 @@ Am echten Roboter erst in der GUI starten, siehe unten.
 | **R2 drücken** | Modus **GREIFEN**: Arme übernehmen, Arm-Steuerung wieder frei. Schon im GREIFEN, Arme aber abgegeben (z. B. nach NOT-HALT): R2 übernimmt sie wieder (Sim: + stehen) |
 | **R2 halten + rechter Stick ←/→** | **HÜFTE drehen** (Oberkörper links/rechts, LED weiß), Arme drehen mit. Siehe [Hüfte drehen](24-A-Hueftdrehung.md) |
 | **R2 halten + R3** | Hüfte sanft zurück zur Mitte |
-| **L3** (linken Stick drücken) | **Ablauf weiter**: wartet ein Ablauf „Schritt für Schritt“ der Demo-GUI auf Bestätigung, fährt er den nächsten Schritt an (wie *Weiter ▶*). Der Controller vibriert zweimal kurz, sobald ein Ablauf wartet, und kurz beim Weiter. Sonst ohne Wirkung. Lief beim Drücken ein Jog (Stick ausgelenkt), hält die Hand genau einmal an, danach kommt kein Hand-Ziel mehr. **Solange der Schritt fährt, sind beide Sticks gesperrt** (Anzeige „ABLAUF fährt (Sticks gesperrt, Kreuz = Stopp)“), sonst bräche ein versehentlich bewegter Stick die Fahrt mit „manueller Vorrang“ ab; Kreuz = Stopp geht immer. Wartet der Ablauf wieder, darf man nachkorrigieren. Nicht bei gehaltenem L2/R2 und nicht im GEHEN |
+| **L3** (linken Stick drücken) | **Ablauf weiter**: wartet ein Ablauf „Schritt für Schritt“ der Demo-GUI auf Bestätigung, fährt er den nächsten Schritt an (wie *Weiter*). Der Controller vibriert zweimal kurz, sobald ein Ablauf wartet, und kurz beim Weiter. Sonst ohne Wirkung. Lief beim Drücken ein Jog (Stick ausgelenkt), hält die Hand genau einmal an, danach kommt kein Hand-Ziel mehr. **Solange der Schritt fährt, sind beide Sticks gesperrt** (Anzeige „ABLAUF fährt (Sticks gesperrt, Kreuz = Stopp)“), sonst bräche ein versehentlich bewegter Stick die Fahrt mit „manueller Vorrang“ ab; Kreuz = Stopp geht immer. Wartet der Ablauf wieder, darf man nachkorrigieren. Nicht bei gehaltenem L2/R2 und nicht im GEHEN |
 | Touchpad | frei (Reserve) |
 
 Richtungen gelten **aus Sicht des Roboters** (vor = in Blickrichtung des
@@ -143,7 +143,7 @@ was auf einer Seite gewählt wird, zeigt die andere sofort.
   Controller (`G1_PS4_ARMS=0`) bleibt alles wie bisher.
 - **Controller in der GUI:** keine eigene Info-Zeile mehr (Modus, Hand und
   Tempo zeigt die GUI selbst). Solange ein Controller aktiv ist, steht oben
-  rechts *🎮 Belegung* (Name im Tooltip, bei Xbox mit Tasten-Zuordnung).
+  rechts *Belegung* (Name im Tooltip, bei Xbox mit Tasten-Zuordnung).
 - Zeitstempel je Feld, der neueste gewinnt. Ein alter Modus (vor dem Start
   des jeweiligen Programms gewählt) wird nicht übernommen.
 
