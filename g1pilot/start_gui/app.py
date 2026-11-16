@@ -9,8 +9,10 @@ from pathlib import Path
 
 from PyQt6.QtCore import QObject, QProcess, QTimer, pyqtSignal
 from PyQt6.QtGui import QIcon, QKeySequence, QShortcut
-from PyQt6.QtWidgets import (QApplication, QLabel, QMainWindow, QMessageBox,
+from PyQt6.QtWidgets import (QApplication, QLabel, QMainWindow,
                              QStackedWidget)
+
+from g1pilot.utils import msgbox
 
 from . import core
 from . import theme as T
@@ -152,7 +154,7 @@ class MainWindow(QMainWindow):
     def _open_external(self, path: Path) -> None:
         err = core.open_path(path)
         if err:
-            QMessageBox.critical(self, "Öffnen fehlgeschlagen", f"{path}\n\n{err}")
+            msgbox.error(self, "Öffnen fehlgeschlagen", f"{path}\n\n{err}")
 
     # ── Vorschaubilder ───────────────────────────────────────────────────
     def refresh_thumbs(self, force: bool = False) -> None:
@@ -188,15 +190,14 @@ class MainWindow(QMainWindow):
     def _docker_guard(self) -> bool:
         if not self._check_docker or core.docker_ready():
             return True
-        r = QMessageBox.question(self, "Docker nicht erreichbar",
-                                 "Docker scheint nicht zu laufen oder ist nicht installiert.\n"
-                                 "Trotzdem fortfahren?")
-        return r == QMessageBox.StandardButton.Yes
+        return msgbox.confirm(self, "Docker nicht erreichbar",
+                              "Docker scheint nicht zu laufen oder ist nicht installiert.\n"
+                              "Trotzdem fortfahren?", yes="Trotzdem starten")
 
     def stop_all(self) -> None:
-        r = QMessageBox.question(self, "Stoppen",
-                                 "Sim- UND Real-Stack stoppen (docker compose down)?")
-        if r != QMessageBox.StandardButton.Yes:
+        if not msgbox.confirm(self, "Stoppen",
+                              "Sim- UND Real-Stack stoppen (docker compose down)?",
+                              yes="Stoppen", danger=True):
             return
         cmd = ["bash", "-c",
                "docker compose --profile sim down --remove-orphans; "
