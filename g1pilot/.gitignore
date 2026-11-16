@@ -84,3 +84,4 @@ hardware/~$armAssembly.SLDASM
 
 # Geh-Diagnose (g1pilot.tools.walk_diag)
 diag_logs/
+.venv-gui/

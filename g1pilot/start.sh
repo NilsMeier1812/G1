@@ -56,22 +56,46 @@ done
 #  Erzwingen: --menu (Text) bzw. das Setzen von G1_NO_GUI=1.
 if [ "$ASSUME_YES" != "1" ] && [ "$FORCE_MENU" != "1" ] && \
    [ "${G1_NO_GUI:-0}" != "1" ] && [ "${#PASSTHRU[@]}" -eq 0 ]; then
-  have_qt() { command -v python3 >/dev/null 2>&1 && \
-              python3 -c 'import PyQt6.QtWidgets' >/dev/null 2>&1; }
-  # Neuer Rechner: PyQt6 fehlt -> einmal anbieten, es per apt nachzuinstallieren
+  # PyQt6 kommt vom System (apt, ab Ubuntu 24.04) oder aus .venv-gui (pip,
+  # z. B. Ubuntu 22.04: dort gibt es python3-pyqt6 nicht).
+  GUI_VENV="$PWD/.venv-gui"
+  GUI_PY=""
+  find_qt() {
+    GUI_PY=""
+    for py in python3 "$GUI_VENV/bin/python"; do
+      if command -v "$py" >/dev/null 2>&1 && \
+         "$py" -c 'import PyQt6.QtWidgets' >/dev/null 2>&1; then
+        GUI_PY="$py"; return 0
+      fi
+    done
+    return 1
+  }
+  install_qt() {
+    # 1) apt, wenn die Distribution das Paket kennt
+    if apt-cache show python3-pyqt6 >/dev/null 2>&1; then
+      sudo apt-get install -y python3-pyqt6 libqt6svg6 && return 0
+    fi
+    # 2) pip in ein eigenes venv (Qt steckt im Wheel; xcb-cursor braucht Qt >= 6.5)
+    echo "[start.sh] python3-pyqt6 gibt es hier nicht per apt -> pip in $GUI_VENV"
+    sudo apt-get install -y python3-venv libxcb-cursor0 || true
+    rm -rf "$GUI_VENV"
+    python3 -m venv "$GUI_VENV" && \
+      "$GUI_VENV/bin/pip" install --upgrade pip >/dev/null && \
+      "$GUI_VENV/bin/pip" install "PyQt6>=6.4"
+  }
+  # Neuer Rechner: PyQt6 fehlt -> einmal anbieten, es nachzuinstallieren
   # (das Startmenue laeuft auf dem Host, nicht im Docker-Image).
-  if ! have_qt && [ -t 0 ] && command -v apt-get >/dev/null 2>&1; then
-    echo "[start.sh] Das grafische Startmenue braucht PyQt6 auf diesem Rechner:"
-    echo "           sudo apt install python3-pyqt6 libqt6svg6"
-    read -r -p "           Jetzt installieren? [J/n] " ans || ans="n"
+  if ! find_qt && [ -t 0 ] && command -v apt-get >/dev/null 2>&1; then
+    echo "[start.sh] Das grafische Startmenue braucht PyQt6 auf diesem Rechner."
+    read -r -p "           Jetzt installieren (sudo apt bzw. pip)? [J/n] " ans || ans="n"
     case "${ans:-j}" in
-      [jJyY]*) sudo apt-get install -y python3-pyqt6 libqt6svg6 || true ;;
+      [jJyY]*) install_qt || echo "[start.sh] Installation fehlgeschlagen." >&2 ;;
     esac
   fi
-  if have_qt; then
+  if find_qt; then
     if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
       rc=0
-      python3 "$(dirname "$0")/g1_gui.py" || rc=$?
+      "$GUI_PY" "$PWD/g1_gui.py" || rc=$?
       # 0 = normal beendet, 130 = Strg+C: fertig. Sonst (z. B. Qt-Plugin fehlt)
       # weiter mit dem Text-Menue, damit man nicht ohne Menue dasteht.
       if [ "$rc" = "0" ] || [ "$rc" = "130" ]; then exit "$rc"; fi
@@ -79,8 +103,9 @@ if [ "$ASSUME_YES" != "1" ] && [ "$FORCE_MENU" != "1" ] && \
     fi
   else
     echo "[start.sh] Grafisches Startmenue braucht PyQt6 auf dem Host:" >&2
-    echo "           sudo apt install python3-pyqt6 libqt6svg6" >&2
-    echo "           Bis dahin: Text-Menue." >&2
+    echo "           Ubuntu 24.04: sudo apt install python3-pyqt6 libqt6svg6" >&2
+    echo "           Ubuntu 22.04: ./start.sh im Terminal und die Rueckfrage mit J" >&2
+    echo "           beantworten (pip-venv g1pilot/.venv-gui). Bis dahin: Text-Menue." >&2
   fi
 fi
 

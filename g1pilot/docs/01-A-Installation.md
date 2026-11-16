@@ -48,7 +48,7 @@ Diese Pakete laufen auf dem **Host**, nicht im Container:
 - `python3-pyqt6` + `libqt6svg6` — grafisches Startmenü von `./start.sh`
   mit eingebautem Doku-Viewer (`libqt6svg6` zeigt die SVG-Bilder der Doku).
   Fehlt PyQt6, bietet `start.sh` an, es selbst nachzuinstallieren
-  (sonst Text-Menü).
+  (Ubuntu 24.04 per apt, 22.04 per pip in `g1pilot/.venv-gui`; sonst Text-Menü).
 - `python3-tk` — Bearbeitungstool für eigene Hände (Schieber, siehe
   [25-A-Eigene-Haende.md](25-A-Eigene-Haende.md)).
 - `python3-venv` — virtualenv für den Umgebungs-Builder / Scene-Editor

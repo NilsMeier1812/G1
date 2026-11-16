@@ -15,8 +15,9 @@ cd g1pilot
 Ohne Argumente öffnet `start.sh` das grafische Startmenü (`g1_gui.py`,
 PyQt6, Code in `start_gui/`). Das Startmenü läuft auf dem PC selbst, nicht
 im Docker-Image. Fehlt PyQt6 (neuer Rechner), fragt `start.sh` „Jetzt
-installieren? [J/n]“ und ruft `sudo apt-get install -y python3-pyqt6
-libqt6svg6` auf; bei „n“ nimmt es das Text-Menü;
+installieren? [J/n]“: Ubuntu 24.04 per `sudo apt-get install -y python3-pyqt6
+libqt6svg6`, Ubuntu 22.04 (dort gibt es das Paket nicht) per pip in
+`g1pilot/.venv-gui`; bei „n“ nimmt es das Text-Menü;
 ohne Display ebenso (erzwingbar mit `--menu` oder `G1_NO_GUI=1`). Beide
 sammeln nur Optionen und rufen am Ende `start.sh --yes` mit den passenden
 Umgebungsvariablen auf.
