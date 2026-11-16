@@ -6,8 +6,10 @@ import os
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QPainter, QColor
 from PyQt6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QHBoxLayout,
-                             QInputDialog, QLineEdit, QMessageBox, QPushButton,
+                             QLineEdit, QPushButton,
                              QScrollArea, QSizePolicy, QVBoxLayout, QWidget)
+
+from g1pilot.utils import msgbox
 
 from . import core
 from . import theme as T
@@ -390,10 +392,10 @@ class SimView(Page):
             float(rt)
         except ValueError:
             self.advanced.set_open(True)
-            QMessageBox.critical(self, "Ungültig", "Sim-Tempo muss eine Zahl sein (z. B. 1.0).")
+            msgbox.error(self, "Ungültig", "Sim-Tempo muss eine Zahl sein (z. B. 1.0).")
             return
         if self.hand_kind.value() == "custom" and not self._custom_name():
-            QMessageBox.critical(self, "Keine Custom Hand",
+            msgbox.error(self, "Keine Custom Hand",
                                  "Bitte eine eigene Hand auswählen oder erst mit "
                                  "»Neue Hand anlegen« → »Anlegen …« eine anlegen.")
             return
@@ -556,7 +558,7 @@ class RealView(Page):
             return
         iface = self._iface()
         if not iface:
-            QMessageBox.critical(self, "Interface fehlt",
+            msgbox.error(self, "Interface fehlt",
                                  "Bitte ein Netzwerk-Interface wählen oder eintippen.")
             return
         vals = {
@@ -703,7 +705,7 @@ class ScenesView(Page):
     def _run_scene(self, cmd: str) -> None:
         scene = self.selected_scene()
         if scene is None:
-            QMessageBox.information(self, "Keine Auswahl", "Bitte zuerst eine Umgebung wählen.")
+            msgbox.info(self, "Keine Auswahl", "Bitte zuerst eine Umgebung wählen.")
             return
         env = os.environ.copy()
         env["G1_INSPIRE_HANDS"] = "1" if self.inspire.isChecked() else "0"
@@ -713,9 +715,9 @@ class ScenesView(Page):
                       browser=(cmd == "edit"))
 
     def _run_prompt(self) -> None:
-        text, ok = QInputDialog.getText(self, "Umgebung aus Text",
-                                        "Beschreibe die Umgebung (Englisch funktioniert "
-                                        "am besten):")
+        text, ok = msgbox.ask_text(self, "Umgebung aus Text",
+                                   "Beschreibe die Umgebung (Englisch funktioniert "
+                                   "am besten):", ok="Erzeugen")
         if not ok or not text.strip():
             return
         self._run_cmd(["prompt", text.strip()], "Umgebung generieren", browser=True)

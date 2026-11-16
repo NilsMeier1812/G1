@@ -91,23 +91,23 @@ def heat_color(v):
     return QColor(*_HEAT[-1][1])
 
 
-def _btn(text, color="#2d2d2d", font=16, height=56, checkable=False):
+def _btn(text, color="#272d38", font=16, height=56, checkable=False):
     b = QPushButton(text)
     b.setMinimumHeight(height)
     b.setCheckable(checkable)
     b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
     b.setStyleSheet(f"""
         QPushButton {{ background:{color}; color:white; font-size:{font}px; font-weight:700;
-                       border:1px solid #555; border-radius:12px; padding:4px 10px; }}
-        QPushButton:hover {{ border:2px solid #aaa; }}
-        QPushButton:pressed {{ background:#555; }}
+                       border:1px solid #3a4250; border-radius:12px; padding:4px 10px; }}
+        QPushButton:hover {{ border:2px solid #8f97a3; }}
+        QPushButton:pressed {{ background:#3a4250; }}
         QPushButton:checked {{ background:#fb8c00; border:2px solid #ffcc80; }}
-        QPushButton:disabled {{ background:#1c1c1c; color:#555; border:1px solid #2a2a2a; }}
+        QPushButton:disabled {{ background:#1f242d; color:#5d6470; border:1px solid #272d38; }}
     """)
     return b
 
 
-def _caption(text, size=14, color="#aaa"):
+def _caption(text, size=14, color="#8f97a3"):
     lbl = QLabel(text)
     lbl.setStyleSheet(f"color:{color}; font-size:{size}px; background:transparent;")
     return lbl
@@ -168,7 +168,7 @@ class FingerControl(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(2, 0, 2, 0)
         lay.setSpacing(4)
-        title = _caption(name, 13, "#ddd")
+        title = _caption(name, 13, "#e8eaed")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setMinimumHeight(30)
         lay.addWidget(title)
@@ -268,9 +268,9 @@ class HandCard(QFrame):
         # Verbindungs-Punkt (gemalt, kein Emoji) + Text
         self.conn_dot = QLabel()
         self.conn_dot.setFixedSize(9, 9)
-        self._set_dot("#666")
+        self._set_dot("#6b7380")
         head.addWidget(self.conn_dot, alignment=Qt.AlignmentFlag.AlignVCenter)
-        self.conn = _caption("–", 12, "#666")
+        self.conn = _caption("–", 12, "#6b7380")
         head.addWidget(self.conn)
         head.addStretch(1)
         self.btn_open = _btn("Öffnen", "#2e7d32", font=15, height=44)
@@ -288,7 +288,7 @@ class HandCard(QFrame):
         self.tactile = TactileHand(side)
         zone_box = QVBoxLayout()
         zone_box.setSpacing(2)
-        zl = _caption("Kraftzonen", 12, "#777")
+        zl = _caption("Kraftzonen", 12, "#6b7380")
         zl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         zone_box.addWidget(zl)
         zone_box.addWidget(self.tactile, 1)
@@ -396,9 +396,9 @@ class HandPanel(QWidget):
 
         # Erweitert (eingeklappt): Griffkraft, Tempo, Kraftzonen nullen
         self.btn_expert = QPushButton("Erweitert")
-        ui_icons.set_icon(self.btn_expert, "chevron-right", "#888888", 16)
+        ui_icons.set_icon(self.btn_expert, "chevron-right", "#8f97a3", 16)
         self.btn_expert.setCheckable(True)
-        self.btn_expert.setStyleSheet("QPushButton{background:transparent;color:#888;"
+        self.btn_expert.setStyleSheet("QPushButton{background:transparent;color:#8f97a3;"
                                       "border:none;font-size:14px;text-align:left;}")
         self.btn_expert.toggled.connect(self._toggle_expert)
         lay.addWidget(self.btn_expert)
@@ -439,10 +439,10 @@ class HandPanel(QWidget):
         box.setMinimumHeight(40)
         box.setMinimumWidth(170)
         box.setStyleSheet("""
-            QComboBox { background:#2d2d2d; color:white; font-size:14px; font-weight:700;
-                        border:1px solid #555; border-radius:10px; padding:4px 12px; }
-            QComboBox:hover { border:2px solid #aaa; }
-            QComboBox QAbstractItemView { background:#2d2d2d; color:white;
+            QComboBox { background:#272d38; color:white; font-size:14px; font-weight:700;
+                        border:1px solid #3a4250; border-radius:10px; padding:4px 12px; }
+            QComboBox:hover { border:2px solid #8f97a3; }
+            QComboBox QAbstractItemView { background:#272d38; color:white;
                                           selection-background-color:#fb8c00; }
         """)
         box.activated.connect(lambda i: cb(box.itemData(i)))
@@ -451,7 +451,7 @@ class HandPanel(QWidget):
     def _toggle_expert(self, on):
         self.expert.setVisible(on)
         ui_icons.set_icon(self.btn_expert, "chevron-down" if on else "chevron-right",
-                          "#888888", 16)
+                          "#8f97a3", 16)
 
     # ── Befehle ─────────────────────────────────────────────────────────
     def _cmd(self, **cmd):

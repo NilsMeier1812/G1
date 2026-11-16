@@ -37,7 +37,7 @@ kein bluetoothd, kein System-D-Bus, AppArmor) in einen Satz für Dialog und Stat
 geht ins Log. Nach einem Fehler startet *Bluetooth erneut versuchen* den Thread neu.
 
 **Neue Version der Handy-Seite:** `CACHE` in `web/sw.js` **und** `VERSION` in
-`web/app.js` hochzählen (derzeit `v10`). Erst dann bietet die Seite am Handy
+`web/app.js` hochzählen (derzeit `v11`). Erst dann bietet die Seite am Handy
 „Aktualisieren“ an; ohne Hochzählen bleibt die alte Version im Cache.
 
 ## Protokoll
