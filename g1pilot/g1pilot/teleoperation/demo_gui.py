@@ -61,6 +61,7 @@ from g1pilot.navigation import scene_markers as sm
 from g1pilot.utils.window_style import DarkStyle, set_app_identity
 from g1pilot.utils import ui_icons
 from g1pilot.utils.common import is_sim_mode
+from g1pilot.utils.hand_profile import hand_profile, inspire_active
 from g1pilot.utils import g1_temperature as g1t
 from g1pilot.utils import g1_battery as g1b
 from g1pilot.utils import push_charge
@@ -626,6 +627,14 @@ def state_css(bg, fg, border, font):
     """
 
 
+def hands_controllable(env=None):
+    """HAENDE-Seite nutzbar? Real immer (Inspire), Sim nur mit Inspire-Profil."""
+    env = os.environ if env is None else env
+    if str(env.get("G1_SIM_MODE", "false")).strip().lower() != "true":
+        return True
+    return inspire_active(env)
+
+
 class VerticalRocker(QWidget):
     """Senkrechter Schieber, der zurueckfedert (Gegenstueck zum VirtualJoystick):
     nach oben ziehen -> value = +1 (hoch), nach unten -> -1, loslassen -> 0."""
@@ -1044,6 +1053,7 @@ class ManipPanel(QWidget):
                 QPushButton:checked {{ background:{MODE_COLOR[MANIP]}; color:white;
                                        border-color:white; }}
                 QPushButton:hover:!checked {{ border-color:{MODE_COLOR[MANIP]}; }}
+                QPushButton:disabled {{ background:#151515; color:#444; border-color:#222; }}
             """)
             b.clicked.connect(lambda _, k=key: self.show_view(k))
             seg.addWidget(b)
@@ -1149,8 +1159,19 @@ class ManipPanel(QWidget):
         lay.addWidget(self.expert)
         lay.addStretch(1)
         self.show_view("arms")
+        # Fingersteuerung gibt es nur mit Inspire-Haenden. In der Sim mit Rubber-
+        # oder eigenem starren Profil (G1_HANDS) ist HAENDE ausgegraut; real hat
+        # der G1 immer Inspire-Haende.
+        self.hands_available = hands_controllable()
+        hb = self.view_btns["hands"]
+        hb.setEnabled(self.hands_available)
+        if not self.hands_available:
+            hb.setToolTip(f"Starre Hände ({hand_profile()}): keine Finger zum Bewegen. "
+                          "Fingersteuerung nur mit Inspire-Händen (Startmenü → Hände).")
 
     def show_view(self, key):
+        if key == "hands" and not getattr(self, "hands_available", True):
+            key = "arms"
         self.views.setCurrentWidget(self.view_pages[key])
         for k, b in self.view_btns.items():
             b.setChecked(k == key)
