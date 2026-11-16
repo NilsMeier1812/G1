@@ -68,6 +68,9 @@ Details: [23-A-Posen-und-Ablaeufe.md](23-A-Posen-und-Ablaeufe.md).
 | `test/teleop_jitter_probe.py` | Befehlsstrom des arm_controllers (Real-Pfad) bei Jog gegen geplante Fahrt, gegen einen Fake-G1 mit Gelenkdynamik |
 | `tools/dds_lowstate_load_robot.py` + `tools/dds_lowstate_load_client.py` | Last-Test: `rt/lowstate`-Listener gegen Abfrage ohne Listener (Grundlage der Bodenkontakt-Abfrage in `loco_client`) |
 
+Die Messwerkzeuge der Evaluation (V1, V4, V6, V7, V8) liegen unter
+`tools/eval/` und sind in Gruppe 7 beschrieben: [7-Evaluation.md](7-Evaluation.md).
+
 ## Doku-Links prüfen
 
 ```bash

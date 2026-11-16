@@ -130,6 +130,14 @@ DOCS = [
     ("6 Entwicklung — Uebersicht", DOCS_DIR / "6-Entwicklung.md"),
     ("60 Tests", DOCS_DIR / "60-A-Tests.md"),
     ("61 Werkzeuge", DOCS_DIR / "61-A-Werkzeuge.md"),
+    None,
+    ("7 Evaluation — Uebersicht", DOCS_DIR / "7-Evaluation.md"),
+    ("70 Code-Vergleich Sim/Real", DOCS_DIR / "70-A-Code-Vergleich-Sim-Real.md"),
+    ("71 Echtzeitfaktor", DOCS_DIR / "71-A-Echtzeitfaktor.md"),
+    ("72 Gelenkwinkel-Aufzeichnung", DOCS_DIR / "72-A-Gelenkwinkel-Aufzeichnung.md"),
+    ("73 Not-Halt-Messung", DOCS_DIR / "73-A-Nothalt-Messung.md"),
+    ("74 Armplaner-Messreihe", DOCS_DIR / "74-A-Armplaner-Messreihe.md"),
+    ("75 Erweiterungsbeispiel", DOCS_DIR / "75-A-Erweiterungsbeispiel.md"),
 ]
 
 # ── Farb-/Stilkonstanten ────────────────────────────────────────────────
