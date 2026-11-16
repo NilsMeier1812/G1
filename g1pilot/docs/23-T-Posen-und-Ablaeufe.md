@@ -35,7 +35,7 @@ Dateiformat Version 3 (seit 2026-10-22, Abläufe):
 ```
 
 `quickslots` (seit 2026-11-16, Version bleibt 3): Controller-Schnellwahl,
-Schlüssel `<erste>-<zweite>` Steuerkreuz-Richtung (`up`/`down`/`left`/`right`,
+Schlüssel `<erste>-<zweite>` Steuerkreuz-Richtung (`up`/`right`/`down`/`left`, Anzeige im Uhrzeigersinn,
 `QUICK_COMBOS`), Wert = Posenname (Verweis; eine gelöschte Pose bleibt
 stehen, wird im Raster rot „(fehlt)“ angezeigt und beim Auslösen
 abgelehnt). API: `list_quickslots()`, `quickslot(combo)`,

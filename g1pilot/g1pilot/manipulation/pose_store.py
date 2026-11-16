@@ -108,7 +108,7 @@ MAX_WAIT_S = 600.0
 MAX_MOVE_M = 0.30
 MOVE_SIDES = ("left", "right")
 # Controller-Schnellwahl: Steuerkreuz-Richtungen (Reihenfolge = Anzeige).
-QUICK_DIRS = ("up", "down", "left", "right")
+QUICK_DIRS = ("up", "right", "down", "left")   # im Uhrzeigersinn (Nils)
 QUICK_COMBOS = tuple(f"{a}-{b}" for a in QUICK_DIRS for b in QUICK_DIRS)
 
 
