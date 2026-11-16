@@ -41,6 +41,12 @@ Die feste Pose **Sichere Pose** (Arme hoch,
 Ellbogen hinten) hat in Demo-GUI und Handy einen eigenen Knopf; ihr Name ist
 `Sichere_Pose` (`G1_SAFE_POSE`).
 
+Controller: **R2 halten + Steuerkreuz zweimal + R2 loslassen** fährt eine von
+16 vorher zugeordneten Posen an. Zuordnen im Fenster Posen & Abläufe, Reiter
+**Controller-Schnellwahl** (4 × 4-Raster: Zeile = erste Richtung, Spalte =
+zweite, im Feld die Pose wählen). Details:
+[Pose-Schnellwahl](11-A-Controller.md#pose-schnellwahl-r2--steuerkreuz-zweimal).
+
 Abbrechen: **Bewegung stoppen** (Demo-GUI, Handy), **Kreuz** am Controller. Ein Marker-Griff oder Stick-Ausschlag
 bricht ebenfalls ab (manueller Vorrang).
 

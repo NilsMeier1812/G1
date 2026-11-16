@@ -12,6 +12,7 @@ Bahnuhr, Abbruch): [20-T-Arm-Manipulation.md › Positionsspeicher](20-T-Arm-Man
 | `g1pilot/manipulation/arm_controller.py` | `/g1pilot/pose_store/{save,goto,cancel}`, Status auf `/g1pilot/arm_command/status` und `/g1pilot/pose_store/save/status` |
 | `g1pilot/teleoperation/sequence_runner.py` | `SequenceRunner`: Zustandsmaschine eines Ablaufs (ohne Qt/ROS) |
 | `g1pilot/teleoperation/sequence_editor.py` | Fenster „Posen & Abläufe“ (PyQt6) |
+| `g1pilot/teleoperation/quickslot_panel.py` | Reiter „Controller-Schnellwahl“: 4 × 4-Raster Pose → R2 + Steuerkreuz 2× |
 | `g1pilot/teleoperation/demo_gui.py` | hängt den Runner an Knöpfe, Handy und Controller; rechnet relative Bewegungen in ein Ziel um |
 | `g1pilot/teleoperation/ps4_arm_teleop.py` | L3 → `/g1pilot/sequence/next`, Sticks gesperrt während `moving` |
 | `g1pilot/teleoperation/phone/gateway.py` | Handy-Aktionen `pose`, `move`, `pose_save`, `seq`, `seq_next`, `seq_mode` (siehe [12-T-Handy.md](12-T-Handy.md#aktionen-und-rechte)) |
@@ -29,8 +30,16 @@ Dateiformat Version 3 (seit 2026-10-22, Abläufe):
  "poses": {"<name>": {"category": "...", "left_arm": [...], "saved_at": 0.0}},
  "moves": {"<bewegung>": {"dx": 0.0, "dy": 0.0, "dz": 0.05, "sides": ["left", "right"]}},
  "sequences": {"<ablauf>": {"steps": [{"pose": "<name>", "wait_s": 0.0},
-                                      {"move": "<bewegung>", "wait_s": 0.0}]}}}
+                                      {"move": "<bewegung>", "wait_s": 0.0}]}},
+ "quickslots": {"down-up": "<name>"}}
 ```
+
+`quickslots` (seit 2026-11-16, Version bleibt 3): Controller-Schnellwahl,
+Schlüssel `<erste>-<zweite>` Steuerkreuz-Richtung (`up`/`down`/`left`/`right`,
+`QUICK_COMBOS`), Wert = Posenname (Verweis; eine gelöschte Pose bleibt
+stehen, wird im Raster rot „(fehlt)“ angezeigt und beim Auslösen
+abgelehnt). API: `list_quickslots()`, `quickslot(combo)`,
+`set_quickslot(combo, pose|None)`. Unbekannte Schlüssel fallen beim Lesen weg.
 
 Ein Ablauf (`sequences`) verweist nur auf Posennamen bzw. relative
 Bewegungen; dieselbe Pose kann in mehreren Abläufen stehen. Eine **relative

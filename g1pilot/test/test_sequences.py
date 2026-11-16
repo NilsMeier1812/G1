@@ -315,3 +315,44 @@ def test_single_pose_and_empty():
     assert r.prefix() == ""
     reach(r, clk)
     assert events[-1] == ("done", "Pose erreicht.")
+
+
+# ── Controller-Schnellwahl (quickslots, 2026-11-16) ─────────────────────────
+def test_quickslots_set_clear_and_persist(store):
+    from g1pilot.manipulation.pose_store import QUICK_COMBOS, quick_combo
+    assert len(QUICK_COMBOS) == 16 and quick_combo("down", "up") == "down-up"
+    with pytest.raises(ValueError):
+        quick_combo("down", "vor")
+    store.save("Greifen", left_arm=[0.0] * 7)
+    store.save("Ablegen", right_arm=[0.0] * 7)
+    assert store.list_quickslots() == {} and store.quickslot("down-up") is None
+    store.set_quickslot("down-up", "Greifen")
+    store.set_quickslot("up-up", "Greifen")                 # mehrfach erlaubt
+    store.set_quickslot("left-right", "Ablegen")
+    with pytest.raises(ValueError):
+        store.set_quickslot("down-vor", "Greifen")
+    with pytest.raises(ValueError):
+        store.set_quickslot("down-down", "Gibts nicht")
+    # andere Schreibvorgaenge behalten die Plaetze
+    store.save("Neu", left_arm=[0.0] * 7)
+    store.save_sequence("Kiste", ["Greifen"])
+    fresh = PoseStore(store.path)
+    assert fresh.list_quickslots() == {"down-up": "Greifen", "up-up": "Greifen",
+                                       "left-right": "Ablegen"}
+    fresh.set_quickslot("up-up", None)
+    fresh.set_quickslot("up-up", "")                        # schon leer: kein Fehler
+    assert "up-up" not in store.list_quickslots()
+    # geloeschte Pose bleibt als Verweis stehen
+    store.delete("Ablegen")
+    assert store.quickslot("left-right") == "Ablegen" and store.get("Ablegen") is None
+
+
+def test_quickslots_bad_entries_dropped(tmp_path):
+    import json
+    path = tmp_path / "poses.json"
+    path.write_text(json.dumps({"version": 3, "poses": {"A": {"left_arm": [0.0] * 7}},
+                                "quickslots": {"down-up": "A", "quer": "A", "up-up": 5,
+                                               "left-left": "  "}}))
+    assert PoseStore(path).list_quickslots() == {"down-up": "A"}
+    path.write_text(json.dumps({"version": 3, "poses": {}, "quickslots": "kaputt"}))
+    assert PoseStore(path).list_quickslots() == {}

@@ -72,6 +72,16 @@ Belegung (Details: g1pilot/docs/11-A-Controller.md):
                Loslassen = Huefte steht. Sticks/Steuerkreuz bewegen dabei die Arme
                nicht; die Arme halten ihre Gelenkstellung und drehen mit.
                Jog-Richtungen gelten danach im Oberkoerper-Bezug.
+  R2 halten + Steuerkreuz zweimal (z. B. runter, hoch)  POSE-SCHNELLWAHL:
+               16 Plaetze (erste x zweite Richtung), zugeordnet im Fenster
+               »Posen & Ablaeufe« der Demo-GUI (pose_store "quickslots").
+               1. Druck kurze Vibration, 2. Druck laengere = Platz gewaehlt
+               (leerer Platz: lange, harte Vibration, nichts passiert). Erst
+               R2 LOSLASSEN faehrt die Pose an (/g1pilot/pose_store/goto,
+               geplant mit Kollisionsschutz); vorher verwirft Kreuz die Wahl.
+               Kommt der 2. Druck nicht innerhalb quick_timeout_s (1,5 s),
+               verfaellt der 1. Waehrend die Pose faehrt, bewegen die Sticks
+               die Haende nicht; Kreuz/PS stoppen sie.
   L2 druecken  Modus GEHEN, R2 druecken = Modus GREIFEN (trigger_modes), wie die
                Kacheln der Demo-GUI. R2 im GREIFEN mit abgegebenen Armen
                (z. B. nach NOT-HALT, /g1pilot/arms/state False) = Arme
@@ -96,6 +106,7 @@ from g1pilot.teleoperation.hand_jog import (
     HoldStreamer, JogReference, hold_pose, jog_reference_mode, lead_limits, jog_step,
 )
 from g1pilot.utils.common import is_sim_mode
+from g1pilot.manipulation.pose_store import PoseStore
 from g1pilot.manipulation.waist_yaw import (
     WAIST_RATE_TOPIC, WAIST_CENTER_TOPIC, WAIST_STATE_TOPIC, STATE_STALE_S,
     parse_state, rotate_twist_yaw,
@@ -110,6 +121,18 @@ SELECTIONS = {
 }
 DPAD_SELECTION = ((L.DPAD_LEFT, "left"), (L.DPAD_RIGHT, "right"),
                   (L.DPAD_UP, "both"), (L.DPAD_DOWN, "mirror"))
+# Pose-Schnellwahl (R2 halten + Steuerkreuz zweimal): Richtungen wie
+# pose_store.QUICK_DIRS.
+DPAD_DIRS = ((L.DPAD_UP, "up"), (L.DPAD_DOWN, "down"),
+             (L.DPAD_LEFT, "left"), (L.DPAD_RIGHT, "right"))
+QUICK_ARROW = {"up": "↑", "down": "↓", "left": "←", "right": "→"}
+
+
+def quick_arrows(combo):
+    """"down-up" -> "↓↑" (Anzeige); Teilstueck "down" -> "↓"."""
+    return "".join(QUICK_ARROW.get(d, "?") for d in (combo or "").split("-") if d)
+
+
 SELECTION_LABEL = {"left": "LINKS", "right": "RECHTS", "both": "BEIDE",
                    "mirror": "BEIDE gespiegelt"}
 MODE_LABEL = {"move": "Verschieben", "turn": "Drehen"}
@@ -172,6 +195,8 @@ class ArmTeleopLogic:
       ("full_arm",), ("full_abort",), ("full_estop",)   -- Voll-Notaus
       ("mirror_arm", side), ("mirror_abort",), ("mirror", side)  -- Spiegeln
       ("seq_next",)                                          -- Ablauf weiter (L3)
+      ("qs_first", dir), ("qs_combo", combo), ("qs_reset", grund),
+      ("quickslot", combo)                -- Pose-Schnellwahl (R2 + Steuerkreuz 2x)
     twist(axes) -> {side: (lin, ang)} fuer die gerade aktiven Seiten (oder {}).
     """
 
@@ -179,7 +204,8 @@ class ArmTeleopLogic:
                  selection="right", max_speed="Schnell", ps_estop=True,
                  full_estop_hold_s=2.0, full_estop_gap_s=0.3,
                  walk_deadman=False, trigger_modes=False, axis_snap_deg=20.0,
-                 mirror_hold_s=2.0, mirror_gap_s=0.3, waist_yaw=False):
+                 mirror_hold_s=2.0, mirror_gap_s=0.3, waist_yaw=False,
+                 quick_timeout_s=1.5):
         self.deadzone = float(deadzone)
         self.expo = float(expo)
         # Linker Stick: Achsen-Einrasten (snap_stick), damit "vor" nur vor
@@ -258,6 +284,17 @@ class ArmTeleopLogic:
         # GREIFEN uebernimmt die Arme nur, wenn sie abgegeben sind (ENABLE
         # bricht geplante Fahrten ab, also nicht bei jedem Hueft-Druck).
         self.arms_enabled = None
+        # Pose-Schnellwahl (nur im Hueft-Modus = R2 gehalten): erste Richtung
+        # + Zeitpunkt, fertige Kombination ("down-up"), Name der Pose (setzt
+        # der Node nach dem Nachschlagen, nur fuer Anzeige). <= 0 = aus.
+        self.quick_timeout_s = float(quick_timeout_s)
+        self._qs_first = None
+        self._qs_t = None
+        self.qs_combo = None
+        self.qs_name = None
+        # Schnellwahl-Pose faehrt (vom Node gesetzt bis zum Endzustand):
+        # Sticks gesperrt wie bei seq_busy.
+        self.qs_busy = False
 
     # ── Zustand ─────────────────────────────────────────────────────────
     @property
@@ -341,10 +378,18 @@ class ArmTeleopLogic:
             return "PS4 · GESPERRT (Options = entsperren, PS-Notaus aktiv)"
         if self.arms_locked:
             return "PS4 · GEHEN (L2 halten = laufen, R2 = Greifen)"
+        if self.waist_mode and self.qs_combo:
+            name = f"»{self.qs_name}«" if self.qs_name else "LEER"
+            return (f"PS4 · SCHNELLWAHL {quick_arrows(self.qs_combo)} = {name} "
+                    "(R2 los = anfahren, Kreuz = verwerfen)")
+        if self.waist_mode and self._qs_first:
+            return f"PS4 · SCHNELLWAHL {quick_arrows(self._qs_first)} … (zweite Richtung)"
         if self.waist_mode:
             return "PS4 · HÜFTE (rechter Stick ←/→, R3 = Mitte)"
         if self.seq_busy:
             return "PS4 · ABLAUF fährt (Sticks gesperrt, Kreuz = Stopp)"
+        if self.qs_busy:
+            return "PS4 · SCHNELLWAHL-POSE fährt (Sticks gesperrt, Kreuz = Stopp)"
         return f"PS4 · {SELECTION_LABEL[self.selection]} · {MODE_LABEL[self.mode]} · {self.speed}"
 
     def status(self):
@@ -357,7 +402,8 @@ class ArmTeleopLogic:
                 "robot_mode": self.robot_mode,
                 "arms_locked": self.arms_locked, "waist_mode": self.waist_mode,
                 "locked": self.locked,
-                "seq_busy": self.seq_busy, "label": self.label()}
+                "seq_busy": self.seq_busy, "qs_busy": self.qs_busy,
+                "quick": self.quick_status(), "label": self.label()}
 
     def clear_estop(self):
         """NOT-HALT quittiert (START aus GUI gesehen)."""
@@ -466,6 +512,48 @@ class ArmTeleopLogic:
             return out + [("hold", ("left", "right")), ("mirror", side)]
         return out
 
+    # ── Pose-Schnellwahl (R2 halten + Steuerkreuz zweimal) ──────────────
+    def quick_status(self):
+        """-> {"first", "combo", "name"} solange gewaehlt wird, sonst None."""
+        if not (self._qs_first or self.qs_combo):
+            return None
+        return {"first": self._qs_first, "combo": self.qs_combo, "name": self.qs_name}
+
+    def quick_clear(self):
+        """Wahl verwerfen (ohne Befehl). True, wenn etwas offen war."""
+        was = bool(self._qs_first or self.qs_combo)
+        self._qs_first = self._qs_t = self.qs_combo = self.qs_name = None
+        return was
+
+    def quick_expire(self, now):
+        """Erste Richtung ohne zweite nach quick_timeout_s verwerfen
+        (vom Node zyklisch gerufen). -> Befehle."""
+        if (self._qs_first and not self.qs_combo and self._qs_t is not None
+                and now - self._qs_t > self.quick_timeout_s):
+            self.quick_clear()
+            return [("qs_reset", "timeout")]
+        return []
+
+    def _update_quick(self, b, rise, now):
+        """Im Hueft-Modus: Steuerkreuz-Druecke sammeln. Nur EINE Richtung
+        zugleich zaehlt (rollt der Daumen ueber eine Diagonale, wirkt nichts)."""
+        if self.quick_timeout_s <= 0.0:
+            return []
+        out = self.quick_expire(now)
+        held = [d for btn, d in DPAD_DIRS if b[btn]]
+        risen = [d for btn, d in DPAD_DIRS if rise[btn]]
+        if len(risen) != 1 or len(held) != 1:
+            return out
+        d = risen[0]
+        if self._qs_first is None or self.qs_combo:
+            # Neu anfangen (auch nach fertiger Wahl: die alte verfaellt).
+            self._qs_first, self._qs_t = d, now
+            self.qs_combo = self.qs_name = None
+            return out + [("qs_first", d)]
+        self.qs_combo = f"{self._qs_first}-{d}"
+        self.qs_name = None
+        return out + [("qs_combo", self.qs_combo)]
+
     # ── Sperre (Options) ────────────────────────────────────────────────
     def set_locked(self, locked):
         """Controller sperren/entsperren. -> Befehle wie update() oder [].
@@ -478,6 +566,7 @@ class ArmTeleopLogic:
         out = []
         if locked:
             out += self._abort_mirror_cmds()
+            self.quick_clear()
             out.append(("hold", ("left", "right")))
             if self._waist_was:
                 self._waist_was = False
@@ -516,6 +605,7 @@ class ArmTeleopLogic:
             # Waehrend R1 + L1 + PS gehalten werden: nur PS-NOT-HALT (unten),
             # keine anderen Tasten (L1/R1 waeren sonst "langsamer/schneller").
             out[:0] = self._abort_mirror_cmds()
+            self.quick_clear()
             if rise[L.PS] and self.ps_estop:
                 out[:0] = [("hold", ("left", "right")), ("estop",)]
                 if not self.estop:
@@ -528,6 +618,7 @@ class ArmTeleopLogic:
         # NOT-HALT zuerst und unabhaengig von allem anderen.
         if rise[L.PS] and self.ps_estop:
             out += self._abort_mirror_cmds()
+            self.quick_clear()
             out.append(("hold", ("left", "right")))
             out.append(("estop",))
             if not self.estop:
@@ -549,6 +640,7 @@ class ArmTeleopLogic:
             return out
         if self.estop:
             # bis zur Quittung in der GUI: nichts bewegen
+            self.quick_clear()
             return out + self._abort_mirror_cmds()
 
         if self.trigger_modes:
@@ -574,9 +666,17 @@ class ArmTeleopLogic:
             self._waist_stop = False
             if waist:
                 # Hueft-Modus: laufende Hand-Jogs anhalten, Arme halten.
+                self.quick_clear()
                 out += [("hold", ("left", "right")), ("waist", "start")]
             else:
                 out.append(("waist", "end"))
+                # Schnellwahl: nur ein echtes R2-LOSLASSEN faehrt an (nicht
+                # L2/Moduswechsel von aussen, die den Hueft-Modus auch beenden).
+                combo = self.qs_combo
+                self.quick_clear()
+                if combo and not self._trig_held[L.R2]:
+                    out.append(("qs_reset", "busy") if self.seq_busy
+                               else ("quickslot", combo))
         if waist:
             out += self._abort_mirror_cmds()     # Steuerkreuz gehoert nicht den Armen
             # R2 gehalten: Sticks/Steuerkreuz/Dreieck/Tempo gehoeren nicht den
@@ -587,10 +687,13 @@ class ArmTeleopLogic:
             if rise[L.CROSS]:
                 self._waist_stop = True
                 out += [("hold", ("left", "right")), ("cancel",), ("waist_stop",)]
+                if self.quick_clear():
+                    out.append(("qs_reset", "cross"))
             if rise[L.CIRCLE]:
                 out.extend(("hand", s, "open") for s in self.sides)
             if rise[L.SQUARE]:
                 out.extend(("hand", s, "close") for s in self.sides)
+            out += self._update_quick(b, rise, now)
             self._share_since = None
             self._home_sent = False
             return out
@@ -672,7 +775,7 @@ class ArmTeleopLogic:
     def twist(self, axes):
         """-> {side: ((vx, vy, vz) m/s, (wx, wy, wz) rad/s)} im JOG_FRAME."""
         if (self.estop or self.locked or self.arms_locked or self.waist_mode
-                or self.seq_busy) or (
+                or self.seq_busy or self.qs_busy) or (
                 self.walk_deadman and (self.walking or deadman_held(axes, ()))):
             return {}
         a = list(axes) + [0.0] * max(0, L.NUM_AXES - len(axes))
@@ -769,6 +872,10 @@ def main(args=None):
             # Jog-Richtungen im Oberkoerper-Bezug (um den gemessenen Taillen-Yaw
             # gedreht): "vor" = Richtung Brust. false = Becken wie bisher.
             self.declare_parameter("jog_torso_frame", True)
+            # Pose-Schnellwahl (R2 halten + Steuerkreuz zweimal, R2 los =
+            # anfahren): so lange (s) wartet die erste Richtung auf die
+            # zweite. 0 = Schnellwahl aus.
+            self.declare_parameter("quick_timeout_s", 1.5)
             gp = lambda n: self.get_parameter(n).value   # noqa: E731
 
             self.logic = ArmTeleopLogic(gp("deadzone"), gp("expo"), gp("speed"),
@@ -779,7 +886,8 @@ def main(args=None):
                                         trigger_modes=gp("trigger_modes"),
                                         axis_snap_deg=gp("axis_snap_deg"),
                                         mirror_hold_s=gp("mirror_hold_s"),
-                                        waist_yaw=gp("waist_yaw"))
+                                        waist_yaw=gp("waist_yaw"),
+                                        quick_timeout_s=gp("quick_timeout_s"))
             self.need_onboard_walk = bool(gp("modes_need_onboard_walk"))
             self.onboard = self.onboard_t = None
             self.joy_timeout = float(gp("joy_timeout_s"))
@@ -801,6 +909,11 @@ def main(args=None):
             self._waist_sending = False  # Rate-Strom laeuft (0 beim Ende senden)
             self._mirror_n = 0
             self._mirror_id = None       # ID des laufenden Spiegel-Kommandos
+            # Pose-Schnellwahl: (pose, t_ausgeloest) solange auf die Huefte
+            # gewartet wird; t_goto = goto gesendet, Antwort steht aus.
+            self._qs_pending = None
+            self._qs_goto_t = None
+            self._qs_accepted = False
 
             self.tf_buffer = Buffer()
             self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -820,6 +933,7 @@ def main(args=None):
             self.pub_waist_center = self.create_publisher(Bool, WAIST_CENTER_TOPIC, 10)
             self.create_subscription(String, WAIST_STATE_TOPIC, self._on_waist_state, 10)
             self.pub_arm_cmd = self.create_publisher(String, "/g1pilot/arm_command", 10)
+            self.pub_pose_goto = self.create_publisher(String, "/g1pilot/pose_store/goto", 10)
             self.pub_feedback = self.create_publisher(String, "/g1pilot/ps4/feedback", 10)
             latched = QoSProfile(depth=1)
             latched.durability = DurabilityPolicy.TRANSIENT_LOCAL
@@ -979,6 +1093,8 @@ def main(args=None):
                 st = json.loads(msg.data)
             except ValueError:
                 return
+            if st.get("source") == "pose_store":
+                self._on_quick_status(st)
             if not self._mirror_id or st.get("id") != self._mirror_id:
                 return
             state, why = st.get("state"), st.get("reason", "")
@@ -993,6 +1109,115 @@ def main(args=None):
             elif state == "cancelled":
                 self._mirror_id = None
                 self.get_logger().info(f"Spiegeln abgebrochen: {why}")
+
+        def _on_quick_status(self, st):
+            """Antwort auf die eigene Schnellwahl-Pose (pose_store-Fahrt):
+            Sticks frei bei Endzustand, Vibration je nach Ausgang."""
+            if self._qs_goto_t is None:
+                return
+            state, why = st.get("state"), st.get("reason", "")
+            if state in ("accepted", "executing"):
+                self._qs_accepted = True
+                return
+            if state not in ("reached", "failed", "rejected", "cancelled"):
+                return
+            self._quick_done()
+            if state == "reached":
+                self.get_logger().info("Schnellwahl: Pose erreicht.")
+                self._send_feedback(rumble_ms=120, strong=0.0, weak=0.5)
+            elif state == "cancelled":
+                self.get_logger().info(f"Schnellwahl-Pose abgebrochen: {why}")
+            else:
+                self.get_logger().warn(f"Schnellwahl-Pose nicht ausgefuehrt ({state}): {why}")
+                self._send_feedback(rumble_ms=600, strong=1.0, weak=0.0)
+
+        def _quick_done(self):
+            self._qs_pending = self._qs_goto_t = None
+            self._qs_accepted = False
+            if self.logic.qs_busy:
+                self.logic.qs_busy = False
+                self._changed(rumble_ms=0)
+
+        def _waist_busy(self):
+            """Huefte dreht/faehrt zur Mitte/laeuft nach (arm_controller,
+            /g1pilot/waist/state "busy"; aeltere Stande: moving/centering)."""
+            w = self.waist
+            if w is None or self.waist_t is None or time.monotonic() - self.waist_t > STATE_STALE_S:
+                return False
+            return bool(w.get("busy", w.get("moving") or w.get("centering")))
+
+        def _quick_tick(self, now):
+            """Schnellwahl: verfallene erste Richtung, Warten auf die Huefte,
+            ausbleibende Antwort des arm_controllers."""
+            for cmd in self.logic.quick_expire(now):
+                self._run(cmd)
+            if self._qs_pending is not None:
+                pose, t0 = self._qs_pending
+                if self.logic.estop or self.logic.locked:
+                    self._quick_done()
+                elif not self._waist_busy():
+                    self._qs_pending = None
+                    self._quick_goto(pose)
+                elif now - t0 > self.QUICK_WAIST_WAIT_S:
+                    self.get_logger().warn(f"Schnellwahl »{pose}« verworfen: Huefte "
+                                           "kommt nicht zur Ruhe.")
+                    self._quick_done()
+                    self._send_feedback(rumble_ms=600, strong=1.0, weak=0.0)
+            elif (self._qs_goto_t is not None and not self._qs_accepted
+                  and now - self._qs_goto_t > self.QUICK_ANSWER_S):
+                self.get_logger().warn(
+                    "Schnellwahl: arm_controller hat die Pose nicht angenommen "
+                    "(Arme nicht bereit? siehe dessen Log).")
+                self._quick_done()
+                self._send_feedback(rumble_ms=600, strong=1.0, weak=0.0)
+
+        QUICK_WAIST_WAIT_S = 3.0   # so lange auf das Ende der Hueftdrehung warten
+        QUICK_ANSWER_S = 3.0       # so lange auf accepted/executing warten
+
+        def _quick_lookup(self, combo):
+            """-> Pose-Name des Platzes (Datei frisch gelesen) oder None."""
+            try:
+                return PoseStore().quickslot(combo)
+            except Exception as e:   # noqa: BLE001 -- Datei kaputt/fehlt
+                self.get_logger().warn(f"Schnellwahl: Posen-Datei nicht lesbar ({e}).")
+                return None
+
+        def _quick_fire(self, combo):
+            arrows = quick_arrows(combo)
+            name = self._quick_lookup(combo)
+            if not name:
+                self.get_logger().warn(f"Schnellwahl {arrows}: Platz ist leer.")
+                self._send_feedback(rumble_ms=600, strong=1.0, weak=0.0)
+                return
+            if self.seq_waiting or self.logic.seq_busy:
+                self.get_logger().warn(f"Schnellwahl {arrows} »{name}« verworfen: ein Ablauf "
+                                       "laeuft/wartet (erst beenden: Kreuz).")
+                self._send_feedback(rumble_ms=600, strong=1.0, weak=0.0)
+                return
+            if self.logic.arms_enabled is False and not is_sim_mode():
+                self.get_logger().warn(f"Schnellwahl {arrows} »{name}« verworfen: Arme nicht "
+                                       "uebernommen (R2 druecken).")
+                self._send_feedback(rumble_ms=600, strong=1.0, weak=0.0)
+                return
+            # Kein Halte-Strom: jedes Hand-Ziel braeche die geplante Fahrt ab.
+            self.holds.clear()
+            self.logic.qs_busy = True
+            self._qs_pending = (name, time.monotonic())
+            self._changed(rumble_ms=0)
+            if not self._waist_busy():
+                self._qs_pending = None
+                self._quick_goto(name)
+            else:
+                self.get_logger().info(f"Schnellwahl {arrows} »{name}«: warte, bis die "
+                                       "Huefte steht.")
+
+        def _quick_goto(self, name):
+            self._qs_goto_t = time.monotonic()
+            self._qs_accepted = False
+            self.pub_pose_goto.publish(String(data=name))
+            self.get_logger().info(f"Schnellwahl: Pose »{name}« anfahren (geplant; "
+                                   "Stopp mit Kreuz/PS).")
+            self._send_feedback(rumble_ms=150, strong=0.0, weak=0.8)
 
         def _on_start(self, msg):
             if msg.data and self.logic.clear_estop():
@@ -1022,6 +1247,8 @@ def main(args=None):
 
         def _on_estop(self, msg):
             if msg.data and self.logic.latch_estop():
+                self.logic.quick_clear()
+                self._quick_done()
                 self._hold(("left", "right"))
                 self.holds.clear()   # Arme sind ohnehin abgeschaltet
                 self.get_logger().warn("NOT-HALT (von aussen) -- PS4 gesperrt bis START.")
@@ -1101,11 +1328,14 @@ def main(args=None):
                 self.get_logger().info("L3: Ablauf weiter (naechster Schritt).")
                 self._send_feedback(rumble_ms=120, strong=0.0, weak=0.6)
             elif kind == "cancel":
+                if self._qs_pending is not None:
+                    self._quick_done()   # wartete noch auf die Huefte: nicht mehr senden
                 self.pub_cancel.publish(Bool(data=True))
                 self.get_logger().info("STOPP: Hand haelt, geplante Bewegung abgebrochen.")
                 self._send_feedback(rumble_ms=80, strong=0.6, weak=0.0)
             elif kind == "estop":
                 self.holds.clear()
+                self._quick_done()
                 self.pub_estop.publish(Bool(data=True))
                 self.get_logger().warn("NOT-HALT (PS-Taste). Quittieren in GUI.")
                 self._send_feedback(rumble_ms=600, strong=1.0, weak=1.0)
@@ -1123,6 +1353,7 @@ def main(args=None):
                 self._publish_status()
             elif kind == "full_estop":
                 self.holds.clear()
+                self._quick_done()
                 # Zuerst der Voll-Notaus (loco_client: Damp), dann der normale
                 # NOT-HALT (arm_controller/GUIs sperren wie bei PS).
                 self.pub_full_estop.publish(Bool(data=True))
@@ -1158,6 +1389,30 @@ def main(args=None):
                     "Stopp mit Kreuz/PS oder Stick).")
                 self._send_feedback(rumble_ms=250, strong=0.0, weak=1.0, force=True)
                 self._publish_status()
+            elif kind == "qs_first":
+                self.get_logger().info(f"Schnellwahl {quick_arrows(cmd[1])} … (zweite Richtung)")
+                self._send_feedback(rumble_ms=60, strong=0.0, weak=0.5)
+                self._publish_status()
+            elif kind == "qs_combo":
+                name = self._quick_lookup(cmd[1])
+                self.logic.qs_name = name
+                if name:
+                    self.get_logger().info(f"Schnellwahl {quick_arrows(cmd[1])} = »{name}« "
+                                           "(R2 loslassen = anfahren, Kreuz = verwerfen).")
+                    self._send_feedback(rumble_ms=220, strong=0.4, weak=0.9)
+                else:
+                    self.get_logger().warn(f"Schnellwahl {quick_arrows(cmd[1])}: Platz leer.")
+                    self._send_feedback(rumble_ms=600, strong=1.0, weak=0.0)
+                self._publish_status()
+            elif kind == "qs_reset":
+                why = {"timeout": "zweite Richtung kam nicht", "cross": "Kreuz",
+                       "busy": "Ablauf faehrt"}.get(cmd[1], cmd[1])
+                self.get_logger().info(f"Schnellwahl verworfen ({why}).")
+                if cmd[1] == "busy":
+                    self._send_feedback(rumble_ms=600, strong=1.0, weak=0.0)
+                self._publish_status()
+            elif kind == "quickslot":
+                self._quick_fire(cmd[1])
             elif kind == "changed":
                 self._changed()
             elif kind == "waist":
@@ -1321,6 +1576,7 @@ def main(args=None):
             now = time.monotonic()
             dt = min(0.1, now - self.t_tick)
             self.t_tick = now
+            self._quick_tick(now)
             if self._home_off_at is not None and now >= self._home_off_at:
                 self._home_off_at = None
                 self.pub_home.publish(Bool(data=False))
@@ -1333,6 +1589,12 @@ def main(args=None):
                     self.get_logger().warn("Spiegeln-Halten abgebrochen: keine "
                                            "Controller-Daten mehr.")
                     self._send_feedback(stop_rumble=True)
+                # Schnellwahl verwerfen: sonst fuehre ein nach dem Funkabriss
+                # als "R2 los" gelesener Zustand die Pose an.
+                if self.logic.quick_clear():
+                    self.get_logger().warn("Schnellwahl verworfen: keine Controller-Daten mehr.")
+                if self._qs_pending is not None:
+                    self._quick_done()
                 if self.connected:
                     self.connected = False
                     self.get_logger().warn("PS4-Controller: keine Daten mehr -> Hand haelt an.")

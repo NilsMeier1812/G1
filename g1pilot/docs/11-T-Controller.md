@@ -246,6 +246,36 @@ vorn/oben fahren, dann fein positionieren. Das gilt für den Marker genauso.
 | `axis_snap_deg` | 20 | Achsen-Einrasten des linken Sticks; 0 = aus |
 | `waist_yaw` | `true` | R2 halten + rechter Stick = Hüfte drehen, R2 + R3 = Mitte (nur mit `trigger_modes`) |
 | `jog_torso_frame` | `true` | Jog-Richtungen um den gemessenen Taillen-Yaw drehen (Oberkörper-Bezug) |
+| `quick_timeout_s` | 1.5 | Pose-Schnellwahl: so lange wartet die erste Richtung auf die zweite; `0` = Schnellwahl aus |
+
+## Pose-Schnellwahl
+
+Nur im Hüft-Modus (`waist_mode`: R2 gehalten im GREIFEN, nicht gesperrt/
+NOT-HALT/L2). `ArmTeleopLogic._update_quick` sammelt Steuerkreuz-Flanken
+(genau eine Richtung gedrückt, sonst ignoriert): `("qs_first", dir)`, dann
+`("qs_combo", "down-up")`. Endet der Hüft-Modus durch echtes R2-Loslassen,
+kommt `("quickslot", combo)`; endet er anders (L2, Moduswechsel aus der GUI)
+oder kommt NOT-HALT, Sperre, Voll-Notaus-Halten oder ein Joy-Timeout
+dazwischen, wird die Wahl still verworfen (`quick_clear`). Kreuz verwirft
+mit `("qs_reset", "cross")`, die verfallene erste Richtung kommt aus
+`quick_expire` (Node-Takt).
+
+Der Node schlägt den Platz bei jedem Druck frisch in der Posen-Datei nach
+(`PoseStore().quickslot(combo)`) und sendet beim Loslassen den Namen auf
+`/g1pilot/pose_store/goto` – derselbe Weg wie *Anfahren* in der GUI
+(arm_controller `_on_pose_goto` → Planer, `_arms_not_ready_reason`). Meldet
+`/g1pilot/waist/state` `busy` (Hüfte dreht/läuft nach), wartet er bis 3 s.
+Bis zum Endzustand der pose_store-Fahrt auf `/g1pilot/arm_command/status`
+ist `qs_busy` gesetzt (Sticks gesperrt wie bei `seq_busy`); ohne
+`accepted`/`executing` nach 3 s gilt die Pose als abgelehnt. Seit diesem
+Stand meldet der arm_controller ein abgelehntes `goto` (Arme nicht bereit)
+auch als `rejected` mit `source: pose_store`.
+
+`/g1pilot/ps4/status` trägt `quick` (`{first, combo, name}` oder `null`) und
+`qs_busy`; die Demo-GUI zeigt daraus die Statuszeile und lässt das Feld im
+Reiter *Controller-Schnellwahl* (`teleoperation/quickslot_panel.py`)
+aufleuchten. Zuordnung: `pose_store` `quickslots`
+([23-T-Posen-und-Ablaeufe.md](23-T-Posen-und-Ablaeufe.md#dateiformat)).
 
 ## Hüftdrehung
 

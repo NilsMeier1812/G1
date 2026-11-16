@@ -59,6 +59,7 @@ Am echten Roboter erst in der GUI starten, siehe unten.
 | **R2 drücken** | Modus **GREIFEN**: Arme übernehmen, Arm-Steuerung wieder frei. Schon im GREIFEN, Arme aber abgegeben (z. B. nach NOT-HALT): R2 übernimmt sie wieder (Sim: + stehen) |
 | **R2 halten + rechter Stick ←/→** | **HÜFTE drehen** (Oberkörper links/rechts, LED weiß), Arme drehen mit. Siehe [Hüfte drehen](24-A-Hueftdrehung.md) |
 | **R2 halten + R3** | Hüfte sanft zurück zur Mitte |
+| **R2 halten + Steuerkreuz 2×** (z. B. ↓ ↑), **R2 loslassen** | **Pose-Schnellwahl**: fährt die Pose an, die diesem der 16 Plätze zugeordnet ist (geplant, mit Kollisionsschutz). Siehe [Pose-Schnellwahl](#pose-schnellwahl-r2--steuerkreuz-zweimal) |
 | **L3** (linken Stick drücken) | **Ablauf weiter**: wartet ein Ablauf „Schritt für Schritt“ der Demo-GUI auf Bestätigung, fährt er den nächsten Schritt an (wie *Weiter*). Der Controller vibriert zweimal kurz, sobald ein Ablauf wartet, und kurz beim Weiter. Sonst ohne Wirkung. Lief beim Drücken ein Jog (Stick ausgelenkt), hält die Hand genau einmal an, danach kommt kein Hand-Ziel mehr. **Solange der Schritt fährt, sind beide Sticks gesperrt** (Anzeige „ABLAUF fährt (Sticks gesperrt, Kreuz = Stopp)“), sonst bräche ein versehentlich bewegter Stick die Fahrt mit „manueller Vorrang“ ab; Kreuz = Stopp geht immer. Wartet der Ablauf wieder, darf man nachkorrigieren. Nicht bei gehaltenem L2/R2 und nicht im GEHEN |
 | Touchpad | frei (Reserve) |
 
@@ -155,6 +156,41 @@ R2 loslassen = Hüfte steht sofort. Solange R2 gehalten wird, bewegen Sticks,
 Steuerkreuz, Dreieck und L1/R1 nicht die Arme. Bereich, automatische
 Rückkehr zur Mitte vor GEHEN/Grundstellung/Arme abgeben, Verhalten bei
 NOT-HALT und Abschalten: [24-A-Hueftdrehung.md](24-A-Hueftdrehung.md).
+
+## Pose-Schnellwahl (R2 + Steuerkreuz zweimal)
+
+Gespeicherte Posen direkt am Controller anfahren, ohne GUI:
+
+1. **R2 halten** (wie zum Hüfte-Drehen, nur im GREIFEN).
+2. **Steuerkreuz erste Richtung** drücken – kurze, leichte Vibration.
+3. **Steuerkreuz zweite Richtung** drücken – längere Vibration = Platz
+   gewählt. Ist der Platz leer: lange, harte Vibration, es passiert nichts.
+4. **R2 loslassen** – die Pose fährt an (wie *Anfahren* in der GUI: Bahn
+   wird geplant, Kollisionsschutz). Am Ziel kurze Vibration.
+
+Damit gibt es 16 Plätze (4 erste × 4 zweite Richtungen, z. B. ↓↓, ↓↑, →←).
+Zugeordnet wird in der Demo-GUI: Fenster **Posen & Abläufe**, Reiter
+**Controller-Schnellwahl** – ein 4 × 4-Raster, Zeile = erste Richtung,
+Spalte = zweite; in jedem Feld die Pose auswählen. Wählt man am Controller,
+leuchtet das Feld dort grün auf, die Statuszeile zeigt
+„SCHNELLWAHL ↓↑ = »Pose« – R2 loslassen fährt an“.
+
+![Reiter Controller-Schnellwahl: 4 × 4-Raster, Zeile = erste, Spalte = zweite Richtung](images/schnellwahl_raster.png)
+
+- **Verwerfen** vor dem Loslassen: **Kreuz**. Kommt nach der ersten Richtung
+  1,5 s lang keine zweite, verfällt sie (dann einfach neu anfangen). Eine
+  neue Richtung nach fertiger Wahl beginnt eine neue Wahl.
+- **Diagonalen zählen nicht**: rutscht der Daumen auf zwei Richtungen
+  zugleich, wird nichts gewählt.
+- **Während die Pose fährt**, bewegen die Sticks die Hände nicht (sonst
+  bräche ein versehentlich bewegter Stick die Fahrt ab). **Kreuz** stoppt,
+  **PS** ist NOT-HALT wie immer.
+- Hat man die Hüfte gedreht, wartet die Pose, bis die Hüfte steht (höchstens 3 s).
+- Kein Anfahren, solange ein Ablauf fährt oder auf *Weiter* wartet, im
+  NOT-HALT, gesperrt (Options) oder wenn der Controller die Verbindung
+  verliert. Lehnt der arm_controller ab (z. B. Arme nicht übernommen):
+  lange, harte Vibration, Grund im Log.
+- Abschalten: Parameter `quick_timeout_s:=0`.
 
 ## Gehen mit L2
 
@@ -326,6 +362,7 @@ vorgesehen.
 | **R2 drücken** | **RT drücken** | Modus **GREIFEN** |
 | **R2 halten + rechter Stick ←/→** | **RT halten + rechter Stick ←/→** | **Hüfte drehen** |
 | **R2 halten + R3** | **RT halten + R3** (rechten Stick drücken) | Hüfte zur Mitte |
+| **R2 halten + Steuerkreuz 2×** | **RT halten + Steuerkreuz 2×** | **Pose-Schnellwahl** (RT loslassen = anfahren) |
 | Share 1 s | **View** 1 s (linke kleine Taste) | Grundstellung |
 | Options | **Menu** (rechte kleine Taste) | Controller sperren / entsperren |
 | PS | **Xbox-Taste** | **NOT-HALT** (Oberkörper) |

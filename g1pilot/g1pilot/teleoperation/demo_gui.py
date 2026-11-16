@@ -1499,11 +1499,28 @@ class DemoGUI(QWidget):
         res = status_line.ps4_text(n.ps4, age, sim=self.sim_mode, walk=n.ps4walk,
                                    device=n.ps4dev)
         self.btn_pad_help.setVisible(res is not None)
+        self._show_quickslot(res)
         if res is not None:
             name = (n.ps4dev or {}).get("name")
             label = status_line.controller_label(n.ps4dev)
             self.btn_pad_help.setToolTip((f"{name}\n" if name else "")
                                          + f"Belegung des {label}-Controllers")
+
+    def _show_quickslot(self, res):
+        """Pose-Schnellwahl am Controller (R2 + Steuerkreuz 2x): Wahl in der
+        Statuszeile zeigen (nur bei Aenderung, ueberschreibt sonst nichts)
+        und das Feld im Fenster »Posen & Abläufe« aufleuchten lassen."""
+        st = self.node.ps4 or {}
+        quick = st.get("quick") if res is not None and st.get("waist_mode") else None
+        busy = res is not None and st.get("qs_busy")
+        key = (json.dumps(quick, sort_keys=True) if quick else "", bool(busy))
+        if key != getattr(self, "_quick_shown", ("", False)):
+            self._quick_shown = key
+            if quick or busy:
+                self._status(res[0], res[1])
+        ed = self.seq_editor
+        if ed is not None and ed.isVisible():
+            ed.quick.highlight(quick)
 
     def _refresh_start_bar(self):
         n, now = self.node, time.monotonic()
