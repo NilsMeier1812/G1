@@ -459,3 +459,31 @@ def test_gui_shows_controller_quickslot_in_status(gui):
     g.status.setText("anderes")
     g._refresh_info()                         # unveraendert: Statuszeile bleibt
     assert g.status.text() == "anderes"
+
+
+def test_pose_search_filters_editor_and_load_dialog(gui):
+    dg, g, node, sent, strs, states, store = gui
+    g.open_sequence_editor()
+    ed = g.seq_editor
+
+    def visible(tree):
+        return [tree.topLevelItem(i).child(j).text(0)
+                for i in range(tree.topLevelItemCount())
+                if not tree.topLevelItem(i).isHidden()
+                for j in range(tree.topLevelItem(i).childCount())
+                if not tree.topLevelItem(i).child(j).isHidden()]
+    ed.pose_search.setText("greif")
+    assert [t.split("   ")[0] for t in visible(ed.pose_tree)] == ["Greifen"]
+    ed.reload()                                   # Filter bleibt beim Neuladen
+    assert [t.split("   ")[0] for t in visible(ed.pose_tree)] == ["Greifen"]
+    ed.pose_search.setText("")
+    assert len(visible(ed.pose_tree)) >= 3
+    from PyQt6.QtCore import Qt
+    from g1pilot.teleoperation.gui_base import PoseLoadDialog
+    d = PoseLoadDialog(None, store.list_grouped(), components_of=store.components)
+    assert not d.btn_ok.isEnabled()
+    d.search.setText("hand")
+    assert visible(d.tree) == ["Hand_vor"]
+    hit = d.tree.findItems("Hand_vor", Qt.MatchFlag.MatchRecursive)[0]
+    d.tree.setCurrentItem(hit)
+    assert d.btn_ok.isEnabled()
