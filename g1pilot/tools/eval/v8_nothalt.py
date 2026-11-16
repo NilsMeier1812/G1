@@ -422,6 +422,7 @@ class Sim(Base):
         self.ex.add_node(self.inj)
         threading.Thread(target=self.ex.spin, daemon=True).start()
         self.env = None
+        time.sleep(2.0)          # TF-Puffer fuellen
 
     def enable(self):
         self.pub_bool(self.p_enable)
@@ -463,17 +464,19 @@ def go_start(tg, timeout=20.0):
     return False
 
 
-def ensure_pose(tg, side="left", timeout=5.0):
-    """Aktuelle kommandierte Handpose (nach Kalibrier-Ziel)."""
-    p = tg.current_pose(side)
-    if p is not None:
-        return p
-    tg.calibrate(side)
+def ensure_pose(tg, side="left", timeout=10.0):
+    """Aktuelle kommandierte Handpose. Fehlt sie (Seite noch nicht kalibriert),
+    wird alle 0,5 s ein Ziel GENAU auf die aktuelle Hand geschickt (wie der
+    RViz-Marker beim ersten Ziehen) -- das kalibriert, ohne zu bewegen."""
     t_end = time.monotonic() + timeout
+    t_cal = 0.0
     while time.monotonic() < t_end:
         p = tg.current_pose(side)
         if p is not None:
             return p
+        if time.monotonic() - t_cal > 0.5:
+            tg.calibrate(side)
+            t_cal = time.monotonic()
         time.sleep(0.05)
     return None
 
@@ -507,7 +510,10 @@ def case_vollnotaus(tg, rng, a):
     time.sleep(0.2)
     rows = tg.writes.since(t0)
     t_slack = first_slack(rows)
-    t_waist = first_waist_passive(rows)
+    before = tg.writes.since(t0 - 0.3)
+    held = any(max(r[4]) > 0.0 for r in before if r[0] < t0)
+    # Taille nur auswertbar, wenn sie vorher gehalten wurde (Sim: waist_hold aus)
+    t_waist = first_waist_passive(rows) if held else None
     t_topic = tg.full_estop_t[n_full] if len(tg.full_estop_t) > n_full else None
     hold = a.vollnotaus_halten
     ms = lambda t: None if t is None else (t - t0) * 1000.0   # noqa: E731
@@ -708,7 +714,8 @@ def main(argv=None):
                 if vals:
                     fs[k] = ec.describe(vals)
             if fall == "zielsprung":
-                lim = REAL_PARAMS["ee_velocity_limit"] if a.ziel == "attrappe" else None
+                # bringup_real 0,25 m/s; bringup_sim setzt 0,5 m/s
+                lim = REAL_PARAMS["ee_velocity_limit"] if a.ziel == "attrappe" else 0.5
                 fs["ee_velocity_limit_mps"] = lim
                 if lim:
                     fs["anteil_ueber_grenze_20ms"] = (sum(1 for r in res if (r.get("v_hand_max_20ms_mps") or 0) > lim)
@@ -736,6 +743,11 @@ def main(argv=None):
         except Exception as e:      # noqa: BLE001
             summary["diagramm_fehler"] = str(e)
     run.finish(summary)
+    if a.ziel == "sim":
+        # DDS-/rclpy-Abbau stuerzt beim Prozessende gelegentlich ab (Aborted),
+        # nachdem alles geschrieben ist -> hart beenden, Ergebnis ist komplett.
+        sys.stdout.flush()
+        os._exit(0)
     return 0
 
 

@@ -80,3 +80,11 @@ Optionen: `--faelle`, `--wdh`, `--seed`, `--vollnotaus-halten`,
   ausbleibende Zustandsdaten. Was die Messung als Halt zeigt, ist die
   Schleppfehler-Begrenzung (`max_tracking_error`) bzw. das Fahrtende.
 - Sim: `rt/arm_sdk` wird mitgelesen; die Zeit enthält die DDS-Zustellung.
+  Kommen Nachrichten gebündelt an, wird der Zeitabstand zweier Kommandos
+  winzig und die Geschwindigkeit „je Kommando“ unsinnig groß. Aussagekräftig
+  ist dort der Wert über 20 ms (`v_hand_max_20ms_mps`); beide werden ausgegeben.
+- Sim: die Taille hält der `arm_controller` dort nicht (`waist_hold` nur
+  real), „bis Taille schlaff“ bleibt leer; netto rechnet ab dem Topic
+  `/g1pilot/full_emergency_stop`.
+- Grenze für den Zielsprung: `ee_velocity_limit` 0,25 m/s (real/Attrappe),
+  0,5 m/s (Sim, `bringup_sim`).
