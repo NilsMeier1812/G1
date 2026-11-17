@@ -273,7 +273,8 @@ def test_gui_sources_have_no_emoji():
     tools = here.parent / "unitree_mujoco" / "unitree_robots" / "g1" / "tools"
     files = (list((here / "start_gui").glob("*.py"))
              + [here / "g1pilot" / "teleoperation" / f for f in (
-                 "demo_gui.py", "hand_panel.py", "sequence_editor.py", "status_line.py", "dialog_style.py",
+                 "demo_gui.py", "demo_ui.py", "hand_panel.py", "sequence_editor.py", "status_line.py",
+                 "dialog_style.py",
                  "gui_base.py", "sequence_runner.py")]
              + [here / "g1pilot" / "teleoperation" / "phone" / f for f in (
                  "link.py", "web/app.js", "web/index.html")]
