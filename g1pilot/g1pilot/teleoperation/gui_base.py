@@ -12,8 +12,8 @@ import math
 from PyQt6.QtWidgets import (
     QWidget, QPushButton, QVBoxLayout,
     QHBoxLayout, QLabel, QInputDialog, QMessageBox,
-    QDialog, QCheckBox, QDialogButtonBox, QLineEdit, QComboBox,
-    QFormLayout, QGroupBox, QTreeWidget, QTreeWidgetItem
+    QDialog, QCheckBox, QLineEdit, QComboBox,
+    QFormLayout, QGridLayout, QTreeWidget, QTreeWidgetItem, QHeaderView
 )
 from PyQt6.QtCore import Qt, QPointF
 from PyQt6.QtGui import QPainter, QColor, QPen, QBrush
@@ -23,6 +23,10 @@ from rclpy.qos import QoSProfile, DurabilityPolicy
 from std_msgs.msg import Float32, Bool, String
 from geometry_msgs.msg import Twist
 from g1pilot.teleoperation.sim_autostart import ARMS_STATE_TOPIC, LOCO_STATE_TOPIC
+from g1pilot.teleoperation import dialog_style as ds
+from g1pilot.utils import ui_icons
+
+POSE_COLOR = "#ff9800"   # wie GREIFEN / Fenster »Posen & Abläufe«
 
 
 class VirtualJoystick(QWidget):
@@ -120,18 +124,27 @@ class PoseSaveDialog(QDialog):
         super().__init__(parent)
         self._store = store
         self.setWindowTitle("Pose speichern")
-        self.setMinimumWidth(420)
+        self.setStyleSheet(ds.DIALOG_CSS)
+        self.setMinimumWidth(560)
 
         root = QVBoxLayout(self)
+        root.setContentsMargins(20, 18, 20, 16)
+        root.setSpacing(12)
+        root.addLayout(ds.header("Pose speichern", "save", POSE_COLOR,
+                                 "Die aktuelle Stellung unter einem Namen ablegen. Beim "
+                                 "Anfahren wird die Bahn jedes Mal neu geplant."))
 
+        card, cl = ds.card("Name und Ablage", "square-pen")
         form = QFormLayout()
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(8)
         self.ed_name = QLineEdit()
         self.ed_name.setPlaceholderText("z. B. Regal oben rechts")
         form.addRow("Name:", self.ed_name)
 
         self.cb_category = QComboBox()
         self.cb_category.addItems(categories or [])
-        btn_new_cat = QPushButton("Kategorie anlegen")
+        btn_new_cat = ds.button("Kategorie anlegen", "folder-open")
         btn_new_cat.clicked.connect(self._new_category)
         cat_row = QHBoxLayout()
         cat_row.addWidget(self.cb_category, 1)
@@ -146,28 +159,37 @@ class PoseSaveDialog(QDialog):
             self.cb_sequence.setToolTip("Gespeicherte Pose hinten an diesen Ablauf hängen "
                                         "(neuer Name legt den Ablauf an).")
             form.addRow("An Ablauf anhängen:", self.cb_sequence)
-        root.addLayout(form)
+        cl.addLayout(form)
+        root.addWidget(card)
 
-        box = QGroupBox("Was speichern?")
-        box_lay = QVBoxLayout(box)
+        card, cl = ds.card("Was speichern?", "hand", POSE_COLOR,
+                           "Nur das Gewählte fährt später mit.")
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(16)
         self.cb_left_arm = QCheckBox("Linker Arm")
         self.cb_right_arm = QCheckBox("Rechter Arm")
         self.cb_left_hand = QCheckBox("Linke Hand (Finger)")
         self.cb_right_hand = QCheckBox("Rechte Hand (Finger)")
         # Alle vier standardmaessig an: der haeufige Fall ist "ganze Haltung".
-        for w in (self.cb_left_arm, self.cb_right_arm,
-                  self.cb_left_hand, self.cb_right_hand):
+        # Links/rechts nebeneinander wie am Roboter (von vorn gesehen egal --
+        # Beschriftung entscheidet).
+        for i, w in enumerate((self.cb_left_arm, self.cb_right_arm,
+                               self.cb_left_hand, self.cb_right_hand)):
             w.setChecked(True)
-            box_lay.addWidget(w)
-        root.addWidget(box)
+            grid.addWidget(w, i // 2, i % 2)
+        cl.addLayout(grid)
+        root.addWidget(card)
 
-        btns = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        btns.button(QDialogButtonBox.StandardButton.Ok).setText("Speichern")
-        btns.button(QDialogButtonBox.StandardButton.Cancel).setText("Abbrechen")
-        btns.accepted.connect(self._on_accept)
-        btns.rejected.connect(self.reject)
-        root.addWidget(btns)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        self.btn_cancel = ds.button("Abbrechen", k="ghost")
+        self.btn_cancel.clicked.connect(self.reject)
+        self.btn_ok = ds.button("Speichern", "save", "primary", "#ffffff")
+        self.btn_ok.setDefault(True)
+        self.btn_ok.clicked.connect(self._on_accept)
+        row.addWidget(self.btn_cancel)
+        row.addWidget(self.btn_ok)
+        root.addLayout(row)
 
         self.ed_name.setFocus()
 
@@ -226,17 +248,29 @@ class PoseLoadDialog(QDialog):
     def __init__(self, parent, grouped, components_of=None):
         super().__init__(parent)
         self.setWindowTitle("Pose anfahren")
-        self.resize(560, 420)
+        self.setStyleSheet(ds.DIALOG_CSS)
+        self.resize(640, 560)
         self._name = None
 
         lay = QVBoxLayout(self)
-        lay.addWidget(QLabel("Gespeicherte Posen (nach Kategorie):"))
+        lay.setContentsMargins(20, 18, 20, 16)
+        lay.setSpacing(12)
+        lay.addLayout(ds.header("Pose anfahren", "play", POSE_COLOR,
+                                "Gespeicherte Posen nach Kategorie. Die Bahn wird geplant "
+                                "(Kollisionsschutz); Stopp jederzeit."))
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Pose suchen …")
+        self.search.setClearButtonEnabled(True)
+        self.search.addAction(ui_icons.icon("search", ds.MUTED, 16),
+                              QLineEdit.ActionPosition.LeadingPosition)
+        lay.addWidget(self.search)
 
         self.tree = QTreeWidget()
         self.tree.setColumnCount(2)
-        self.tree.setHeaderLabels(["Pose", "Enthaelt"])
+        self.tree.setHeaderLabels(["Pose", "Enthält"])
         for category, names in grouped.items():
             top = QTreeWidgetItem([category, ""])
+            top.setIcon(0, ui_icons.icon("folder-open", POSE_COLOR, 16))
             # Kategorie-Zeilen sind Ueberschriften, keine anfahrbaren Ziele.
             top.setFlags(top.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             for name in names:
@@ -244,28 +278,50 @@ class PoseLoadDialog(QDialog):
                 labels = ", ".join(COMPONENT_LABELS.get(c, c) for c in comps)
                 child = QTreeWidgetItem([name, labels])
                 child.setData(0, Qt.ItemDataRole.UserRole, name)
+                child.setForeground(1, QColor(ds.MUTED))
                 top.addChild(child)
             if not names:
                 empty = QTreeWidgetItem(["(leer)", ""])
                 empty.setFlags(empty.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+                empty.setForeground(0, QColor(ds.MUTED))
                 top.addChild(empty)
             self.tree.addTopLevelItem(top)
         self.tree.expandAll()
-        for col in (0, 1):
-            self.tree.resizeColumnToContents(col)
+        hdr = self.tree.header()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setStretchLastSection(True)
         lay.addWidget(self.tree, 1)
 
-        self.btns = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        self.btns.button(QDialogButtonBox.StandardButton.Ok).setText("Anfahren")
-        self.btns.button(QDialogButtonBox.StandardButton.Cancel).setText("Abbrechen")
-        self.btns.accepted.connect(self._on_accept)
-        self.btns.rejected.connect(self.reject)
-        lay.addWidget(self.btns)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        self.btn_cancel = ds.button("Abbrechen", k="ghost")
+        self.btn_cancel.clicked.connect(self.reject)
+        self.btn_ok = ds.button("Anfahren", "play", "primary", "#ffffff")
+        self.btn_ok.setDefault(True)
+        self.btn_ok.clicked.connect(self._on_accept)
+        row.addWidget(self.btn_cancel)
+        row.addWidget(self.btn_ok)
+        lay.addLayout(row)
 
         self.tree.currentItemChanged.connect(self._sync_ok)
         self.tree.itemDoubleClicked.connect(lambda *_: self._on_accept())
+        self.search.textChanged.connect(self._filter)
         self._sync_ok()
+
+    def _filter(self, text):
+        """Suchfeld: nur passende Posen (und ihre Kategorie) zeigen."""
+        needle = (text or "").strip().lower()
+        for i in range(self.tree.topLevelItemCount()):
+            top = self.tree.topLevelItem(i)
+            shown = 0
+            for j in range(top.childCount()):
+                child = top.child(j)
+                name = child.data(0, Qt.ItemDataRole.UserRole)
+                hit = not needle or (name is not None and (
+                    needle in name.lower() or needle in top.text(0).lower()))
+                child.setHidden(not hit)
+                shown += hit
+            top.setHidden(bool(needle) and shown == 0)
 
     def _current_name(self):
         item = self.tree.currentItem()
@@ -274,8 +330,7 @@ class PoseLoadDialog(QDialog):
         return item.data(0, Qt.ItemDataRole.UserRole)
 
     def _sync_ok(self, *_):
-        self.btns.button(QDialogButtonBox.StandardButton.Ok).setEnabled(
-            self._current_name() is not None)
+        self.btn_ok.setEnabled(self._current_name() is not None)
 
     def _on_accept(self):
         name = self._current_name()
