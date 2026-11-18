@@ -17,7 +17,7 @@ die Demo-GUI ist seitdem die einzige Bedienoberfläche.
 | Datei | Inhalt |
 |---|---|
 | `g1pilot/teleoperation/demo_gui.py` | PyQt6-Oberfläche: `DemoNode` (ROS), `WalkPanel`, `ManipPanel` (ARME/HÄNDE), `ArmJogPanel`, `DemoGUI` (Aufbau Kopfleiste / Arbeitsfläche / Seitenleiste / Statusleiste, alle Abläufe und Sicherheitslogik) |
-| `g1pilot/teleoperation/demo_ui.py` | Bausteine ohne ROS (seit 2026-11-17): `ModeTile` (Modus-Umschalter), `Card`, `ResponsiveRow` (Karten neben-/untereinander), `TileGrid` (Raster mit Suche für Abläufe/Stationen), `CurrentStack`, `VerticalRocker`/`HorizontalRocker`, `TempPanel`, `HistoryDialog`, Stil-Helfer |
+| `g1pilot/teleoperation/demo_ui.py` | Bausteine ohne ROS (seit 2026-11-17): `ModeTile` (Modus-Umschalter), `Card`, `ResponsiveRow` (Karten neben-/untereinander), `TileGrid` (Raster mit Suche für Abläufe/Stationen), `CurrentStack`, `VerticalRocker`/`HorizontalRocker`, `TempPanel`, `HistoryDialog`, Stil-Helfer; Controller-Ansicht (2026-11-18): `ControllerCard`, `LegendCard`, `QuickGrid`, `default_view` (`G1_DEMO_VIEW`) |
 | `g1pilot/teleoperation/gui_base.py` | Basisklasse `GuiNode` (Publisher), `VirtualJoystick`, Dialoge `PoseSaveDialog` / `PoseLoadDialog` |
 | `g1pilot/teleoperation/hand_panel.py` | Seite HÄNDE (Finger, Kraft, Kraftzonen) über `/g1pilot/hand_cmd` und `/g1pilot/hand_status` |
 | `g1pilot/teleoperation/sequence_runner.py` | Ablauf abfahren (Am Stück / Schritt für Schritt), ohne Qt/ROS testbar, siehe [23-T-Posen-und-Ablaeufe.md](23-T-Posen-und-Ablaeufe.md) |
@@ -84,6 +84,7 @@ Die Watcher starten `./start.sh`, `make sim` und `make real`.
 | `test/test_demo_gui_temperature.py`, `test/test_g1_temperature.py` | Temperatur- und Akku-Kacheln, Aufbereitung Temperaturen |
 | `test/test_g1_battery.py` | Aufbereitung Akku (Einheiten, Plausibilität, Schwellen) |
 | `test/test_demo_gui_waist.py` | Anzeige Hüfte, Knopf Hüfte Mitte, Schieber Hüfte drehen (Strom, Stopp, nur GREIFEN/ARME) |
+| `test/test_demo_gui_controller_view.py` | Ansicht Touch \| Controller: Karten tauschen (Greifen/Gehen), Schnellwahl zeigt Plätze, Klick fährt an, leuchtet live, Belegung je Modus, kein Hüft-Strom, Mindestgröße |
 | `test/test_demo_gui_layout.py` | Aufbau: Raster für 20+ Abläufe/Stationen mit Suche, Spalten nach Breite, Verlauf, Seitenleiste Sim/Real |
 | `test/test_gui_external_estop.py` | NOT-HALT von außen (Controller) |
 | `test/test_status_line.py` | Texte der Info-Zeile |

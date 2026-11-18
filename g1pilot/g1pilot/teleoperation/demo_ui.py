@@ -14,6 +14,8 @@ alles mit der Fenstergroesse mitwaechst:
                     Suche ab SEARCH_FROM Eintraegen, scrollt (Ablaeufe, Stationen)
   Seitenleiste      NOT-HALT, Roboter (real) bzw. Simulation, Beenden
   Statusleiste      aktuelle Meldung + Verlauf
+  Controller-Ansicht  ControllerCard (Zustand), LegendCard (Belegung), QuickGrid
+                    (16 Plaetze der Pose-Schnellwahl) statt Joysticks
 
 Farben aus utils/ui_theme.py (eine Quelle fuer alle G1-Fenster) plus die
 Modus-Farben GEHEN blau / GREIFEN orange.
@@ -235,8 +237,8 @@ class ResponsiveRow(QWidget):
         # Breite nie ueber dem Umbruchpunkt erzwingen: schmaler -> untereinander.
         h = super().minimumSizeHint()
         if not self.stacked:
-            w = max(self.lay.itemAt(i).widget().minimumSizeHint().width()
-                    for i in range(self.lay.count()))
+            ws = [self.lay.itemAt(i).widget() for i in range(self.lay.count())]
+            w = max([x.minimumSizeHint().width() for x in ws if not x.isHidden()] or [0])
             return QSize(min(h.width(), w), h.height())
         return h
 
@@ -750,3 +752,235 @@ class HistoryDialog(QDialog):
             it = QListWidgetItem(f"{stamp}   {text}")
             it.setForeground(QColor(color))
             self.list.addItem(it)
+
+
+# ── Controller-Ansicht ──────────────────────────────────────────────────
+# Umschalter in der Kopfleiste: TOUCH (alles per Klick) | CONTROLLER (was man
+# am Controller ohnehin macht -- Joysticks, Pfeiltasten -- faellt weg, dafuer
+# Zustand des Controllers, Belegung und Pose-Schnellwahl gross).
+VIEW_TOUCH = "touch"
+VIEW_CONTROLLER = "controller"
+VIEW_TITLE = {VIEW_TOUCH: "Touch", VIEW_CONTROLLER: "Controller"}
+VIEW_ICON = {VIEW_TOUCH: "layout-grid", VIEW_CONTROLLER: "gamepad-2"}
+VIEW_ENV = "G1_DEMO_VIEW"
+QUICK_ARROW = {"up": "arrow-up", "right": "arrow-right", "down": "arrow-down",
+               "left": "arrow-left"}
+QUICK_DIRS = ("up", "right", "down", "left")      # wie pose_store (Uhrzeigersinn)
+LIVE_COLOR = "#66bb6a"
+
+
+def default_view(env=None):
+    """Start-Ansicht aus G1_DEMO_VIEW (touch | controller), sonst Touch."""
+    import os
+    v = (env if env is not None else os.environ.get(VIEW_ENV, "")).strip().lower()
+    return VIEW_CONTROLLER if v in (VIEW_CONTROLLER, "pad", "gamepad") else VIEW_TOUCH
+
+
+def key_chip(text, color=T.ACCENT):
+    lbl = QLabel(text)
+    lbl.setStyleSheet(f"background:{T.CARD_HI}; color:{color}; border:1px solid {T.LINE};"
+                      "border-radius:8px; padding:3px 9px; font-size:13px; font-weight:700;")
+    lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    return lbl
+
+
+class FactTile(QFrame):
+    """Kleine Kachel: Titel (grau) + Wert (gross, farbig)."""
+
+    def __init__(self, title):
+        super().__init__()
+        self.setObjectName("fact")
+        self.setStyleSheet(f"QFrame#fact {{ background:{T.CARD_HI}; border-radius:10px; }}"
+                           "QLabel { background:transparent; }")
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(12, 8, 12, 8)
+        lay.setSpacing(2)
+        self.title = caption(title, size=12)
+        lay.addWidget(self.title)
+        self.value = QLabel("–")
+        self.value.setWordWrap(True)
+        lay.addWidget(self.value)
+        self.set_value("–")
+
+    def set_value(self, text, color=T.FG):
+        self.value.setText(text)
+        self.value.setStyleSheet(f"color:{color}; font-size:18px; font-weight:800;")
+
+
+class ControllerCard(Card):
+    """Zustand des Controllers fuer die Controller-Ansicht: eine Zeile, was
+    der Controller gerade tut (status_line.ps4_text), darunter Kacheln mit
+    den wichtigsten Werten."""
+
+    def __init__(self, color, facts):
+        super().__init__("Controller", "gamepad-2", color)
+        self.line = QLabel()
+        self.line.setWordWrap(True)
+        self.body.addWidget(self.line)
+        grid = QGridLayout()
+        grid.setSpacing(8)
+        self.facts = {}
+        for i, (key, title) in enumerate(facts):
+            t = FactTile(title)
+            grid.addWidget(t, i // 2, i % 2)
+            self.facts[key] = t
+        self.body.addLayout(grid)
+        self.set_line(None)
+
+    def set_line(self, res):
+        """res = (Text, Farbe) aus status_line.ps4_text oder None."""
+        text, color = res if res else ("Kein Controller aktiv – im Startmenü unter "
+                                       "Ausstattung einschalten.", T.MUTED)
+        self.line.setText(text)
+        self.line.setStyleSheet(f"color:{color}; font-size:16px; font-weight:800; "
+                                f"background:{T.BG}; border-left:4px solid {color}; "
+                                "border-radius:6px; padding:8px 10px;")
+
+    def set_fact(self, key, text, color=T.FG):
+        self.facts[key].set_value(text, color)
+
+
+class LegendCard(Card):
+    """Tastenbelegung (Taste als Chip + Wirkung), nach Bereichen, scrollt."""
+
+    def __init__(self):
+        super().__init__("Belegung", "book-open", T.FG)
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll.setStyleSheet("QScrollArea { background:transparent; }")
+        inner = QWidget()
+        inner.setStyleSheet("background:transparent;")
+        self.lay = QVBoxLayout(inner)
+        self.lay.setContentsMargins(0, 0, 8, 0)
+        self.lay.setSpacing(6)
+        self.scroll.setWidget(inner)
+        self.scroll.setMinimumHeight(130)
+        self.body.addWidget(self.scroll, 1)
+        self._key = None
+
+    def rows(self):
+        """[(Taste, Wirkung)] wie angezeigt (Tests)."""
+        out = []
+        for i in range(self.lay.count()):
+            w = self.lay.itemAt(i).widget()
+            if w is not None and getattr(w, "entry", None):
+                out.append(w.entry)
+        return out
+
+    def set_groups(self, groups, colors):
+        """groups = [(Titel, Icon, Farbschluessel, [(Taste, Wirkung)])]."""
+        key = repr(groups)
+        if key == self._key:
+            return
+        self._key = key
+        while self.lay.count():
+            item = self.lay.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+        for title, _icon, ck, rows in groups:
+            col = colors.get(ck, T.ACCENT)
+            head = QLabel(title.upper())
+            head.setStyleSheet(f"color:{col}; font-size:11px; font-weight:800; "
+                               "letter-spacing:1px; padding-top:6px;")
+            self.lay.addWidget(head)
+            for k, what in rows:
+                row = QWidget()
+                row.entry = (k, what)
+                hl = QHBoxLayout(row)
+                hl.setContentsMargins(0, 0, 0, 0)
+                hl.setSpacing(10)
+                hl.addWidget(key_chip(k, col), 0, Qt.AlignmentFlag.AlignTop)
+                w = QLabel(what)
+                w.setWordWrap(True)
+                w.setStyleSheet(f"color:{T.FG}; font-size:13px;")
+                hl.addWidget(w, 1)
+                self.lay.addWidget(row)
+        self.lay.addStretch(1)
+
+
+class QuickGrid(QWidget):
+    """Pose-Schnellwahl (R2 halten + Steuerkreuz 2x) als 4x4-Kacheln: Zeile =
+    erste Richtung, Spalte = zweite. Klick faehrt die Pose an (on_pick(name)),
+    die Wahl am Controller leuchtet live (highlight)."""
+
+    def __init__(self, on_pick=None):
+        super().__init__()
+        self.on_pick = on_pick
+        grid = QGridLayout(self)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setSpacing(6)
+        for c, d in enumerate(QUICK_DIRS):
+            grid.addWidget(self._arrow(d), 0, c + 1, Qt.AlignmentFlag.AlignCenter)
+        self.cells = {}
+        self.names = {}
+        for r, first in enumerate(QUICK_DIRS):
+            grid.addWidget(self._arrow(first), r + 1, 0, Qt.AlignmentFlag.AlignCenter)
+            for c, second in enumerate(QUICK_DIRS):
+                key = f"{first}-{second}"
+                b = QPushButton("–")
+                b.setMinimumHeight(44)
+                b.setMinimumWidth(70)
+                b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+                b.clicked.connect(lambda _=False, k=key: self._clicked(k))
+                grid.addWidget(b, r + 1, c + 1)
+                self.cells[key] = b
+        for c in range(1, 5):
+            grid.setColumnStretch(c, 1)
+        self._live = (None, None)
+        self.set_slots({})
+
+    @staticmethod
+    def _arrow(direction):
+        lbl = QLabel()
+        lbl.setPixmap(ui_icons.pixmap(QUICK_ARROW[direction], WAIST_COLOR, 18))
+        lbl.setStyleSheet("background:transparent;")
+        return lbl
+
+    def _clicked(self, key):
+        name = self.names.get(key)
+        if name and self.on_pick is not None:
+            self.on_pick(name)
+
+    def set_slots(self, slots):
+        """slots = {"up-down": Pose, ...} (pose_store.list_quickslots)."""
+        self.names = dict(slots or {})
+        for key, b in self.cells.items():
+            name = self.names.get(key)
+            b.setText(name or "–")      # leer: bleibt klickbar, tut aber nichts
+            arrows = " ".join({"up": "↑", "right": "→", "down": "↓", "left": "←"}[d]
+                              for d in key.split("-"))
+            b.setToolTip(f"R2 halten, Steuerkreuz {arrows}, R2 loslassen"
+                         + (f" = »{name}« (Klick fährt hier an)" if name else " (leer)"))
+        self._paint()
+
+    def highlight(self, quick):
+        """Controller-Status "quick" ({first, combo} oder None)."""
+        quick = quick or {}
+        live = (quick.get("first"), quick.get("combo"))
+        if live != self._live:
+            self._live = live
+            self._paint()
+
+    def state_of(self, key):
+        first, combo = self._live
+        if combo:
+            return "live" if key == combo else ""
+        if first and key.split("-")[0] == first:
+            return "row"
+        return ""
+
+    def _paint(self):
+        for key, b in self.cells.items():
+            st = self.state_of(key)
+            if st == "live":
+                c = LIVE_COLOR if self.names.get(key) else "#ffb300"   # leer = gelb
+                css = state_css(c, "white", f"3px solid {c}", 13, radius=10)
+            elif st == "row":
+                css = state_css(T.CARD_HI, T.FG, f"2px solid {WAIST_COLOR}", 13, radius=10)
+            elif self.names.get(key):
+                css = button_css(T.CARD_HI, T.FG, 13, radius=10)
+            else:
+                css = state_css(T.CARD, DIM, f"1px dashed {T.LINE}", 13, radius=10)
+            b.setStyleSheet(css + " QPushButton { padding:4px 4px; }")

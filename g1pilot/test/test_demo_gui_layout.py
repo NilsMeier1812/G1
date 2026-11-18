@@ -13,6 +13,7 @@ pytest.importorskip("PyQt6")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import rclpy                                       # noqa: E402
+from PyQt6.QtCore import QTimer                  # noqa: E402
 from PyQt6.QtWidgets import QApplication, QPushButton   # noqa: E402
 
 SEQS = [f"Ablauf {i:02d}" for i in range(24)]
@@ -35,6 +36,8 @@ def gui(request, monkeypatch):
         yield dg, g, app
     finally:
         g.close()
+        for t in g.findChildren(QTimer):     # keine Timer nach destroy_node
+            t.stop()
         node.tf_listener.executor.shutdown()
         node.tf_listener.dedicated_listener_thread.join(timeout=2.0)
         node.tf_node.destroy_node()

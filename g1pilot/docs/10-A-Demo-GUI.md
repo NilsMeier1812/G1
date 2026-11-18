@@ -19,7 +19,7 @@ Funktion hat genau einen Platz, und alles wächst mit der Fenstergröße mit
 
 ```
 ┌──────────────────────────────────────────────────────────────┬───────────────┐
-│ G1·REAL  [ GEHEN        ][ GREIFEN ▌AKTIV ]   [PS4][Handy][⛶] │               │
+│ G1·REAL [GEHEN][GREIFEN▌AKTIV] [Touch|Controller][PS4][Handy][⛶]│               │
 ├──────── Linie in Modusfarbe ─────────────────────────────────┤  ( NOT-HALT ) │
 │ [ ARME | HÄNDE ]                          [Bewegung stoppen] │               │
 │ ┌ Hand bewegen ─────────────┐ ┌ Abläufe ───────────────────┐ │ STARTLEISTE   │
@@ -40,7 +40,7 @@ Funktion hat genau einen Platz, und alles wächst mit der Fenstergröße mit
 
 | Bereich | Inhalt |
 |---|---|
-| **Kopfleiste** (oben) | SIM/REAL-Kennung, Modus-Umschalter GEHEN \| GREIFEN, rechts Controller-Belegung, Handy, Vollbild |
+| **Kopfleiste** (oben) | SIM/REAL-Kennung, Modus-Umschalter GEHEN \| GREIFEN, Ansicht Touch \| Controller, rechts Controller-Belegung, Handy, Vollbild |
 | **Arbeitsfläche** (Mitte) | nur der aktive Modus, als Karten nebeneinander (schmales Fenster: untereinander) |
 | **Seitenleiste** (rechts) | NOT-HALT (immer oben), real Startleiste + Akku/Temperaturen, Sim die Sim-Werkzeuge, ganz unten Beenden |
 | **Statusleiste** (unten) | aktuelle Meldung in Klartext, *Verlauf* zeigt die letzten 200 |
@@ -48,6 +48,31 @@ Funktion hat genau einen Platz, und alles wächst mit der Fenstergröße mit
 Listen, die wachsen können (Abläufe, Stationen), sind **Raster**: Die
 Spaltenzahl folgt der Breite, ab 9 Einträgen erscheint ein Suchfeld, was
 nicht passt, scrollt. 20 und mehr Abläufe sind damit kein Problem.
+
+### Kopfleiste: Ansicht Touch | Controller
+
+Rechts in der Kopfleiste schaltet **Touch | Controller** die Arbeitsfläche um.
+Es ändert sich nur, was angezeigt wird: Modus, Topics und Sicherheit bleiben
+gleich, und alles, was zu sehen ist, lässt sich weiter anklicken.
+
+| Ansicht | GREIFEN | GEHEN |
+|---|---|---|
+| **Touch** (Start) | Hand bewegen (Joysticks, Hüfte-Schieber), ARME \| HÄNDE, Abläufe, Posen | Manuell gehen (Joystick, Pfeiltasten), Auto-Navigation |
+| **Controller** | Karte *Controller* (was der Controller gerade tut, Hand, Stick bewegt, Tempo, Hüfte), *Posen*, *Belegung*; rechts *Pose-Schnellwahl* und *Abläufe* | Karte *Controller* (läuft/steht, Geh-Tempo), *Belegung*, Auto-Navigation |
+
+In der Controller-Ansicht fällt weg, was man ohnehin am Controller macht:
+Joysticks, Pfeiltasten, Hüfte-Schieber, die Seite HÄNDE (Kreis/Viereck) und
+der Knopf *Belegung* oben (die Belegung steht schon auf der Fläche, gefiltert
+auf den aktiven Modus).
+
+Die **Pose-Schnellwahl** zeigt die 16 Plätze (R2 halten + Steuerkreuz 2×) mit
+den zugeordneten Posen: Zeile = erste Richtung, Spalte = zweite. Am Controller
+leuchtet erst die Zeile (lila Rand), dann der gewählte Platz (grün, leer =
+gelb). Ein Klick auf einen Platz fährt die Pose an wie *Pose anfahren*.
+*Plätze belegen …* öffnet direkt den Reiter *Controller-Schnellwahl* im
+Fenster *Posen & Abläufe*.
+
+Start-Ansicht: `G1_DEMO_VIEW=controller` (Default `touch`).
 
 ### Kopfleiste: Modus
 

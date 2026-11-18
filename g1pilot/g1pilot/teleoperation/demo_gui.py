@@ -666,6 +666,19 @@ class WalkPanel(QWidget):
         self.manual_card.body.addWidget(self.manual, 1)
         self.row.add(self.manual_card, 3)
         self.set_speed("Langsam")
+        # Controller-Ansicht: statt Joystick/Pfeilen Zustand + Belegung (Gehen).
+        self.ctrl_col = QWidget()
+        cl = QVBoxLayout(self.ctrl_col)
+        cl.setContentsMargins(0, 0, 0, 0)
+        cl.setSpacing(14)
+        self.ctrl_card = UI.ControllerCard(MODE_COLOR[WALK], (
+            ("state", "Gehen"), ("speed", "Geh-Tempo")))
+        cl.addWidget(self.ctrl_card)
+        self.legend_card = UI.LegendCard()
+        cl.addWidget(self.legend_card, 1)
+        self.ctrl_col.hide()
+        self.row.add(self.ctrl_col, 3)
+        self.controller_view = False
 
         # Karte 2: AUTO NAV -- Roboter faehrt selbststaendig zum in RViz gesetzten
         # Ziel (/g1pilot/auto_enable -> joy_mux gibt den Nav-Joy weiter).
@@ -789,6 +802,15 @@ class WalkPanel(QWidget):
         self.held.clear()
         self.joystick.mouseReleaseEvent(None)   # Knopf zentrieren -> vx=vy=0
 
+    def set_controller_view(self, on):
+        """Controller-Ansicht: »Manuell gehen« weg (L2 halten am Controller),
+        dafuer Zustand + Belegung. Auto-Navigation und Stationen bleiben."""
+        self.controller_view = bool(on)
+        self.reset()
+        self.manual_card.setVisible(not on)
+        self.ctrl_col.setVisible(bool(on))
+        self.updateGeometry()
+
 
 # ── GREIFEN ──────────────────────────────────────────────────────────────
 class ManipPanel(QWidget):
@@ -872,10 +894,37 @@ class ManipPanel(QWidget):
         self.jog_card.body.addLayout(waist)
         self.row.add(self.jog_card, 5)
 
+        # Controller-Ansicht (UI.VIEW_CONTROLLER): statt »Hand bewegen« der
+        # Zustand des Controllers + Belegung; »Posen« rutscht darunter.
+        self.ctrl_col = QWidget()
+        self.ctrl_lay = QVBoxLayout(self.ctrl_col)
+        self.ctrl_lay.setContentsMargins(0, 0, 0, 0)
+        self.ctrl_lay.setSpacing(14)
+        self.ctrl_card = UI.ControllerCard(MODE_COLOR[MANIP], (
+            ("hand", "Hand"), ("motion", "Stick bewegt"), ("speed", "Tempo"),
+            ("waist", "Hüfte")))
+        self.ctrl_lay.addWidget(self.ctrl_card)
+        self.legend_card = UI.LegendCard()
+        self.ctrl_lay.addWidget(self.legend_card, 1)
+        self.row.add(self.ctrl_col, 4)
+        self.ctrl_col.hide()
+
         right = QWidget()
         rcol = QVBoxLayout(right)
         rcol.setContentsMargins(0, 0, 0, 0)
         rcol.setSpacing(14)
+        self.rcol = rcol
+        # Pose-Schnellwahl (nur Controller-Ansicht): die 16 Plaetze R2 +
+        # Steuerkreuz 2x, Wahl am Controller leuchtet, Klick faehrt an.
+        self.quick_card = UI.Card("Pose-Schnellwahl", "layout-grid", UI.WAIST_COLOR,
+                                  "R2 halten · Steuerkreuz 2× · R2 los")
+        self.quick_grid = UI.QuickGrid(on_pick=lambda name: self.gui.run_poses([name]))
+        self.quick_card.body.addWidget(self.quick_grid)
+        self.btn_quick_edit = UI.big_button("Plätze belegen …", font=14, height=38,
+                                            icon="square-pen")
+        self.quick_card.body.addWidget(self.btn_quick_edit)
+        rcol.addWidget(self.quick_card)
+        self.quick_card.hide()
         # Karte »Abläufe«: Am Stueck | Schritt fuer Schritt, »Weiter« (nur wenn
         # ein Ablauf auf Bestaetigung wartet; Controller: L3), Raster mit Suche.
         self.seq_card = UI.Card("Abläufe", "play", T.ACCENT)
@@ -925,6 +974,7 @@ class ManipPanel(QWidget):
         self.pose_card.body.addWidget(self.btn_marker)
         rcol.addWidget(self.pose_card)
         self.row.add(right, 4)
+        self.controller_view = False
 
         self.show_view("arms")
         # Fingersteuerung gibt es nur mit Inspire-Haenden. In der Sim mit Rubber-
@@ -936,6 +986,25 @@ class ManipPanel(QWidget):
         if not self.hands_available:
             hb.setToolTip(f"Starre Hände ({hand_profile()}): keine Finger zum Bewegen. "
                           "Fingersteuerung nur mit Inspire-Händen (Startmenü → Hände).")
+
+    def set_controller_view(self, on):
+        """Controller-Ansicht: Joysticks/Huefte-Schieber und HAENDE-Seite weg
+        (macht man am Controller), dafuer Controller-Zustand, Belegung und
+        Pose-Schnellwahl. Abläufe, Posen und »Bewegung stoppen« bleiben."""
+        on = bool(on)
+        self.controller_view = on
+        self.jog.reset()
+        self.waist_rocker.mouseReleaseEvent(None)     # Schieber los -> Huefte steht
+        if on:
+            self.show_view("arms")
+            self.ctrl_lay.insertWidget(1, self.pose_card)
+        else:
+            self.rcol.addWidget(self.pose_card)
+        self.view_switch.setVisible(not on)
+        self.jog_card.setVisible(not on)
+        self.ctrl_col.setVisible(on)
+        self.quick_card.setVisible(on)
+        self.updateGeometry()
 
     def _marker_icon(self, on):
         ui_icons.set_icon(self.btn_marker, "check" if on else "square",
@@ -1054,6 +1123,11 @@ class DemoGUI(QWidget):
         self.info_timer = QTimer(self)
         self.info_timer.timeout.connect(self._refresh_info)
         self.info_timer.start(500)
+        # Controller-Ansicht: Zustand 10 Hz (Schnellwahl leuchtet sofort).
+        self.view = UI.VIEW_TOUCH
+        self.ctrl_timer = QTimer(self)
+        self.ctrl_timer.timeout.connect(self._refresh_controller_view)
+        self.set_view(UI.default_view())
         self.seq_timer = QTimer(self)
         self.seq_timer.timeout.connect(self.seq.tick)
         self.seq_timer.start(100)
@@ -1114,10 +1188,25 @@ class DemoGUI(QWidget):
         modes.addWidget(self.tiles[MANIP])
         head.addLayout(modes, 3)
         head.addStretch(1)
+        # Ansicht: Touch (alles per Klick) | Controller (Joysticks weg, dafuer
+        # Controller-Zustand, Belegung, Pose-Schnellwahl). Start: G1_DEMO_VIEW.
+        keys = (UI.VIEW_TOUCH, UI.VIEW_CONTROLLER)
+        self.view_toggle, vbtns = UI.segmented(["  " + UI.VIEW_TITLE[k] for k in keys], None,
+                                               font=14, height=40)
+        self.view_btns = {k: vbtns["  " + UI.VIEW_TITLE[k]] for k in keys}
+        for k, b in self.view_btns.items():
+            ui_icons.set_icon(b, UI.VIEW_ICON[k], "#ffffff", 16)
+            b.clicked.connect(lambda _=False, v=k: self.set_view(v))
+        self.view_btns[UI.VIEW_TOUCH].setToolTip(
+            "Touch-Ansicht: alles per Klick (Joysticks, Pfeiltasten, Hüfte, Hände)")
+        self.view_btns[UI.VIEW_CONTROLLER].setToolTip(
+            "Controller-Ansicht: was man am Controller macht, fällt weg -- dafür "
+            "Controller-Zustand, Belegung und Pose-Schnellwahl. Klicken geht weiter.")
+        head.addWidget(self.view_toggle)
         # Rechts: Controller-Belegung (nur wenn ein Controller aktiv ist), Handy
         # (ausser G1_PHONE=0, phone/link.py) und Vollbild -- am Roboter-Rechner
         # fehlt oft die Titelleiste. Tasten: F11 umschalten, Esc verlassen.
-        self.btn_pad_help = UI.chip_button("Controller", "gamepad-2")
+        self.btn_pad_help = UI.chip_button("Belegung", "gamepad-2")
         self.btn_pad_help.setVisible(False)
         head.addWidget(self.btn_pad_help)
         self.btn_phone = UI.chip_button("Handy", "smartphone")
@@ -1361,13 +1450,91 @@ class DemoGUI(QWidget):
         # nur der Knopf zur Belegung, solange ein Controller aktiv ist.
         res = status_line.ps4_text(n.ps4, age, sim=self.sim_mode, walk=n.ps4walk,
                                    device=n.ps4dev)
-        self.btn_pad_help.setVisible(res is not None)
+        # In der Controller-Ansicht steht die Belegung schon auf der Flaeche.
+        self.btn_pad_help.setVisible(res is not None
+                                     and getattr(self, "view", None) != UI.VIEW_CONTROLLER)
         self._show_quickslot(res)
         if res is not None:
             name = (n.ps4dev or {}).get("name")
             label = status_line.controller_label(n.ps4dev)
             self.btn_pad_help.setToolTip((f"{name}\n" if name else "")
                                          + f"Belegung des {label}-Controllers")
+
+    # ── Ansicht Touch | Controller ─────────────────────────────────────
+    def set_view(self, view):
+        """Touch- oder Controller-Ansicht (nur Oberflaeche: Modus, Topics und
+        Sicherheit bleiben gleich; alle Knoepfe der Ansicht sind klickbar)."""
+        view = UI.VIEW_CONTROLLER if view == UI.VIEW_CONTROLLER else UI.VIEW_TOUCH
+        on = view == UI.VIEW_CONTROLLER
+        self.view = view
+        for k, b in self.view_btns.items():
+            b.setChecked(k == view)
+        self.manip_panel.set_controller_view(on)
+        self.walk_panel.set_controller_view(on)
+        if on:
+            self.btn_pad_help.setVisible(False)
+            self._reload_quick_slots()
+            self._refresh_controller_view()
+            self.ctrl_timer.start(100)
+        else:
+            self.ctrl_timer.stop()
+        self.stack.updateGeometry()
+
+    def _reload_quick_slots(self):
+        store = self._pose_store()
+        try:
+            slots = store.list_quickslots() if store is not None else {}
+        except Exception:   # noqa: BLE001 -- Anzeige, Datei evtl. gerade im Schreiben
+            return
+        self.manip_panel.quick_grid.set_slots(slots)
+        self._quick_reload_t = time.monotonic()
+
+    def _refresh_controller_view(self):
+        """Controller-Ansicht (10 Hz): Zustand, Werte, Belegung, Schnellwahl."""
+        n, now = self.node, time.monotonic()
+        age = None if n.ps4_t is None else now - n.ps4_t
+        res = status_line.ps4_text(n.ps4, age, sim=self.sim_mode, walk=n.ps4walk,
+                                   device=n.ps4dev)
+        fresh = res is not None and age is not None and age <= status_line.STALE_S
+        st = (n.ps4 or {}) if fresh else {}
+        walk = (n.ps4walk or {}) if fresh else {}
+        colors = {"manip": MODE_COLOR[MANIP], "walk": MODE_COLOR[WALK],
+                  "waist": UI.WAIST_COLOR, "seq": "#66bb6a", "safety": "#ef5350",
+                  "other": T.FG}
+        groups = status_line.ps4_help_groups(n.ps4)
+        mp, wp = self.manip_panel, self.walk_panel
+        if self.mode == MANIP or self.mode is None:
+            c = mp.ctrl_card
+            c.set_line(res)
+            sel = st.get("selection")
+            c.set_fact("hand", status_line.SELECTION_LABEL.get(sel, "–") if sel else "–",
+                       status_line._hex(status_line.COLORS[sel])
+                       if sel in status_line.COLORS else T.FG)
+            c.set_fact("motion", status_line.MODE_LABEL.get(st.get("mode"), "–"))
+            speed = st.get("speed") or "–"
+            if st.get("speed_req") not in (None, st.get("speed")):
+                speed += " (max.)"
+            c.set_fact("speed", speed)
+            wt = status_line.waist_text(n.waist, None if n.waist_t is None else now - n.waist_t)
+            c.set_fact("waist", wt[0].replace("Hüfte ", "", 1) if wt else "–",
+                       wt[1] if wt else T.FG)
+            mp.legend_card.set_groups(
+                [g for g in groups if g[2] in ("manip", "waist", "seq", "safety")], colors)
+            quick = st.get("quick") if st.get("waist_mode") else None
+            mp.quick_grid.highlight(quick)
+            if now - getattr(self, "_quick_reload_t", 0.0) > 2.0:
+                self._reload_quick_slots()      # Zuordnung im Editor geaendert
+        if self.mode == WALK:
+            c = wp.ctrl_card
+            c.set_line(res)
+            if walk.get("active") and not walk.get("estop"):
+                c.set_fact("state", "läuft (L2 gehalten)", MODE_COLOR[WALK])
+            elif fresh:
+                c.set_fact("state", "steht · L2 halten = laufen")
+            else:
+                c.set_fact("state", "–")
+            c.set_fact("speed", walk.get("speed") or wp.speed_name)
+            wp.legend_card.set_groups([g for g in groups if g[2] in ("walk", "safety")], colors)
 
     def _show_quickslot(self, res):
         """Pose-Schnellwahl am Controller (R2 + Steuerkreuz 2x): Wahl in der
@@ -1587,6 +1754,7 @@ class DemoGUI(QWidget):
         mp.btn_save.clicked.connect(lambda: self.save_current_pose())
         mp.btn_next.clicked.connect(self.sequence_next)
         mp.btn_sequences.clicked.connect(self.open_sequence_editor)
+        mp.btn_quick_edit.clicked.connect(lambda: self.open_sequence_editor(tab=1))
         mp.btn_marker.toggled.connect(lambda on: n.publish_bool(n.pub_marker_follow, on))
         # Einstellungen gehen in den gemeinsamen Zustand (Controller zieht nach).
         mp.jog.on_change = n.share
@@ -1912,6 +2080,7 @@ class DemoGUI(QWidget):
 
     def _reload_sequence_buttons(self):
         self.manip_panel.fill_sequence_buttons(self._sequences())
+        self._reload_quick_slots()
         if self.seq_editor is not None and self.seq_editor.isVisible():
             self.seq_editor.reload()
 
@@ -2085,7 +2254,7 @@ class DemoGUI(QWidget):
         mp = self.manip_panel
         rate = mp.waist_rocker.value
         allowed = (self.mode == MANIP and self.pending is None
-                   and mp.views.currentWidget() is mp.arms_page)
+                   and mp.views.currentWidget() is mp.arms_page and not mp.controller_view)
         if not allowed and abs(rate) > 1e-3:
             mp.waist_rocker.mouseReleaseEvent(None)
             rate = 0.0
@@ -2133,11 +2302,14 @@ class DemoGUI(QWidget):
         if dlg.exec() == QDialog.DialogCode.Accepted and dlg.selected_name():
             self.run_poses([dlg.selected_name()])
 
-    def open_sequence_editor(self):
-        """Fenster »Posen & Abläufe« (nicht modal: nebenher Hand bewegen)."""
+    def open_sequence_editor(self, tab=None):
+        """Fenster »Posen & Abläufe« (nicht modal: nebenher Hand bewegen).
+        tab=1: gleich den Reiter »Controller-Schnellwahl« zeigen."""
         if self.seq_editor is None:
             self.seq_editor = SequenceEditor(self, parent=self)
         self.seq_editor.reload()
+        if tab is not None:
+            self.seq_editor.tabs.setCurrentIndex(tab)
         self.seq_editor.show()
         self.seq_editor.raise_()
         self.seq_editor.activateWindow()
