@@ -64,9 +64,9 @@ def test_wizard_shows_suggestions_and_creates(app, tmp_path, monkeypatch):
 
 
 def test_wizard_rejects_bad_mass(app, monkeypatch):
-    from PyQt6.QtWidgets import QMessageBox
+    from g1pilot.utils import msgbox
     warned = []
-    monkeypatch.setattr(QMessageBox, "warning", lambda *a: warned.append(a[2]))
+    monkeypatch.setattr(msgbox, "warn", lambda *a: warned.append(a[2]))
     w = hand_new.build_wizard()
     try:
         w.file_path = HAKEN_STL

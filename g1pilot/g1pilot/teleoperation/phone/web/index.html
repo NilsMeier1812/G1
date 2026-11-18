@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#111111">
+<meta name="theme-color" content="#14171d">
 <title>G1 Handy</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <style>
   :root {
-    --bg: #111; --card: #1b1b1b; --line: #2c2c2c; --text: #eee; --dim: #9a9a9a;
+    --bg: #14171d; --card: #1f242d; --line: #2e3541; --text: #e8eaed; --dim: #8f97a3;
     --walk: #1e88e5; --grasp: #fb8c00; --ok: #66bb6a; --warn: #ffb300; --stop: #e53935;
     --info: #4fc3f7;
   }
@@ -31,6 +31,7 @@
   section h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--dim);
     margin: 0 0 10px; }
   .hidden { display: none !important; }
+  button.stopbtn { background: #e5484d; min-height: 52px; }
   label { display: block; font-size: 14px; color: var(--dim); margin: 10px 0 4px; }
   input[type=text] { width: 100%; font-size: 20px; padding: 12px; border-radius: 10px;
     border: 1px solid #444; background: #0c0c0c; color: var(--text); }
@@ -69,7 +70,7 @@
   #toast.bad { background: #4e342e; color: #ffe0b2; }
   .sheetbg { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 10; display: flex;
     align-items: flex-end; }
-  .sheetbg .box { max-height: 88vh; overflow-y: auto; background: #1e1e1e; width: 100%; max-width: 640px; margin: 0 auto; padding: 18px 16px
+  .sheetbg .box { max-height: 88vh; overflow-y: auto; background: #1b1f27; width: 100%; max-width: 640px; margin: 0 auto; padding: 18px 16px
     calc(20px + env(safe-area-inset-bottom)); border-radius: 18px 18px 0 0; }
   .sheetbg h3 { margin: 0 0 8px; font-size: 22px; }
   .sheetbg p { color: #ccc; margin: 0 0 16px; }
@@ -280,6 +281,17 @@
       <div class="knob">›</div>
     </div>
     <div class="row" style="grid-template-columns:1fr"><button id="sheetCancel" class="ghost">Abbrechen</button></div>
+  </div>
+</div>
+
+<div id="askSheet" class="sheetbg hidden">
+  <div class="box">
+    <h3 id="askTitle"></h3>
+    <p id="askText"></p>
+    <div class="row">
+      <button id="askCancel" class="ghost">Abbrechen</button>
+      <button id="askOk" class="stopbtn">Löschen</button>
+    </div>
   </div>
 </div>
 

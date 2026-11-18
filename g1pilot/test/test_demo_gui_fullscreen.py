@@ -137,18 +137,32 @@ def test_window_fits_small_screen(gui):
 
 
 def test_fullscreen_button_in_mode_header(gui):
-    """Vollbild-Knopf oben rechts in der Zeile »1 · MODUS«, ueber den Kacheln."""
+    """Vollbild-Knopf oben rechts in der Kopfleiste, in einer Zeile mit dem
+    Modus-Umschalter (GEHEN | GREIFEN)."""
     g, app = gui
     from g1pilot.teleoperation import demo_gui as dg
-    btn = g.btn_fullscreen.mapTo(g, g.btn_fullscreen.rect().bottomLeft())
-    tile = g.tiles[dg.WALK].mapTo(g, g.tiles[dg.WALK].rect().topLeft())
-    assert btn.y() <= tile.y()
-    assert btn.x() > g.width() // 2
+    btn = g.btn_fullscreen.mapTo(g, g.btn_fullscreen.rect().center())
+    tile = g.tiles[dg.WALK].mapTo(g, g.tiles[dg.WALK].rect().center())
+    assert abs(btn.y() - tile.y()) <= 12            # gleiche Zeile
+    assert btn.y() < 80                             # ganz oben
+    assert btn.x() > g.width() // 2 > tile.x()
+
+
+def test_estop_and_quit_in_sidebar(gui):
+    """NOT-HALT oben in der Seitenleiste, »Beenden« ganz unten darunter, beide
+    rechts neben der Arbeitsflaeche."""
+    g, app = gui
+    estop = g.btn_estop.mapTo(g, g.btn_estop.rect().center())
+    quit_ = g.btn_quit.mapTo(g, g.btn_quit.rect().center())
+    work = g.panel_scroll.mapTo(g, g.panel_scroll.rect().topRight())
+    assert estop.x() > work.x() and quit_.x() > work.x()
+    assert estop.y() < 200 and quit_.y() > estop.y() + 200
 
 
 def test_start_bar_holds_start_and_onboard(gui):
-    """Real: Start | Damp | Preparation | Walk | loco_client-Rueckmeldung in EINER
-    Zeile; Start ist bis zum Klick frei und danach grau »Gestartet ✓«."""
+    """Real: Start | Damp | Preparation | Walk + loco_client-Rueckmeldung in der
+    Startleiste (Seitenleiste); Start ist bis zum Klick frei und danach grau
+    »Gestartet ✓«."""
     g, app = gui
     if g.sim_mode:
         assert g.start_bar.isHidden()

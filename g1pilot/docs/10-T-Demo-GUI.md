@@ -16,7 +16,8 @@ die Demo-GUI ist seitdem die einzige Bedienoberfläche.
 
 | Datei | Inhalt |
 |---|---|
-| `g1pilot/teleoperation/demo_gui.py` | PyQt6-Oberfläche: `DemoNode` (ROS), `ModeTile`, `TempPanel`, Seiten ARME/HÄNDE, Startleiste, Status, Vollbild |
+| `g1pilot/teleoperation/demo_gui.py` | PyQt6-Oberfläche: `DemoNode` (ROS), `WalkPanel`, `ManipPanel` (ARME/HÄNDE), `ArmJogPanel`, `DemoGUI` (Aufbau Kopfleiste / Arbeitsfläche / Seitenleiste / Statusleiste, alle Abläufe und Sicherheitslogik) |
+| `g1pilot/teleoperation/demo_ui.py` | Bausteine ohne ROS (seit 2026-11-17): `ModeTile` (Modus-Umschalter), `Card`, `ResponsiveRow` (Karten neben-/untereinander), `TileGrid` (Raster mit Suche für Abläufe/Stationen), `CurrentStack`, `VerticalRocker`/`HorizontalRocker`, `TempPanel`, `HistoryDialog`, Stil-Helfer; Controller-Ansicht (2026-11-18): `ControllerCard`, `LegendCard`, `QuickGrid`, `default_view` (`G1_DEMO_VIEW`) |
 | `g1pilot/teleoperation/gui_base.py` | Basisklasse `GuiNode` (Publisher), `VirtualJoystick`, Dialoge `PoseSaveDialog` / `PoseLoadDialog` |
 | `g1pilot/teleoperation/hand_panel.py` | Seite HÄNDE (Finger, Kraft, Kraftzonen) über `/g1pilot/hand_cmd` und `/g1pilot/hand_status` |
 | `g1pilot/teleoperation/sequence_runner.py` | Ablauf abfahren (Am Stück / Schritt für Schritt), ohne Qt/ROS testbar, siehe [23-T-Posen-und-Ablaeufe.md](23-T-Posen-und-Ablaeufe.md) |
@@ -37,7 +38,7 @@ die Demo-GUI ist seitdem die einzige Bedienoberfläche.
 
 | Richtung | Topic | Zweck |
 |---|---|---|
-| sendet | `/g1pilot/start_walking`, `/g1pilot/start_balancing`, `/g1pilot/arms/enabled` | Modus-Kacheln |
+| sendet | `/g1pilot/start_walking`, `/g1pilot/start_balancing`, `/g1pilot/arms/enabled` | Modus-Umschalter |
 | sendet | `/g1pilot/start` | Startleiste »Start« / NOT-HALT quittieren |
 | sendet | `/g1pilot/loco_request` | Startleiste Damp / Preparation / Walk (real, `loco_client` prüft erneut) |
 | sendet | `/g1pilot/emergency_stop` | NOT-HALT |
@@ -45,7 +46,7 @@ die Demo-GUI ist seitdem die einzige Bedienoberfläche.
 | sendet | `/g1pilot/auto_enable`, `/g1pilot/goal` | AUTO NAV, Zur Station |
 | sendet | `/g1pilot/hand_goal/<side>`, `/g1pilot/arms/home`, `/g1pilot/pose_store/goto`, `/g1pilot/pose_store/cancel`, `/g1pilot/arm_command` | Arme: Jog, Grundstellung, Posen, Abläufe, relative Bewegungen |
 | sendet | `/g1pilot/hand_action/<side>`, `/g1pilot/hand_cmd` | Hände |
-| sendet | `/g1pilot/waist/center` | Knopf Hüfte Mitte |
+| sendet | `/g1pilot/waist/center`, `/g1pilot/waist/yaw_rate` | Knopf Hüfte Mitte, Schieber Hüfte drehen (Rate −1..1 mit ~30 Hz, beim Loslassen 0) |
 | sendet | `/g1pilot/push`, `/g1pilot/push_charge`, `/g1pilot/scene_reset` | nur Sim |
 | liest | `/g1pilot/arms/walk_ready`, `/g1pilot/arms/state`, `/g1pilot/loco_state` | Moduswechsel bestätigt, Sim-Auto-Start |
 | liest | `/g1pilot/arm_command/status`, `/g1pilot/pose_store/save/status` | Ablauf-Schritte, Speichern quittiert |
@@ -75,14 +76,16 @@ Die Watcher starten `./start.sh`, `make sim` und `make real`.
 | Test | Inhalt |
 |---|---|
 | `test/test_demo_gui_controller_sync.py` | GUI folgt dem Controller (Kacheln, Auswahl, Tempo), Sim und Real |
-| `test/test_demo_gui_fullscreen.py` | Vollbild, Mindesthöhe, Scrollbereich |
+| `test/test_demo_gui_fullscreen.py` | Vollbild, Mindestgröße (≤ 700 px hoch, ≤ 1366 px breit), Lage von Vollbild/NOT-HALT/Beenden |
 | `test/test_demo_gui_ground_precheck.py` | Bodenkontakt-Vorabprüfung an »Walk« |
 | `test/test_demo_gui_jog_hold.py` | »Hand bewegen«: Halte-Ziel beim Loslassen |
 | `test/test_demo_gui_real_quit.py` | »Real beenden«: Reihenfolge, Abbruch durch NOT-HALT |
 | `test/test_demo_gui_sequences.py` | Abläufe in der GUI |
 | `test/test_demo_gui_temperature.py`, `test/test_g1_temperature.py` | Temperatur- und Akku-Kacheln, Aufbereitung Temperaturen |
 | `test/test_g1_battery.py` | Aufbereitung Akku (Einheiten, Plausibilität, Schwellen) |
-| `test/test_demo_gui_waist.py` | Anzeige Hüfte, Knopf Hüfte Mitte |
+| `test/test_demo_gui_waist.py` | Anzeige Hüfte, Knopf Hüfte Mitte, Schieber Hüfte drehen (Strom, Stopp, nur GREIFEN/ARME) |
+| `test/test_demo_gui_controller_view.py` | Ansicht Touch \| Controller: Karten tauschen (Greifen/Gehen), Schnellwahl zeigt Plätze, Klick fährt an, leuchtet live, Belegung je Modus, kein Hüft-Strom, Mindestgröße |
+| `test/test_demo_gui_layout.py` | Aufbau: Raster für 20+ Abläufe/Stationen mit Suche, Spalten nach Breite, Verlauf, Seitenleiste Sim/Real |
 | `test/test_gui_external_estop.py` | NOT-HALT von außen (Controller) |
 | `test/test_status_line.py` | Texte der Info-Zeile |
 | `test/test_sim_autostart.py` | Auto-Start mit Quittung |

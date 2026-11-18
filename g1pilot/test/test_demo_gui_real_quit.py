@@ -68,7 +68,7 @@ def _double_click(g):
 def test_real_button_visible_and_needs_confirm(gui):
     g, node, sent, trigger, app = gui
     assert not g.sim_mode
-    assert g.btn_quit.text() == "Real\nbeenden" and not g.btn_quit.isHidden()
+    assert g.btn_quit.text() == "Real beenden" and not g.btn_quit.isHidden()
     g._quit_clicked()                               # erster Klick: nur scharf
     assert sent == [] and not trigger.exists()
     assert "nochmal" in g.btn_quit.text()
@@ -108,7 +108,7 @@ def test_estop_aborts_real_quit(gui):
     node.arms_state = False                             # E-Stop: Arme schlaff
     _pump(app, 2.5)
     assert not trigger.exists()
-    assert g.btn_quit.isEnabled() and g.btn_quit.text() == "Real\nbeenden"
+    assert g.btn_quit.isEnabled() and g.btn_quit.text() == "Real beenden"
     assert g._real_quit == 0
 
 

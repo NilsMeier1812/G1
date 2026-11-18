@@ -203,12 +203,12 @@ def test_sim_navigation_forces_rviz_and_restores(win):
 
 
 def test_sim_rejects_bad_tempo(win, monkeypatch):
-    from PyQt6.QtWidgets import QMessageBox
+    from g1pilot.utils import msgbox
     win.open_sim()
     v = win.current
     monkeypatch.setattr(win, "start_process", win._fake_start)
     shown = []
-    monkeypatch.setattr(QMessageBox, "critical", lambda *a, **k: shown.append(a))
+    monkeypatch.setattr(msgbox, "error", lambda *a, **k: shown.append(a))
     v.rt.setText("schnell")
     v.start_btn.click()
     assert shown and not win._started
@@ -273,7 +273,8 @@ def test_gui_sources_have_no_emoji():
     tools = here.parent / "unitree_mujoco" / "unitree_robots" / "g1" / "tools"
     files = (list((here / "start_gui").glob("*.py"))
              + [here / "g1pilot" / "teleoperation" / f for f in (
-                 "demo_gui.py", "hand_panel.py", "sequence_editor.py", "status_line.py", "dialog_style.py",
+                 "demo_gui.py", "demo_ui.py", "hand_panel.py", "sequence_editor.py", "status_line.py",
+                 "dialog_style.py",
                  "gui_base.py", "sequence_runner.py")]
              + [here / "g1pilot" / "teleoperation" / "phone" / f for f in (
                  "link.py", "web/app.js", "web/index.html")]
