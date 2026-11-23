@@ -47,7 +47,7 @@ Die letzte Auswahl merkt sich das Startmenü in
 
 | Abschnitt | Simulation | Echter Roboter |
 |---|---|---|
-| Umgebung / Verbindung | Kachel mit Vorschaubild je Szene aus `scene_editor/scenes/` (siehe [Vorschaubilder](#vorschaubilder-der-umgebungen)); Kachel **+ Neue Umgebung** führt zu *Umgebungen* | Netzwerk-Interface (prüft auf 192.168.123.x) |
+| Umgebung / Verbindung | Kachel mit Vorschaubild je Szene aus `scene_editor/scenes/` (siehe [Vorschaubilder](#vorschaubilder-der-umgebungen)); Kachel **+ Neue Umgebung** führt zu *Umgebungen* | Netzwerk-Interface mit Live-Anzeige (alle 3 s im Hintergrund: Adresse 192.168.123.x, Kabel, Ping zum G1, Inspire-Hände), Knopf **Netzwerk einrichten …** (siehe [unten](#netzwerk-einrichten)) |
 | Lauf-Policy | Alt `g1_wholebody` (Standard), AGILE Velocity, AGILE Velocity-Height | — |
 | Hände | Karten Rubber, Inspire (Standard) oder Custom; bei Custom Auswahl des Profils (z. B. Box-Haken) und Knopf **Bearbeiten …** fürs Bearbeitungstool; Eintrag **➕ Neue Hand anlegen …** + **Anlegen …** für eine neue Hand aus einer 3D-Datei ([25-A](25-A-Eigene-Haende.md)) | — |
 | Ausstattung (Schalter) | Navigation, **Controller (PS4 / Xbox)**, RViz | Inspire-Hände + IPs, RViz (empfohlen), **Controller (PS4 / Xbox) für Arme + Hände** |
@@ -69,6 +69,40 @@ Die letzte Auswahl merkt sich das Startmenü in
   *Bedienoberfläche* (Streamdeck) wurde 2026-10-30 entfernt.
 - Welche Umgebungsvariable hinter welcher Option steht:
   [04-T-Umgebungsvariablen.md](04-T-Umgebungsvariablen.md).
+
+## Netzwerk einrichten
+
+Für den echten G1 braucht der PC eine feste Adresse im Roboter-LAN
+`192.168.123.x`. Auf einem frisch installierten PC geht das direkt im
+Startmenü: **Echter Roboter → Netzwerk einrichten …**
+
+1. Interface zum G1 wählen (kabelgebunden: `enp…`, `eno…`, `eth…`, `enx…`)
+   und die Adresse dieses PCs (Vorschlag `192.168.123.222`).
+2. Der Dialog zeigt, was er vorfindet (vorhandenes Profil `g1-robot`, kein
+   Kabel, WLAN gewählt, zweites Interface im Roboter-LAN, ungültige oder
+   schon vergebene Adresse wie `.161`) und darunter **genau die Befehle**, die
+   er ausführt.
+3. **Jetzt einrichten** legt das NetworkManager-Profil `g1-robot` an (oder
+   passt ein vorhandenes an): feste IP, kein Gateway, kein DNS, startet von
+   selbst beim Einstecken. WLAN und andere Verbindungen bleiben unberührt.
+   Das System fragt dabei nach dem Passwort (polkit). Klappt das nicht,
+   wiederholt der Dialog den Schritt mit `pkexec`.
+4. Ist `ufw` aktiv, öffnet ein Schalter die Firewall für dieses Interface
+   (`ufw allow in on …`), sonst kommen die DDS-Daten nicht an.
+5. Das Protokoll zeigt jede Ausgabe. Fehlt nur das Kabel, ist das kein
+   Fehler: das Profil aktiviert sich beim Einstecken.
+
+**Profil entfernen** löscht `g1-robot` wieder (mit Rückfrage). Ohne
+NetworkManager zeigt der Dialog die `ip addr add`-Befehle zum Kopieren; die
+gelten nur bis zum Neustart. Der manuelle Weg steht in
+[50-A-Echter-Roboter.md](50-A-Echter-Roboter.md#b--netzwerk-ersteinrichtung).
+
+**Live-Anzeige:** Solange die Seite *Echter Roboter* offen ist, prüft das
+Startmenü alle 3 s im Hintergrund Adresse, Kabel, Ping zum G1
+(`192.168.123.161`) und, wenn die Hände an sind, Modbus-Port der beiden
+Inspire-Hände. Grün heißt: im Roboter-LAN und der G1 antwortet. Orange nennt,
+was fehlt. Neu eingesteckte USB-Adapter oder eine eben vergebene IP tauchen
+ohne neues Öffnen in der Interface-Liste auf. **Jetzt prüfen** prüft sofort.
 
 ## Vorschaubilder der Umgebungen
 
@@ -174,6 +208,7 @@ Details: `resource/icons/README.md`.
 | Doku-Viewer zeigt Diagramme nicht | `libqt6svg6` fehlt (SVG-Unterstützung von Qt). |
 | Umgebungs-Kachel ohne Bild | `scene_editor/.venv` fehlt (*Umgebungen → Setup*), oder Rendern fehlgeschlagen: Ausgabe von `render_thumbs.py` im Terminal, aus dem `start.sh` lief. |
 | Real: *Starten* bleibt grau | Sicherheits-Häkchen setzen. |
-| Real: „Keine 192.168.123.x-Adresse auf diesem Interface“ | Kabel/IP prüfen, siehe [50-A-Echter-Roboter.md](50-A-Echter-Roboter.md#b--netzwerk-ersteinrichtung). |
+| Real: „Keine 192.168.123.x-Adresse auf …“ | **Netzwerk einrichten …** klicken ([unten](#netzwerk-einrichten)) oder von Hand, siehe [50-A-Echter-Roboter.md](50-A-Echter-Roboter.md#b--netzwerk-ersteinrichtung). |
+| Real: „… aber der G1 antwortet nicht“ | IP stimmt, aber kein Ping zu 192.168.123.161: G1 eingeschaltet und hochgefahren? Richtiges Kabel/Interface? |
 | *Sim beenden* meldet, es gehe nur mit `make stop` | Stack wurde ohne Watcher gestartet (`make sim-bg` oder `docker compose` direkt). |
 | PS4-Controller in der Sim nicht gefunden | Start über `start.sh` (nimmt `docker-compose.ps4.yml` dazu); unter WSL gibt es kein `/dev/input`. |

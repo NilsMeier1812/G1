@@ -96,6 +96,13 @@ WSL2-NAT nicht zuverlässig. Keine GPU nötig.
 | `192.168.123.210` / `.211` | Inspire-Hand links/rechts (Modbus TCP 6000) |
 | `192.168.123.222` | eigener PC (selbst vergeben, Konvention; jede freie `.x` geht) |
 
+**Am einfachsten im Startmenü:** *Echter Roboter → Netzwerk einrichten …*
+zeigt die Befehle aus Schritt 3 (und auf Wunsch 5) für das gewählte
+Interface an und führt sie nach Klick aus (Passwort-Abfrage des Systems).
+Details: [03-A-Startmenue.md](03-A-Startmenue.md#netzwerk-einrichten). Die
+Anzeige darunter prüft danach laufend, ob der G1 antwortet (Schritt 4). Von
+Hand geht es so:
+
 1. G1 einschalten, per Ethernet-Kabel mit dem PC verbinden.
 2. Interface-Namen finden: `ip -br link`. Gesucht ist das kabelgebundene
    Interface: `enp…`/`eno…`/`eth0`, `enx…` bei USB-Adaptern. `lo`,
@@ -134,8 +141,9 @@ WSL2-NAT nicht zuverlässig. Keine GPU nötig.
    auf dem Roboter-Interface erlauben (`sudo ufw allow in on "$NIC"`).
 
 Die Interface-Auswahl im Startmenü markiert die NIC mit
-`192.168.123.x`-Adresse automatisch als Vorschlag und warnt, wenn das
-gewählte Interface keine solche Adresse hat.
+`192.168.123.x`-Adresse automatisch als Vorschlag. Die Anzeige darunter
+prüft alle 3 s im Hintergrund Adresse, Kabel, Ping zum G1 und die Hände
+(grün = G1 antwortet, orange = was fehlt).
 
 **Wie die beiden DDS-Netze zusammenspielen (nichts einzustellen):** Im
 Container laufen zwei DDS-Teilnehmer nebeneinander. Das Unitree-SDK spricht
@@ -554,7 +562,7 @@ Seit 2026-10-19:
 | RViz leer | `USE_RVIZ=true`? X11-Freigabe (`xhost +local:root`) gelaufen? |
 | `permission denied … docker.sock` | Benutzer nicht in der Gruppe `docker` oder nicht neu eingeloggt (Abschnitt 0). |
 | Erster Start hängt beim Bauen / Netzwerkfehler im Build | Image noch nicht gebaut und kein Internet über das Roboter-LAN. Mit Internet `make build-real` laufen lassen (Abschnitt 0). |
-| Startmenü zeigt beim Interface „keine IPv4“ | Feste IP fehlt oder ist verloren gegangen (nur mit `ip addr add` gesetzt, Kabel gezogen). `sudo nmcli con up g1-robot`, siehe B. |
+| Startmenü zeigt beim Interface „keine IPv4“ | Feste IP fehlt oder ist verloren gegangen (nur mit `ip addr add` gesetzt, Kabel gezogen). Startmenü **Netzwerk einrichten …** oder `sudo nmcli con up g1-robot`, siehe B. |
 | Ping geht, `dds_check` bekommt nichts | Firewall (`sudo ufw status`), falsches Interface in der Auswahl (z. B. WLAN statt LAN), oder zwei Interfaces im 192.168.123.x-Netz. |
 | `ros2 topic list` im eigenen Terminal leer | Eigene Terminals im Container öffnen (`make shell-real`), nicht auf dem Host. Dort sind `ROS_DOMAIN_ID=1` und die Loopback-DDS-Config schon gesetzt. |
 | Startleiste: „keine Daten vom loco_client“ oder „Modus unbekannt“ | `loco_client` erreicht den G1 nicht (Interface/Kabel) oder die Loco-Firmware spricht einen anderen Dienst: `G1_LOCO_SERVICE=loco` für ai_sport bis 8.1, Default `sport` ab 8.2. |
