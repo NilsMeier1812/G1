@@ -433,7 +433,7 @@ Alle Halt-Wege mit Quittieren und Einstellungen: [51-A-Notaus.md](51-A-Notaus.md
 | Arm fährt falsch, aber ruhig | Arme abgeben (Demo-GUI GREIFEN verlassen, Arme fahren langsam in die Onboard-Pose, dann Übergabe) |
 | Ruckt/schwingt an den Armen, Kontakt mit Mensch/Objekt | **NOT-HALT** (Demo-GUI) / **PS** bzw. Xbox-Taste am Controller (Arme/Hände sofort schlaff; Taille gehalten; Beine: StopMove, Onboard-Regler balanciert weiter) |
 | Hand fährt per Controller falsch | Stick loslassen bzw. **Kreuz** / Xbox **A** (Hand steht sofort, Roboter bleibt stehen) |
-| G1 soll sofort ganz aus (Beine weich) | **Voll-Notaus am Controller: R1 + L1 + PS 2 s halten** (Xbox: RB + LB + Xbox-Taste) → ganzer G1 Damp, sackt in den Kran. Quittieren mit »Start« (bleibt in Damp), dann Startleiste Preparation → Walk. Siehe [11-A-Controller.md](11-A-Controller.md#voll-notaus-r1--l1--ps) |
+| G1 soll sofort ganz aus (Beine weich) | **Voll-Notaus: Demo-GUI VOLL-NOTAUS 1,5 s halten** oder am Controller **R1 + L1 + PS 2 s halten** (Xbox: RB + LB + Xbox-Taste) → ganzer G1 Damp, sackt in den Kran. Quittieren mit »Start« (bleibt in Damp), dann Startleiste Preparation → Walk. Siehe [11-A-Controller.md](11-A-Controller.md#voll-notaus-r1--l1--ps) |
 | Echte Gefahr / Sturz droht | **Unitree-Fernbedienung** (übergeordnet, Damp dort). Der normale NOT-HALT dämpft die Beine **nicht** (außer `G1_ESTOP_DAMP_LEGS=1`) |
 
 Was EMERGENCY STOP konkret bewirkt (Stand 2026-10-15): Arme werden

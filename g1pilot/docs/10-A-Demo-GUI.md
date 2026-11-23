@@ -21,7 +21,7 @@ Funktion hat genau einen Platz, und alles wächst mit der Fenstergröße mit
 ┌──────────────────────────────────────────────────────────────┬───────────────┐
 │ G1·REAL [GEHEN][GREIFEN▌AKTIV] [Touch|Controller][PS4][Handy][⛶]│               │
 ├──────── Linie in Modusfarbe ─────────────────────────────────┤  ( NOT-HALT ) │
-│ [ ARME | HÄNDE ]                          [Bewegung stoppen] │               │
+│ [ ARME | HÄNDE ]                          [Bewegung stoppen] │ [VOLL-NOTAUS] │
 │ ┌ Hand bewegen ─────────────┐ ┌ Abläufe ───────────────────┐ │ STARTLEISTE   │
 │ │ Arm [L|R|Beide|Gespiegelt]│ │ [Am Stück|Schritt] [Weiter]│ │ G1: Walk …    │
 │ │ Tempo [Langsam|Normal|…]  │ │ (Suche ab 9 Abläufen)      │ │ [Start]       │
@@ -42,7 +42,7 @@ Funktion hat genau einen Platz, und alles wächst mit der Fenstergröße mit
 |---|---|
 | **Kopfleiste** (oben) | SIM/REAL-Kennung, Modus-Umschalter GEHEN \| GREIFEN, Ansicht Touch \| Controller, rechts Controller-Belegung, Handy, Vollbild |
 | **Arbeitsfläche** (Mitte) | nur der aktive Modus, als Karten nebeneinander (schmales Fenster: untereinander) |
-| **Seitenleiste** (rechts) | NOT-HALT (immer oben), real Startleiste + Akku/Temperaturen, Sim die Sim-Werkzeuge, ganz unten Beenden |
+| **Seitenleiste** (rechts) | NOT-HALT und VOLL-NOTAUS (immer oben), real Startleiste + Akku/Temperaturen, Sim die Sim-Werkzeuge, ganz unten Beenden |
 | **Statusleiste** (unten) | aktuelle Meldung in Klartext, *Verlauf* zeigt die letzten 200 |
 
 Listen, die wachsen können (Abläufe, Stationen), sind **Raster**: Die
@@ -278,6 +278,12 @@ entfernt):
 - **NOT-HALT** steht immer ganz oben, rund und rot, und scrollt nie weg. Der
   Modus-Umschalter wird danach inaktiv. Was er genau auslöst:
   [51-A-Notaus.md](51-A-Notaus.md).
+- **VOLL-NOTAUS** direkt darunter (eckig, dunkelrot): ganzer G1 in Damp, auch
+  die Beine, wie R1 + L1 + PS am Controller. **1,5 s gedrückt halten**, der
+  Knopf füllt sich dabei. Schon der Druck löst den normalen NOT-HALT aus;
+  vorher loslassen bricht nur die Eskalation ab. Danach steht in der
+  Startleiste *VOLL-NOTAUS quittieren*; der G1 bleibt in Damp, Aufstehen über
+  Preparation → Walk.
 - **Startleiste** (nur echter G1), siehe oben bei *Kopfleiste: Modus*.
 - **Akku** (nur echter G1, unter der Startleiste): Ladestand in Prozent, darunter
   die Spannung; gelb bis 30 %, rot bis 15 % (`G1_BATT_WARN` / `G1_BATT_CRIT`,

@@ -373,6 +373,10 @@ class GuiNode(Node):
         self.pub_left_hand = self.create_publisher(String, '/g1pilot/hand_action/left', 10)
         self.pub_right_hand = self.create_publisher(String, '/g1pilot/hand_action/right', 10)
         self.pub_emergency_stop = self.create_publisher(Bool, '/g1pilot/emergency_stop', 10)
+        # VOLL-NOTAUS (ganzer G1 Damp, auch die Beine): derselbe Pfad wie
+        # R1 + L1 + PS am Controller (loco_client Damp, arm_controller Taille schlaff).
+        self.pub_full_emergency_stop = self.create_publisher(
+            Bool, '/g1pilot/full_emergency_stop', 10)
         self.pub_push = self.create_publisher(Bool, '/g1pilot/push', 10)
         # Aufladbarer Schubs: Ladegrad 0..1 beim Loslassen (siehe utils/push_charge.py).
         self.pub_push_charge = self.create_publisher(Float32, '/g1pilot/push_charge', 10)
@@ -388,6 +392,10 @@ class GuiNode(Node):
         # Der Callback laeuft im Qt-Thread (spin_once im QTimer).
         self.on_emergency_stop = None
         self.create_subscription(Bool, '/g1pilot/emergency_stop', self._emergency_stop, 10)
+        # Voll-Notaus von aussen (R1 + L1 + PS) bzw. Echo des eigenen Knopfs.
+        self.on_full_emergency_stop = None
+        self.create_subscription(Bool, '/g1pilot/full_emergency_stop',
+                                 self._full_emergency_stop, 10)
         # Quittung fuer den Sim-Auto-Start (sim_autostart.py): Zustand von
         # arm_controller (Arme aktiv?) und loco_sim (hold|stand|walk|damp), latched.
         self.arms_state = None
@@ -402,6 +410,10 @@ class GuiNode(Node):
     def _emergency_stop(self, msg: Bool):
         if msg.data and self.on_emergency_stop:
             self.on_emergency_stop()
+
+    def _full_emergency_stop(self, msg: Bool):
+        if msg.data and self.on_full_emergency_stop:
+            self.on_full_emergency_stop()
 
     def publish_bool(self, pub, value: bool):
         msg = Bool()

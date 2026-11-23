@@ -8,11 +8,21 @@ Node was tut. Bedienung: [51-A-Notaus.md](51-A-Notaus.md).
 | Topic | Typ | Sender | Empfänger |
 |---|---|---|---|
 | `/g1pilot/emergency_stop` | Bool | Demo-GUI, `ps4_arm_teleop` (PS), Handy über die Demo-GUI (`phone/link.py`), alter Joystick | `arm_controller`, `loco_client` / `loco_sim`, Inspire-Bridge, `ps4_arm_teleop`, `ps4_walk`, GUIs |
-| `/g1pilot/full_emergency_stop` | Bool | `ps4_arm_teleop` (R1 + L1 + PS 2 s) | `arm_controller`, `loco_client` |
+| `/g1pilot/full_emergency_stop` | Bool | `ps4_arm_teleop` (R1 + L1 + PS 2 s), Demo-GUI (VOLL-NOTAUS 1,5 s halten) | `arm_controller`, `loco_client`, Demo-GUI |
 | `/g1pilot/start` | Bool | Demo-GUI-Startleiste, Handy | quittiert in `arm_controller`, `loco_client` / `loco_sim` |
 
 Die Demo-GUI hört selbst auf `/g1pilot/emergency_stop`, damit ein NOT-HALT
-vom Controller dort angezeigt wird (`demo_gui._external_estop`).
+vom Controller dort angezeigt wird (`demo_gui._external_estop`), ebenso
+auf `/g1pilot/full_emergency_stop` (`demo_gui._enter_full_estop`: Startleiste
+»VOLL-NOTAUS quittieren«).
+
+Der GUI-Knopf VOLL-NOTAUS (`demo_ui.HoldButton`, `FULL_ESTOP_HOLD_S` = 1,5 s
+in `demo_gui.py`) sendet beim Drücken den normalen NOT-HALT
+(`demo_gui.emergency_stop`) und nach Ablauf in derselben Reihenfolge wie der
+Controller zuerst `/g1pilot/full_emergency_stop`, dann
+`/g1pilot/emergency_stop` (`demo_gui.full_emergency_stop`). In der Sim wirkt
+er wie der NOT-HALT (`loco_sim` dämpft ohnehin alles), `arm_controller`
+schaltet zusätzlich die Taille schlaff.
 
 ## Wer was tut
 
@@ -59,6 +69,7 @@ hängender Gehbefehl den Halt nicht verzögert. Antwort-Codes stehen im Log
 | `test/test_ps4_arm_teleop_node.py` | PS, R1 + L1 + PS, Sperre |
 | `test/test_ps4_walk_node.py` | Latch und Abriss beim Gehen |
 | `test/test_gui_external_estop.py` | Demo-GUI zeigt einen NOT-HALT von außen |
+| `test/test_demo_gui_full_estop.py` | Demo-GUI-Knopf VOLL-NOTAUS: Halten, Abbruch, Reihenfolge, Anzeige von außen, Quittieren |
 | `test/test_phone_demo_gui.py` | NOT-HALT vom Handy |
 
 Alle in der Gruppe `test/run_tests.sh sicherheit` ([60-A-Tests.md](60-A-Tests.md)).
