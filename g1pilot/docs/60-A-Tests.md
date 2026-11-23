@@ -36,7 +36,7 @@ test/run_tests.sh <gruppe> [weitere pytest-Argumente]
 | `planer` | Armplaner, arm_controller real | |
 | `loco` | loco_client real, Controller-Gehen, Bodenkontakt, Joy-Mux, Startleiste | |
 | `controller` | PS4/Xbox, Gehen, gemeinsamer Zustand, Spiegeln, Hüfte | |
-| `gui` | Demo-GUI (Vollbild, Sync, Temperaturen, Abläufe, Hüfte, Real beenden), Fenster-Icons | |
+| `gui` | Demo-GUI (Vollbild, Sync, Temperaturen, Abläufe, Hüfte, Real beenden), Fenster-Icons, Startmenü (inkl. Netzwerk-Assistent) | |
 | `haende` | Inspire-Modbus-Backend | |
 | `sim` | Lauf-Policy, loco_sim-Zustand, Schubs, Auto-Start | |
 | `handy` | Gateway, BLE gegen nachgebautes BlueZ, `proto.js`, Handy-Seite in Chromium | |

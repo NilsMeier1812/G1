@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from functools import partial
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QPainter, QColor
@@ -11,8 +12,9 @@ from PyQt6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QHBoxLayout,
 
 from g1pilot.utils import msgbox
 
-from . import core
+from . import core, netsetup
 from . import theme as T
+from .network import LinkMonitor, LinkStatusCard, NetworkSetupDialog
 from .widgets import (AddCard, ChoiceGroup, Collapsible, FieldRow, RowList, SceneCard,
                       TileGrid, ToggleRow, button, card, dot, icon_label, label,
                       section_title, set_icon)
@@ -424,12 +426,21 @@ class RealView(Page):
 
     help_doc = "50-A-Echter-Roboter.md"
 
-    def __init__(self, app, nics=None):
+    def __init__(self, app, nics=None, probe=None, setup_host=None):
         super().__init__(app, "Echter Roboter",
                          "G1 per LAN: Unitree-Loco + Arme + Hände. Der Roboter bewegt sich!",
                          T.RED)
         st = core.load_settings("real")
         self._nics = core.detect_nics() if nics is None else nics
+        if probe is None:
+            if nics is None:
+                probe = netsetup.probe
+            else:   # feste Testliste: nichts anpingen, kein Kabel-Status
+                fixed = list(nics)
+                probe = partial(netsetup.probe, nics_fn=lambda: fixed,
+                                ping_fn=lambda _h: None, tcp_fn=lambda _h, _p: False,
+                                carrier_fn=lambda _i: None)
+        self._setup_host = setup_host          # Tests: Ergebnis von inspect_host()
 
         # 1) Verbindung -----------------------------------------------------
         self.section("Verbindung zum G1")
@@ -451,11 +462,14 @@ class RealView(Page):
             self.iface.setCurrentText(st.get("iface", ""))
         rows.add(FieldRow("Netzwerk-Interface", self.iface,
                           "Kabel zum Roboter, Adresse im Netz 192.168.123.x"))
-        self.lan = label("", wrap=True)
-        self.lan.setContentsMargins(0, 0, 0, 8)
-        rows.add(self.lan)
+        self.link = LinkStatusCard(self._open_netsetup, lambda: self.monitor.check_now())
+        self.lan = self.link.text
+        rows.add(self.link)
         self.body.addWidget(rows)
         self.iface.currentTextChanged.connect(lambda _t: self._sync_lan())
+        # Verbindung laufend im Hintergrund pruefen (nur solange sichtbar).
+        self.monitor = LinkMonitor(probe, self._probe_params, parent=self)
+        self.monitor.updated.connect(self._on_link)
 
         # 2) Ausstattung ----------------------------------------------------
         self.section("Ausstattung")
@@ -475,6 +489,8 @@ class RealView(Page):
                                       st.get("ps4", False)))
         self.body.addWidget(rows)
         self.hands.toggled.connect(lambda _v: self._sync())
+        for e in (self.left, self.right):
+            e.editingFinished.connect(self._sync)
 
         # 3) Geh-Limits -----------------------------------------------------
         self.section("Geh-Limits (konservativ für die ersten Tests)")
@@ -534,21 +550,83 @@ class RealView(Page):
         return self._iface_map.get(text, text.split()[0] if text else "")
 
     def _sync_lan(self) -> None:
-        ip = dict(self._nics).get(self._iface(), "")
-        if ip.startswith("192.168.123."):
-            self.lan.setText(f"Im Roboter-LAN ({ip}).")
-            self.lan.setStyleSheet(f"color:{T.GREEN};")
-        else:
-            self.lan.setText("Keine 192.168.123.x-Adresse auf diesem Interface — "
-                             "Kabel/IP prüfen (Roboter-LAN).")
-            self.lan.setStyleSheet(f"color:{T.AMBER};")
-        self.summary.setText(f"Interface: {self._iface() or '—'}") if hasattr(self, "summary") \
-            else None
+        """Sofort-Anzeige aus der bekannten NIC-Liste (ohne Ping); die
+        Hintergrund-Pruefung ergaenzt Kabel, G1 und Haende."""
+        iface = self._iface()
+        st = netsetup.LinkStatus(iface=iface, ip=dict(self._nics).get(iface, ""),
+                                 nics=self._nics,
+                                 others=[n for n in netsetup.robot_ifaces(self._nics)
+                                         if n != iface])
+        self.link.set_plain(st.text(), st.level)
+        if hasattr(self, "summary"):
+            self.summary.setText(f"Interface: {iface or '—'}")
+        if hasattr(self, "monitor") and self.monitor.running:
+            self.monitor.check_now()
+
+    def _probe_params(self) -> dict:
+        hands = []
+        if self.hands.isChecked():
+            hands = [("Hand links", self.left.text().strip() or "192.168.123.210"),
+                     ("Hand rechts", self.right.text().strip() or "192.168.123.211")]
+        try:
+            port = int(self.port.text().strip() or "6000")
+        except ValueError:
+            port = 6000
+        return {"iface": self._iface(), "hands": hands, "port": port}
+
+    def _on_link(self, st) -> None:
+        self.monitor.finish()
+        if st.nics and st.nics != self._nics:
+            self._set_nics(st.nics)
+        if st.iface == self._iface():
+            self.link.show_status(st)
+            self.last_link = st
+
+    def _set_nics(self, nics) -> None:
+        """NIC-Liste erneuern (USB-Adapter eingesteckt, IP vergeben), Auswahl
+        behalten. Nicht, solange jemand im Feld tippt oder die Liste offen ist."""
+        if self.iface.lineEdit().hasFocus() or self.iface.view().isVisible():
+            return
+        cur = self._iface()
+        self._nics = list(nics)
+        self.iface.blockSignals(True)
+        self.iface.clear()
+        self._iface_map = {}
+        sel = ""
+        for name, ip in self._nics:
+            lbl = f"{name}  ({ip or 'keine IPv4'})"
+            self.iface.addItem(lbl)
+            self._iface_map[lbl] = name
+            if name == cur:
+                sel = lbl
+        self.iface.setCurrentText(sel or cur)
+        self.iface.blockSignals(False)
+
+    def _open_netsetup(self) -> None:
+        dlg = NetworkSetupDialog(self, self._nics, self._iface(), host=self._setup_host)
+        dlg.applied.connect(self._after_netsetup)
+        self.netsetup_dialog = dlg
+        msgbox.run_dialog(dlg)
+
+    def _after_netsetup(self) -> None:
+        self._set_nics(core.detect_nics()) if self._setup_host is None else None
+        self.monitor.check_now()
+
+    def showEvent(self, e) -> None:  # noqa: N802
+        super().showEvent(e)
+        if not self.monitor.running:
+            self.monitor.start()
+
+    def hideEvent(self, e) -> None:  # noqa: N802
+        self.monitor.stop()
+        super().hideEvent(e)
 
     def _sync(self) -> None:
         on = self.hands.isChecked()
         self.left_row.setEnabled(on)
         self.right_row.setEnabled(on)
+        if hasattr(self, "monitor") and self.monitor.running:
+            self.monitor.check_now()
 
     def _sync_confirm(self) -> None:
         self.start_btn.setEnabled(self.confirm.isChecked())
