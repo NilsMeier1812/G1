@@ -28,13 +28,13 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QIcon
 from PyQt6.QtWidgets import (
     QDialog, QHBoxLayout, QVBoxLayout, QGridLayout, QLabel, QListWidget,
-    QListWidgetItem, QPushButton, QTreeWidget, QTreeWidgetItem, QInputDialog,
-    QMessageBox, QDoubleSpinBox, QAbstractItemView,
+    QListWidgetItem, QPushButton, QTreeWidget, QTreeWidgetItem,
+    QDoubleSpinBox, QAbstractItemView,
     QLineEdit, QCheckBox, QTabWidget, QWidget,
 )
 
 from g1pilot.manipulation.pose_store import MAX_MOVE_M, clean_move
-from g1pilot.utils import ui_icons
+from g1pilot.utils import msgbox, ui_icons
 from g1pilot.teleoperation.quickslot_panel import QuickSlotPanel
 from g1pilot.teleoperation import dialog_style as ds
 from g1pilot.teleoperation.sequence_runner import pretty_pose_name, step_name
@@ -345,7 +345,7 @@ class SequenceEditor(QDialog):
         try:
             store.save_sequence(name, self._steps())
         except (OSError, ValueError) as e:
-            QMessageBox.warning(self, "Ablauf", f"Nicht gespeichert: {e}")
+            msgbox.warn(self, "Ablauf", f"Nicht gespeichert: {e}")
             return
         self._renumber()
         it = self.seq_list.currentItem()
@@ -380,7 +380,7 @@ class SequenceEditor(QDialog):
 
     # ── Ablaeufe ────────────────────────────────────────────────────────
     def _ask_name(self, title, text, default=""):
-        name, ok = QInputDialog.getText(self, title, text, text=default)
+        name, ok = msgbox.ask_text(self, title, text, text=default)
         name = (name or "").strip()
         return name if ok and name else None
 
@@ -409,21 +409,21 @@ class SequenceEditor(QDialog):
         name = self.current_sequence()
         if not name:
             return
-        if QMessageBox.question(self, "Ablauf löschen",
-                                f"Ablauf »{name}« löschen? Die Posen selbst bleiben erhalten."
-                                ) != QMessageBox.StandardButton.Yes:
+        if not msgbox.confirm(self, "Ablauf löschen",
+                              f"Ablauf »{name}« löschen? Die Posen selbst bleiben erhalten.",
+                              yes="Löschen", danger=True):
             return
         self._try(lambda s: s.delete_sequence(name), select="")
 
     def _try(self, fn, select=None):
         store = self._store()
         if store is None:
-            QMessageBox.warning(self, "Abläufe", "Posen-Datei nicht lesbar.")
+            msgbox.warn(self, "Abläufe", "Posen-Datei nicht lesbar.")
             return
         try:
             fn(store)
         except (OSError, ValueError) as e:
-            QMessageBox.warning(self, "Abläufe", str(e))
+            msgbox.warn(self, "Abläufe", str(e))
             return
         self.reload(select=select)
         self._changed()
@@ -506,8 +506,8 @@ class SequenceEditor(QDialog):
                 if any(s.get(kind) == name for s in steps)]
         extra = (f"\n\nSie wird in {len(used)} Ablauf/Abläufen benutzt ({', '.join(used)}); "
                  "dort erscheint sie dann als FEHLT." if used else "")
-        if QMessageBox.question(self, f"{what} löschen", f"{what} »{name}« löschen?{extra}"
-                                ) != QMessageBox.StandardButton.Yes:
+        if not msgbox.confirm(self, f"{what} löschen", f"{what} »{name}« löschen?{extra}",
+                              yes="Löschen", danger=True):
             return
         self._try(lambda s: s.delete_move(name) if kind == "move" else s.delete(name))
 
@@ -621,7 +621,7 @@ class MoveDialog(QDialog):
                 raise ValueError("Bitte einen Namen eingeben.")
             clean_move(**mv)
         except ValueError as e:
-            QMessageBox.warning(self, "Relative Bewegung", str(e))
+            msgbox.warn(self, "Relative Bewegung", str(e))
             return
         self.accept()
 

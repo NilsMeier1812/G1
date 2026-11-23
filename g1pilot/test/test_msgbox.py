@@ -65,13 +65,13 @@ def test_theme_shared_with_start_gui():
 
 
 def test_no_standard_qt_dialogs_in_gui_sources():
-    """Keine grauen QMessageBox/QInputDialog mehr (Karten-Dialoge aus msgbox).
-    Posen-/Ablauf-Dialoge (gui_base.py, sequence_editor.py) folgen nach PR #54."""
+    """Keine grauen QMessageBox/QInputDialog mehr (Karten-Dialoge aus msgbox)."""
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
     files = list((root / "start_gui").glob("*.py")) + [
         root / "g1pilot/teleoperation/demo_gui.py", root / "g1pilot/teleoperation/hand_panel.py",
         root / "g1pilot/teleoperation/quickslot_panel.py",
+        root / "g1pilot/teleoperation/gui_base.py", root / "g1pilot/teleoperation/sequence_editor.py",
         root.parent / "unitree_mujoco/unitree_robots/g1/tools/hand_new.py",
         root.parent / "unitree_mujoco/unitree_robots/g1/tools/hand_adjust.py"]
     for f in files:
@@ -86,3 +86,9 @@ def test_phone_web_has_no_browser_dialogs():
     js = (Path(__file__).resolve().parents[1] / "g1pilot/teleoperation/phone/web/app.js").read_text()
     import re
     assert not re.search(r"(?<![\w.])(confirm|alert|prompt)\(", js)
+
+
+def test_dialog_style_uses_shared_theme():
+    from g1pilot.teleoperation import dialog_style as ds
+    assert (ds.BG, ds.CARD, ds.LINE, ds.ACCENT) == (ui_theme.BG, ui_theme.CARD, ui_theme.LINE,
+                                                     ui_theme.ACCENT)
