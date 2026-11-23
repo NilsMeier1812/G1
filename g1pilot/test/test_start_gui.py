@@ -203,12 +203,12 @@ def test_sim_navigation_forces_rviz_and_restores(win):
 
 
 def test_sim_rejects_bad_tempo(win, monkeypatch):
-    from PyQt6.QtWidgets import QMessageBox
+    from g1pilot.utils import msgbox
     win.open_sim()
     v = win.current
     monkeypatch.setattr(win, "start_process", win._fake_start)
     shown = []
-    monkeypatch.setattr(QMessageBox, "critical", lambda *a, **k: shown.append(a))
+    monkeypatch.setattr(msgbox, "error", lambda *a, **k: shown.append(a))
     v.rt.setText("schnell")
     v.start_btn.click()
     assert shown and not win._started

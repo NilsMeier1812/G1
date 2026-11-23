@@ -7,32 +7,12 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QStyleFactory
 
 def DarkStyle(app: QApplication):
-    app.setStyle(QStyleFactory.create('Fusion'))
-    dark_palette = QPalette()
-
-    dark_palette.setColor(QPalette.ColorRole.Window, QColor(0, 0, 0))
-    dark_palette.setColor(QPalette.ColorRole.WindowText, Qt.GlobalColor.white)
-    dark_palette.setColor(QPalette.ColorRole.Base, QColor(25, 25, 25))
-    dark_palette.setColor(QPalette.ColorRole.AlternateBase, QColor(53, 53, 53))
-    dark_palette.setColor(QPalette.ColorRole.ToolTipBase, Qt.GlobalColor.white)
-    dark_palette.setColor(QPalette.ColorRole.ToolTipText, Qt.GlobalColor.white)
-    dark_palette.setColor(QPalette.ColorRole.Text, Qt.GlobalColor.white)
-    dark_palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
-    dark_palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Button, QColor(30, 30, 30))
-    dark_palette.setColor(QPalette.ColorRole.ButtonText, Qt.GlobalColor.white)
-    dark_palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, QColor(100, 100, 100))
-    dark_palette.setColor(QPalette.ColorRole.BrightText, Qt.GlobalColor.red)
-    dark_palette.setColor(QPalette.ColorRole.Link, QColor(42, 130, 218))
-    dark_palette.setColor(QPalette.ColorRole.Highlight, QColor(42, 130, 218))
-    dark_palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Highlight, QColor(100, 100, 100))
-    dark_palette.setColor(QPalette.ColorRole.HighlightedText, Qt.GlobalColor.black)
-
-    app.setPalette(dark_palette)
-    app.setStyleSheet(
-        "QToolTip { color: #ffffff; background-color: #2a82da; border: 1px solid white; }"
-        "QPushButton:checked { background-color: green; color: white; }"
-        "QPushButton { background-color: #353535; color: white; border: 1px solid #555555; padding: 4px; }"
-    )
+    """Gemeinsames dunkles Theme (g1pilot/utils/ui_theme.py, wie das Startmenue).
+    Schriftgroessen bleiben bei den Widgets der Demo-GUI."""
+    from g1pilot.utils import ui_theme
+    ui_theme.apply(app, fonts=False)
+    app.setStyleSheet(app.styleSheet() + (
+        f"QPushButton:checked {{ background-color: {ui_theme.ACCENT}; color: white; }}"))
 
 def LightStyle(app: QApplication):
     app.setStyle(QStyleFactory.create('Fusion'))

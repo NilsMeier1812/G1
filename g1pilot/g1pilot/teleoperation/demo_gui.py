@@ -43,7 +43,7 @@ import time
 
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QGridLayout, QPushButton, QVBoxLayout, QHBoxLayout,
-    QLabel, QStackedWidget, QFrame, QDialog, QMessageBox, QSizePolicy,
+    QLabel, QStackedWidget, QFrame, QDialog, QSizePolicy,
     QGraphicsOpacityEffect, QTableWidget, QTableWidgetItem, QScrollArea,
 )
 from PyQt6.QtCore import QTimer, Qt, QRectF, QPointF, QEvent
@@ -58,6 +58,7 @@ from tf2_ros import Buffer, TransformListener
 
 from g1pilot.navigation import scene_markers as sm
 
+from g1pilot.utils import msgbox, ui_theme
 from g1pilot.utils.window_style import DarkStyle, set_app_identity
 from g1pilot.utils import ui_icons
 from g1pilot.utils.common import is_sim_mode
@@ -440,7 +441,7 @@ class TempPanel(QFrame):
         self.batt_warn, self.batt_crit = g1b.thresholds()
         self.setObjectName("temp")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setStyleSheet("QFrame#temp { background:#1b1b1b; border:1px solid #333;"
+        self.setStyleSheet("QFrame#temp { background:#1b1f27; border:1px solid #2e3541;"
                            " border-radius:8px; } QLabel { background:transparent; }")
         lay = QHBoxLayout(self)
         lay.setContentsMargins(10, 6, 10, 6)
@@ -453,10 +454,10 @@ class TempPanel(QFrame):
         self._paint(self.batt_tile, "Akku", "–", "", "none")
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.VLine)
-        sep.setStyleSheet("color:#333;")
+        sep.setStyleSheet("color:#2e3541;")
         lay.addWidget(sep)
         cap = QLabel("TEMP.\nMOTOREN")
-        cap.setStyleSheet("color:#777; font-size:11px; font-weight:700;")
+        cap.setStyleSheet("color:#6b7380; font-size:11px; font-weight:700;")
         lay.addWidget(cap)
         self.tiles = {}
         for key, title in (("max", "Max"),) + tuple((k, t) for k, t, _ in g1t.GROUPS):
@@ -475,7 +476,7 @@ class TempPanel(QFrame):
 
     @staticmethod
     def _paint(tile, title, value, sub, lvl):
-        tile.setText(f"<div style='font-size:10px; color:#ddd'>{title}</div>"
+        tile.setText(f"<div style='font-size:10px; color:#e8eaed'>{title}</div>"
                      f"<div style='font-size:17px; font-weight:800'>{value}</div>"
                      f"<div style='font-size:9px; color:#eee'>{sub}</div>")
         tile.setStyleSheet(f"background:{g1t.LEVEL_COLOR[lvl]}; color:white;"
@@ -523,23 +524,42 @@ class TempPanel(QFrame):
         if data is None:
             return
         if self.dialog is None:
-            self.dialog = QDialog(self)
-            self.dialog.setWindowTitle("Motortemperaturen")
-            self.dialog.setStyleSheet("QDialog { background:#111; } QLabel { color:#ddd; }"
-                                      " QTableWidget { background:#1b1b1b; color:white;"
-                                      " gridline-color:#333; }"
-                                      " QHeaderView::section { background:#222; color:#aaa; }")
-            v = QVBoxLayout(self.dialog)
+            dlg = self.dialog = QDialog(self)
+            dlg.setWindowTitle("Motortemperaturen")
+            dlg.setStyleSheet(ui_theme.stylesheet())
+            v = QVBoxLayout(dlg)
+            v.setContentsMargins(18, 18, 18, 16)
+            v.setSpacing(12)
+            head = QHBoxLayout()
+            head.setSpacing(12)
+            badge = QLabel()
+            badge.setPixmap(ui_icons.pixmap("cpu", ui_theme.ACCENT, 22))
+            badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            badge.setFixedSize(40, 40)
+            badge.setStyleSheet(f"background:{ui_theme.CARD_HI}; border-radius:10px;")
+            head.addWidget(badge)
+            col = QVBoxLayout()
+            col.setSpacing(1)
+            t = QLabel("Motortemperaturen")
+            t.setStyleSheet("font-size:14pt; font-weight:700;")
+            col.addWidget(t)
+            sub = QLabel(f"Gelb ab {self.warn:.0f} °C, rot ab {self.crit:.0f} °C "
+                         "(Annahme, anpassbar: G1_TEMP_WARN / G1_TEMP_CRIT).")
+            sub.setWordWrap(True)
+            sub.setStyleSheet(f"color:{ui_theme.MUTED};")
+            col.addWidget(sub)
+            head.addLayout(col, 1)
+            v.addLayout(head)
             self.table = QTableWidget(g1t.N_MOTORS + 1, 4)
             self.table.setHorizontalHeaderLabels(["Motor", "Sensor 1 [°C]", "Sensor 2 [°C]", "Spannung [V]"])
             self.table.verticalHeader().setVisible(False)
             self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+            self.table.setShowGrid(False)
+            self.table.horizontalHeader().setStretchLastSection(True)
             self.table.setColumnWidth(0, 200)
             for c in (1, 2, 3):
                 self.table.setColumnWidth(c, 110)
-            v.addWidget(self.table)
-            v.addWidget(QLabel(f"Gelb ab {self.warn:.0f} °C, rot ab {self.crit:.0f} °C "
-                               "(Annahme, anpassbar: G1_TEMP_WARN / G1_TEMP_CRIT)."))
+            v.addWidget(self.table, 1)
             self.dialog.resize(600, 760)
         self._fill_dialog(data)
         self.dialog.show()
@@ -589,9 +609,9 @@ class ModeTile(QPushButton):
         if state == "active":
             sub, bg, fg, border = "AKTIV", color, "white", "4px solid white"
         elif state == "pending":
-            sub, bg, fg, border = "wechselt …", "#2a2a2a", color, f"4px dashed {color}"
+            sub, bg, fg, border = "wechselt …", "#272d38", color, f"4px dashed {color}"
         else:
-            sub, bg, fg, border = "antippen zum Wechseln", "#1c1c1c", "#777", "2px solid #333"
+            sub, bg, fg, border = "antippen zum Wechseln", "#1f242d", "#6b7380", "2px solid #2e3541"
             if self.hint:
                 sub = self.hint
         self.setText(f"{title}\n{sub}")
@@ -599,21 +619,21 @@ class ModeTile(QPushButton):
             QPushButton {{ background:{bg}; color:{fg}; border:{border};
                            border-radius:18px; font-size:26px; font-weight:800; }}
             QPushButton:hover:!disabled {{ border-color:{color}; }}
-            QPushButton:disabled {{ background:#151515; color:#444; border:2px solid #222; }}
+            QPushButton:disabled {{ background:#1b1f27; color:#5d6470; border:2px solid #1f242d; }}
         """)
 
 
-def big_button(text, color="#2d2d2d", font=20, height=80):
+def big_button(text, color="#272d38", font=20, height=80):
     b = QPushButton(text)
     b.setMinimumHeight(height)
     b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
     b.setStyleSheet(f"""
         QPushButton {{ background:{color}; color:white; font-size:{font}px; font-weight:700;
-                       border:1px solid #555; border-radius:14px; padding:8px; }}
-        QPushButton:hover {{ border:2px solid #aaa; }}
-        QPushButton:pressed {{ background:#555; }}
-        QPushButton:checked {{ background:#4CAF50; border:2px solid #80ff80; }}
-        QPushButton:disabled {{ background:#1c1c1c; color:#555; border:1px solid #2a2a2a; }}
+                       border:1px solid #3a4250; border-radius:14px; padding:8px; }}
+        QPushButton:hover {{ border:2px solid #8f97a3; }}
+        QPushButton:pressed {{ background:#3a4250; }}
+        QPushButton:checked {{ background:#4c8bf5; border:2px solid #8db4fa; }}
+        QPushButton:disabled {{ background:#1f242d; color:#5d6470; border:1px solid #272d38; }}
     """)
     return b
 
@@ -623,7 +643,7 @@ def state_css(bg, fg, border, font):
     return f"""
         QPushButton {{ background:{bg}; color:{fg}; font-size:{font}px; font-weight:700;
                        border:{border}; border-radius:14px; padding:8px; }}
-        QPushButton:disabled {{ background:#1c1c1c; color:#555; border:1px solid #2a2a2a; }}
+        QPushButton:disabled {{ background:#1f242d; color:#5d6470; border:1px solid #272d38; }}
     """
 
 
@@ -668,19 +688,19 @@ class VerticalRocker(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
         cx, cy = w / 2, h / 2
-        p.setBrush(QBrush(QColor("#1e1e1e")))
-        p.setPen(QPen(QColor("#444"), 2))
+        p.setBrush(QBrush(QColor("#1f242d")))
+        p.setPen(QPen(QColor("#3a4250"), 2))
         p.drawRoundedRect(QRectF(cx - 26, 4, 52, h - 8), 26, 26)
-        p.setPen(QPen(QColor("#333"), 1))
+        p.setPen(QPen(QColor("#2e3541"), 1))
         p.drawLine(int(cx - 18), int(cy), int(cx + 18), int(cy))
         # Richtungs-Icons oben/unten (ui_icons, keine Emoji-Glyphen)
         for name, y in ((self._labels[0], 9), (self._labels[1], h - 27)):
-            pm = ui_icons.pixmap(name, "#777", 18)
+            pm = ui_icons.pixmap(name, "#6b7380", 18)
             if not pm.isNull():
                 p.drawPixmap(QPointF(cx - 9, y), pm)
         active = abs(self.value) > 1e-3
-        p.setBrush(QBrush(QColor("#4CAF50") if active else QColor("#3c3c3c")))
-        p.setPen(QPen(QColor("#80ff80") if active else QColor("#666"), 2))
+        p.setBrush(QBrush(QColor("#4c8bf5") if active else QColor("#272d38")))
+        p.setPen(QPen(QColor("#8db4fa") if active else QColor("#6b7380"), 2))
         p.drawEllipse(QPointF(cx, cy + self._knob), 15, 15)
 
 
@@ -873,7 +893,7 @@ class WalkPanel(QWidget):
                              f"Die GUI selbst geht dann mit »{WALK_GUI_MAX}«.")
                 b.setStyleSheet(b.styleSheet() + """
                     QPushButton:checked:disabled { background:#1b3a1c; color:#ccc;
-                                                   border:2px dashed #80ff80; }""")
+                                                   border:2px dashed #8db4fa; }""")
             right.addWidget(b)
             self.speed_btns[name] = b
         right.addStretch(1)
@@ -911,7 +931,7 @@ class WalkPanel(QWidget):
     @staticmethod
     def _caption(text):
         lbl = QLabel(text)
-        lbl.setStyleSheet("color:#aaa; font-size:15px;")
+        lbl.setStyleSheet("color:#8f97a3; font-size:15px;")
         return lbl
 
     def set_stations(self, names):
@@ -923,7 +943,7 @@ class WalkPanel(QWidget):
         self.station_by_name = {}
         if not names:
             b = QLabel("keine — in der Szene Objekte »station_<Name>« anlegen")
-            b.setStyleSheet("color:#666; font-size:14px;")
+            b.setStyleSheet("color:#6b7380; font-size:14px;")
             self.station_row.insertWidget(1, b)
             self.station_btns.append(b)
             return
@@ -942,7 +962,7 @@ class WalkPanel(QWidget):
         """Station, zu der gerade gelaufen wird: gestrichelt (wie »wechselt«)."""
         for name, b in self.station_by_name.items():
             if name == self.nav_station:
-                b.setStyleSheet(state_css("#2a2a2a", NAV_DONE_COLOR,
+                b.setStyleSheet(state_css("#272d38", NAV_DONE_COLOR,
                                           f"4px dashed {NAV_DONE_COLOR}", 15))
             else:
                 b.setStyleSheet(b.default_css)
@@ -985,13 +1005,13 @@ class WalkPanel(QWidget):
         if phase == NAV_MOVING:
             self.btn_auto_nav.setText("AUTO NAV  läuft …\nantippen zum Stoppen")
             self.btn_auto_nav.setStyleSheet(
-                state_css("#2a2a2a", walk, f"4px dashed {walk}", 20))
+                state_css("#272d38", walk, f"4px dashed {walk}", 20))
             self.nav_hint.setText(f"Läuft selbstständig {to}. "
                                   "Manuelle Steuerung ist gesperrt.")
         elif phase == NAV_ARRIVED:
             self.btn_auto_nav.setText("AUTO NAV  AN\nZiel erreicht")
             self.btn_auto_nav.setStyleSheet(
-                state_css("#2e7d32", "white", "4px solid #80ff80", 20))
+                state_css("#2e7d32", "white", "4px solid #8db4fa", 20))
             self.nav_hint.setText("Am Ziel angekommen. AUTO NAV bleibt an — nächstes "
                                   "Ziel in RViz setzen oder antippen zum Stoppen.")
         elif phase == NAV_WAIT:
@@ -1044,8 +1064,8 @@ class ManipPanel(QWidget):
             b.setMinimumHeight(42)
             b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             b.setStyleSheet(f"""
-                QPushButton {{ background:#1c1c1c; color:#888; font-size:17px; font-weight:800;
-                               border:2px solid #333; border-radius:0; padding:6px;
+                QPushButton {{ background:#1f242d; color:#8f97a3; font-size:17px; font-weight:800;
+                               border:2px solid #2e3541; border-radius:0; padding:6px;
                                border-top-left-radius:{radius.split()[0]};
                                border-top-right-radius:{radius.split()[1]};
                                border-bottom-right-radius:{radius.split()[2]};
@@ -1053,7 +1073,7 @@ class ManipPanel(QWidget):
                 QPushButton:checked {{ background:{MODE_COLOR[MANIP]}; color:white;
                                        border-color:white; }}
                 QPushButton:hover:!checked {{ border-color:{MODE_COLOR[MANIP]}; }}
-                QPushButton:disabled {{ background:#151515; color:#444; border-color:#222; }}
+                QPushButton:disabled {{ background:#1b1f27; color:#5d6470; border-color:#1f242d; }}
             """)
             b.clicked.connect(lambda _, k=key: self.show_view(k))
             seg.addWidget(b)
@@ -1090,8 +1110,8 @@ class ManipPanel(QWidget):
             b.setMinimumHeight(44)
             r = radius.split()
             b.setStyleSheet(f"""
-                QPushButton {{ background:#1c1c1c; color:#999; font-size:15px; font-weight:700;
-                               border:2px solid #333; padding:4px 12px;
+                QPushButton {{ background:#1f242d; color:#8f97a3; font-size:15px; font-weight:700;
+                               border:2px solid #2e3541; padding:4px 12px;
                                border-top-left-radius:{r[0]}; border-top-right-radius:{r[1]};
                                border-bottom-right-radius:{r[2]}; border-bottom-left-radius:{r[3]}; }}
                 QPushButton:checked {{ background:#1565c0; color:white; border-color:white; }}
@@ -1123,7 +1143,7 @@ class ManipPanel(QWidget):
         # Hueftdrehung (Controller: R2 halten + rechter Stick): Stand + Mitte.
         waist_row = QHBoxLayout()
         self.waist_label = QLabel("Hüfte: –")
-        self.waist_label.setStyleSheet("color:#888; font-size:15px; font-weight:700;")
+        self.waist_label.setStyleSheet("color:#8f97a3; font-size:15px; font-weight:700;")
         self.btn_waist_center = big_button("Hüfte Mitte", font=15, height=40)
         self.btn_waist_center.setFixedWidth(200)
         waist_row.addWidget(self.waist_label, 1)
@@ -1139,9 +1159,9 @@ class ManipPanel(QWidget):
 
         # Erweitert (eingeklappt)
         self.btn_expert = QPushButton("Erweitert")
-        ui_icons.set_icon(self.btn_expert, "chevron-right", "#888888", 16)
+        ui_icons.set_icon(self.btn_expert, "chevron-right", "#8f97a3", 16)
         self.btn_expert.setCheckable(True)
-        self.btn_expert.setStyleSheet("QPushButton{background:transparent;color:#888;"
+        self.btn_expert.setStyleSheet("QPushButton{background:transparent;color:#8f97a3;"
                                       "border:none;font-size:14px;text-align:left;}")
         lay.addWidget(self.btn_expert)
         self.expert = QFrame()
@@ -1179,7 +1199,7 @@ class ManipPanel(QWidget):
     def _toggle_expert(self, on):
         self.expert.setVisible(on)
         ui_icons.set_icon(self.btn_expert, "chevron-down" if on else "chevron-right",
-                          "#888888", 16)
+                          "#8f97a3", 16)
 
     def fill_sequence_buttons(self, sequences):
         """sequences: [(Ablauf, [Posennamen ...]), ...] (leere Ablaeufe ohne Knopf)."""
@@ -1254,7 +1274,7 @@ class DemoGUI(QWidget):
         node.on_save_status = self._on_save_status
 
         self.setWindowTitle("G1 Demo — " + ("SIM" if self.sim_mode else "REAL"))
-        self.setStyleSheet("QWidget { background:#111; }")
+        self.setStyleSheet("QWidget { background:#14171d; }")
         self.resize(1200, 860)
         self._build()
         self._wire()
@@ -1316,14 +1336,14 @@ class DemoGUI(QWidget):
         head1.addWidget(self._section_label("1  ·  MODUS"))
         head1.addStretch(1)
         self.btn_pad_help = self._small_button("Belegung")
-        ui_icons.set_icon(self.btn_pad_help, "gamepad-2", "#dddddd", 18)
+        ui_icons.set_icon(self.btn_pad_help, "gamepad-2", "#e8eaed", 18)
         self.btn_pad_help.setVisible(False)
         head1.addWidget(self.btn_pad_help)
         # Vollbild immer aus der GUI erreichbar (am Roboter-Rechner fehlt oft die
         # Titelleiste des Fenstermanagers). Tasten: F11 umschalten, Esc verlassen.
         # Handy-Zugang (sichtbar ausser mit G1_PHONE=0, phone/link.py).
         self.btn_phone = self._small_button("Handy")
-        ui_icons.set_icon(self.btn_phone, "smartphone", "#dddddd", 16)
+        ui_icons.set_icon(self.btn_phone, "smartphone", "#e8eaed", 16)
         self.btn_phone.setVisible(False)
         head1.addWidget(self.btn_phone)
         self.btn_fullscreen = self._small_button("")
@@ -1392,7 +1412,7 @@ class DemoGUI(QWidget):
         self.stack = QStackedWidget()
         self.idle_panel = QLabel("Bitte oben einen Modus wählen.")
         self.idle_panel.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.idle_panel.setStyleSheet("color:#666; font-size:22px;")
+        self.idle_panel.setStyleSheet("color:#6b7380; font-size:22px;")
         for w in (self.idle_panel, self.walk_panel, self.manip_panel):
             self.stack.addWidget(w)
         # Scrollbereich als Reserve: die Mindesthoehe des Fensters haengt so
@@ -1479,11 +1499,11 @@ class DemoGUI(QWidget):
     def _update_fullscreen_button(self):
         if self.isFullScreen():
             self.btn_fullscreen.setText("Vollbild beenden")
-            ui_icons.set_icon(self.btn_fullscreen, "minimize-2", "#dddddd", 16)
+            ui_icons.set_icon(self.btn_fullscreen, "minimize-2", "#e8eaed", 16)
             self.btn_fullscreen.setToolTip("Vollbild verlassen (Esc oder F11)")
         else:
             self.btn_fullscreen.setText("Vollbild")
-            ui_icons.set_icon(self.btn_fullscreen, "maximize", "#dddddd", 16)
+            ui_icons.set_icon(self.btn_fullscreen, "maximize", "#e8eaed", 16)
             self.btn_fullscreen.setToolTip("Vollbild (F11), verlassen mit Esc")
 
     def changeEvent(self, event):
@@ -1511,7 +1531,7 @@ class DemoGUI(QWidget):
         wt = status_line.waist_text(n.waist, None if n.waist_t is None else now - n.waist_t)
         mp = self.manip_panel
         mp.waist_label.setText(wt[0] if wt else "Hüfte: keine Daten")
-        mp.waist_label.setStyleSheet(f"color:{wt[1] if wt else '#888'}; font-size:15px; "
+        mp.waist_label.setStyleSheet(f"color:{wt[1] if wt else '#8f97a3'}; font-size:15px; "
                                      "font-weight:700;")
         mp.btn_waist_center.setEnabled(bool(wt) and not wt[0].startswith("Hüfte Mitte"))
         age = None if n.ps4_t is None else now - n.ps4_t
@@ -1711,17 +1731,17 @@ class DemoGUI(QWidget):
         b.setFixedHeight(30)
         b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         b.setStyleSheet("""
-            QPushButton { background:#263238; color:#ddd; font-size:14px; font-weight:700;
-                          border:1px solid #555; border-radius:8px; padding:2px 12px; }
-            QPushButton:hover { border:2px solid #aaa; }
-            QPushButton:pressed { background:#555; }
+            QPushButton { background:#272d38; color:#e8eaed; font-size:14px; font-weight:700;
+                          border:1px solid #3a4250; border-radius:8px; padding:2px 12px; }
+            QPushButton:hover { border:2px solid #8f97a3; }
+            QPushButton:pressed { background:#3a4250; }
         """)
         return b
 
     @staticmethod
     def _section_label(text):
         lbl = QLabel(text)
-        lbl.setStyleSheet("color:#555; font-size:12px; font-weight:700; letter-spacing:2px;")
+        lbl.setStyleSheet("color:#5d6470; font-size:12px; font-weight:700; letter-spacing:2px;")
         return lbl
 
     def _wire(self):
@@ -1952,7 +1972,7 @@ class DemoGUI(QWidget):
             tile.set_state("active" if m == self.mode
                            else "pending" if m == self.pending else "inactive")
         shown = self.pending or self.mode
-        color = MODE_COLOR.get(shown, "#333")
+        color = MODE_COLOR.get(shown, "#2e3541")
         self.panel_frame.setStyleSheet(
             f"QFrame#panel {{ border:3px solid {color}; border-radius:18px; }}")
         self.manip_panel.view_switch.setVisible(self.mode == MANIP)
@@ -2271,7 +2291,7 @@ class DemoGUI(QWidget):
         store = self._pose_store()
         grouped = store.list_grouped() if store is not None else {}
         if not any(grouped.values()):
-            QMessageBox.information(self, "Keine Posen", "Noch keine Pose gespeichert.")
+            msgbox.info(self, "Keine Posen", "Noch keine Pose gespeichert.")
             return
         dlg = PoseLoadDialog(self, grouped, components_of=store.components)
         if dlg.exec() == QDialog.DialogCode.Accepted and dlg.selected_name():
@@ -2390,7 +2410,7 @@ class DemoGUI(QWidget):
         self.started = True
         self._refresh()
         self._status("Roboter steht wieder am Startpunkt (gehalten) — "
-                     "oben einen Modus wählen.", "#aaa")
+                     "oben einen Modus wählen.", "#8f97a3")
 
     def emergency_stop(self):
         n = self.node
@@ -2442,7 +2462,7 @@ class DemoGUI(QWidget):
             self._quit_armed += 1
             armed = self._quit_armed
             self.btn_quit.setText("Wirklich?\nnochmal tippen")
-            self.btn_quit.setStyleSheet(state_css("#2a2a2a", "#ffb300",
+            self.btn_quit.setStyleSheet(state_css("#272d38", "#ffb300",
                                                   "4px dashed #ffb300", 15))
             QTimer.singleShot(QUIT_CONFIRM_MS,
                               lambda: armed == self._quit_armed and self._disarm_quit())

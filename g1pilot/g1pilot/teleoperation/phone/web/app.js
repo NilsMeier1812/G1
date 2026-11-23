@@ -563,8 +563,21 @@ $("btnConnect").addEventListener("click", busy($("btnConnect"), async () => {
   if (!chars) await connect();
   await login();
 }));
+// Rueckfrage im Seitenstil (statt Browser-confirm)
+let askAction = null;
+function askSheet(title, text, okLabel, fn) {
+  $("askTitle").textContent = title;
+  $("askText").textContent = text;
+  $("askOk").textContent = okLabel;
+  askAction = fn;
+  show("askSheet", true);
+}
+function closeAsk() { askAction = null; show("askSheet", false); }
+$("askCancel").addEventListener("click", closeAsk);
+$("askOk").addEventListener("click", () => { const f = askAction; closeAsk(); if (f) f(); });
 $("btnForget").addEventListener("click", () => {
-  if (confirm("Kopplung auf diesem Handy löschen? Am PC das Gerät ebenfalls entfernen.")) { saveCfg(null); render(); }
+  askSheet("Kopplung löschen?", "Die Kopplung auf diesem Handy wird gelöscht. " +
+           "Am PC das Gerät ebenfalls entfernen.", "Löschen", () => { saveCfg(null); render(); });
 });
 $("btnDisconnect").addEventListener("click", () => disconnect());
 
@@ -606,7 +619,7 @@ $("btnHome").addEventListener("click", () => confirmAction("Grundstellung",
 
 // Version der Handy-Seite; muss zu CACHE in sw.js passen. Kein Auto-Update: eine neue Version
 // wartet im Hintergrund, bis hier »Aktualisieren« getippt wird.
-const VERSION = "v10";
+const VERSION = "v11";
 $("version").textContent = `Handy-Seite ${VERSION}`;
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then((reg) => {

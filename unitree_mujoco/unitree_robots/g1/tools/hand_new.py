@@ -297,9 +297,10 @@ def build_wizard(initial=None):
     from PyQt6.QtCore import QObject, QSize, Qt, QTimer, pyqtSignal
     from PyQt6.QtGui import QColor, QFont, QPainter, QPixmap
     from PyQt6.QtWidgets import (QButtonGroup, QFileDialog, QFrame, QHBoxLayout, QLabel,
-                                 QLineEdit, QMessageBox, QPushButton, QScrollArea,
+                                 QLineEdit, QPushButton, QScrollArea,
                                  QSizePolicy, QVBoxLayout, QWidget)
 
+    from g1pilot.utils import msgbox
     from start_gui import theme as T
     from start_gui import widgets as W
 
@@ -593,13 +594,13 @@ def build_wizard(initial=None):
             res = self.res
             title = self.ed_title.text().strip()
             if not res or not title:
-                QMessageBox.warning(self, "Neue Hand", "Bitte Datei wählen und einen Namen geben.")
+                msgbox.warn(self, "Neue Hand", "Bitte Datei wählen und einen Namen geben.")
                 return
             try:
                 mass = float(self.ed_mass.text().replace(",", "."))
                 assert mass > 0
             except Exception:
-                QMessageBox.warning(self, "Neue Hand", "Masse: Zahl > 0 in kg.")
+                msgbox.warn(self, "Neue Hand", "Masse: Zahl > 0 in kg.")
                 return
             i = self.pick()
             try:
@@ -607,7 +608,7 @@ def build_wizard(initial=None):
                                       unit=res["unit"], mirror_left=self.mirror.isChecked(),
                                       mass=mass, pick=i + 1, unit_guess=res["unit_guess"])
             except Exception as e:
-                QMessageBox.warning(self, "Neue Hand", str(e))
+                msgbox.warn(self, "Neue Hand", str(e))
                 return
             self.btn_ok.setEnabled(False)
             self.status.setText(f"hands/{slug}/ angelegt. Erzeuge Modell (Kollisions-Zerlegung, "
