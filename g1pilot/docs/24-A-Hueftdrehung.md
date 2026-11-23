@@ -8,8 +8,19 @@ Seit 2026-10-21, Bereich seit 2026-10-23 ±105°.
 
 Der G1 kann den Oberkörper über das Taillengelenk `waist_yaw` nach links oder
 rechts drehen, ohne die Füße zu bewegen. Gedreht wird mit dem Controller
-(PS4/Xbox), die Demo-GUI und das Handy zeigen den Stand an, die Demo-GUI hat
-zusätzlich den Knopf **Hüfte Mitte**.
+(PS4/Xbox) oder in der Demo-GUI (Schieber, seit 2026-11-17), die Demo-GUI und
+das Handy zeigen den Stand an, die Demo-GUI hat zusätzlich den Knopf
+**Hüfte Mitte**.
+
+## Bedienung in der Demo-GUI
+
+GREIFEN → Seite ARME → Karte *Hand bewegen*, unterste Zeile: Stand
+(„Hüfte 12° links“), ein **waagrechter Schieber** und **Hüfte Mitte**.
+Schieber nach links ziehen = nach links drehen, proportional zum Weg,
+höchstens 15 °/s; loslassen = Hüfte steht. Technisch genau wie R2 + rechter
+Stick: die GUI sendet `/g1pilot/waist/yaw_rate` (−1..1, + = links) mit ~30 Hz
+und beim Loslassen einmal 0; ohne Strom hält der arm_controller nach 0,3 s an.
+Außerhalb von GREIFEN/ARME und nach NOT-HALT springt der Schieber zurück.
 
 ## Bedienung am Controller
 

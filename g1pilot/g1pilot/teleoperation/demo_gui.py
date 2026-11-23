@@ -40,25 +40,26 @@ import math
 import os
 import sys
 import time
+from collections import deque
 
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QGridLayout, QPushButton, QVBoxLayout, QHBoxLayout,
-    QLabel, QStackedWidget, QFrame, QDialog, QSizePolicy,
-    QGraphicsOpacityEffect, QTableWidget, QTableWidgetItem, QScrollArea,
+    QLabel, QFrame, QDialog, QSizePolicy, QGraphicsOpacityEffect, QScrollArea,
 )
-from PyQt6.QtCore import QTimer, Qt, QRectF, QPointF, QEvent
-from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QKeySequence, QShortcut, QIcon
+from PyQt6.QtCore import QTimer, Qt, QEvent
+from PyQt6.QtGui import QKeySequence, QShortcut, QIcon
 
 import rclpy
 from rclpy.qos import QoSProfile, DurabilityPolicy
-from std_msgs.msg import Bool, String
+from std_msgs.msg import Bool, Float32, String
 from geometry_msgs.msg import Twist, PoseStamped
 from visualization_msgs.msg import Marker, MarkerArray
 from tf2_ros import Buffer, TransformListener
 
 from g1pilot.navigation import scene_markers as sm
 
-from g1pilot.utils import msgbox, ui_theme
+from g1pilot.utils import msgbox
+from g1pilot.utils import ui_theme as T
 from g1pilot.utils.window_style import DarkStyle, set_app_identity
 from g1pilot.utils import ui_icons
 from g1pilot.utils.common import is_sim_mode
@@ -72,6 +73,8 @@ from g1pilot.teleoperation.gui_base import (
     GuiNode, VirtualJoystick, PoseSaveDialog, PoseLoadDialog,
 )
 from g1pilot.teleoperation.hand_panel import HandPanel
+from g1pilot.teleoperation import demo_ui as UI
+from g1pilot.teleoperation.demo_ui import ModeTile, VerticalRocker, TempPanel, state_css
 from g1pilot.teleoperation import status_line
 from g1pilot.teleoperation import shared_state
 from g1pilot.teleoperation import sequence_runner as sr
@@ -79,7 +82,7 @@ from g1pilot.teleoperation.sequence_editor import SequenceEditor
 from g1pilot.teleoperation.phone import link as phone_link
 from g1pilot.teleoperation.ps4_arm_teleop import mirror_twist
 from g1pilot.manipulation.waist_yaw import (
-    WAIST_CENTER_TOPIC, WAIST_STATE_TOPIC, STATE_STALE_S, rotate_twist_yaw,
+    WAIST_CENTER_TOPIC, WAIST_RATE_TOPIC, WAIST_STATE_TOPIC, STATE_STALE_S, rotate_twist_yaw,
 )
 from g1pilot.teleoperation.ps4_joystick import DEVICE_TOPIC
 from g1pilot.teleoperation.hand_jog import (
@@ -87,12 +90,10 @@ from g1pilot.teleoperation.hand_jog import (
     JogReference, jog_reference_mode, lead_limits, jog_step,
 )
 
-WALK = "walk"
-MANIP = "manip"
-
-# Farbcode je Modus -- zieht sich durch Kachel, Steuerbereich-Rahmen und Status.
-MODE_COLOR = {WALK: "#1e88e5", MANIP: "#fb8c00"}
-MODE_TITLE = {WALK: "GEHEN", MANIP: "GREIFEN"}
+# Modi und Farbcode (Modus-Umschalter, Linie unter der Kopfleiste, Karten).
+WALK, MANIP = UI.WALK, UI.MANIP
+MODE_COLOR = UI.MODE_COLOR
+MODE_TITLE = UI.MODE_TITLE
 
 # Geschwindigkeitsstufen (normiert, loco_sim skaliert mit max_cmd ~0.8 m/s).
 # Fuer Vorfuehrungen bewusst gedeckelt -- "Normal" ist nicht Vollgas.
@@ -140,6 +141,11 @@ JOG_SIDE_NAME = {v: k for k, v in JOG_SIDE_KEY.items()}
 # »Sim beenden«: Trigger-Datei im bind-gemounteten Repo (docker-compose:
 # .:/ros2_ws/src/g1pilot). Der Host-Watcher docker/sim_shutdown_watcher.sh
 # (gestartet von start.sh / make sim) stoppt daraufhin den ganzen Sim-Stack.
+# Sim-Knopf »Roboter schubsen« (Text waehrend des Aufladens: Ladegrad).
+PUSH_LABEL = "Roboter schubsen"
+# So viele Meldungen merkt sich die Statusleiste (Knopf »Verlauf«).
+HISTORY_LEN = 200
+
 SIM_SHUTDOWN_TRIGGER = "/ros2_ws/src/g1pilot/.sim_shutdown_request"
 QUIT_CONFIRM_MS = 4000      # so lange gilt der erste Klick als »scharf«
 QUIT_ACK_TIMEOUT_MS = 3000  # Watcher loescht die Datei -> sonst Hinweis
@@ -256,6 +262,11 @@ class DemoNode(GuiNode):
         self.create_subscription(String, WAIST_STATE_TOPIC,
                                  lambda m: self._latched_json("waist", m), 10)
         self.pub_waist_center = self.create_publisher(Bool, WAIST_CENTER_TOPIC, 10)
+        # Huefte drehen aus der GUI (Schieber in »Hand bewegen«): wie der
+        # Controller ein Rate-Strom -1..1 (+ = links), ~30 Hz solange gezogen,
+        # beim Loslassen einmal 0. Der arm_controller haelt ohne Strom an
+        # (Totmann) und prueft selbst, ob er die Taille drehen darf.
+        self.pub_waist_rate = self.create_publisher(Float32, WAIST_RATE_TOPIC, 10)
         # Gemeinsamer Bedienzustand mit dem Controller (shared_state.py).
         # on_shared(Aenderungen) wird fuer Wechsel von aussen gerufen.
         self.t_start_wall = time.time()
@@ -427,226 +438,7 @@ class DemoNode(GuiNode):
             self.on_save_status(data)
 
 
-# ── Bereich 1: Modus-Kachel ──────────────────────────────────────────────
-class TempPanel(QFrame):
-    """Real: Akku und Temperaturen des G1. Ganz links der Akku-Ladestand
-    (rt/lf/bmsstate), dann der heisseste Motor, daneben je Gruppe (Bein L/R,
-    Taille, Arm L/R) das Maximum, farbig nach Schwelle. Klick = Tabelle aller
-    29 Motoren (beide Sensoren) + IMU."""
-
-    def __init__(self, node):
-        super().__init__()
-        self.node = node
-        self.warn, self.crit = g1t.thresholds()
-        self.batt_warn, self.batt_crit = g1b.thresholds()
-        self.setObjectName("temp")
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setStyleSheet("QFrame#temp { background:#1b1f27; border:1px solid #2e3541;"
-                           " border-radius:8px; } QLabel { background:transparent; }")
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(10, 6, 10, 6)
-        lay.setSpacing(8)
-        self.batt_tile = QLabel()
-        self.batt_tile.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.batt_tile.setMinimumWidth(84)
-        self.batt_tile.setFixedHeight(56)
-        lay.addWidget(self.batt_tile)
-        self._paint(self.batt_tile, "Akku", "–", "", "none")
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.VLine)
-        sep.setStyleSheet("color:#2e3541;")
-        lay.addWidget(sep)
-        cap = QLabel("TEMP.\nMOTOREN")
-        cap.setStyleSheet("color:#6b7380; font-size:11px; font-weight:700;")
-        lay.addWidget(cap)
-        self.tiles = {}
-        for key, title in (("max", "Max"),) + tuple((k, t) for k, t, _ in g1t.GROUPS):
-            tile = QLabel()
-            tile.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            tile.setMinimumWidth(96 if key == "max" else 78)
-            tile.setFixedHeight(56)
-            lay.addWidget(tile)
-            self.tiles[key] = tile
-            self._paint(tile, title, "–", "", "none")
-        self.dialog = None
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.refresh)
-        self.timer.start(500)
-        self.refresh()
-
-    @staticmethod
-    def _paint(tile, title, value, sub, lvl):
-        tile.setText(f"<div style='font-size:10px; color:#e8eaed'>{title}</div>"
-                     f"<div style='font-size:17px; font-weight:800'>{value}</div>"
-                     f"<div style='font-size:9px; color:#eee'>{sub}</div>")
-        tile.setStyleSheet(f"background:{g1t.LEVEL_COLOR[lvl]}; color:white;"
-                           " border-radius:6px;")
-
-    def refresh_battery(self):
-        data = self.node.battery
-        if data is None or g1b.is_stale(self.node.battery_t, time.monotonic()):
-            self._paint(self.batt_tile, "Akku", "–", "keine Daten", "none")
-            self.batt_tile.setToolTip(f"Keine Akkudaten vom Roboter "
-                                      f"(robot_state, {g1b.TOPIC_DDS}).")
-            return
-        soc = data["soc"]
-        self._paint(self.batt_tile, "Akku", f"{soc:.0f} %", g1b.subtitle(data),
-                    g1b.level(soc, self.batt_warn, self.batt_crit))
-        self.batt_tile.setToolTip(
-            g1b.details(data) + f"\n\nGelb ab {self.batt_warn:.0f} %, rot ab "
-            f"{self.batt_crit:.0f} % (Annahme, anpassbar: G1_BATT_WARN / G1_BATT_CRIT).")
-
-    def refresh(self):
-        self.refresh_battery()
-        data = self.node.temps
-        if data is None or g1t.is_stale(self.node.temps_t, time.monotonic()):
-            for key, tile in self.tiles.items():
-                title = "Max" if key == "max" else dict((k, t) for k, t, _ in g1t.GROUPS)[key]
-                self._paint(tile, title, "–", "keine Daten", "none")
-                tile.setToolTip("Keine Temperaturdaten vom Roboter (robot_state).")
-            return
-        idx, top = g1t.hottest(data)
-        self._paint(self.tiles["max"], "Max", f"{top:.0f} °C", g1t.motor_label(idx),
-                    g1t.level(top, self.warn, self.crit))
-        self.tiles["max"].setToolTip(f"Heissester Motor: {g1t.motor_label(idx)}, {top:.0f} °C")
-        for g in g1t.group_summary(data):
-            tile = self.tiles[g["key"]]
-            self._paint(tile, g["title"], f"{g['max']:.0f} °C", g["label"],
-                        g1t.level(g["max"], self.warn, self.crit))
-            tile.setToolTip("\n".join(
-                f"{g1t.motor_label(i)}: {t:.0f} °C" for i, t in g["temps"].items()))
-        if self.dialog is not None and self.dialog.isVisible():
-            self._fill_dialog(data)
-
-    # ── Detailtabelle ───────────────────────────────────────────────
-    def mousePressEvent(self, e):
-        data = self.node.temps
-        if data is None:
-            return
-        if self.dialog is None:
-            dlg = self.dialog = QDialog(self)
-            dlg.setWindowTitle("Motortemperaturen")
-            dlg.setStyleSheet(ui_theme.stylesheet())
-            v = QVBoxLayout(dlg)
-            v.setContentsMargins(18, 18, 18, 16)
-            v.setSpacing(12)
-            head = QHBoxLayout()
-            head.setSpacing(12)
-            badge = QLabel()
-            badge.setPixmap(ui_icons.pixmap("cpu", ui_theme.ACCENT, 22))
-            badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            badge.setFixedSize(40, 40)
-            badge.setStyleSheet(f"background:{ui_theme.CARD_HI}; border-radius:10px;")
-            head.addWidget(badge)
-            col = QVBoxLayout()
-            col.setSpacing(1)
-            t = QLabel("Motortemperaturen")
-            t.setStyleSheet("font-size:14pt; font-weight:700;")
-            col.addWidget(t)
-            sub = QLabel(f"Gelb ab {self.warn:.0f} °C, rot ab {self.crit:.0f} °C "
-                         "(Annahme, anpassbar: G1_TEMP_WARN / G1_TEMP_CRIT).")
-            sub.setWordWrap(True)
-            sub.setStyleSheet(f"color:{ui_theme.MUTED};")
-            col.addWidget(sub)
-            head.addLayout(col, 1)
-            v.addLayout(head)
-            self.table = QTableWidget(g1t.N_MOTORS + 1, 4)
-            self.table.setHorizontalHeaderLabels(["Motor", "Sensor 1 [°C]", "Sensor 2 [°C]", "Spannung [V]"])
-            self.table.verticalHeader().setVisible(False)
-            self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-            self.table.setShowGrid(False)
-            self.table.horizontalHeader().setStretchLastSection(True)
-            self.table.setColumnWidth(0, 200)
-            for c in (1, 2, 3):
-                self.table.setColumnWidth(c, 110)
-            v.addWidget(self.table, 1)
-            self.dialog.resize(600, 760)
-        self._fill_dialog(data)
-        self.dialog.show()
-        self.dialog.raise_()
-
-    def _fill_dialog(self, data):
-        def cell(r, c, text, lvl=None):
-            it = QTableWidgetItem(text)
-            if lvl:
-                it.setBackground(QColor(g1t.LEVEL_COLOR[lvl]))
-            self.table.setItem(r, c, it)
-        for i in range(g1t.N_MOTORS):
-            cell(i, 0, g1t.motor_label(i))
-            for c in (0, 1):
-                t = data["t"][i][c]
-                cell(i, c + 1, f"{t:.0f}", g1t.level(t, self.warn, self.crit))
-            cell(i, 3, f"{data['v'][i]:.1f}" if i < len(data["v"]) else "–")
-        r = g1t.N_MOTORS
-        cell(r, 0, "IMU")
-        cell(r, 1, f"{data['imu']:.0f}", g1t.level(data["imu"], self.warn, self.crit))
-        cell(r, 2, "–")
-        cell(r, 3, "–")
-
-
-class ModeTile(QPushButton):
-    """Grosse Kachel mit drei sichtbaren Zustaenden: aktiv / wechselt / inaktiv."""
-
-    def __init__(self, mode):
-        super().__init__()
-        self.mode = mode
-        self.hint = None        # Untertitel statt »antippen zum Wechseln« (inaktiv)
-        self.state = "inactive"
-        self.setMinimumHeight(100)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.set_state("inactive")
-
-    def set_hint(self, hint):
-        """Vorab-Hinweis (real, GEHEN): z. B. »gesperrt · kein Bodenkontakt«."""
-        if hint != self.hint:
-            self.hint = hint
-            self.set_state(self.state)
-
-    def set_state(self, state):
-        self.state = state
-        color = MODE_COLOR[self.mode]
-        title = MODE_TITLE[self.mode]
-        if state == "active":
-            sub, bg, fg, border = "AKTIV", color, "white", "4px solid white"
-        elif state == "pending":
-            sub, bg, fg, border = "wechselt …", "#272d38", color, f"4px dashed {color}"
-        else:
-            sub, bg, fg, border = "antippen zum Wechseln", "#1f242d", "#6b7380", "2px solid #2e3541"
-            if self.hint:
-                sub = self.hint
-        self.setText(f"{title}\n{sub}")
-        self.setStyleSheet(f"""
-            QPushButton {{ background:{bg}; color:{fg}; border:{border};
-                           border-radius:18px; font-size:26px; font-weight:800; }}
-            QPushButton:hover:!disabled {{ border-color:{color}; }}
-            QPushButton:disabled {{ background:#1b1f27; color:#5d6470; border:2px solid #1f242d; }}
-        """)
-
-
-def big_button(text, color="#272d38", font=20, height=80):
-    b = QPushButton(text)
-    b.setMinimumHeight(height)
-    b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-    b.setStyleSheet(f"""
-        QPushButton {{ background:{color}; color:white; font-size:{font}px; font-weight:700;
-                       border:1px solid #3a4250; border-radius:14px; padding:8px; }}
-        QPushButton:hover {{ border:2px solid #8f97a3; }}
-        QPushButton:pressed {{ background:#3a4250; }}
-        QPushButton:checked {{ background:#4c8bf5; border:2px solid #8db4fa; }}
-        QPushButton:disabled {{ background:#1f242d; color:#5d6470; border:1px solid #272d38; }}
-    """)
-    return b
-
-
-def state_css(bg, fg, border, font):
-    """Knopf-Stil fuer Zustaende (z.B. gestrichelt = laeuft, wie ModeTile)."""
-    return f"""
-        QPushButton {{ background:{bg}; color:{fg}; font-size:{font}px; font-weight:700;
-                       border:{border}; border-radius:14px; padding:8px; }}
-        QPushButton:disabled {{ background:#1f242d; color:#5d6470; border:1px solid #272d38; }}
-    """
-
-
+# ── Bausteine (demo_ui.py) ───────────────────────────────────────────────
 def hands_controllable(env=None):
     """HAENDE-Seite nutzbar? Real immer (Inspire), Sim nur mit Inspire-Profil."""
     env = os.environ if env is None else env
@@ -655,55 +447,7 @@ def hands_controllable(env=None):
     return inspire_active(env)
 
 
-class VerticalRocker(QWidget):
-    """Senkrechter Schieber, der zurueckfedert (Gegenstueck zum VirtualJoystick):
-    nach oben ziehen -> value = +1 (hoch), nach unten -> -1, loslassen -> 0."""
-
-    def __init__(self, height=190, width=74, labels=("chevron-up", "chevron-down")):
-        super().__init__()
-        self.setFixedSize(width, height)
-        self._labels = labels
-        self._travel = height / 2 - 24     # Knopf-Weg je Richtung (Pixel)
-        self._knob = 0.0                   # Versatz vom Zentrum, + = nach unten
-        self.value = 0.0
-
-    def _set_from_y(self, y):
-        self._knob = max(-self._travel, min(self._travel, y - self.height() / 2))
-        self.value = -self._knob / self._travel
-        self.update()
-
-    def mousePressEvent(self, e):
-        self._set_from_y(e.position().y())
-
-    def mouseMoveEvent(self, e):
-        self._set_from_y(e.position().y())
-
-    def mouseReleaseEvent(self, e):
-        self._knob = 0.0
-        self.value = 0.0
-        self.update()
-
-    def paintEvent(self, e):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        w, h = self.width(), self.height()
-        cx, cy = w / 2, h / 2
-        p.setBrush(QBrush(QColor("#1f242d")))
-        p.setPen(QPen(QColor("#3a4250"), 2))
-        p.drawRoundedRect(QRectF(cx - 26, 4, 52, h - 8), 26, 26)
-        p.setPen(QPen(QColor("#2e3541"), 1))
-        p.drawLine(int(cx - 18), int(cy), int(cx + 18), int(cy))
-        # Richtungs-Icons oben/unten (ui_icons, keine Emoji-Glyphen)
-        for name, y in ((self._labels[0], 9), (self._labels[1], h - 27)):
-            pm = ui_icons.pixmap(name, "#6b7380", 18)
-            if not pm.isNull():
-                p.drawPixmap(QPointF(cx - 9, y), pm)
-        active = abs(self.value) > 1e-3
-        p.setBrush(QBrush(QColor("#4c8bf5") if active else QColor("#272d38")))
-        p.setPen(QPen(QColor("#8db4fa") if active else QColor("#6b7380"), 2))
-        p.drawEllipse(QPointF(cx, cy + self._knob), 15, 15)
-
-
+# ── Hand bewegen ─────────────────────────────────────────────────────────
 class ArmJogPanel(QWidget):
     """Hand bewegen, zwei Gruppen (beide gleichzeitig nutzbar), Richtungen aus
     Sicht des Roboters (JOG_FRAME), Drehung um die Hand selbst:
@@ -713,74 +457,89 @@ class ArmJogPanel(QWidget):
     Gedrueckt halten = Hand faehrt, loslassen = Hand steht.
     twist() -> ((vx, vy, vz) m/s, (wx, wy, wz) rad/s) im JOG_FRAME."""
 
-    STICK = 180
+    STICK = 170        # Startgroesse, danach nach Breite
+    STICK_MIN, STICK_MAX = 140, 220
 
     def __init__(self):
         super().__init__()
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(18)
-
-        opts = QVBoxLayout()
-        opts.setSpacing(6)
-        opts.addWidget(WalkPanel._caption("Arm"))
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(12)
         # on_change(feld, wert): Auswahl in der GUI geaendert -> gemeinsamer Zustand
         self.on_change = None
-        self.side_btns = self._choice_row(opts, list(JOG_SIDES)[:2], self.set_side)
-        self.side_btns.update(self._choice_row(opts, list(JOG_SIDES)[2:], self.set_side))
-        opts.addSpacing(8)
-        opts.addWidget(WalkPanel._caption("Tempo"))
-        self.speed_btns = self._choice_row(opts, JOG_SPEEDS, self.set_speed)
-        opts.addStretch(1)
-        lay.addLayout(opts)
+        opts = QHBoxLayout()
+        opts.setSpacing(16)
+        col = QVBoxLayout()
+        col.setSpacing(4)
+        col.addWidget(UI.caption("Arm"))
+        w, self.side_btns = UI.segmented(list(JOG_SIDES), self.set_side, font=14, height=40)
+        col.addWidget(w)
+        opts.addLayout(col, 4)
+        col = QVBoxLayout()
+        col.setSpacing(4)
+        col.addWidget(UI.caption("Tempo"))
+        w, self.speed_btns = UI.segmented(list(JOG_SPEEDS), self.set_speed, font=14, height=40)
+        col.addWidget(w)
+        opts.addLayout(col, 3)
+        outer.addLayout(opts)
 
+        outer.addStretch(1)
+        sticks = QHBoxLayout()
+        sticks.setSpacing(28)
+        sticks.addStretch(1)
         self.move_stick, self.move_rocker = self._group(
-            lay, "VERSCHIEBEN", "vor / zurück · links / rechts", "hoch / runter", ("chevron-up", "chevron-down"))
+            sticks, "VERSCHIEBEN", "vor / zurück · links / rechts", "hoch / runter",
+            ("chevron-up", "chevron-down"))
         self.turn_stick, self.turn_rocker = self._group(
-            lay, "DREHEN", "kippen · schwenken", "rollen", ("rotate-ccw", "rotate-cw"))
-        lay.addStretch(1)
+            sticks, "DREHEN", "kippen · schwenken", "rollen", ("rotate-ccw", "rotate-cw"))
+        sticks.addStretch(1)
+        outer.addLayout(sticks)
+        outer.addStretch(1)
 
         self.set_side("Rechts")
         self.set_speed("Normal")
+        # Mindestbreite mit den kleinsten Joysticks (sonst schrumpften sie nie).
+        self.setMinimumWidth(max(opts.minimumSize().width(),
+                                 2 * (self.STICK_MIN + 70) + 28 + 40))
 
     def _group(self, parent, title, stick_cap, rocker_cap, rocker_labels):
         box = QVBoxLayout()
         box.setSpacing(4)
         head = QLabel(title)
         head.setStyleSheet(f"color:{MODE_COLOR[MANIP]}; font-size:13px; font-weight:800;"
-                           "letter-spacing:1px;")
+                           "letter-spacing:1px; background:transparent;")
         box.addWidget(head)
         row = QHBoxLayout()
-        row.setSpacing(12)
+        row.setSpacing(10)
         col = QVBoxLayout()
-        col.addWidget(WalkPanel._caption(stick_cap), alignment=Qt.AlignmentFlag.AlignCenter)
+        col.addWidget(UI.caption(stick_cap, size=12), alignment=Qt.AlignmentFlag.AlignCenter)
         stick = VirtualJoystick(self.STICK)
         col.addWidget(stick, alignment=Qt.AlignmentFlag.AlignCenter)
         row.addLayout(col)
         col = QVBoxLayout()
-        col.addWidget(WalkPanel._caption(rocker_cap), alignment=Qt.AlignmentFlag.AlignCenter)
+        col.addWidget(UI.caption(rocker_cap, size=12), alignment=Qt.AlignmentFlag.AlignCenter)
         rocker = VerticalRocker(self.STICK, labels=rocker_labels)
         col.addWidget(rocker, alignment=Qt.AlignmentFlag.AlignCenter)
         row.addLayout(col)
         box.addLayout(row)
+        box.addStretch(1)
         parent.addLayout(box)
         return stick, rocker
 
-    @staticmethod
-    def _choice_row(parent, choices, on_pick):
-        row = QHBoxLayout()
-        row.setSpacing(6)
-        btns = {}
-        for name in choices:
-            b = big_button(name, font=15, height=44)
-            b.setCheckable(True)
-            b.setFixedWidth(118)
-            b.clicked.connect(lambda _, n=name: on_pick(n))
-            row.addWidget(b)
-            btns[name] = b
-        row.addStretch(1)
-        parent.addLayout(row)
-        return btns
+    def resizeEvent(self, e):
+        """Joysticks + Schieber wachsen mit der Kartenbreite (STICK_MIN..STICK_MAX)."""
+        free = e.size().width() - 2 * (60 + 10) - 28 - 40
+        size = max(self.STICK_MIN, min(self.STICK_MAX, free // 2))
+        if size != self.move_stick.width() and not self._jog_held():
+            for st in (self.move_stick, self.turn_stick):
+                st.set_size(size)
+            for ro in (self.move_rocker, self.turn_rocker):
+                ro.set_length(size)
+        super().resizeEvent(e)
+
+    def _jog_held(self):
+        lin, ang = self.twist()
+        return max(abs(c) for c in lin + ang) > 1e-4
 
     def set_side(self, name, notify=True):
         self.side = name
@@ -822,10 +581,12 @@ class ArmJogPanel(QWidget):
             w.mouseReleaseEvent(None)
 
 
-# ── Bereich 2a: Gehen ────────────────────────────────────────────────────
+# ── GEHEN ────────────────────────────────────────────────────────────────
 class WalkPanel(QWidget):
-    """Joystick-Knopf ODER Pfeiltasten (gedrueckt halten = laufen, loslassen =
-    stehen). Ausgabe: velocity() -> (vx, vy, yaw), bereits mit Stufe skaliert."""
+    """Zwei Karten: links »Manuell gehen« (Joystick-Knopf ODER Pfeiltasten,
+    gedrueckt halten = laufen, loslassen = stehen; Tempo), rechts
+    »Auto-Navigation« (AUTO NAV + Stationen als Raster).
+    velocity() -> (vx, vy, yaw), bereits mit Stufe skaliert."""
 
     def __init__(self):
         super().__init__()
@@ -835,135 +596,140 @@ class WalkPanel(QWidget):
         self.on_change = None    # on_change("walk_speed", stufe) -> gemeinsamer Zustand
 
         outer = QVBoxLayout(self)
-        outer.setSpacing(14)
-        # Manuelle Steuerung in einem Container -> bei AUTO NAV komplett sperren.
-        self.manual = QWidget()
-        lay = QHBoxLayout(self.manual)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(30)
-        outer.addWidget(self.manual, 1)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self.row = UI.ResponsiveRow(breakpoint=900)
+        outer.addWidget(self.row, 1)
 
-        # Knopf
+        # Karte 1: manuell. Der Inhalt liegt in self.manual -> bei AUTO NAV sperren.
+        self.manual_card = UI.Card("Manuell gehen", "footprints", MODE_COLOR[WALK],
+                                   "gedrückt halten · loslassen = stehen")
+        self.manual = QWidget()
+        mlay = QVBoxLayout(self.manual)
+        mlay.setContentsMargins(0, 0, 0, 0)
+        mlay.setSpacing(12)
+        mlay.addStretch(1)
+        ctl = QHBoxLayout()
+        ctl.setSpacing(30)
+        ctl.addStretch(1)
         left = QVBoxLayout()
-        left.addWidget(self._caption("Knopf ziehen"))
-        self.joystick = VirtualJoystick(260)
+        left.addWidget(UI.caption("Knopf ziehen"), alignment=Qt.AlignmentFlag.AlignCenter)
+        self.joystick = VirtualJoystick(240)
         left.addWidget(self.joystick, alignment=Qt.AlignmentFlag.AlignCenter)
         left.addStretch(1)
-        lay.addLayout(left, 1)
-
-        # Pfeile + Drehen
+        ctl.addLayout(left)
         mid = QVBoxLayout()
-        mid.addWidget(self._caption("…oder Pfeil gedrückt halten"))
+        mid.addWidget(UI.caption("…oder Pfeil gedrückt halten"),
+                      alignment=Qt.AlignmentFlag.AlignCenter)
         pad = QGridLayout()
         pad.setSpacing(10)
-        arrows = {
-            "fwd": ("arrow-up", "", 0, 1), "back": ("arrow-down", "", 2, 1),
-            "left": ("arrow-left", "", 1, 0), "right": ("arrow-right", "", 1, 2),
-            "turn_l": ("rotate-ccw", "", 0, 0), "turn_r": ("rotate-cw", "", 0, 2),
-        }
+        arrows = {"fwd": ("arrow-up", 0, 1), "back": ("arrow-down", 2, 1),
+                  "left": ("arrow-left", 1, 0), "right": ("arrow-right", 1, 2),
+                  "turn_l": ("rotate-ccw", 0, 0), "turn_r": ("rotate-cw", 0, 2)}
         tips = {"fwd": "vorwärts", "back": "rückwärts", "left": "seitlich links",
                 "right": "seitlich rechts", "turn_l": "links drehen", "turn_r": "rechts drehen"}
-        for key, (ic, txt, r, c) in arrows.items():
-            b = big_button(txt, font=16, height=90)
-            ui_icons.set_icon(b, ic, "#ffffff", 40)
+        self.arrow_btns = {}
+        for key, (ic, r, c) in arrows.items():
+            b = UI.big_button("", height=72)
+            ui_icons.set_icon(b, ic, "#ffffff", 34)
             b.setToolTip(f"{tips[key]} (gedrückt halten)")
-            b.setFixedWidth(110)
+            b.setFixedWidth(86)
             b.pressed.connect(lambda k=key: self.held.add(k))
             b.released.connect(lambda k=key: self.held.discard(k))
             pad.addWidget(b, r, c)
+            self.arrow_btns[key] = b
         mid.addLayout(pad)
         mid.addStretch(1)
-        lay.addLayout(mid, 1)
-
-        # Tempo
-        right = QVBoxLayout()
-        right.addWidget(self._caption("Tempo"))
+        ctl.addLayout(mid)
+        ctl.addStretch(1)
+        mlay.addLayout(ctl)
+        mlay.addStretch(1)
+        tempo = QHBoxLayout()
+        tempo.setSpacing(10)
+        tempo.addWidget(UI.caption("Tempo"))
+        names = [n if n in SPEEDS else f"{n} (Controller)" for n in shared_state.SPEED_ORDER]
+        w, btns = UI.segmented(names, None, color=MODE_COLOR[WALK], font=15, height=42)
         self.speed_btns = {}
-        for name in shared_state.SPEED_ORDER:
-            gui = name in SPEEDS
-            b = big_button(name if gui else f"{name}\n(Controller)", font=20 if gui else 15,
-                           height=70)
-            b.setCheckable(True)
-            if gui:
-                b.clicked.connect(lambda _, n=name: self.set_speed(n))
+        for name, label in zip(shared_state.SPEED_ORDER, names):
+            b = btns[label]
+            if name in SPEEDS:
+                b.clicked.connect(lambda _=False, n=name: self.set_speed(n))
             else:
-                # Nur Anzeige: am Controller gewaehlt (R1 bzw. L2 + Steuerkreuz hoch), in der GUI gesperrt.
+                # Nur Anzeige: am Controller gewaehlt (R1 bzw. L2 + Steuerkreuz hoch).
                 b.setEnabled(False)
-                b.setToolTip("Nur am Controller wählbar (im GEHEN R1, oder L2 halten + Steuerkreuz hoch). "
-                             f"Die GUI selbst geht dann mit »{WALK_GUI_MAX}«.")
-                b.setStyleSheet(b.styleSheet() + """
-                    QPushButton:checked:disabled { background:#1b3a1c; color:#ccc;
-                                                   border:2px dashed #8db4fa; }""")
-            right.addWidget(b)
+                b.setToolTip("Nur am Controller wählbar (im GEHEN R1, oder L2 halten + "
+                             f"Steuerkreuz hoch). Die GUI selbst geht dann mit »{WALK_GUI_MAX}«.")
             self.speed_btns[name] = b
-        right.addStretch(1)
-        lay.addLayout(right)
+        w.setMaximumWidth(520)
+        tempo.addWidget(w, 1)
+        tempo.addStretch(1)
+        mlay.addLayout(tempo)
+        self.manual_card.body.addWidget(self.manual, 1)
+        self.row.add(self.manual_card, 3)
         self.set_speed("Langsam")
+        # Controller-Ansicht: statt Joystick/Pfeilen Zustand + Belegung (Gehen).
+        self.ctrl_col = QWidget()
+        cl = QVBoxLayout(self.ctrl_col)
+        cl.setContentsMargins(0, 0, 0, 0)
+        cl.setSpacing(14)
+        self.ctrl_card = UI.ControllerCard(MODE_COLOR[WALK], (
+            ("state", "Gehen"), ("speed", "Geh-Tempo")))
+        cl.addWidget(self.ctrl_card)
+        self.legend_card = UI.LegendCard()
+        cl.addWidget(self.legend_card, 1)
+        self.ctrl_col.hide()
+        self.row.add(self.ctrl_col, 3)
+        self.controller_view = False
 
-        # AUTO NAV: Roboter faehrt selbststaendig zum in RViz gesetzten Ziel
-        # (/g1pilot/auto_enable -> joy_mux gibt den Nav-Joy weiter).
-        nav = QHBoxLayout()
-        nav.setSpacing(16)
-        self.btn_auto_nav = big_button("", "#283593", height=70)
+        # Karte 2: AUTO NAV -- Roboter faehrt selbststaendig zum in RViz gesetzten
+        # Ziel (/g1pilot/auto_enable -> joy_mux gibt den Nav-Joy weiter).
+        self.nav_card = UI.Card("Auto-Navigation", "anchor", NAV_DONE_COLOR)
+        self.btn_auto_nav = UI.big_button("", "#283593", font=17, height=64)
         self.btn_auto_nav.setCheckable(True)
-        self.btn_auto_nav.setFixedWidth(360)
         self.btn_auto_nav.setEnabled(NAV_AVAILABLE)
         self._auto_nav_css = self.btn_auto_nav.styleSheet()
-        nav.addWidget(self.btn_auto_nav)
-        self.nav_hint = self._caption("")
+        self.nav_card.body.addWidget(self.btn_auto_nav)
+        self.nav_hint = UI.caption("")
         self.nav_hint.setWordWrap(True)
-        nav.addWidget(self.nav_hint, 1)
-        outer.addLayout(nav)
+        self.nav_card.body.addWidget(self.nav_hint)
+        self.nav_card.body.addWidget(UI.section("Stationen"))
         # Stations-Knoepfe: setzen das Ziel + schalten AUTO NAV ein. Werden aus
         # den station_<Name>-Markierungen der geladenen Szene gebaut.
-        self.station_row = QHBoxLayout()
-        self.station_row.setSpacing(10)
-        self.station_row.addWidget(self._caption("Zur Station:"))
+        self.station_grid = UI.TileGrid(tile_w=150, placeholder="Station suchen …")
+        self.nav_card.body.addWidget(self.station_grid, 1)
+        self.row.add(self.nav_card, 2)
         self.station_btns = []
         self.station_by_name = {}
         self.nav_station = None   # Station, zu der gerade gelaufen wird
         self.on_station = None
-        self.station_row.addStretch(1)
-        outer.addLayout(self.station_row)
         self.set_stations([])
         self.set_nav_view(NAV_OFF)
 
     @staticmethod
     def _caption(text):
-        lbl = QLabel(text)
-        lbl.setStyleSheet("color:#8f97a3; font-size:15px;")
-        return lbl
+        return UI.caption(text, size=15)
 
     def set_stations(self, names):
-        for b in self.station_btns:
-            self.station_row.removeWidget(b)
-            b.hide()            # deleteLater allein laesst es bis zum Loeschen sichtbar
-            b.deleteLater()
         self.station_btns = []
         self.station_by_name = {}
-        if not names:
-            b = QLabel("keine — in der Szene Objekte »station_<Name>« anlegen")
-            b.setStyleSheet("color:#6b7380; font-size:14px;")
-            self.station_row.insertWidget(1, b)
-            self.station_btns.append(b)
-            return
-        for i, name in enumerate(names):
-            b = big_button(sm.station_label(name), "#2e7d32", font=15, height=48)
-            b.setMaximumWidth(240)
+        for name in names:
+            b = UI.big_button(sm.station_label(name), UI.STATION_COLOR, font=15, height=52)
             b.setEnabled(NAV_AVAILABLE)
+            b.setToolTip(f"Ziel »{sm.station_label(name)}« setzen und selbst hinlaufen")
             b.clicked.connect(lambda _, n=name: self.on_station and self.on_station(n))
             b.default_css = b.styleSheet()
-            self.station_row.insertWidget(1 + i, b)
             self.station_btns.append(b)
             self.station_by_name[name] = b
+        self.station_grid.set_widgets(
+            self.station_btns, "Keine Stationen — in der Szene Objekte »station_<Name>« anlegen.")
+        self.nav_card.set_hint(f"{len(names)} Stationen" if names else "")
         self._style_stations()
 
     def _style_stations(self):
         """Station, zu der gerade gelaufen wird: gestrichelt (wie »wechselt«)."""
         for name, b in self.station_by_name.items():
             if name == self.nav_station:
-                b.setStyleSheet(state_css("#272d38", NAV_DONE_COLOR,
-                                          f"4px dashed {NAV_DONE_COLOR}", 15))
+                b.setStyleSheet(UI.state_css(T.CARD_HI, NAV_DONE_COLOR,
+                                             f"3px dashed {NAV_DONE_COLOR}", 15))
             else:
                 b.setStyleSheet(b.default_css)
 
@@ -996,6 +762,8 @@ class WalkPanel(QWidget):
         fade = QGraphicsOpacityEffect(self.manual)
         fade.setOpacity(0.3 if on else 1.0)
         self.manual.setGraphicsEffect(fade)
+        self.manual_card.set_hint("gesperrt: AUTO NAV ist an" if on
+                                  else "gedrückt halten · loslassen = stehen")
         self.nav_station = station if phase == NAV_MOVING else None
         self._style_stations()
         if on:
@@ -1003,26 +771,27 @@ class WalkPanel(QWidget):
         walk = MODE_COLOR[WALK]
         to = f"zur Station »{sm.station_label(station)}«" if station else "zum Ziel"
         if phase == NAV_MOVING:
-            self.btn_auto_nav.setText("AUTO NAV  läuft …\nantippen zum Stoppen")
+            self.btn_auto_nav.setText("AUTO NAV  läuft …  ·  antippen zum Stoppen")
             self.btn_auto_nav.setStyleSheet(
-                state_css("#272d38", walk, f"4px dashed {walk}", 20))
+                UI.state_css(T.CARD_HI, walk, f"3px dashed {walk}", 17))
             self.nav_hint.setText(f"Läuft selbstständig {to}. "
                                   "Manuelle Steuerung ist gesperrt.")
         elif phase == NAV_ARRIVED:
-            self.btn_auto_nav.setText("AUTO NAV  AN\nZiel erreicht")
+            self.btn_auto_nav.setText("AUTO NAV  AN  ·  Ziel erreicht")
             self.btn_auto_nav.setStyleSheet(
-                state_css("#2e7d32", "white", "4px solid #8db4fa", 20))
+                UI.state_css("#2e7d32", "white", "3px solid #8db4fa", 17))
             self.nav_hint.setText("Am Ziel angekommen. AUTO NAV bleibt an — nächstes "
                                   "Ziel in RViz setzen oder antippen zum Stoppen.")
         elif phase == NAV_WAIT:
             self.btn_auto_nav.setStyleSheet(self._auto_nav_css)
-            self.btn_auto_nav.setText("AUTO NAV  AN\nwartet auf Ziel")
+            self.btn_auto_nav.setText("AUTO NAV  AN  ·  wartet auf Ziel")
             self.nav_hint.setText("Ziel in RViz setzen (»2D Goal Pose«) oder Station "
                                   "wählen. Manuelle Steuerung ist gesperrt.")
         elif NAV_AVAILABLE:
             self.btn_auto_nav.setStyleSheet(self._auto_nav_css)
-            self.btn_auto_nav.setText("AUTO NAV\nselbst zum Ziel laufen")
-            self.nav_hint.setText("Erst Ziel in RViz setzen, dann AUTO NAV einschalten.")
+            self.btn_auto_nav.setText("AUTO NAV  ·  selbst zum Ziel laufen")
+            self.nav_hint.setText("Ziel in RViz setzen (»2D Goal Pose«) und AUTO NAV "
+                                  "einschalten, oder direkt eine Station wählen.")
         else:
             self.btn_auto_nav.setStyleSheet(self._auto_nav_css)
             self.btn_auto_nav.setText("AUTO NAV")
@@ -1033,53 +802,52 @@ class WalkPanel(QWidget):
         self.held.clear()
         self.joystick.mouseReleaseEvent(None)   # Knopf zentrieren -> vx=vy=0
 
+    def set_controller_view(self, on):
+        """Controller-Ansicht: »Manuell gehen« weg (L2 halten am Controller),
+        dafuer Zustand + Belegung. Auto-Navigation und Stationen bleiben."""
+        self.controller_view = bool(on)
+        self.reset()
+        self.manual_card.setVisible(not on)
+        self.ctrl_col.setVisible(bool(on))
+        self.updateGeometry()
 
-# ── Bereich 2b: Greifen ──────────────────────────────────────────────────
+
+# ── GREIFEN ──────────────────────────────────────────────────────────────
 class ManipPanel(QWidget):
-    """Umschalter ARME | HAENDE, darunter jeweils eine Seite.
-    ARME: Ablaeufe als grosse Knoepfe, Haende auf/zu, Grundstellung.
-    Einzelfunktionen (Pose anfahren/speichern, Marker folgen) liegen
-    eingeklappt unter 'Erweitert' -- fuer den Betreuer, nicht fuer Besucher.
-    HAENDE: HandPanel (ganze Hand + umschaltbar einzelne Finger)."""
+    """Kopfzeile: Umschalter ARME | HAENDE und »Bewegung stoppen«.
+    ARME: drei Karten -- »Hand bewegen« (Joysticks + Hueftdrehung),
+          »Abläufe« (Raster mit Suche, Am Stück / Schritt, »Weiter«) und
+          »Posen« (Sichere Pose, Grundstellung, Pose anfahren/speichern,
+          RViz-Marker folgen).
+    HAENDE: HandPanel (ganze Hand + einzelne Finger, Kraftzonen)."""
 
     def __init__(self, gui):
         super().__init__()
         self.gui = gui
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(8)
+        outer.setSpacing(12)
 
-        # Umschalter ARME | HAENDE: eigenes Widget -> DemoGUI setzt es in die
-        # Titelzeile neben »GREIFEN« (spart eine Zeile).
-        self.view_switch = QWidget()
-        self.view_switch.setFixedWidth(520)
-        seg = QHBoxLayout(self.view_switch)
-        seg.setContentsMargins(0, 0, 0, 0)
-        seg.setSpacing(0)
-        self.view_btns = {}
-        for key, text, radius in (("arms", "ARME", "14px 0 0 14px"),
-                                  ("hands", "HÄNDE", "0 14px 14px 0")):
-            b = QPushButton(text)
-            b.setCheckable(True)
-            b.setMinimumHeight(42)
-            b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-            b.setStyleSheet(f"""
-                QPushButton {{ background:#1f242d; color:#8f97a3; font-size:17px; font-weight:800;
-                               border:2px solid #2e3541; border-radius:0; padding:6px;
-                               border-top-left-radius:{radius.split()[0]};
-                               border-top-right-radius:{radius.split()[1]};
-                               border-bottom-right-radius:{radius.split()[2]};
-                               border-bottom-left-radius:{radius.split()[3]}; }}
-                QPushButton:checked {{ background:{MODE_COLOR[MANIP]}; color:white;
-                                       border-color:white; }}
-                QPushButton:hover:!checked {{ border-color:{MODE_COLOR[MANIP]}; }}
-                QPushButton:disabled {{ background:#1b1f27; color:#5d6470; border-color:#1f242d; }}
-            """)
-            b.clicked.connect(lambda _, k=key: self.show_view(k))
-            seg.addWidget(b)
-            self.view_btns[key] = b
+        head = QHBoxLayout()
+        head.setSpacing(12)
+        self.view_switch, btns = UI.segmented(["  ARME", "  HÄNDE"], None, color=MODE_COLOR[MANIP],
+                                              font=16, height=44, min_w=150)
+        self.view_btns = {"arms": btns["  ARME"], "hands": btns["  HÄNDE"]}
+        ui_icons.set_icon(self.view_btns["arms"], "bot", "#ffffff", 18)
+        ui_icons.set_icon(self.view_btns["hands"], "hand", "#ffffff", 18)
+        for key, b in self.view_btns.items():
+            b.clicked.connect(lambda _=False, k=key: self.show_view(k))
+        head.addWidget(self.view_switch)
+        head.addStretch(1)
+        self.btn_cancel = UI.big_button("Bewegung stoppen", "#5d4037", font=16, height=44,
+                                        icon="circle-stop")
+        self.btn_cancel.setToolTip("Laufende Arm-Bewegung oder Ablauf anhalten "
+                                   "(Controller: Kreuz)")
+        self.btn_cancel.setFixedWidth(240)
+        head.addWidget(self.btn_cancel)
+        outer.addLayout(head)
 
-        self.views = QStackedWidget()
+        self.views = UI.CurrentStack()
         outer.addWidget(self.views, 1)
         arms = QWidget()
         self.views.addWidget(arms)
@@ -1087,97 +855,127 @@ class ManipPanel(QWidget):
             gui.node, status_cb=lambda t: gui._status(t, MODE_COLOR[MANIP]))
         self.views.addWidget(self.hand_panel)
         self.view_pages = {"arms": arms, "hands": self.hand_panel}
+        self.arms_page = arms
 
         lay = QVBoxLayout(arms)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(14)
+        self.row = UI.ResponsiveRow(breakpoint=940)
+        lay.addWidget(self.row, 1)
 
-        self.seq_row = QHBoxLayout()
-        self.seq_row.setSpacing(10)
-        lay.addLayout(self.seq_row)
+        # Karte »Hand bewegen« (Joystick + Hoch/Runter) -- statt Marker in RViz,
+        # unten die Hueftdrehung (wie am Controller R2 + rechter Stick).
+        self.jog_card = UI.Card("Hand bewegen", "move", MODE_COLOR[MANIP],
+                                "gedrückt halten · loslassen = stehen")
+        self.jog = ArmJogPanel()
+        self.jog_card.body.addWidget(self.jog, 1)
+        rule = QFrame()
+        rule.setFixedHeight(1)
+        rule.setStyleSheet(f"background:{T.LINE}; border:none;")
+        self.jog_card.body.addWidget(rule)
+        waist = QHBoxLayout()
+        waist.setSpacing(12)
+        wcol = QVBoxLayout()
+        wcol.setSpacing(2)
+        self.waist_label = QLabel("Hüfte: –")
+        self.waist_label.setStyleSheet(f"color:{UI.WAIST_COLOR}; font-size:15px; font-weight:700;")
+        wcol.addWidget(self.waist_label)
+        whint = UI.caption("Knopf ziehen = drehen, loslassen = steht "
+                           "(Controller: R2 + rechter Stick)", size=12)
+        whint.setWordWrap(True)
+        wcol.addWidget(whint)
+        waist.addLayout(wcol, 2)
+        self.waist_rocker = UI.HorizontalRocker(170)
+        self.waist_rocker.setToolTip("Oberkörper drehen: nach links/rechts ziehen, "
+                                     "loslassen = Hüfte steht")
+        waist.addWidget(self.waist_rocker, 2)
+        self.btn_waist_center = UI.big_button("Hüfte Mitte", font=15, height=44)
+        self.btn_waist_center.setFixedWidth(140)
+        waist.addWidget(self.btn_waist_center)
+        self.jog_card.body.addLayout(waist)
+        self.row.add(self.jog_card, 5)
 
-        # Ablauf-Steuerung: Am Stueck | Schritt fuer Schritt, »Weiter« (nur
-        # wenn ein Ablauf auf Bestaetigung wartet; Controller: L3), Fenster
-        # »Posen & Abläufe« (zusammenstellen, Posen anfahren/speichern).
+        # Controller-Ansicht (UI.VIEW_CONTROLLER): statt »Hand bewegen« der
+        # Zustand des Controllers + Belegung; »Posen« rutscht darunter.
+        self.ctrl_col = QWidget()
+        self.ctrl_lay = QVBoxLayout(self.ctrl_col)
+        self.ctrl_lay.setContentsMargins(0, 0, 0, 0)
+        self.ctrl_lay.setSpacing(14)
+        self.ctrl_card = UI.ControllerCard(MODE_COLOR[MANIP], (
+            ("hand", "Hand"), ("motion", "Stick bewegt"), ("speed", "Tempo"),
+            ("waist", "Hüfte")))
+        self.ctrl_lay.addWidget(self.ctrl_card)
+        self.legend_card = UI.LegendCard()
+        self.ctrl_lay.addWidget(self.legend_card, 1)
+        self.row.add(self.ctrl_col, 4)
+        self.ctrl_col.hide()
+
+        right = QWidget()
+        rcol = QVBoxLayout(right)
+        rcol.setContentsMargins(0, 0, 0, 0)
+        rcol.setSpacing(14)
+        self.rcol = rcol
+        # Pose-Schnellwahl (nur Controller-Ansicht): die 16 Plaetze R2 +
+        # Steuerkreuz 2x, Wahl am Controller leuchtet, Klick faehrt an.
+        self.quick_card = UI.Card("Pose-Schnellwahl", "layout-grid", UI.WAIST_COLOR,
+                                  "R2 halten · Steuerkreuz 2× · R2 los")
+        self.quick_grid = UI.QuickGrid(on_pick=lambda name: self.gui.run_poses([name]))
+        self.quick_card.body.addWidget(self.quick_grid)
+        self.btn_quick_edit = UI.big_button("Plätze belegen …", font=14, height=38,
+                                            icon="square-pen")
+        self.quick_card.body.addWidget(self.btn_quick_edit)
+        rcol.addWidget(self.quick_card)
+        self.quick_card.hide()
+        # Karte »Abläufe«: Am Stueck | Schritt fuer Schritt, »Weiter« (nur wenn
+        # ein Ablauf auf Bestaetigung wartet; Controller: L3), Raster mit Suche.
+        self.seq_card = UI.Card("Abläufe", "play", T.ACCENT)
         ctl = QHBoxLayout()
         ctl.setSpacing(10)
-        self.seq_mode_btns = {}
-        seg = QHBoxLayout()
-        seg.setSpacing(0)
-        for key, radius in ((sr.MODE_AUTO, "12px 0 0 12px"), (sr.MODE_STEP, "0 12px 12px 0")):
-            b = QPushButton(sr.MODE_TITLE[key])
-            b.setCheckable(True)
-            b.setMinimumHeight(44)
-            r = radius.split()
-            b.setStyleSheet(f"""
-                QPushButton {{ background:#1f242d; color:#8f97a3; font-size:15px; font-weight:700;
-                               border:2px solid #2e3541; padding:4px 12px;
-                               border-top-left-radius:{r[0]}; border-top-right-radius:{r[1]};
-                               border-bottom-right-radius:{r[2]}; border-bottom-left-radius:{r[3]}; }}
-                QPushButton:checked {{ background:#1565c0; color:white; border-color:white; }}
-            """)
-            b.clicked.connect(lambda _, k=key: self.gui.set_sequence_mode(k))
-            seg.addWidget(b)
-            self.seq_mode_btns[key] = b
-        ctl.addLayout(seg)
-        self.btn_next = big_button("Weiter", "#2e7d32", font=18, height=44)
-        ui_icons.set_icon(self.btn_next, "chevron-right", "#ffffff", 22)
-        # Pfeil rechts vom Text
-        self.btn_next.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+        w, self.seq_mode_btns = UI.segmented([sr.MODE_AUTO, sr.MODE_STEP], None, font=14,
+                                             height=42)
+        for key, b in self.seq_mode_btns.items():
+            b.setText(sr.MODE_TITLE[key])
+            b.clicked.connect(lambda _=False, k=key: self.gui.set_sequence_mode(k))
+        ctl.addWidget(w, 3)
+        self.btn_next = UI.big_button("Weiter", "#2e7d32", font=16, height=42)
+        ui_icons.set_icon(self.btn_next, "chevron-right", "#ffffff", 20)
+        self.btn_next.setLayoutDirection(Qt.LayoutDirection.RightToLeft)   # Pfeil rechts
         self.btn_next.setToolTip("Nächsten Schritt des Ablaufs anfahren (Controller: L3)")
-        ctl.addWidget(self.btn_next, 1)
-        self.btn_sequences = big_button("Posen && Abläufe …", font=15, height=44)
-        self.btn_sequences.setFixedWidth(220)
-        ctl.addWidget(self.btn_sequences)
-        lay.addLayout(ctl)
+        ctl.addWidget(self.btn_next, 2)
+        self.seq_card.body.addLayout(ctl)
+        self.seq_grid = UI.TileGrid(tile_w=170, placeholder="Ablauf suchen …")
+        self.seq_row = self.seq_grid.grid     # Kompatibilitaet: Knoepfe der Ablaeufe
+        self.seq_card.body.addWidget(self.seq_grid, 1)
+        self.btn_sequences = UI.big_button("Posen && Abläufe bearbeiten …", font=14, height=40,
+                                           icon="square-pen")
+        self.seq_card.body.addWidget(self.btn_sequences)
+        rcol.addWidget(self.seq_card, 1)
 
-        row = QHBoxLayout()
-        # Haende auf/zu gibt es auf der Seite HAENDE.
-        self.btn_safe = big_button("Sichere Pose", font=18, height=50)
-        self.btn_home = big_button("Grundstellung", font=18, height=50)
-        self.btn_cancel = big_button("Bewegung stoppen", "#5d4037", font=18, height=50)
-        for b in (self.btn_safe, self.btn_home, self.btn_cancel):
-            row.addWidget(b)
-        lay.addLayout(row)
-
-        # Hueftdrehung (Controller: R2 halten + rechter Stick): Stand + Mitte.
-        waist_row = QHBoxLayout()
-        self.waist_label = QLabel("Hüfte: –")
-        self.waist_label.setStyleSheet("color:#8f97a3; font-size:15px; font-weight:700;")
-        self.btn_waist_center = big_button("Hüfte Mitte", font=15, height=40)
-        self.btn_waist_center.setFixedWidth(200)
-        waist_row.addWidget(self.waist_label, 1)
-        waist_row.addWidget(self.btn_waist_center)
-        lay.addLayout(waist_row)
-
-        # Hand bewegen (Joystick + Hoch/Runter) -- statt Marker in RViz.
-        lay.addSpacing(4)
-        lay.addWidget(WalkPanel._caption("Hand bewegen  —  gedrückt halten, loslassen = stehen"))
-        self.jog = ArmJogPanel()
-        lay.addWidget(self.jog)
-        self.arms_page = arms
-
-        # Erweitert (eingeklappt)
-        self.btn_expert = QPushButton("Erweitert")
-        ui_icons.set_icon(self.btn_expert, "chevron-right", "#8f97a3", 16)
-        self.btn_expert.setCheckable(True)
-        self.btn_expert.setStyleSheet("QPushButton{background:transparent;color:#8f97a3;"
-                                      "border:none;font-size:14px;text-align:left;}")
-        lay.addWidget(self.btn_expert)
-        self.expert = QFrame()
-        ex = QHBoxLayout(self.expert)
-        ex.setContentsMargins(0, 0, 0, 0)
-        self.btn_goto = big_button("Pose anfahren …", font=15, height=50)
-        self.btn_save = big_button("Pose speichern …", font=15, height=50)
-        self.btn_marker = big_button("Marker folgen", font=15, height=50)
+        # Karte »Posen«
+        self.pose_card = UI.Card("Posen", "bot", MODE_COLOR[MANIP])
+        grid = QGridLayout()
+        grid.setSpacing(8)
+        self.btn_safe = UI.big_button("Sichere Pose", font=14, height=42, icon="shield-check")
+        self.btn_home = UI.big_button("Grundstellung", font=14, height=42, icon="anchor")
+        self.btn_goto = UI.big_button("Pose anfahren …", font=14, height=42, icon="folder-open")
+        self.btn_save = UI.big_button("Pose speichern …", font=14, height=42, icon="save")
+        for i, b in enumerate((self.btn_safe, self.btn_home, self.btn_goto, self.btn_save)):
+            grid.addWidget(b, i // 2, i % 2)
+        self.pose_card.body.addLayout(grid)
+        self.btn_marker = QPushButton("RViz-Marker folgen")
         self.btn_marker.setCheckable(True)
         self.btn_marker.setChecked(True)   # Default des interactive_marker-Node
-        for b in (self.btn_goto, self.btn_save, self.btn_marker):
-            ex.addWidget(b)
-        self.expert.setVisible(False)
-        self.btn_expert.toggled.connect(self._toggle_expert)
-        lay.addWidget(self.expert)
-        lay.addStretch(1)
+        self.btn_marker.setToolTip("Arme folgen dem interaktiven Marker in RViz")
+        self.btn_marker.setStyleSheet(f"""
+            QPushButton {{ background:transparent; color:{T.MUTED}; border:none;
+                           font-size:14px; text-align:left; padding:2px; }}
+            QPushButton:checked {{ color:{T.FG}; }}""")
+        self.btn_marker.toggled.connect(self._marker_icon)
+        self._marker_icon(True)
+        self.pose_card.body.addWidget(self.btn_marker)
+        rcol.addWidget(self.pose_card)
+        self.row.add(right, 4)
+        self.controller_view = False
+
         self.show_view("arms")
         # Fingersteuerung gibt es nur mit Inspire-Haenden. In der Sim mit Rubber-
         # oder eigenem starren Profil (G1_HANDS) ist HAENDE ausgegraut; real hat
@@ -1189,39 +987,66 @@ class ManipPanel(QWidget):
             hb.setToolTip(f"Starre Hände ({hand_profile()}): keine Finger zum Bewegen. "
                           "Fingersteuerung nur mit Inspire-Händen (Startmenü → Hände).")
 
+    def set_controller_view(self, on):
+        """Controller-Ansicht: Joysticks/Huefte-Schieber und HAENDE-Seite weg
+        (macht man am Controller), dafuer Controller-Zustand, Belegung und
+        Pose-Schnellwahl. Abläufe, Posen und »Bewegung stoppen« bleiben."""
+        on = bool(on)
+        self.controller_view = on
+        self.jog.reset()
+        self.waist_rocker.mouseReleaseEvent(None)     # Schieber los -> Huefte steht
+        if on:
+            self.show_view("arms")
+            self.ctrl_lay.insertWidget(1, self.pose_card)
+        else:
+            self.rcol.addWidget(self.pose_card)
+        self.view_switch.setVisible(not on)
+        self.jog_card.setVisible(not on)
+        self.ctrl_col.setVisible(on)
+        self.quick_card.setVisible(on)
+        self.updateGeometry()
+
+    def _marker_icon(self, on):
+        ui_icons.set_icon(self.btn_marker, "check" if on else "square",
+                          T.ACCENT if on else T.MUTED, 18)
+
     def show_view(self, key):
         if key == "hands" and not getattr(self, "hands_available", True):
             key = "arms"
         self.views.setCurrentWidget(self.view_pages[key])
+        self.views.updateGeometry()
         for k, b in self.view_btns.items():
             b.setChecked(k == key)
 
-    def _toggle_expert(self, on):
-        self.expert.setVisible(on)
-        ui_icons.set_icon(self.btn_expert, "chevron-down" if on else "chevron-right",
-                          "#8f97a3", 16)
-
     def fill_sequence_buttons(self, sequences):
         """sequences: [(Ablauf, [Posennamen ...]), ...] (leere Ablaeufe ohne Knopf)."""
-        while self.seq_row.count():
-            w = self.seq_row.takeAt(0).widget()
-            if w is not None:
-                w.deleteLater()
         sequences = [(label, names) for label, names in sequences if names]
-        if not sequences:
-            self.seq_row.addWidget(WalkPanel._caption(
-                "Noch keine Abläufe — »Posen & Abläufe …« öffnen, Ablauf anlegen und "
-                "Posen hinzufügen."))
-            return
-        self.seq_row.addWidget(WalkPanel._caption("Abläufe:"))
+        btns = []
         for label, names in sequences:
-            b = big_button(label, "#1565c0", font=17, height=64)
-            b.setToolTip(" → ".join(pretty_pose_name(n) for n in names))
+            b = UI.big_button(label, UI.SEQ_COLOR, font=15, height=56)
+            b.setToolTip(f"{len(names)} Schritte: "
+                         + " → ".join(pretty_pose_name(n) for n in names))
             b.clicked.connect(lambda _, lb=label: self.gui.run_sequence(lb))
-            self.seq_row.addWidget(b)
+            b.default_css = b.styleSheet()
+            btns.append(b)
+        self.seq_buttons = {label: b for (label, _), b in zip(sequences, btns)}
+        self.seq_grid.set_widgets(
+            btns, "Noch keine Abläufe — »Posen & Abläufe bearbeiten …« öffnen, Ablauf "
+                  "anlegen und Posen hinzufügen.")
+        self.seq_card.set_hint(f"{len(btns)} gespeichert" if btns else "")
+        self._style_sequences(getattr(self, "_running", None))
+
+    def _style_sequences(self, running):
+        """Laufender Ablauf: gestrichelt (wie »wechselt«)."""
+        self._running = running
+        for label, b in getattr(self, "seq_buttons", {}).items():
+            if label == running:
+                b.setStyleSheet(UI.state_css(UI.SEQ_COLOR, "white", "3px dashed white", 15))
+            else:
+                b.setStyleSheet(b.default_css)
 
     def show_sequence(self, runner):
-        """Modus-Knoepfe und »Weiter« nach dem Runner-Stand."""
+        """Modus-Knoepfe, »Weiter« und laufender Ablauf nach dem Runner-Stand."""
         for k, b in self.seq_mode_btns.items():
             b.setChecked(k == runner.mode)
         waiting = runner.state == sr.WAITING
@@ -1232,7 +1057,7 @@ class ManipPanel(QWidget):
             self.btn_next.setText(f"Schritt {runner.index + 1}/{runner.total} läuft …")
         else:
             self.btn_next.setText("Weiter")
-
+        self._style_sequences(runner.label if runner.active else None)
 
 # ── Hauptfenster ─────────────────────────────────────────────────────────
 class DemoGUI(QWidget):
@@ -1263,6 +1088,7 @@ class DemoGUI(QWidget):
         self._jog_twist = {}        # side -> letzte Sollbewegung (lin, ang)
         self._jog_holds = HoldStreamer()   # Halte-Ziele nach dem Loslassen
         self._jog_t = time.monotonic()
+        self._waist_sending = False   # Hueft-Rate-Strom laeuft (0 beim Loslassen senden)
 
         node.on_walk_ready = self._on_walk_ready
         node.on_arm_status = self._on_arm_status
@@ -1274,7 +1100,8 @@ class DemoGUI(QWidget):
         node.on_save_status = self._on_save_status
 
         self.setWindowTitle("G1 Demo — " + ("SIM" if self.sim_mode else "REAL"))
-        self.setStyleSheet("QWidget { background:#14171d; }")
+        self.setObjectName("demo")
+        self.setStyleSheet(f"QWidget#demo {{ background:{T.BG}; }}")
         self.resize(1200, 860)
         self._build()
         self._wire()
@@ -1296,6 +1123,11 @@ class DemoGUI(QWidget):
         self.info_timer = QTimer(self)
         self.info_timer.timeout.connect(self._refresh_info)
         self.info_timer.start(500)
+        # Controller-Ansicht: Zustand 10 Hz (Schnellwahl leuchtet sofort).
+        self.view = UI.VIEW_TOUCH
+        self.ctrl_timer = QTimer(self)
+        self.ctrl_timer.timeout.connect(self._refresh_controller_view)
+        self.set_view(UI.default_view())
         self.seq_timer = QTimer(self)
         self.seq_timer.timeout.connect(self.seq.tick)
         self.seq_timer.start(100)
@@ -1325,157 +1157,236 @@ class DemoGUI(QWidget):
 
     # ── Aufbau ──────────────────────────────────────────────────────────
     def _build(self):
+        """Aufbau (demo_ui.py):
+          Kopfleiste    SIM/REAL | Modus GEHEN/GREIFEN | Controller, Handy, Vollbild
+          Mitte         Arbeitsflaeche des aktiven Modus (Karten, scrollt)
+          rechts        Seitenleiste: NOT-HALT, Roboter (real) bzw. Simulation, Beenden
+          unten         Statusleiste mit Verlauf"""
         root = QVBoxLayout(self)
-        root.setContentsMargins(20, 12, 20, 12)
-        root.setSpacing(10)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
-        # Bereich 1: Modus. Rechts in der Kopfzeile: Controller-Belegung (nur
-        # wenn ein Controller aktiv ist) und Vollbild.
-        head1 = QHBoxLayout()
-        head1.setSpacing(10)
-        head1.addWidget(self._section_label("1  ·  MODUS"))
-        head1.addStretch(1)
-        self.btn_pad_help = self._small_button("Belegung")
-        ui_icons.set_icon(self.btn_pad_help, "gamepad-2", "#e8eaed", 18)
-        self.btn_pad_help.setVisible(False)
-        head1.addWidget(self.btn_pad_help)
-        # Vollbild immer aus der GUI erreichbar (am Roboter-Rechner fehlt oft die
-        # Titelleiste des Fenstermanagers). Tasten: F11 umschalten, Esc verlassen.
-        # Handy-Zugang (sichtbar ausser mit G1_PHONE=0, phone/link.py).
-        self.btn_phone = self._small_button("Handy")
-        ui_icons.set_icon(self.btn_phone, "smartphone", "#e8eaed", 16)
-        self.btn_phone.setVisible(False)
-        head1.addWidget(self.btn_phone)
-        self.btn_fullscreen = self._small_button("")
-        head1.addWidget(self.btn_fullscreen)
-        root.addLayout(head1)
-        top = QHBoxLayout()
-        top.setSpacing(16)
+        # ── Kopfleiste ──────────────────────────────────────────────────
+        bar = QFrame()
+        bar.setObjectName("topbar")
+        bar.setStyleSheet(f"QFrame#topbar {{ background:{T.SURFACE}; border:none; }}")
+        head = QHBoxLayout(bar)
+        head.setContentsMargins(18, 8, 18, 8)
+        head.setSpacing(12)
+        badge = QLabel("G1 · SIM" if self.sim_mode else "G1 · REAL")
+        badge.setStyleSheet(
+            "font-size:15px; font-weight:800; letter-spacing:1px; padding:6px 12px;"
+            " border-radius:8px; "
+            + ("background:#16304f; color:#8db4fa; border:1px solid #24497a;" if self.sim_mode
+               else "background:#3a1d20; color:#ff8a80; border:1px solid #6a2a30;"))
+        head.addWidget(badge)
+        head.addSpacing(6)
         self.tiles = {WALK: ModeTile(WALK), MANIP: ModeTile(MANIP)}
-        top.addWidget(self.tiles[WALK])
-        top.addWidget(self.tiles[MANIP])
-        root.addLayout(top)
-        # Startleiste (nur real), eine Zeile: Start | Damp | Preparation | Walk |
-        # Rueckmeldung des loco_client (Onboard-Modus, wie in der Handy-App).
-        # Start = /g1pilot/start: gibt die Modus-Kacheln frei und quittiert
-        # einen NOT-HALT (arm_controller, loco_client, Controller). Freigabe der
-        # Onboard-Schritte je nach Onboard-Modus (status_line.start_buttons),
-        # Damp aus dem Stehen und Walk brauchen einen zweiten Klick.
+        modes = QHBoxLayout()
+        modes.setSpacing(8)
+        modes.addWidget(self.tiles[WALK])
+        modes.addWidget(self.tiles[MANIP])
+        head.addLayout(modes, 3)
+        head.addStretch(1)
+        # Ansicht: Touch (alles per Klick) | Controller (Joysticks weg, dafuer
+        # Controller-Zustand, Belegung, Pose-Schnellwahl). Start: G1_DEMO_VIEW.
+        keys = (UI.VIEW_TOUCH, UI.VIEW_CONTROLLER)
+        self.view_toggle, vbtns = UI.segmented(["  " + UI.VIEW_TITLE[k] for k in keys], None,
+                                               font=14, height=40)
+        self.view_btns = {k: vbtns["  " + UI.VIEW_TITLE[k]] for k in keys}
+        for k, b in self.view_btns.items():
+            ui_icons.set_icon(b, UI.VIEW_ICON[k], "#ffffff", 16)
+            b.clicked.connect(lambda _=False, v=k: self.set_view(v))
+        self.view_btns[UI.VIEW_TOUCH].setToolTip(
+            "Touch-Ansicht: alles per Klick (Joysticks, Pfeiltasten, Hüfte, Hände)")
+        self.view_btns[UI.VIEW_CONTROLLER].setToolTip(
+            "Controller-Ansicht: was man am Controller macht, fällt weg -- dafür "
+            "Controller-Zustand, Belegung und Pose-Schnellwahl. Klicken geht weiter.")
+        head.addWidget(self.view_toggle)
+        # Rechts: Controller-Belegung (nur wenn ein Controller aktiv ist), Handy
+        # (ausser G1_PHONE=0, phone/link.py) und Vollbild -- am Roboter-Rechner
+        # fehlt oft die Titelleiste. Tasten: F11 umschalten, Esc verlassen.
+        self.btn_pad_help = UI.chip_button("Belegung", "gamepad-2")
+        self.btn_pad_help.setVisible(False)
+        head.addWidget(self.btn_pad_help)
+        self.btn_phone = UI.chip_button("Handy", "smartphone")
+        self.btn_phone.setVisible(False)
+        head.addWidget(self.btn_phone)
+        self.btn_fullscreen = UI.chip_button("")
+        head.addWidget(self.btn_fullscreen)
+        root.addWidget(bar)
+        # Farblinie des aktiven Modus unter der Kopfleiste.
+        self.mode_line = QFrame()
+        self.mode_line.setFixedHeight(3)
+        root.addWidget(self.mode_line)
+
+        main = QHBoxLayout()
+        main.setContentsMargins(0, 0, 0, 0)
+        main.setSpacing(0)
+        root.addLayout(main, 1)
+
+        # ── Arbeitsflaeche ──────────────────────────────────────────────
+        work = QVBoxLayout()
+        work.setContentsMargins(0, 0, 0, 0)
+        work.setSpacing(0)
+        main.addLayout(work, 1)
+        self.walk_panel = WalkPanel()
+        self.manip_panel = ManipPanel(self)
+        self.stack = UI.CurrentStack()
+        self.idle_panel = QLabel()
+        self.idle_panel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.idle_panel.setWordWrap(True)
+        self.idle_panel.setStyleSheet(f"color:{T.MUTED}; font-size:22px;")
+        for w in (self.idle_panel, self.walk_panel, self.manip_panel):
+            self.stack.addWidget(w)
+        # Scrollbereich: die Mindesthoehe des Fensters haengt so nicht am
+        # groessten Panel (frueher real ~1160 px -> kein Maximieren am 1080er-Schirm).
+        holder = QWidget()
+        hl = QVBoxLayout(holder)
+        hl.setContentsMargins(18, 14, 18, 14)
+        hl.addWidget(self.stack)
+        self.panel_scroll = QScrollArea()
+        self.panel_scroll.setWidgetResizable(True)
+        self.panel_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        # Waagrecht nur als Notbehelf (sehr schmales Fenster, Hand-Seite).
+        self.panel_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.panel_scroll.setWidget(holder)
+        work.addWidget(self.panel_scroll, 1)
+
+        # ── Statusleiste ────────────────────────────────────────────────
+        sbar = QFrame()
+        sbar.setObjectName("statusbar")
+        sbar.setStyleSheet(f"QFrame#statusbar {{ background:{T.SURFACE}; border:none;"
+                           f" border-top:1px solid {T.LINE}; }}")
+        sl = QHBoxLayout(sbar)
+        sl.setContentsMargins(18, 8, 18, 8)
+        sl.setSpacing(12)
+        self.status = QLabel()
+        self.status.setWordWrap(True)
+        self.status.setMinimumHeight(40)
+        self.status.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        sl.addWidget(self.status, 1)
+        self.btn_history = UI.chip_button("Verlauf", "book-open")
+        self.btn_history.setToolTip("Die letzten Meldungen anzeigen")
+        sl.addWidget(self.btn_history, 0, Qt.AlignmentFlag.AlignVCenter)
+        work.addWidget(sbar)
+
+        # ── Seitenleiste ────────────────────────────────────────────────
+        side = QFrame()
+        side.setObjectName("sidebar")
+        side.setFixedWidth(UI.SIDEBAR_W)
+        side.setStyleSheet(f"QFrame#sidebar {{ background:{T.SURFACE}; border:none;"
+                           f" border-left:1px solid {T.LINE}; }} QLabel {{ background:transparent; }}")
+        sv = QVBoxLayout(side)
+        sv.setContentsMargins(14, 14, 14, 14)
+        sv.setSpacing(12)
+        main.addWidget(side)
+        # NOT-HALT: immer oben, immer sichtbar (nicht im Scrollbereich).
+        self.btn_estop = QPushButton("  NOT-HALT")
+        self.btn_estop.setFixedHeight(96)
+        self.btn_estop.setStyleSheet("""
+            QPushButton { background:#c62828; color:white; font-size:28px; font-weight:900;
+                          letter-spacing:1px; border:4px solid #ff8a80; border-radius:48px; }
+            QPushButton:hover { background:#d32f2f; }
+            QPushButton:pressed { background:#ff1744; }
+        """)
+        ui_icons.set_icon(self.btn_estop, "octagon-alert", "#ffffff", 30)
+        self.btn_estop.setToolTip("Alles weich schalten (Arme, Gehen). Danach neu starten.")
+        sv.addWidget(self.btn_estop)
+        side_scroll = QScrollArea()
+        side_scroll.setWidgetResizable(True)
+        side_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        side_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        side_scroll.setStyleSheet(f"QScrollArea {{ background:{T.SURFACE}; }}")
+        side_body = QWidget()
+        side_body.setStyleSheet(f"background:{T.SURFACE};")
+        sb = QVBoxLayout(side_body)
+        sb.setContentsMargins(0, 0, 4, 0)
+        sb.setSpacing(8)
+        side_scroll.setWidget(side_body)
+        sv.addWidget(side_scroll, 1)
+
+        # Real: Startleiste Start | Damp | Preparation | Walk + Rueckmeldung des
+        # loco_client (Onboard-Modus). Start = /g1pilot/start: gibt den Modus-
+        # Umschalter frei und quittiert einen NOT-HALT (arm_controller,
+        # loco_client, Controller). Freigabe der Onboard-Schritte je nach
+        # Onboard-Modus (status_line.start_buttons), Damp aus dem Stehen und
+        # Walk brauchen einen zweiten Klick.
         self.start_bar = QWidget()
-        bar = QHBoxLayout(self.start_bar)
-        bar.setContentsMargins(0, 0, 0, 0)
-        bar.setSpacing(10)
-        self.btn_start = big_button("Start", "#e65100", font=18, height=50)
-        bar.addWidget(self.btn_start, 1)
+        bl = QVBoxLayout(self.start_bar)
+        bl.setContentsMargins(0, 0, 0, 0)
+        bl.setSpacing(8)
+        bl.addWidget(UI.section("Startleiste · Onboard"))
+        self.info_onboard = QLabel()
+        self.info_onboard.setWordWrap(True)
+        self.info_onboard.setVisible(not self.sim_mode)
+        bl.addWidget(self.info_onboard)
+        self.btn_start = UI.big_button("Start", "#e65100", font=17, height=52)
+        bl.addWidget(self.btn_start)
         self.start_btns = {}
-        for step in status_line.START_STEPS:
-            b = big_button(status_line.START_LABEL[step], "#37474f", font=18, height=50)
+        for i, step in enumerate(status_line.START_STEPS):
+            b = UI.big_button(status_line.START_LABEL[step], "#37474f", font=15, height=46)
+            b.setToolTip(f"Schritt {i + 1} von {len(status_line.START_STEPS)}: "
+                         f"{status_line.START_LABEL[step]} am Roboter anfordern")
             b.clicked.connect(lambda _=False, s=step: self._start_step(s))
-            bar.addWidget(b, 1)
+            bl.addWidget(b)
             self.start_btns[step] = b
         self._start_armed = None      # Schritt, der auf den zweiten Klick wartet
         self._start_armed_n = 0
         self._last_note = None
-        self.info_onboard = QLabel()
-        self.info_onboard.setWordWrap(True)
-        self.info_onboard.setSizePolicy(QSizePolicy.Policy.Expanding,
-                                        QSizePolicy.Policy.Preferred)
-        self.info_onboard.setVisible(not self.sim_mode)
-        bar.addWidget(self.info_onboard, 3)
         self.start_bar.setVisible(not self.sim_mode)
-        root.addWidget(self.start_bar)
+        sb.addWidget(self.start_bar)
         self._update_start_button()
 
-        # Bereich 2: Steuerung des aktiven Modus
-        root.addWidget(self._section_label("2  ·  STEUERUNG"))
-        self.panel_frame = QFrame()
-        self.panel_frame.setObjectName("panel")
-        pf = QVBoxLayout(self.panel_frame)
-        pf.setContentsMargins(18, 10, 18, 10)
-        self.walk_panel = WalkPanel()
-        self.manip_panel = ManipPanel(self)
-        # Titelzeile: Modus-Titel + (nur GREIFEN) Umschalter ARME | HAENDE,
-        # zentriert im Platz rechts vom Titel. Darunter eine Trennlinie.
-        head = QHBoxLayout()
-        head.setContentsMargins(0, 0, 0, 0)
-        self.panel_title = QLabel()
-        head.addWidget(self.panel_title)
-        head.addStretch(1)
-        head.addWidget(self.manip_panel.view_switch)
-        head.addStretch(1)
-        pf.addLayout(head)
-        self.panel_rule = QFrame()
-        self.panel_rule.setFixedHeight(2)
-        pf.addSpacing(4)
-        pf.addWidget(self.panel_rule)
-        pf.addSpacing(6)
-        self.stack = QStackedWidget()
-        self.idle_panel = QLabel("Bitte oben einen Modus wählen.")
-        self.idle_panel.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.idle_panel.setStyleSheet("color:#6b7380; font-size:22px;")
-        for w in (self.idle_panel, self.walk_panel, self.manip_panel):
-            self.stack.addWidget(w)
-        # Scrollbereich als Reserve: die Mindesthoehe des Fensters haengt so
-        # nicht mehr am groessten Panel. Frueher lag sie real bei ~1160 px --
-        # hoeher als ein 1080er-Schirm, darum bot der Fenstermanager kein
-        # Maximieren an und auch Vollbild blieb groesser als der Schirm.
-        self.panel_scroll = QScrollArea()
-        self.panel_scroll.setWidgetResizable(True)
-        self.panel_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self.panel_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.panel_scroll.setWidget(self.stack)
-        pf.addWidget(self.panel_scroll, 1)
-        root.addWidget(self.panel_frame, 1)
-
-        # Bereich 3: Status + Sicherheit
-        bottom = QHBoxLayout()
-        bottom.setSpacing(14)
-        self.status = QLabel()
-        self.status.setWordWrap(True)
-        self.status.setMinimumHeight(48)
-        # Real: Temperaturen des G1 (links; in der Sim ausgeblendet, kein Messwert).
+        # Real: Akku + Temperaturen (in der Sim kein Messwert -> aus).
+        self.temp_box = QWidget()
+        tl = QVBoxLayout(self.temp_box)
+        tl.setContentsMargins(0, 8, 0, 0)
+        tl.setSpacing(8)
+        tl.addWidget(UI.section("Akku · Temperaturen"))
         self.temp_panel = TempPanel(self.node)
+        tl.addWidget(self.temp_panel)
+        self.temp_box.setVisible(not self.sim_mode)
         self.temp_panel.setVisible(not self.sim_mode)
         if self.sim_mode:
             self.temp_panel.timer.stop()
-        bottom.addWidget(self.temp_panel)
-        bottom.addStretch(1)
-        self.btn_reset_scene = big_button("Szene\nzurücksetzen", font=15, height=70)
-        self.btn_reset_scene.setFixedWidth(170)
-        self.btn_reset_scene.setVisible(self.sim_mode)
-        bottom.addWidget(self.btn_reset_scene)
-        # Nur Sim: Roboter nach NOT-HALT/Sturz zurueck an den Startpunkt (HOLD,
-        # gehalten wie beim Start) -> danach Modus waehlen, steht sanft auf.
-        self.btn_reset_robot = big_button("Roboter\nzurücksetzen", font=15, height=70)
-        self.btn_reset_robot.setFixedWidth(170)
-        self.btn_reset_robot.setVisible(self.sim_mode)
-        bottom.addWidget(self.btn_reset_robot)
-        # Stoer-Test (nur Sim): schubst den Roboter -> zeigt, dass er sich faengt.
-        self.btn_push = big_button("Roboter\nschubsen", font=15, height=70)
-        self.btn_push.setFixedWidth(170)
-        self.btn_push.setVisible(self.sim_mode)
-        bottom.addWidget(self.btn_push)
+        sb.addWidget(self.temp_box)
+
+        # Sim: Werkzeuge rund um den simulierten Roboter.
+        self.sim_box = QWidget()
+        xl = QVBoxLayout(self.sim_box)
+        xl.setContentsMargins(0, 0, 0, 0)
+        xl.setSpacing(8)
+        xl.addWidget(UI.section("Simulation"))
+        # Roboter nach NOT-HALT/Sturz zurueck an den Startpunkt (HOLD, gehalten
+        # wie beim Start) -> danach Modus waehlen, steht sanft auf.
+        self.btn_reset_robot = UI.big_button("Roboter zurücksetzen", font=15, height=46,
+                                             icon="refresh-cw")
+        self.btn_reset_robot.setToolTip("Roboter zurück an den Startpunkt (gehalten); "
+                                        "danach Modus wählen")
+        # Stoer-Test: schubst den Roboter -> zeigt, dass er sich faengt.
+        self.btn_push = UI.big_button(PUSH_LABEL, font=15, height=46, icon="move")
+        self.btn_push.setToolTip("Kurz tippen = Standard-Schubs, halten = stärker")
+        self.btn_reset_scene = UI.big_button("Szene zurücksetzen", font=15, height=46, icon="box")
+        self.btn_reset_scene.setToolTip("Objekte der Szene an ihre Startplätze")
+        for b in (self.btn_reset_robot, self.btn_push, self.btn_reset_scene):
+            b.setVisible(self.sim_mode)
+            xl.addWidget(b)
+        self.sim_box.setVisible(self.sim_mode)
+        sb.addWidget(self.sim_box)
+        sb.addStretch(1)
+
         # Ganzen Stack beenden (alle Fenster zu). Zweiter Klick bestaetigt.
         # Real: vorher Laufen stoppen und Arme sicher abgeben (_quit_real_begin).
-        self._quit_label = "Sim\nbeenden" if self.sim_mode else "Real\nbeenden"
-        self.btn_quit = big_button(self._quit_label, "#37474f", font=15, height=70)
-        self.btn_quit.setFixedWidth(170)
+        self._quit_label = "Sim beenden" if self.sim_mode else "Real beenden"
+        self.btn_quit = UI.big_button(self._quit_label, font=15, height=48)
+        self.btn_quit.setStyleSheet(UI.button_css("transparent", "#ff8a80", 15,
+                                                  border="#5a2a30"))
+        ui_icons.set_icon(self.btn_quit, "power", "#ff8a80", 18)
         self._quit_css = self.btn_quit.styleSheet()
         self._quit_armed = 0        # >0: erster Klick erfolgt (Zaehler gegen alte Timer)
         self._real_quit = 0         # >0: »Real beenden« laeuft (Zaehler gegen alte Timer)
-        bottom.addWidget(self.btn_quit)
-        self.btn_estop = QPushButton("NOT-HALT")
-        self.btn_estop.setFixedSize(220, 90)
-        self.btn_estop.setStyleSheet("""
-            QPushButton { background:#c62828; color:white; font-size:26px; font-weight:900;
-                          border:3px solid #ff8a80; border-radius:45px; }
-            QPushButton:pressed { background:#ff1744; }
-        """)
-        bottom.addWidget(self.btn_estop)
-        root.addWidget(self._section_label("3  ·  STATUS"))
-        # Status ueber volle Breite (lange Meldungen), Knoepfe darunter.
-        root.addWidget(self.status)
-        root.addLayout(bottom)
+        sv.addWidget(self.btn_quit)
         self._status("Startet …", "#aaa")
 
     # ── Vollbild ────────────────────────────────────────────────────────
@@ -1514,8 +1425,8 @@ class DemoGUI(QWidget):
 
     @staticmethod
     def _info_css(color):
-        return (f"color:{color}; font-size:16px; font-weight:700; padding:4px 10px;"
-                f"background:#1a1a1a; border-left:5px solid {color}; border-radius:6px;")
+        return (f"color:{color}; font-size:14px; font-weight:700; padding:6px 10px;"
+                f"background:{T.BG}; border-left:4px solid {color}; border-radius:6px;")
 
     def _refresh_info(self):
         """Info-Zeile aus den zuletzt empfangenen Zustaenden (2 Hz)."""
@@ -1539,13 +1450,91 @@ class DemoGUI(QWidget):
         # nur der Knopf zur Belegung, solange ein Controller aktiv ist.
         res = status_line.ps4_text(n.ps4, age, sim=self.sim_mode, walk=n.ps4walk,
                                    device=n.ps4dev)
-        self.btn_pad_help.setVisible(res is not None)
+        # In der Controller-Ansicht steht die Belegung schon auf der Flaeche.
+        self.btn_pad_help.setVisible(res is not None
+                                     and getattr(self, "view", None) != UI.VIEW_CONTROLLER)
         self._show_quickslot(res)
         if res is not None:
             name = (n.ps4dev or {}).get("name")
             label = status_line.controller_label(n.ps4dev)
             self.btn_pad_help.setToolTip((f"{name}\n" if name else "")
                                          + f"Belegung des {label}-Controllers")
+
+    # ── Ansicht Touch | Controller ─────────────────────────────────────
+    def set_view(self, view):
+        """Touch- oder Controller-Ansicht (nur Oberflaeche: Modus, Topics und
+        Sicherheit bleiben gleich; alle Knoepfe der Ansicht sind klickbar)."""
+        view = UI.VIEW_CONTROLLER if view == UI.VIEW_CONTROLLER else UI.VIEW_TOUCH
+        on = view == UI.VIEW_CONTROLLER
+        self.view = view
+        for k, b in self.view_btns.items():
+            b.setChecked(k == view)
+        self.manip_panel.set_controller_view(on)
+        self.walk_panel.set_controller_view(on)
+        if on:
+            self.btn_pad_help.setVisible(False)
+            self._reload_quick_slots()
+            self._refresh_controller_view()
+            self.ctrl_timer.start(100)
+        else:
+            self.ctrl_timer.stop()
+        self.stack.updateGeometry()
+
+    def _reload_quick_slots(self):
+        store = self._pose_store()
+        try:
+            slots = store.list_quickslots() if store is not None else {}
+        except Exception:   # noqa: BLE001 -- Anzeige, Datei evtl. gerade im Schreiben
+            return
+        self.manip_panel.quick_grid.set_slots(slots)
+        self._quick_reload_t = time.monotonic()
+
+    def _refresh_controller_view(self):
+        """Controller-Ansicht (10 Hz): Zustand, Werte, Belegung, Schnellwahl."""
+        n, now = self.node, time.monotonic()
+        age = None if n.ps4_t is None else now - n.ps4_t
+        res = status_line.ps4_text(n.ps4, age, sim=self.sim_mode, walk=n.ps4walk,
+                                   device=n.ps4dev)
+        fresh = res is not None and age is not None and age <= status_line.STALE_S
+        st = (n.ps4 or {}) if fresh else {}
+        walk = (n.ps4walk or {}) if fresh else {}
+        colors = {"manip": MODE_COLOR[MANIP], "walk": MODE_COLOR[WALK],
+                  "waist": UI.WAIST_COLOR, "seq": "#66bb6a", "safety": "#ef5350",
+                  "other": T.FG}
+        groups = status_line.ps4_help_groups(n.ps4)
+        mp, wp = self.manip_panel, self.walk_panel
+        if self.mode == MANIP or self.mode is None:
+            c = mp.ctrl_card
+            c.set_line(res)
+            sel = st.get("selection")
+            c.set_fact("hand", status_line.SELECTION_LABEL.get(sel, "–") if sel else "–",
+                       status_line._hex(status_line.COLORS[sel])
+                       if sel in status_line.COLORS else T.FG)
+            c.set_fact("motion", status_line.MODE_LABEL.get(st.get("mode"), "–"))
+            speed = st.get("speed") or "–"
+            if st.get("speed_req") not in (None, st.get("speed")):
+                speed += " (max.)"
+            c.set_fact("speed", speed)
+            wt = status_line.waist_text(n.waist, None if n.waist_t is None else now - n.waist_t)
+            c.set_fact("waist", wt[0].replace("Hüfte ", "", 1) if wt else "–",
+                       wt[1] if wt else T.FG)
+            mp.legend_card.set_groups(
+                [g for g in groups if g[2] in ("manip", "waist", "seq", "safety")], colors)
+            quick = st.get("quick") if st.get("waist_mode") else None
+            mp.quick_grid.highlight(quick)
+            if now - getattr(self, "_quick_reload_t", 0.0) > 2.0:
+                self._reload_quick_slots()      # Zuordnung im Editor geaendert
+        if self.mode == WALK:
+            c = wp.ctrl_card
+            c.set_line(res)
+            if walk.get("active") and not walk.get("estop"):
+                c.set_fact("state", "läuft (L2 gehalten)", MODE_COLOR[WALK])
+            elif fresh:
+                c.set_fact("state", "steht · L2 halten = laufen")
+            else:
+                c.set_fact("state", "–")
+            c.set_fact("speed", walk.get("speed") or wp.speed_name)
+            wp.legend_card.set_groups([g for g in groups if g[2] in ("walk", "safety")], colors)
 
     def _show_quickslot(self, res):
         """Pose-Schnellwahl am Controller (R2 + Steuerkreuz 2x): Wahl in der
@@ -1724,26 +1713,6 @@ class DemoGUI(QWidget):
         self._pad_dialog = dlg               # Referenz halten (nicht modal)
         dlg.show()
 
-    @staticmethod
-    def _small_button(text):
-        """Flacher Knopf fuer die Kopfzeile (Vollbild, Controller-Belegung)."""
-        b = QPushButton(text)
-        b.setFixedHeight(30)
-        b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        b.setStyleSheet("""
-            QPushButton { background:#272d38; color:#e8eaed; font-size:14px; font-weight:700;
-                          border:1px solid #3a4250; border-radius:8px; padding:2px 12px; }
-            QPushButton:hover { border:2px solid #8f97a3; }
-            QPushButton:pressed { background:#3a4250; }
-        """)
-        return b
-
-    @staticmethod
-    def _section_label(text):
-        lbl = QLabel(text)
-        lbl.setStyleSheet("color:#5d6470; font-size:12px; font-weight:700; letter-spacing:2px;")
-        return lbl
-
     def _wire(self):
         n = self.node
         mp = self.manip_panel
@@ -1764,6 +1733,7 @@ class DemoGUI(QWidget):
         self.btn_quit.clicked.connect(self._quit_clicked)
         self.btn_fullscreen.clicked.connect(self.toggle_fullscreen)
         self.btn_pad_help.clicked.connect(self._ps4_help)
+        self.btn_history.clicked.connect(self.show_history)
         self._sc_fullscreen = QShortcut(QKeySequence(Qt.Key.Key_F11), self)
         self._sc_fullscreen.activated.connect(self.toggle_fullscreen)
         self._sc_leave_fullscreen = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
@@ -1784,6 +1754,7 @@ class DemoGUI(QWidget):
         mp.btn_save.clicked.connect(lambda: self.save_current_pose())
         mp.btn_next.clicked.connect(self.sequence_next)
         mp.btn_sequences.clicked.connect(self.open_sequence_editor)
+        mp.btn_quick_edit.clicked.connect(lambda: self.open_sequence_editor(tab=1))
         mp.btn_marker.toggled.connect(lambda on: n.publish_bool(n.pub_marker_follow, on))
         # Einstellungen gehen in den gemeinsamen Zustand (Controller zieht nach).
         mp.jog.on_change = n.share
@@ -1972,19 +1943,24 @@ class DemoGUI(QWidget):
             tile.set_state("active" if m == self.mode
                            else "pending" if m == self.pending else "inactive")
         shown = self.pending or self.mode
-        color = MODE_COLOR.get(shown, "#2e3541")
-        self.panel_frame.setStyleSheet(
-            f"QFrame#panel {{ border:3px solid {color}; border-radius:18px; }}")
-        self.manip_panel.view_switch.setVisible(self.mode == MANIP)
-        self.panel_rule.setVisible(self.mode is not None)
-        self.panel_rule.setStyleSheet(f"background:{color}; border:none; border-radius:1px;")
+        color = MODE_COLOR.get(shown, T.LINE)
+        self.mode_line.setStyleSheet(f"background:{color}; border:none;")
         if self.mode is None:
             self.stack.setCurrentWidget(self.idle_panel)
-            self.panel_title.setText("")
+            self.idle_panel.setText(self._idle_text())
         else:
             self.stack.setCurrentWidget(self.walk_panel if self.mode == WALK else self.manip_panel)
-            self.panel_title.setText(MODE_TITLE[self.mode])
-        self.panel_title.setStyleSheet(f"color:{color}; font-size:20px; font-weight:800;")
+        self.stack.updateGeometry()
+
+    def _idle_text(self):
+        """Arbeitsflaeche ohne Modus: was als Naechstes zu tun ist."""
+        if self.pending is not None:
+            return f"{MODE_TITLE[self.pending]} wird eingeschaltet …"
+        if not self.started:
+            if self._estop_shown:
+                return "NOT-HALT aktiv.\nRechts »NOT-HALT quittieren«, dann oben einen Modus wählen."
+            return "Zuerst rechts »Start« drücken,\ndann oben GEHEN oder GREIFEN wählen."
+        return "Oben einen Modus wählen: GEHEN oder GREIFEN."
 
     def set_auto_nav(self, on):
         """AUTO NAV an/aus. Aus sendet joy_mux einmal einen neutralen Stop."""
@@ -2104,6 +2080,7 @@ class DemoGUI(QWidget):
 
     def _reload_sequence_buttons(self):
         self.manip_panel.fill_sequence_buttons(self._sequences())
+        self._reload_quick_slots()
         if self.seq_editor is not None and self.seq_editor.isVisible():
             self.seq_editor.reload()
 
@@ -2208,7 +2185,7 @@ class DemoGUI(QWidget):
         store = self._pose_store()
         if store is None or store.get(SAFE_POSE) is None:
             self._status(f"Pose »{pretty_pose_name(SAFE_POSE)}« ist nicht gespeichert "
-                         "(Erweitert → Pose speichern).", "#ffb300")
+                         "(Karte »Posen« → Pose speichern …).", "#ffb300")
             return
         self.run_poses([SAFE_POSE])
 
@@ -2229,6 +2206,7 @@ class DemoGUI(QWidget):
         now = time.monotonic()
         dt = min(0.1, now - self._jog_t)
         self._jog_t = now
+        self._waist_tick()
         mp = self.manip_panel
         jog = mp.jog
         lin, ang = jog.twist()
@@ -2268,6 +2246,33 @@ class DemoGUI(QWidget):
             self._status("Hand bewegen: Handposition unbekannt (TF fehlt) — "
                          "läuft der Roboter-Zustand?", "#ffb300")
 
+    def _waist_tick(self):
+        """Huefte drehen (Schieber in »Hand bewegen«), ~30 Hz wie der Controller:
+        solange gezogen Rate -1..1 senden (+ = links), beim Loslassen oder
+        Verlassen von GREIFEN/ARME einmal 0. Ohne Strom haelt der arm_controller
+        die Huefte von selbst an (Totmann)."""
+        mp = self.manip_panel
+        rate = mp.waist_rocker.value
+        allowed = (self.mode == MANIP and self.pending is None
+                   and mp.views.currentWidget() is mp.arms_page and not mp.controller_view)
+        if not allowed and abs(rate) > 1e-3:
+            mp.waist_rocker.mouseReleaseEvent(None)
+            rate = 0.0
+        n = self.node
+        if abs(rate) > 1e-3:
+            if not self._waist_sending:
+                # Wie am Controller: keine Halte-Ziele (Becken-Bezug) -- sie
+                # zoegen die Arme nach dem Drehen an die alte Stelle zurueck.
+                self._jog_holds.clear()
+                self._waist_sending = True
+                self._status("Hüfte dreht …", UI.WAIST_COLOR)
+            n.pub_waist_rate.publish(Float32(data=float(max(-1.0, min(1.0, rate)))))
+        elif self._waist_sending:
+            self._waist_sending = False
+            n.pub_waist_rate.publish(Float32(data=0.0))
+            if self.mode == MANIP:
+                self._status("Hüfte steht.", UI.WAIST_COLOR)
+
     def _jog_stop(self):
         """Losgelassen: Ziel auf die aktuelle Hand setzen -> Arm bleibt sofort
         stehen statt den Vorlauf noch abzufahren (hold_pose: entlang der
@@ -2297,11 +2302,14 @@ class DemoGUI(QWidget):
         if dlg.exec() == QDialog.DialogCode.Accepted and dlg.selected_name():
             self.run_poses([dlg.selected_name()])
 
-    def open_sequence_editor(self):
-        """Fenster »Posen & Abläufe« (nicht modal: nebenher Hand bewegen)."""
+    def open_sequence_editor(self, tab=None):
+        """Fenster »Posen & Abläufe« (nicht modal: nebenher Hand bewegen).
+        tab=1: gleich den Reiter »Controller-Schnellwahl« zeigen."""
         if self.seq_editor is None:
             self.seq_editor = SequenceEditor(self, parent=self)
         self.seq_editor.reload()
+        if tab is not None:
+            self.seq_editor.tabs.setCurrentIndex(tab)
         self.seq_editor.show()
         self.seq_editor.raise_()
         self.seq_editor.activateWindow()
@@ -2376,7 +2384,7 @@ class DemoGUI(QWidget):
         lvl = self._push_charger.level()
         if lvl > 0.0:
             f = push_charge.force_for_level(lvl)
-            self.btn_push.setText(f"Schubs\n{lvl*100:.0f} % · {f:.0f} N")
+            self.btn_push.setText(f"Schubs {lvl*100:.0f} % · {f:.0f} N")
             self._status(f"Schubs aufgeladen: {lvl*100:.0f} % ({f:.0f} N) – loslassen zum Schubsen",
                          "#ffb300")
 
@@ -2387,7 +2395,7 @@ class DemoGUI(QWidget):
         self._push_timer.stop()
         lvl = self._push_charger.release()
         self.node.publish_push_charge(lvl)
-        self.btn_push.setText("Roboter\nschubsen")
+        self.btn_push.setText(PUSH_LABEL)
         f = push_charge.force_for_level(lvl)
         self._status(f"Roboter wird geschubst … ({f:.0f} N)", "#ffb300")
 
@@ -2461,9 +2469,9 @@ class DemoGUI(QWidget):
         if not self._quit_armed:
             self._quit_armed += 1
             armed = self._quit_armed
-            self.btn_quit.setText("Wirklich?\nnochmal tippen")
-            self.btn_quit.setStyleSheet(state_css("#272d38", "#ffb300",
-                                                  "4px dashed #ffb300", 15))
+            self.btn_quit.setText("Wirklich? nochmal tippen")
+            self.btn_quit.setStyleSheet(state_css(T.CARD_HI, "#ffb300",
+                                                  "3px dashed #ffb300", 15))
             QTimer.singleShot(QUIT_CONFIRM_MS,
                               lambda: armed == self._quit_armed and self._disarm_quit())
             return
@@ -2472,7 +2480,7 @@ class DemoGUI(QWidget):
         if not self.sim_mode:
             self._quit_real_begin()
             return
-        self.btn_quit.setText("Sim wird\nbeendet …")
+        self.btn_quit.setText("Sim wird beendet …")
         try:
             with open(SIM_SHUTDOWN_TRIGGER, "w") as f:
                 f.write("quit")
@@ -2514,7 +2522,7 @@ class DemoGUI(QWidget):
         n = self.node
         self._real_quit += 1
         token = self._real_quit
-        self.btn_quit.setText("Arme werden\nabgegeben …")
+        self.btn_quit.setText("Arme werden abgegeben …")
         self.autostart.cancel("Real beenden")
         self._cancel_sequence()
         self.set_auto_nav(False)
@@ -2556,7 +2564,7 @@ class DemoGUI(QWidget):
     def _quit_real_shutdown(self, token):
         if token != self._real_quit:
             return
-        self.btn_quit.setText("Real wird\nbeendet …")
+        self.btn_quit.setText("Real wird beendet …")
         try:
             with open(REAL_SHUTDOWN_TRIGGER, "w") as f:
                 f.write("quit")
@@ -2586,11 +2594,27 @@ class DemoGUI(QWidget):
                      f"oder make stop", "#ef5350")
 
     def _status(self, text, color):
+        """Meldung in der Statusleiste (und im Verlauf, Wiederholungen nur einmal)."""
         self._status_color = color
         self.status.setText(text)
         self.status.setStyleSheet(
-            f"color:{color}; font-size:20px; font-weight:700; padding:10px 16px;"
-            f"background:#1a1a1a; border-left:6px solid {color}; border-radius:8px;")
+            f"color:{color}; font-size:18px; font-weight:700; padding:4px 14px;"
+            f"background:transparent; border-left:5px solid {color};")
+        hist = self.__dict__.setdefault("_history", deque(maxlen=HISTORY_LEN))
+        if not hist or hist[-1][1] != text:
+            hist.append((time.strftime("%H:%M:%S"), text, color))
+        dlg = getattr(self, "_history_dialog", None)
+        if dlg is not None and dlg.isVisible():
+            dlg.fill(hist)
+
+    def show_history(self):
+        """Fenster »Meldungen« (die letzten HISTORY_LEN Meldungen)."""
+        hist = self.__dict__.setdefault("_history", deque(maxlen=HISTORY_LEN))
+        if getattr(self, "_history_dialog", None) is None:
+            self._history_dialog = UI.HistoryDialog(self, hist)
+        self._history_dialog.fill(hist)
+        self._history_dialog.show()
+        self._history_dialog.raise_()
 
 
 def main():

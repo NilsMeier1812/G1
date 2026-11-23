@@ -46,6 +46,16 @@ class VirtualJoystick(QWidget):
         self.vx = 0.0
         self.vy = 0.0
 
+    def set_size(self, size):
+        """Groesse aendern (Demo-GUI passt die Joysticks an die Fensterbreite an)."""
+        size = int(size)
+        if size == self._size:
+            return
+        self._size = size
+        self.setFixedSize(size, size)
+        self._radius = size / 2 - 16
+        self.mouseReleaseEvent(None)
+
     def _update_vel(self):
         r = self._radius
         # Bildschirm-y zeigt nach unten -> oben (negatives dy) = vorwaerts.

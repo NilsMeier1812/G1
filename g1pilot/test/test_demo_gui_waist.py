@@ -75,3 +75,67 @@ def test_jog_forward_follows_torso_yaw(gui):
     _, p = sent[-1]
     # Huefte 90 deg nach links: "vor" (Brust) zeigt im Becken-Frame nach +y
     assert p[1] > -0.23 + 1e-4 and abs(p[0] - 0.35) < 1e-6
+
+
+def _rates(node):
+    sent = []
+    node.pub_waist_rate.publish = lambda m: sent.append(round(float(m.data), 3))
+    return sent
+
+
+def test_waist_rocker_streams_rate_and_stops(gui):
+    """Huefte drehen aus der GUI (2026-11-17): Schieber gezogen -> Rate-Strom
+    wie am Controller (+ = links), loslassen -> genau einmal 0."""
+    dg, g, node = gui
+    g.started, g.mode = True, dg.MANIP
+    g._refresh()
+    mp = g.manip_panel
+    sent = _rates(node)
+    g._waist_tick()
+    assert sent == []                                # nichts gezogen -> nichts gesendet
+    mp.waist_rocker.value = 0.5                      # nach links gezogen
+    g._waist_tick()
+    g._waist_tick()
+    assert sent == [0.5, 0.5] and "Hüfte dreht" in g.status.text()
+    mp.waist_rocker.value = -2.0                     # gekappt auf -1
+    g._waist_tick()
+    assert sent[-1] == -1.0
+    mp.waist_rocker.mouseReleaseEvent(None)          # losgelassen
+    g._waist_tick()
+    g._waist_tick()
+    assert sent[-1] == 0.0 and sent.count(0.0) == 1
+    assert "Hüfte steht" in g.status.text()
+
+
+def test_waist_rocker_only_in_grasp_arms(gui):
+    """Ausserhalb von GREIFEN/ARME (GEHEN, HAENDE, NOT-HALT) dreht nichts;
+    ein laufender Strom endet mit 0 und der Schieber springt zurueck."""
+    dg, g, node = gui
+    g.started, g.mode = True, dg.MANIP
+    g._refresh()
+    mp = g.manip_panel
+    sent = _rates(node)
+    mp.waist_rocker.value = 0.8
+    g._waist_tick()
+    assert sent == [0.8]
+    g.emergency_stop()                               # Modus weg
+    g._waist_tick()
+    assert sent == [0.8, 0.0] and mp.waist_rocker.value == 0.0
+    g.mode = dg.WALK
+    mp.waist_rocker.value = 0.8
+    g._waist_tick()
+    assert sent == [0.8, 0.0] and mp.waist_rocker.value == 0.0
+
+
+def test_waist_rocker_clears_hold_targets(gui):
+    """Wie am Controller: Halte-Ziele (Becken-Bezug) wuerden die Arme nach dem
+    Drehen zurueckziehen -> beim Start der Drehung verwerfen."""
+    dg, g, node = gui
+    g.started, g.mode = True, dg.MANIP
+    g._refresh()
+    _rates(node)
+    g._jog_holds.hold("left", ([0.3, 0.2, 0.1], (0, 0, 0, 1)), time.monotonic())
+    assert g._jog_holds.due(time.monotonic() + 0.05)
+    g.manip_panel.waist_rocker.value = 0.3
+    g._waist_tick()
+    assert not g._jog_holds.due(time.monotonic() + 0.05)

@@ -156,7 +156,7 @@ TOPICS = {
     "/g1pilot/pose_store/goto": ("String", ["gui"], ["arm_controller"], "ros"),
     "/g1pilot/pose_store/cancel": ("Bool", ["gui", "ps4_arm_teleop"],
                                    ["arm_controller", "gui"], "ros"),
-    "/g1pilot/waist/yaw_rate": ("Float32", ["ps4_arm_teleop"], ["arm_controller"], "ros"),
+    "/g1pilot/waist/yaw_rate": ("Float32", ["ps4_arm_teleop", "gui"], ["arm_controller"], "ros"),
     "/g1pilot/waist/center": ("Bool", ["ps4_arm_teleop", "gui"], ["arm_controller"], "ros"),
     "/g1pilot/waist/state": ("String (JSON)", ["arm_controller"],
                              ["loco_sim:sim", "loco_client:real", "ps4_arm_teleop",
