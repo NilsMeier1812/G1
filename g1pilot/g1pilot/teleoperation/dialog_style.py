@@ -5,14 +5,14 @@ Farben passend zur Demo-GUI, Icons aus g1pilot/utils/ui_icons.py (keine Emojis).
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout
 
-from g1pilot.utils import ui_icons
+from g1pilot.utils import ui_icons, ui_theme as T
 
-BG = "#141414"
-CARD = "#1d1f23"
-LINE = "#2c3038"
-FG = "#e8eaed"
-MUTED = "#9aa0a6"
-ACCENT = "#4fc3f7"
+BG = T.BG
+CARD = T.CARD
+LINE = T.LINE
+FG = T.FG
+MUTED = T.MUTED
+ACCENT = T.ACCENT
 OK = "#66bb6a"
 WARN = "#ffb300"
 BAD = "#ef5350"
@@ -45,43 +45,43 @@ DIALOG_CSS = f"""
 QDialog {{ background:{BG}; }}
 QLabel {{ color:{FG}; background:transparent; }}
 QFrame#dcard {{ background:{CARD}; border:1px solid {LINE}; border-radius:14px; }}
-QPushButton {{ background:#2a2e35; color:{FG}; border:1px solid #3a3f48; border-radius:10px;
+QPushButton {{ background:#272d38; color:{FG}; border:1px solid #3a4250; border-radius:10px;
                padding:9px 16px; font-size:14px; font-weight:600; }}
 QPushButton:hover {{ border-color:#6b7280; }}
-QPushButton:pressed {{ background:#3a3f48; }}
+QPushButton:pressed {{ background:#3a4250; }}
 QPushButton:disabled {{ color:#5d6470; background:#1a1c20; border-color:#24272d; }}
-QPushButton[kind="primary"] {{ background:#1565c0; border:none; color:white; }}
-QPushButton[kind="primary"]:hover {{ background:#1e78d8; }}
+QPushButton[kind="primary"] {{ background:#4c8bf5; border:none; color:white; }}
+QPushButton[kind="primary"]:hover {{ background:#5d97f7; }}
 QPushButton[kind="warn"] {{ background:#5d4037; border:none; }}
 QPushButton[kind="warn"]:disabled, QPushButton[kind="primary"]:disabled {{
     background:#1a1c20; color:#5d6470; border:1px solid #24272d; }}
 QPushButton[kind="ghost"] {{ background:transparent; }}
-QListWidget {{ background:#16181b; border:1px solid {LINE}; border-radius:10px; color:{FG};
+QListWidget {{ background:#1b1f27; border:1px solid {LINE}; border-radius:10px; color:{FG};
                font-size:14px; padding:4px; outline:none; }}
 QListWidget::item {{ padding:8px 6px; border-radius:6px; }}
-QListWidget::item:selected {{ background:#263445; color:white; }}
+QListWidget::item:selected {{ background:#2a3a55; color:white; }}
 QScrollArea {{ border:none; background:{BG}; }}
 QWidget#dbody {{ background:{BG}; }}
-QLineEdit, QComboBox, QDoubleSpinBox {{ background:#16181b; color:{FG}; border:1px solid #3a3f48;
+QLineEdit, QComboBox, QDoubleSpinBox {{ background:#1b1f27; color:{FG}; border:1px solid #3a4250;
     border-radius:8px; padding:6px 10px; font-size:14px; min-height:22px; }}
 QLineEdit:focus, QComboBox:focus, QDoubleSpinBox:focus {{ border-color:{ACCENT}; }}
-QComboBox QAbstractItemView {{ background:#16181b; color:{FG}; border:1px solid #3a3f48;
-    selection-background-color:#263445; }}
+QComboBox QAbstractItemView {{ background:#1b1f27; color:{FG}; border:1px solid #3a4250;
+    selection-background-color:#2a3a55; }}
 QCheckBox {{ color:{FG}; font-size:14px; spacing:8px; padding:4px 2px; }}
-QTreeWidget {{ background:#16181b; border:1px solid {LINE}; border-radius:10px; color:{FG};
+QTreeWidget {{ background:#1b1f27; border:1px solid {LINE}; border-radius:10px; color:{FG};
     font-size:14px; padding:4px; outline:none; }}
 QTreeWidget::item {{ padding:6px 4px; border-radius:6px; }}
-QTreeWidget::item:selected {{ background:#263445; color:white; }}
+QTreeWidget::item:selected {{ background:#2a3a55; color:white; }}
 QHeaderView::section {{ background:{CARD}; color:{MUTED}; border:none;
     border-bottom:1px solid {LINE}; padding:6px; font-weight:700; }}
 QComboBox::drop-down {{ border:none; width:26px; }}
 QComboBox::down-arrow {{ image:url({ARROW_DOWN}); width:14px; height:14px; }}
 QDoubleSpinBox {{ padding-right:30px; }}
 QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{ subcontrol-origin:border; width:26px;
-    background:#262a31; border:none; border-left:1px solid #3a3f48; }}
+    background:#272d38; border:none; border-left:1px solid #3a4250; }}
 QDoubleSpinBox::up-button {{ subcontrol-position:top right; border-top-right-radius:8px; }}
 QDoubleSpinBox::down-button {{ subcontrol-position:bottom right; border-bottom-right-radius:8px; }}
-QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {{ background:#3a3f48; }}
+QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {{ background:#3a4250; }}
 QDoubleSpinBox::up-arrow {{ image:url({ARROW_UP}); width:12px; height:12px; }}
 QDoubleSpinBox::down-arrow {{ image:url({ARROW_DOWN}); width:12px; height:12px; }}
 QTabWidget::pane {{ border:none; top:-1px; }}
@@ -92,7 +92,7 @@ QTabBar::tab:hover {{ color:{FG}; }}
 """
 
 
-def icon_box(name, color=FG, size=20, box=36, bg="#2a2e35"):
+def icon_box(name, color=FG, size=20, box=36, bg="#272d38"):
     lbl = QLabel()
     lbl.setPixmap(ui_icons.pixmap(name, color, size))
     lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -130,7 +130,7 @@ def card(title, icon="", accent=FG, sub=""):
 def key_chip(text, color=ACCENT):
     """Taste als abgerundeter Chip (z. B. »L2 halten«)."""
     lbl = QLabel(text)
-    lbl.setStyleSheet(f"background:#262a31; color:{color}; border:1px solid #3a3f48;"
+    lbl.setStyleSheet(f"background:#272d38; color:{color}; border:1px solid #3a4250;"
                       "border-radius:8px; padding:4px 10px; font-size:13px; font-weight:700;")
     lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
     return lbl

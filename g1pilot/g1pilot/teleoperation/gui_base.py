@@ -11,7 +11,7 @@ Speichern-/Laden-Dialoge des Positionsspeichers.
 import math
 from PyQt6.QtWidgets import (
     QWidget, QPushButton, QVBoxLayout,
-    QHBoxLayout, QLabel, QInputDialog, QMessageBox,
+    QHBoxLayout, QLabel,
     QDialog, QCheckBox, QLineEdit, QComboBox,
     QFormLayout, QGridLayout, QTreeWidget, QTreeWidgetItem, QHeaderView
 )
@@ -24,7 +24,7 @@ from std_msgs.msg import Float32, Bool, String
 from geometry_msgs.msg import Twist
 from g1pilot.teleoperation.sim_autostart import ARMS_STATE_TOPIC, LOCO_STATE_TOPIC
 from g1pilot.teleoperation import dialog_style as ds
-from g1pilot.utils import ui_icons
+from g1pilot.utils import msgbox, ui_icons
 
 POSE_COLOR = "#ff9800"   # wie GREIFEN / Fenster »Posen & Abläufe«
 
@@ -89,15 +89,15 @@ class VirtualJoystick(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         c = self._size / 2
-        p.setBrush(QBrush(QColor("#1e1e1e")))
-        p.setPen(QPen(QColor("#444"), 2))
+        p.setBrush(QBrush(QColor("#1f242d")))
+        p.setPen(QPen(QColor("#3a4250"), 2))
         p.drawEllipse(QPointF(c, c), self._radius + 10, self._radius + 10)
-        p.setPen(QPen(QColor("#333"), 1))
+        p.setPen(QPen(QColor("#2e3541"), 1))
         p.drawLine(int(c - self._radius), int(c), int(c + self._radius), int(c))
         p.drawLine(int(c), int(c - self._radius), int(c), int(c + self._radius))
         active = abs(self.vx) > 1e-3 or abs(self.vy) > 1e-3
-        p.setBrush(QBrush(QColor("#4CAF50") if active else QColor("#3c3c3c")))
-        p.setPen(QPen(QColor("#80ff80") if active else QColor("#666"), 2))
+        p.setBrush(QBrush(QColor("#4c8bf5") if active else QColor("#272d38")))
+        p.setPen(QPen(QColor("#8db4fa") if active else QColor("#6b7380"), 2))
         p.drawEllipse(QPointF(c + self._knob.x(), c + self._knob.y()), 15, 15)
 
 
@@ -206,7 +206,7 @@ class PoseSaveDialog(QDialog):
     def _new_category(self):
         """Neue Kategorie anlegen. Sie wird SOFORT im Store vermerkt (leerer
         "Ordner"), damit sie auch nach Abbruch dieses Dialogs erhalten bleibt."""
-        name, ok = QInputDialog.getText(self, "Kategorie anlegen", "Name der Kategorie:")
+        name, ok = msgbox.ask_text(self, "Kategorie anlegen", "Name der Kategorie:", ok="Anlegen")
         name = (name or "").strip()
         if not ok or not name:
             return
@@ -214,7 +214,7 @@ class PoseSaveDialog(QDialog):
             try:
                 self._store.add_category(name)
             except Exception as e:   # noqa: BLE001 -- Anlegen darf den Dialog nie killen
-                QMessageBox.warning(self, "Kategorie", f"Nicht gespeichert: {e}")
+                msgbox.warn(self, "Kategorie", f"Nicht gespeichert: {e}")
         idx = self.cb_category.findText(name)
         if idx < 0:
             self.cb_category.addItem(name)
@@ -229,11 +229,11 @@ class PoseSaveDialog(QDialog):
 
     def _on_accept(self):
         if not self.ed_name.text().strip():
-            QMessageBox.warning(self, "Pose speichern", "Bitte einen Namen eingeben.")
+            msgbox.warn(self, "Pose speichern", "Bitte einen Namen eingeben.")
             self.ed_name.setFocus()
             return
         if not self._components():
-            QMessageBox.warning(self, "Pose speichern",
+            msgbox.warn(self, "Pose speichern",
                                 "Bitte mindestens eine Komponente auswaehlen.")
             return
         self.accept()

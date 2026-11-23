@@ -288,7 +288,7 @@ def test_editor_relative_moves(gui, monkeypatch):
     assert "2. Anheben" in ed.step_list.item(1).text()
     # Ungueltig (0 cm) -> Dialog meldet und bleibt offen
     warned = []
-    monkeypatch.setattr(se.QMessageBox, "warning", lambda *a: warned.append(a[2]))
+    monkeypatch.setattr(se.msgbox, "warn", lambda *a: warned.append(a[2]))
     dlg = se.MoveDialog(ed, "Nichts", {"dx": 0, "dy": 0, "dz": 0, "sides": ["left"]})
     dlg._accept()
     assert warned and dlg.result()[0] == "Nichts"
