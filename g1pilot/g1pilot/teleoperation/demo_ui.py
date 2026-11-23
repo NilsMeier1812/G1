@@ -12,7 +12,8 @@ alles mit der Fenstergroesse mitwaechst:
                     untereinander (ResponsiveRow)
   Listen            TileGrid: Kacheln im Raster, Spaltenzahl nach Breite,
                     Suche ab SEARCH_FROM Eintraegen, scrollt (Ablaeufe, Stationen)
-  Seitenleiste      NOT-HALT, Roboter (real) bzw. Simulation, Beenden
+  Seitenleiste      NOT-HALT, VOLL-NOTAUS (HoldButton), Roboter (real) bzw.
+                    Simulation, Beenden
   Statusleiste      aktuelle Meldung + Verlauf
   Controller-Ansicht  ControllerCard (Zustand), LegendCard (Belegung), QuickGrid
                     (16 Plaetze der Pose-Schnellwahl) statt Joysticks
@@ -28,7 +29,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout, QBoxLayout, QScrollArea, QSizePolicy, QDialog, QTableWidget,
     QTableWidgetItem, QListWidget, QListWidgetItem, QStackedWidget,
 )
-from PyQt6.QtCore import Qt, QRectF, QPointF, QTimer, QSize
+from PyQt6.QtCore import Qt, QRectF, QPointF, QTimer, QSize, pyqtSignal
 from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QFont
 
 from g1pilot.utils import ui_theme as T
@@ -347,6 +348,110 @@ class TileGrid(QWidget):
             self.grid.setColumnStretch(c, 1)
         for c in range(cols, cols + 8):
             self.grid.setColumnStretch(c, 0)
+
+
+# ── Halte-Knopf (VOLL-NOTAUS) ───────────────────────────────────────────
+class HoldButton(QPushButton):
+    """Knopf, der erst nach ``hold_s`` ununterbrochenem Halten ausloest
+    (Schutz gegen versehentliches Antippen, wie R1 + L1 + PS am Controller).
+
+    Signale: ``armed`` sofort beim Druecken, ``fired`` nach Ablauf der
+    Haltezeit (genau einmal je Druck), ``aborted`` beim Loslassen vorher.
+    Der Fortschritt fuellt den Knopf von links (Farbe ``fill``). Gezeichnet
+    wird per Stylesheet-Verlauf, damit Theme/Schrift wie bei den anderen
+    Knoepfen bleiben. ``clock`` ist fuer Tests austauschbar."""
+
+    armed = pyqtSignal()
+    fired = pyqtSignal()
+    aborted = pyqtSignal()
+
+    TICK_MS = 30
+
+    def __init__(self, text, hold_s=1.5, base="#3a1216", fill="#ff1744",
+                 border="#ff5252", font=17, height=64, clock=time.monotonic):
+        super().__init__(text)
+        self.hold_s = max(0.05, float(hold_s))
+        self._base, self._fill, self._border, self._font = base, fill, border, font
+        self._clock = clock
+        self._since = None          # Zeitpunkt des Drueckens (None = nicht gehalten)
+        self._fired = False
+        self.setMinimumHeight(height)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)   # Leertaste loest nichts aus
+        self._timer = QTimer(self)
+        self._timer.setInterval(self.TICK_MS)
+        self._timer.timeout.connect(self._tick)
+        self.pressed.connect(self.begin)
+        self.released.connect(self.cancel)
+        self._paint(0.0)
+
+    @property
+    def holding(self):
+        """True, solange gehalten und noch nicht ausgeloest."""
+        return self._since is not None and not self._fired
+
+    def progress(self):
+        if self._since is None:
+            return 0.0
+        if self._fired:
+            return 1.0
+        return min(1.0, max(0.0, (self._clock() - self._since) / self.hold_s))
+
+    def begin(self):
+        if not self.isEnabled() or self._since is not None:
+            return
+        self._since = self._clock()
+        self._fired = False
+        self._timer.start()
+        self.armed.emit()
+        self._paint(0.0)
+
+    def cancel(self):
+        """Loslassen: vor Ablauf = Abbruch, danach nur zuruecksetzen."""
+        if self._since is None:
+            return
+        was = self.holding
+        self._since = None
+        self._fired = False
+        self._timer.stop()
+        self._paint(0.0)
+        if was:
+            self.aborted.emit()
+
+    def _tick(self):
+        if self._since is None or self._fired:
+            self._timer.stop()
+            return
+        p = self.progress()
+        self._paint(p)
+        if p >= 1.0:
+            self._fired = True
+            self._timer.stop()
+            self.fired.emit()
+
+    def _paint(self, p):
+        if p <= 0.0:
+            bg = self._base
+        elif p >= 1.0:
+            bg = self._fill
+        else:
+            q = min(0.999, p)
+            bg = (f"qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {self._fill}, "
+                  f"stop:{q:.3f} {self._fill}, stop:{q + 0.001:.3f} {self._base}, "
+                  f"stop:1 {self._base})")
+        self.setStyleSheet(f"""
+            QPushButton {{ background:{bg}; color:white; font-size:{self._font}px;
+                           font-weight:900; border:2px solid {self._border};
+                           border-radius:14px; padding:4px 10px; }}
+            QPushButton:hover {{ border:3px solid {self._border}; }}
+            QPushButton:disabled {{ background:{T.CARD}; color:{DIM};
+                                    border:1px solid {T.CARD_HI}; }}
+        """)
+
+    def hideEvent(self, e):
+        self.cancel()
+        super().hideEvent(e)
 
 
 # ── Modus-Umschalter ────────────────────────────────────────────────────

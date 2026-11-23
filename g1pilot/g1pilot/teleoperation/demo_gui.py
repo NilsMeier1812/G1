@@ -148,6 +148,9 @@ HISTORY_LEN = 200
 
 SIM_SHUTDOWN_TRIGGER = "/ros2_ws/src/g1pilot/.sim_shutdown_request"
 QUIT_CONFIRM_MS = 4000      # so lange gilt der erste Klick als »scharf«
+# VOLL-NOTAUS-Knopf: so lange ununterbrochen halten (Controller: 2 s fuer
+# R1 + L1 + PS). Kuerzer, weil der Druck selbst schon den NOT-HALT ausloest.
+FULL_ESTOP_HOLD_S = 1.5
 QUIT_ACK_TIMEOUT_MS = 3000  # Watcher loescht die Datei -> sonst Hinweis
 # »Real beenden«: erst Laufen stoppen und die Arme sicher an den Onboard-Regler
 # zurueckgeben (DISABLE: Rueckfahrt in die Pose vom ENABLE, dann Gewichtsrampe),
@@ -1071,6 +1074,7 @@ class DemoGUI(QWidget):
         self.started = self.sim_mode
         self._estop_unacked = False   # Sim: NOT-HALT noch nicht per START quittiert
         self._estop_shown = False     # NOT-HALT angezeigt, noch nicht quittiert
+        self._full_estop_shown = False  # davon VOLL-NOTAUS (ganzer G1 Damp)
         # Ablauf/Einzelpose (sequence_runner.py): wann welcher Schritt losfaehrt.
         self.seq = sr.SequenceRunner(self._seq_goto, self._on_seq_change,
                                      mode=default_sequence_mode(self.sim_mode))
@@ -1094,6 +1098,7 @@ class DemoGUI(QWidget):
         node.on_arm_status = self._on_arm_status
         node.on_nav_status = self._on_nav_status
         node.on_emergency_stop = self._external_estop
+        node.on_full_emergency_stop = self._enter_full_estop
         node.on_shared = self._on_shared
         node.on_seq_next = self.sequence_next
         node.on_pose_cancel = self._on_pose_cancel
@@ -1293,6 +1298,23 @@ class DemoGUI(QWidget):
         ui_icons.set_icon(self.btn_estop, "octagon-alert", "#ffffff", 30)
         self.btn_estop.setToolTip("Alles weich schalten (Arme, Gehen). Danach neu starten.")
         sv.addWidget(self.btn_estop)
+        # VOLL-NOTAUS: ganzer G1 in Damp (auch die Beine) -- derselbe Pfad wie
+        # R1 + L1 + PS am Controller. Schutz gegen Antippen: FULL_ESTOP_HOLD_S
+        # halten (Knopf fuellt sich). Schon der Druck loest den normalen
+        # NOT-HALT aus, das Halten eskaliert nur noch auf die Beine.
+        self.btn_full_estop = UI.HoldButton(
+            f"  VOLL-NOTAUS\n{FULL_ESTOP_HOLD_S:.1f} s halten".replace(".", ","),
+            hold_s=FULL_ESTOP_HOLD_S)
+        ui_icons.set_icon(self.btn_full_estop, "triangle-alert", "#ffffff", 24)
+        self.btn_full_estop.setToolTip(
+            "Gedrückt halten: ganzer G1 in Damp, auch die Beine "
+            "(wie R1 + L1 + PS am Controller). Der G1 sackt in den Kran bzw. fällt. "
+            "Schon das Drücken löst den normalen NOT-HALT aus; loslassen vor Ablauf "
+            "bricht nur die Eskalation ab.")
+        self.btn_full_estop.armed.connect(self._full_estop_armed)
+        self.btn_full_estop.fired.connect(self.full_emergency_stop)
+        self.btn_full_estop.aborted.connect(self._full_estop_aborted)
+        sv.addWidget(self.btn_full_estop)
         side_scroll = QScrollArea()
         side_scroll.setWidgetResizable(True)
         side_scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -1767,10 +1789,17 @@ class DemoGUI(QWidget):
             return
         self.node.publish_bool(self.node.pub_start, True)
         self.started = True
-        self._update_start_button()
+        full = self._full_estop_shown
         self._estop_unacked = False
         self._estop_shown = False
-        self._status("Gestartet. Jetzt einen Modus wählen.", "#aaa")
+        self._full_estop_shown = False
+        self._update_start_button()
+        if full:
+            # loco_client quittiert den Voll-Notaus nur (kein Aufstehen).
+            self._status("VOLL-NOTAUS quittiert — der G1 bleibt in Damp. Aufstehen: "
+                         "Startleiste Preparation, dann Walk.", "#ffb300")
+        else:
+            self._status("Gestartet. Jetzt einen Modus wählen.", "#aaa")
         self._refresh()
 
     def _update_start_button(self):
@@ -1783,6 +1812,11 @@ class DemoGUI(QWidget):
             ui_icons.set_icon(self.btn_start, "check", "#9e9e9e", 22)
             self.btn_start.setToolTip("START ist erfolgt. Nach einem NOT-HALT "
                                       "hier erneut quittieren.")
+        elif self._full_estop_shown:
+            self.btn_start.setIcon(QIcon())
+            self.btn_start.setText("VOLL-NOTAUS\nquittieren")
+            self.btn_start.setToolTip("Quittiert den VOLL-NOTAUS. Der G1 bleibt in Damp; "
+                                      "Aufstehen danach über Preparation, dann Walk.")
         elif self._estop_shown:
             self.btn_start.setIcon(QIcon())
             self.btn_start.setText("NOT-HALT\nquittieren")
@@ -1832,6 +1866,7 @@ class DemoGUI(QWidget):
             n.publish_bool(n.pub_start, True)
             self._estop_unacked = False
             self._estop_shown = False
+            self._full_estop_shown = False
             self._status("NOT-HALT quittiert …", "#aaa")
             QTimer.singleShot(300, lambda: self.request_mode(mode))
             return
@@ -1957,6 +1992,9 @@ class DemoGUI(QWidget):
         if self.pending is not None:
             return f"{MODE_TITLE[self.pending]} wird eingeschaltet …"
         if not self.started:
+            if self._full_estop_shown:
+                return ("VOLL-NOTAUS aktiv — der G1 ist in Damp.\nRechts »VOLL-NOTAUS quittieren«, "
+                        "dann Preparation und Walk in der Startleiste.")
             if self._estop_shown:
                 return "NOT-HALT aktiv.\nRechts »NOT-HALT quittieren«, dann oben einen Modus wählen."
             return "Zuerst rechts »Start« drücken,\ndann oben GEHEN oder GREIFEN wählen."
@@ -2414,6 +2452,7 @@ class DemoGUI(QWidget):
         n.publish_bool(n.pub_start, True)
         self._estop_unacked = False
         self._estop_shown = False
+        self._full_estop_shown = False
         self.mode = self.pending = None
         self.started = True
         self._refresh()
@@ -2427,6 +2466,55 @@ class DemoGUI(QWidget):
             n.publish_bool(pub, False)
         n.publish_bool(n.pub_emergency_stop, True)
         self._enter_estop()
+
+    def full_emergency_stop(self):
+        """VOLL-NOTAUS (Halte-Knopf): ganzer G1 in Damp. Reihenfolge wie am
+        Controller (ps4_arm_teleop »full_estop«): zuerst /g1pilot/full_emergency_stop
+        (loco_client: Damp vor StopMove; arm_controller: Taille schlaff), dann
+        der normale NOT-HALT (Arme, Controller, andere GUIs sperren). Sim:
+        loco_sim daempft beim NOT-HALT ohnehin den ganzen Roboter."""
+        n = self.node
+        n.publish_bool(n.pub_full_emergency_stop, True)
+        for pub in (n.pub_start, n.pub_start_balancing, n.pub_start_walking,
+                    n.pub_arms_enabled, n.pub_arms_home):
+            n.publish_bool(pub, False)
+        n.publish_bool(n.pub_emergency_stop, True)
+        self._enter_full_estop()
+
+    def _full_estop_armed(self):
+        """Halte-Knopf gedrueckt: sofort normaler NOT-HALT (falls noch nicht
+        aktiv), das Halten eskaliert danach auf den ganzen G1."""
+        if not self._estop_shown:
+            self.emergency_stop()
+        if not self._full_estop_shown:
+            self._status(f"VOLL-NOTAUS: weiter halten ({FULL_ESTOP_HOLD_S:.1f} s) — "
+                         "loslassen bricht ab, NOT-HALT bleibt.".replace(".", ",", 1),
+                         "#ef5350")
+
+    def _full_estop_aborted(self):
+        if not self._full_estop_shown:
+            self._status("VOLL-NOTAUS abgebrochen (zu früh losgelassen) — "
+                         "der normale NOT-HALT ist aktiv.", "#ef5350")
+
+    def _enter_full_estop(self):
+        """VOLL-NOTAUS anzeigen (eigener Knopf oder R1 + L1 + PS am Controller).
+        Ein normaler NOT-HALT kommt zusaetzlich (_enter_estop); hier nur die
+        strengere Anzeige: Quittieren laesst den G1 in Damp."""
+        if self._full_estop_shown:
+            return
+        self._full_estop_shown = True
+        if not self._estop_shown:
+            self._enter_estop()
+        self.btn_full_estop.cancel()
+        self._update_start_button()
+        self._refresh()
+        if self.sim_mode:
+            self._status("VOLL-NOTAUS aktiv — ganzer Roboter in Damp. Danach "
+                         "»Roboter zurücksetzen«.", "#ef5350")
+        else:
+            self._status("VOLL-NOTAUS aktiv — ganzer G1 in Damp (auch die Beine). "
+                         "Quittieren rechts, Aufstehen nur über Preparation → Walk.",
+                         "#ef5350")
 
     def _external_estop(self):
         """NOT-HALT von aussen (PS-Taste am PS4-Controller): GUI wechselt in

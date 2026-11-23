@@ -11,11 +11,17 @@ Sicherheitsablauf am echten Roboter: [50-A-Echter-Roboter.md](50-A-Echter-Robote
 | **Stopp** | Controller **Kreuz** (Xbox **A**), Stick loslassen | Hand steht sofort, geplante Bewegung bricht ab. Roboter bleibt, wie er ist |
 | **Gehen stoppen** | **L2 loslassen** (Totmann), GUI-Gehknopf loslassen | G1 bleibt stehen, balanciert weiter |
 | **NOT-HALT** | Demo-GUI **NOT-HALT**, Controller **PS** (Xbox-Taste), Handy **NOT-HALT** | Arme schlaff (sacken gedämpft ab), Hände aus (halten ihre Stellung), Hüftdrehung steht, **Taille gehalten**, Beine `StopMove`: der G1 **bleibt stehen** |
-| **Voll-Notaus** | Controller **R1 + L1 + PS 2 s halten** (Xbox **RB + LB + Xbox-Taste**) | ganzer G1 in **Damp**, auch Beine und Taille: er **sackt zusammen** (Kran!) |
+| **Voll-Notaus** | Demo-GUI **VOLL-NOTAUS 1,5 s halten**, Controller **R1 + L1 + PS 2 s halten** (Xbox **RB + LB + Xbox-Taste**) | ganzer G1 in **Damp**, auch Beine und Taille: er **sackt zusammen** (Kran!) |
 | **Unitree-Fernbedienung** | Damp an der Fernbedienung | wirkt an der Firmware, unabhängig von PC und Stack |
 
 Beim Voll-Notaus vibriert der Controller während der 2 s; vorzeitig
 loslassen bricht ab, der NOT-HALT vom PS-Druck bleibt aber bestehen.
+
+In der Demo-GUI sitzt **VOLL-NOTAUS** direkt unter dem NOT-HALT. Gleiches
+Prinzip: schon das Drücken löst den normalen NOT-HALT aus, der Knopf füllt
+sich von links rot, nach 1,5 s ununterbrochenem Halten folgt der
+Voll-Notaus. Vorher loslassen bricht nur die Eskalation ab. Ein Voll-Notaus
+vom Controller wird in der GUI genauso angezeigt.
 
 ## In der Simulation
 
@@ -29,7 +35,7 @@ Nach einem NOT-HALT ist alles gesperrt, bis quittiert wird:
 
 | | Sim | Echter G1 |
 |---|---|---|
-| Demo-GUI | einen Modus wählen (GREIFEN/GEHEN) | Startleiste **NOT-HALT quittieren** (»Start«) |
+| Demo-GUI | einen Modus wählen (GREIFEN/GEHEN) | Startleiste **NOT-HALT quittieren** bzw. **VOLL-NOTAUS quittieren** (»Start«) |
 | Handy | **Start** (mit Recht »Bedienen«) | **Start** |
 | Controller | geht nicht, absichtlich | geht nicht, absichtlich |
 
@@ -59,7 +65,7 @@ Aufstehen: Startleiste **Preparation**, dann **Walk**.
 |---|---|
 | Arm fährt falsch, aber ruhig | Kreuz bzw. GREIFEN verlassen |
 | Ruck, Schwingen, Kontakt mit Mensch oder Objekt | **NOT-HALT** (GUI, PS, Handy) |
-| G1 soll sofort ganz weich werden | **Voll-Notaus** R1 + L1 + PS 2 s |
+| G1 soll sofort ganz weich werden | **Voll-Notaus**: GUI-Knopf 1,5 s halten oder R1 + L1 + PS 2 s |
 | Sturz droht, PC reagiert nicht | **Unitree-Fernbedienung** |
 
 Die Tabelle »Notaus-Reflex« in
