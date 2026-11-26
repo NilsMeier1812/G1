@@ -17,6 +17,8 @@ und »Bluetooth erneut versuchen«.
   G1_PHONE_BT_ENCRYPT   1 = zusaetzlich BLE-Kopplung verlangen (Default 0)
   G1_PHONE_VIEW_ESTOP   1 = auch Ansicht-Handys duerfen NOT-HALT (Default 1)
   G1_PHONE_STORE        Geraeteliste (Default ~/.config/g1pilot/phone_devices.json)
+  G1_PHONE_WEB_URL      Adresse der Handy-Seite fuer QR-Code/Text im Handy-Fenster
+                        (Default https://nilsmeier1812.github.io/G1/)
 
 Verbindungsverlust oder entzogene Steuerhoheit bricht eine vom Handy
 gestartete Bewegung (Ablauf, Sichere Pose, Grundstellung) ab.
@@ -27,11 +29,13 @@ import os
 import time
 
 from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtGui import QColor, QImage, QPainter, QPixmap
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
+    QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
     QListWidgetItem, QScrollArea, QWidget,
 )
 
+from g1pilot.utils.qr_code import qr_matrix
 from g1pilot.utils.ui_icons import icon, set_icon
 from g1pilot.teleoperation import dialog_style as DS
 from g1pilot.teleoperation import status_line
@@ -44,6 +48,33 @@ POSE_COMPONENTS = ("left_arm", "right_arm", "left_hand", "right_hand")   # Maske
 HAND_ARGS = {"open": (None, "open"), "close": (None, "close"),
              "left_open": ("left", "open"), "left_close": ("left", "close"),
              "right_open": ("right", "open"), "right_close": ("right", "close")}
+
+
+WEB_URL_DEFAULT = "https://nilsmeier1812.github.io/G1/"   # GitHub Pages, .github/workflows/phone-pages.yml
+QR_QUIET = 4             # Ruhezone in Modulen (Norm: mindestens 4)
+
+
+def web_url():
+    """Adresse der Handy-Seite (QR-Code + Text im Handy-Fenster)."""
+    return os.environ.get("G1_PHONE_WEB_URL", "").strip() or WEB_URL_DEFAULT
+
+
+def qr_pixmap(text, px=190):
+    """QR-Code als QPixmap: schwarz auf weiss mit Ruhezone, ganzzahlig skaliert
+    (scharfe Kanten, auch auf dunklem Dialog gut scanbar). Groesse <= px."""
+    m = qr_matrix(text)
+    n = len(m) + 2 * QR_QUIET
+    scale = max(1, px // n)
+    img = QImage(n * scale, n * scale, QImage.Format.Format_RGB32)
+    img.fill(QColor("#ffffff"))
+    p = QPainter(img)
+    for y, row in enumerate(m):
+        for x, dark in enumerate(row):
+            if dark:
+                p.fillRect((x + QR_QUIET) * scale, (y + QR_QUIET) * scale, scale, scale,
+                           QColor("#000000"))
+    p.end()
+    return QPixmap.fromImage(img)
 
 
 def enabled():
@@ -457,7 +488,7 @@ class PhoneDialog(QDialog):
         self.setWindowTitle("Handy-Zugang")
         self.setMinimumWidth(560)
         self.setStyleSheet(DS.DIALOG_CSS)
-        self.resize(600, 860)
+        self.resize(600, 900)
         # Inhalt in einer Scroll-Flaeche: kleine Bildschirme scrollen statt zu quetschen
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -514,6 +545,51 @@ class PhoneDialog(QDialog):
         cl.addLayout(btns)
         lay.addWidget(box)
 
+        # Handy-Seite (fuer neue Benutzer: QR-Code statt Adresse abtippen)
+        box, cl = DS.card("Handy-Seite öffnen", "qr-code", DS.ACCENT,
+                          "Für neue Handys: einmal scannen, danach läuft die Seite offline.")
+        url = web_url()
+        row = QHBoxLayout()
+        row.setSpacing(16)
+        self.lbl_qr = QLabel()
+        self.lbl_qr.setObjectName("phone_qr")
+        try:
+            self.lbl_qr.setPixmap(qr_pixmap(url))
+            self.lbl_qr.setToolTip(url)
+            self.lbl_qr.setStyleSheet("background:#ffffff; border-radius:8px;")
+        except ValueError:
+            self.lbl_qr.setVisible(False)          # Adresse zu lang: nur Text
+        row.addWidget(self.lbl_qr, 0, Qt.AlignmentFlag.AlignTop)
+        col = QVBoxLayout()
+        col.setSpacing(8)
+        steps = QLabel(
+            "1. QR-Code mit der Kamera des Android-Handys scannen und in <b>Chrome</b> öffnen.<br>"
+            "2. Chrome-Menü → <b>Zum Startbildschirm hinzufügen</b>.<br>"
+            "3. Hier unten <b>Als Bediener koppeln</b> und den Code am Handy eingeben.")
+        steps.setWordWrap(True)
+        steps.setTextFormat(Qt.TextFormat.RichText)
+        steps.setStyleSheet("font-size:13px;")
+        col.addWidget(steps)
+        self.lbl_url = QLabel(url)
+        self.lbl_url.setObjectName("phone_url")
+        self.lbl_url.setWordWrap(True)
+        self.lbl_url.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.lbl_url.setStyleSheet(
+            f"color:{DS.ACCENT}; font-family:monospace; font-size:13px; padding:6px 8px;"
+            "background:#16181b; border-radius:8px;")
+        col.addWidget(self.lbl_url)
+        crow = QHBoxLayout()
+        self.btn_copy = DS.kind(QPushButton("Adresse kopieren"), "ghost")
+        set_icon(self.btn_copy, "copy", DS.FG, 16)
+        self.btn_copy.clicked.connect(self._copy_url)
+        crow.addWidget(self.btn_copy)
+        crow.addStretch(1)
+        col.addLayout(crow)
+        col.addStretch(1)
+        row.addLayout(col, 1)
+        cl.addLayout(row)
+        lay.addWidget(box)
+
         # Koppeln
         box, cl = DS.card("Neues Handy koppeln", "plus", DS.OK,
                           "Code erscheint hier und wird am Handy eingegeben.")
@@ -562,6 +638,11 @@ class PhoneDialog(QDialog):
         self._timer.timeout.connect(self.refresh)
         lay.addStretch(1)
         self._timer.start(500)
+
+    def _copy_url(self):
+        QApplication.clipboard().setText(self.lbl_url.text())
+        self.btn_copy.setText("Kopiert")
+        QTimer.singleShot(1500, lambda: self.btn_copy.setText("Adresse kopieren"))
 
     def _pair(self, role):
         code = self.link.gw.start_pairing(role)
