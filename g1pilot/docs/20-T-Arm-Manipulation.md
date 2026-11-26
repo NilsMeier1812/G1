@@ -350,9 +350,10 @@ die Hand auf den letzten `approach_len` (10 cm) entlang der Handachse
 ankommen; ist das nicht möglich, von oben. Abfahrt vom Start analog.
 
 **Rückfallkette:** (1) Gerade im Gelenkraum direkt gültig → fertig.
-(2) Optimierung von mehreren Startbahnen (gerade, um 15 cm und um
-30 cm angehoben, zurückgezogen; „30 cm" holt z. B. die Hand aus der
-Lauf-Pose über die Tischkante, ohne RRT). (3) Eigener vektorisierter RRT-Connect als Startbahn, dann
+(2) Optimierung von mehreren Startbahnen (gerade, um 15 cm angehoben,
+zurückgezogen, zuletzt um 30 cm angehoben; „30 cm" holt z. B. die Hand aus der
+Lauf-Pose über die Tischkante, ohne RRT, und steht hinten, damit die
+übrigen Fälle nicht später in den RRT kommen). (3) Eigener vektorisierter RRT-Connect als Startbahn, dann
 Glättung mit schrittweise erhöhtem Abstand. (4) Reduzierter Abstand
 (×0,6 bis `min_clearance`) und Startbahn über die Lauf-Pose. Ziel in harter
 Selbstkollision oder tiefer als `goal_max_depth` (2 cm) in einem Objekt →

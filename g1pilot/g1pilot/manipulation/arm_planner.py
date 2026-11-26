@@ -776,11 +776,11 @@ def _plan_arms(geom, sides, q_start, q_goal, limits, params=None, self_check=Non
     # 2) Optimierer mit vollem Abstand aus einfachen Startbahnen.
     seeds = [("straight", straight),
              ("lift", _bump_seed(prob, np.array([0.0, 0.0, 1.0]), 0.15)),
+             ("retract", _bump_seed(prob, np.array([-1.0, 0.0, 0.5]) / math.sqrt(1.25), 0.15)),
              # Hoeher anheben: z.B. aus der Lauf-Pose (Hand unter Tischhoehe)
              # ueber die Tischkante -- sonst landet das im RRT (1,7-2 s statt
              # 0,75 s, Tischstudie 2026-11-26).
-             ("lift_high", _bump_seed(prob, np.array([0.0, 0.0, 1.0]), 0.30)),
-             ("retract", _bump_seed(prob, np.array([-1.0, 0.0, 0.5]) / math.sqrt(1.25), 0.15))]
+             ("lift_high", _bump_seed(prob, np.array([0.0, 0.0, 1.0]), 0.30))]
     for k, (name, Xi0) in enumerate(seeds):
         if expired():
             break
