@@ -66,6 +66,36 @@ box_demo        -> Hindernis (statisch, der Arm weicht aus)
 grasp_apfel      -> Greif-Objekt (beweglich, die Hand darf ran)
 ```
 
+**Wie Greif-Objekte kollidieren.** MuJoCo rechnet Kontakte eines Netz-Geoms
+nur mit seiner konvexen Huelle -- eine KLT-Kiste waere ein voller Block ohne
+Innenraum und Grifftaschen. Darum bekommt jedes **nicht-konvexe** Greif-Netz
+beim Kombinieren eine Kollision aus achsparallelen **Quadern** im selben
+freien Koerper (Geoms `<objekt>__hull000` ..., Gruppe 3 = im Viewer
+ausgeblendet, rot):
+
+- Oberflaeche auf ein 3-mm-Voxelgitter legen, geschlossene Hohlraeume fuellen,
+  Spalten bis 6 mm schliessen, belegte Voxel zu grossen Quadern zusammenfassen;
+  die unterste Lage wird eine flache Auflage aus wenigen Quadern.
+- Das Netz bleibt nur Optik (`contype`/`conaffinity` 0) und traegt wie bisher
+  Masse und Traegheit (`mass` aus der Szene); die Quader haben Masse 0 und die
+  ueblichen Umgebungs-Bits (3: Koerper und Haende).
+- Konvexe Netze (z. B. `sample_ramp`) und Grundkoerper (box, cylinder ...)
+  bleiben unveraendert.
+- Ergebnis liegt wie bei den Hindernissen im Cache
+  `meshes/.collision/<mesh>-<hash>/grasp_boxes_v1/boxes.json` (erster Bau
+  ~1-2 s je Netz, danach Millisekunden).
+- RViz, Armplaner und Nav sehen das Objekt wie bisher als **einen** Quader
+  (Bounding-Box des Netzes); die Hand darf Greif-Objekte dort ohnehin beruehren.
+- Grenzen: schraege/runde Flaechen werden zur 3-mm-Treppe, Oeffnungen unter
+  ~6 mm gehen zu, innere Flaechen liegen bis 3 mm daneben (Grifftasche der
+  kleinen KLT 12 statt 14 mm). Jeder Quader kostet etwas Rechenzeit (A5 mit
+  zwei KLT: +0,14 ms je Sim-Schritt auf einem 4-Kern-Cloud-Rechner).
+  Feiner/grober: `GRASP_VOXEL` in `build_env_scene.py`.
+- Behelfe wie die frueheren Quader-Rippen an der kleinen KLT (Anbauteile
+  `<grasp-Name>__...`) sind fuer KLT-Kisten nicht mehr noetig: die Haken-Hand
+  greift unter die Schuerze der Grifftasche (Test
+  `g1pilot/test/test_grasp_collision.py`). Anbauteile funktionieren weiter.
+
 ---
 
 ## Was ist drin?

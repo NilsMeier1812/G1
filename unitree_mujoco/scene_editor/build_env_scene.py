@@ -485,6 +485,265 @@ def add_collision_hulls(geom_el, mesh_abs: Path, mesh_scale, asset, wb, warnings
                     "(Viewer: Gruppe 3 einblenden zum Ansehen).")
 
 
+# ── Greif-Objekte aus Netzen (z. B. KLT-Kisten) ──────────────────────────
+# Auch ein Greif-Objekt aus EINEM Netz-Geom kollidiert in MuJoCo nur mit seiner
+# konvexen Huelle: eine KLT-Kiste ist dann ein voller Block, Innenraum und
+# Grifftaschen sind zu. Darum bekommt jedes nicht-konvexe Greif-Netz eine
+# Kollision aus Quadern (siehe _grasp_boxes):
+#   * Oberflaeche des Netzes auf ein Voxelgitter (GRASP_VOXEL) legen, rundum
+#     geschlossene Hohlraeume fuellen, Spalten bis 2*GRASP_CLOSE_VOXELS Voxel
+#     schliessen (Treppenstufen schraeger Flaechen, Mini-Loecher), belegte
+#     Voxel gierig zu moeglichst grossen achsparallelen Quadern zusammenfassen.
+#   * Die unterste Voxel-Lage wird als eine flache Auflage zusammengefasst
+#     (Loecher in der Grundflaeche gefuellt): auf dem Tisch beruehren nur ~3
+#     Quader die Platte statt ~20 -- jeder beruehrende Quader kostet MuJoCo pro
+#     Schritt eine Box-Box-Rechnung.
+#   * Warum keine V-HACD wie bei den festen Hindernissen? Gemessen an der
+#     kleinen KLT (Stirnwand 1 mm, Grifftasche 14 mm): V-HACD verliert selbst
+#     mit 4 Mio. Voxeln Teile der 1-mm-Stirnwand (Hand faehrt durch die Wand in
+#     die Kiste), CoACD haelt die Wand, braucht aber ~190 s und macht die Tasche
+#     mit schraegen Keilen enger. Die Quader liegen bis auf ein Voxel genau
+#     (Tasche 12 statt 14 mm), jede Wand ist mindestens ein Voxel dick (nichts
+#     tunnelt), Bau ~1-2 s je Kiste, danach aus dem Cache.
+#   * Rechenzeit: jeder Quader kostet MuJoCo etwas Kollisionspruefung gegen
+#     die Nachbarn (gemessen A5, 4-Kern-Cloud-Rechner, je Sim-Schritt):
+#     Voxel 2 mm 591 Quader +0,21 ms, 3 mm 377 Quader +0,14 ms, 4 mm 234
+#     Quader +0,09 ms. 3 mm ist der Kompromiss: Tasche und 1-mm-Wand bleiben
+#     richtig, Haken heben die Kiste bei allen drei Werten.
+#   * Grenze: schraege/runde Flaechen werden zur Treppe (Stufe <= 1 Voxel),
+#     Oeffnungen unter 2*GRASP_CLOSE_VOXELS Voxel (6 mm) gehen zu. Konvexe
+#     Netze (z. B. sample_ramp) brauchen nichts und bleiben wie bisher.
+# Die Quader haengen im freien Koerper des Objekts (Geom-Namen
+# "<objekt>__hull000" ..., Gruppe 3 = im Viewer ausgeblendet) und tragen KEINE
+# Masse; das Netz bleibt Optik (contype/conaffinity 0) und traegt wie bisher
+# Masse und Traegheit. scene_objects.py erkennt die Teile am Namen.
+GRASP_HULL_INFIX = "__hull"
+GRASP_VOXEL = 0.003           # m: Kantenlaenge eines Voxels (Genauigkeit)
+GRASP_CLOSE_VOXELS = 1        # Spalten bis 2*N Voxel werden geschlossen
+GRASP_MAX_CELLS = 8_000_000   # groessere Objekte -> Voxel wird groesser
+# Version des Verfahrens -- hochzaehlen, wenn sich etwas an _grasp_boxes
+# aendert (eigener Cache-Unterordner, alte Ergebnisse werden nicht benutzt).
+GRASP_DECOMP_VERSION = "grasp_boxes_v1"
+
+
+def _surface_points(vertices, faces, step):
+    """Punkte auf allen Dreiecken, Abstand <= step (baryzentrisches Raster,
+    je Dreieck so fein wie seine laengste Kante es verlangt)."""
+    import numpy as np
+    tri = vertices[faces]                                     # (F,3,3)
+    edge = np.max(np.linalg.norm(tri - np.roll(tri, 1, axis=1), axis=2), axis=1)
+    n_div = np.maximum(1, np.ceil(edge / step)).astype(int)
+    out = [vertices]
+    for n in np.unique(n_div):
+        sel = tri[n_div == n]
+        i, j = np.meshgrid(np.arange(n + 1), np.arange(n + 1), indexing="ij")
+        keep = (i + j) <= n
+        a, b = i[keep] / n, j[keep] / n                       # (K,)
+        w = np.stack([1.0 - a - b, a, b], axis=1)             # (K,3)
+        out.append(np.einsum("kv,fvd->fkd", w, sel).reshape(-1, 3))
+    return np.concatenate(out)
+
+
+def _fill_enclosed(occ):
+    """Rundum geschlossene Hohlraeume eines Voxelgitters (beliebige Dimension)
+    fuellen, wie scipy.ndimage.binary_fill_holes -- scipy ist im Editor-venv
+    nicht sicher da. Offene Raeume (Kisten-Innenraum, Grifftaschen) bleiben
+    frei."""
+    import numpy as np
+    free = ~occ
+    outside = np.zeros_like(occ)
+    for ax in range(occ.ndim):
+        for end in (0, -1):
+            sl = [slice(None)] * occ.ndim
+            sl[ax] = end
+            outside[tuple(sl)] = free[tuple(sl)]
+    while True:
+        grown = outside | _shift_or(outside)
+        grown &= free
+        if np.array_equal(grown, outside):
+            return ~outside
+        outside = grown
+
+
+def _shift_or(a):
+    """Jede Zelle ODER ihre 2*ndim direkten Nachbarn (Kreuz-Nachbarschaft)."""
+    out = a.copy()
+    for ax in range(a.ndim):
+        lo = [slice(None)] * a.ndim
+        hi = [slice(None)] * a.ndim
+        lo[ax], hi[ax] = slice(1, None), slice(None, -1)
+        out[tuple(lo)] |= a[tuple(hi)]
+        out[tuple(hi)] |= a[tuple(lo)]
+    return out
+
+
+def _close(occ, r):
+    """Morphologisches Schliessen mit einem Wuerfel (2r+1)^3: fuellt Spalten
+    bis 2r Voxel Breite, breitere Oeffnungen behalten ihre Form."""
+    import numpy as np
+    if r <= 0:
+        return occ.copy()
+    pad = r + 1
+    a = np.pad(occ, pad)
+
+    def sweep(x, op):
+        # Wuerfel = Linie je Achse nacheinander (separierbar)
+        for ax in range(x.ndim):
+            y = x.copy()
+            for k in range(1, r + 1):
+                lo = [slice(None)] * x.ndim
+                hi = [slice(None)] * x.ndim
+                lo[ax], hi[ax] = slice(k, None), slice(None, -k)
+                if op == "or":
+                    y[tuple(lo)] |= x[tuple(hi)]
+                    y[tuple(hi)] |= x[tuple(lo)]
+                else:
+                    y[tuple(lo)] &= x[tuple(hi)]
+                    y[tuple(hi)] &= x[tuple(lo)]
+                    # Rand: ausserhalb gilt als frei
+                    edge_lo = [slice(None)] * x.ndim
+                    edge_hi = [slice(None)] * x.ndim
+                    edge_lo[ax], edge_hi[ax] = slice(None, k), slice(-k, None)
+                    y[tuple(edge_lo)] = False
+                    y[tuple(edge_hi)] = False
+            x = y
+        return x
+
+    closed = sweep(sweep(a, "or"), "and")
+    return closed[(slice(pad, -pad),) * occ.ndim] | occ
+
+
+def _greedy_boxes(occ):
+    """Belegte Voxel gierig zu Quadern zusammenfassen. Jeder Quader waechst
+    von seinem Startvoxel aus in alle sechs Richtungen, solange die neue
+    Schicht voll belegt ist; Quader duerfen sich ueberlappen (weniger Teile).
+    Probiert alle Achsen-Reihenfolgen, nimmt die mit den wenigsten Quadern.
+    Ergebnis: Liste (lo, hi) in Voxel-Indizes (hi exklusiv)."""
+    import itertools
+    import numpy as np
+    best = None
+    for order in itertools.permutations(range(occ.ndim)):
+        occ_t = np.transpose(occ, order)
+        todo = occ_t.copy()
+        n0, n1, n2 = occ_t.shape
+        boxes = []
+        for i, j, k in np.argwhere(occ_t):
+            if not todo[i, j, k]:
+                continue
+            i2 = i + 1
+            while i2 < n0 and occ_t[i2, j, k]:
+                i2 += 1
+            j2 = j + 1
+            while j2 < n1 and occ_t[i:i2, j2, k].all():
+                j2 += 1
+            k2 = k + 1
+            while k2 < n2 and occ_t[i:i2, j:j2, k2].all():
+                k2 += 1
+            i0, j0, k0 = i, j, k
+            while i0 > 0 and occ_t[i0 - 1, j:j2, k:k2].all():
+                i0 -= 1
+            while j0 > 0 and occ_t[i0:i2, j0 - 1, k:k2].all():
+                j0 -= 1
+            while k0 > 0 and occ_t[i0:i2, j0:j2, k0 - 1].all():
+                k0 -= 1
+            todo[i0:i2, j0:j2, k0:k2] = False
+            lo, hi = [0, 0, 0], [0, 0, 0]
+            for t, ax in enumerate(order):
+                lo[ax], hi[ax] = (i0, j0, k0)[t], (i2, j2, k2)[t]
+            boxes.append((lo, hi))
+        if best is None or len(boxes) < len(best):
+            best = boxes
+    return best
+
+
+def _grasp_boxes(mesh, voxel=GRASP_VOXEL, close=GRASP_CLOSE_VOXELS):
+    """Quader-Zerlegung eines Netzes (siehe GRASP_HULL_INFIX).
+
+    Das Gitter wird je Achse genau an die Bounding-Box des Netzes angepasst,
+    die Aussenmasse stimmen also exakt; innere Flaechen liegen bis zu einem
+    Voxel daneben (duenne Waende werden auf 1 Voxel aufgedickt).
+    Rueckgabe: Liste [cx, cy, cz, hx, hy, hz] in Netz-Koordinaten.
+    """
+    import numpy as np
+    lo = mesh.bounds[0].astype(float)
+    ext = np.maximum(mesh.extents.astype(float), 1e-6)
+    while True:
+        n = np.maximum(1, np.round(ext / voxel)).astype(int)
+        if int(np.prod(n)) <= GRASP_MAX_CELLS:
+            break
+        voxel *= 1.25
+    pitch = ext / n
+    pts = _surface_points(np.asarray(mesh.vertices, float), np.asarray(mesh.faces),
+                          0.5 * float(pitch.min()))
+    idx = np.clip(np.floor((pts - lo) / pitch).astype(int), 0, n - 1)
+    occ = np.zeros(n, dtype=bool)
+    occ[idx[:, 0], idx[:, 1], idx[:, 2]] = True
+    occ = _close(_fill_enclosed(occ), close)
+    # Auflage: unterste Lage fuer sich (Loecher gefuellt), Rest darueber
+    base = np.zeros_like(occ)
+    base[:, :, 0] = _fill_enclosed(occ[:, :, 0])
+    upper = occ.copy()
+    upper[:, :, 0] = False
+    out = []
+    for part in (base, upper):
+        for b_lo, b_hi in _greedy_boxes(part):
+            p0 = lo + np.array(b_lo) * pitch
+            p1 = lo + np.array(b_hi) * pitch
+            out.append([float(v) for v in (*((p0 + p1) / 2), *((p1 - p0) / 2))])
+    return out
+
+
+def _grasp_boxes_cached(mesh_abs: Path):
+    """Quader-Zerlegung eines Greif-Netzes, gecacht nach Datei-Inhalt (wie
+    _decompose_cached). Rueckgabe: Liste der Quader, [] wenn das Netz schon
+    konvex ist (dann reicht MuJoCos Huelle), None ohne trimesh."""
+    digest = hashlib.sha1(mesh_abs.read_bytes()).hexdigest()[:10]
+    cache = COLLISION_CACHE / f"{mesh_abs.stem}-{digest}" / GRASP_DECOMP_VERSION / "boxes.json"
+    if cache.is_file():
+        try:
+            return json.loads(cache.read_text())
+        except (OSError, ValueError):
+            pass
+    try:
+        import trimesh
+    except ImportError:
+        return None
+    mesh = trimesh.load(str(mesh_abs), force="mesh")
+    boxes = [] if (mesh.is_watertight and mesh.is_convex) else _grasp_boxes(mesh)
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    tmp = cache.with_suffix(".tmp")
+    tmp.write_text(json.dumps(boxes))
+    tmp.replace(cache)
+    return boxes
+
+
+def add_grasp_collision(body_el, geom_el, mesh_abs: Path, mesh_scale, warnings) -> None:
+    """Greif-Objekt aus einem Netz: Kollision ueber Quader im selben freien
+    Koerper, das Netz selbst wird reine Optik und behaelt Masse/Traegheit."""
+    boxes = _grasp_boxes_cached(mesh_abs)
+    name = geom_el.get("name")
+    if boxes is None:
+        warnings.append(f"  ! Greif-Objekt '{name}': keine Kollisions-Zerlegung "
+                        "(trimesh fehlt) -> Kollision nur ueber konvexe Huelle.")
+        return
+    if not boxes:
+        return   # Netz ist konvex: MuJoCos Huelle ist exakt
+    geom_el.set("contype", "0")
+    geom_el.set("conaffinity", "0")
+    scale = _floats(mesh_scale, (1.0, 1.0, 1.0))
+    sx, sy, sz = scale * 3 if len(scale) == 1 else scale[:3]
+    contact = {attr: geom_el.get(attr) for attr in CONTACT_ATTRS if geom_el.get(attr)}
+    for i, (cx, cy, cz, hx, hy, hz) in enumerate(boxes):
+        ET.SubElement(body_el, "geom", {
+            "name": f"{name}{GRASP_HULL_INFIX}{i:03d}", "type": "box", "group": "3",
+            "mass": "0", "rgba": "0.9 0.3 0.3 0.4",
+            "pos": _fmt((sx * cx, sy * cy, sz * cz)),
+            "size": _fmt((abs(sx * hx), abs(sy * hy), abs(sz * hz))),
+            **contact})
+    warnings.append(f"  i Greif-Objekt '{name}': Kollision ueber {len(boxes)} Quader "
+                    "(Innenraum/Griffe offen; Viewer: Gruppe 3 einblenden).")
+
+
 def merge_environment(env_root, asset, wb, env_dir, warnings):
     """Mischt NUR die Objekte der Umgebung in die Basis ein.
 
@@ -544,6 +803,9 @@ def merge_environment(env_root, asset, wb, env_dir, warnings):
             if _is_grasp_geom(el):
                 body = _wrap_grasp_geom(el)
                 _attach_parts(body, attach.pop(el.get("name"), []), warnings)
+                if el.get("type") == "mesh" and el.get("mesh") in env_meshes:
+                    mesh_abs, mesh_scale = env_meshes[el.get("mesh")]
+                    add_grasp_collision(body, body.find("geom"), mesh_abs, mesh_scale, warnings)
                 wb.append(body)
                 continue
             if el.tag == "body":
@@ -640,6 +902,38 @@ def extract_spawn(env_root, warnings):
     return None
 
 
+def build_scene(env_path: Path, robot_file: str, out_path: Path) -> list:
+    """Basis + Umgebung -> out_path schreiben. Gibt die Hinweise zurueck."""
+    env_dir = env_path.parent
+    # Umgebung einlesen (Kommentare vorher strippen: MuJoCos Parser ist tolerant,
+    # ElementTree strikt - z.B. sind '--'-Folgen in XML-Kommentaren ungueltig).
+    raw = env_path.read_text(encoding="utf-8")
+    cleaned = re.sub(r"<!--.*?-->", "", raw, flags=re.DOTALL)
+    env_root = ET.fromstring(cleaned)
+
+    warnings = []
+    mj, asset, wb = build_base(robot_file, f"g1_env_{env_path.stem}")
+    spawn = extract_spawn(env_root, warnings)
+    stations = extract_stations(env_root, warnings)
+    merge_environment(env_root, asset, wb, env_dir, warnings)
+    if spawn is not None or stations:
+        custom = ET.SubElement(mj, "custom")
+        if spawn is not None:
+            ET.SubElement(custom, "numeric", {"name": "g1_spawn", "data": _fmt(spawn)})
+        for name, x, y, yaw in stations:
+            ET.SubElement(custom, "numeric", {"name": name, "data": _fmt((x, y, yaw))})
+
+    ET.indent(mj, space="  ")
+    header = (
+        "<!-- AUTO-GENERIERT von scene_editor/build_env_scene.py.\n"
+        f"     Basis (G1 + Licht + Boden + Weld) + Umgebung: {env_path.name}\n"
+        f"     Roboter: {robot_file}\n"
+        "     NICHT von Hand editieren - wird bei jeder Umgebungs-Auswahl neu erzeugt. -->\n"
+    )
+    out_path.write_text(header + ET.tostring(mj, encoding="unicode") + "\n", encoding="utf-8")
+    return warnings
+
+
 def main() -> None:
     _reexec_in_editor_venv()
     ap = argparse.ArgumentParser(description="G1-Basis + Umgebung zu lauffaehiger Szene kombinieren")
@@ -659,7 +953,6 @@ def main() -> None:
         env_path = (Path.cwd() / env_path).resolve()
     if not env_path.is_file():
         sys.exit(f"[build_env_scene] Umgebung nicht gefunden: {env_path}")
-    env_dir = env_path.parent
 
     hands = args.hands.strip().lower()
     if hands in ("inspire", "rubber"):
@@ -673,35 +966,7 @@ def main() -> None:
 
     name = env_path.stem
     out_path = Path(args.out).resolve() if args.out else (G1_DIR / f"scene_env_{name}.xml")
-
-    # Umgebung einlesen (Kommentare vorher strippen: MuJoCos Parser ist tolerant,
-    # ElementTree strikt - z.B. sind '--'-Folgen in XML-Kommentaren ungueltig).
-    raw = env_path.read_text(encoding="utf-8")
-    cleaned = re.sub(r"<!--.*?-->", "", raw, flags=re.DOTALL)
-    env_root = ET.fromstring(cleaned)
-
-    warnings = []
-    mj, asset, wb = build_base(robot_file, f"g1_env_{name}")
-    spawn = extract_spawn(env_root, warnings)
-    stations = extract_stations(env_root, warnings)
-    merge_environment(env_root, asset, wb, env_dir, warnings)
-    if spawn is not None or stations:
-        custom = ET.SubElement(mj, "custom")
-        if spawn is not None:
-            ET.SubElement(custom, "numeric", {"name": "g1_spawn", "data": _fmt(spawn)})
-        for name, x, y, yaw in stations:
-            ET.SubElement(custom, "numeric", {"name": name, "data": _fmt((x, y, yaw))})
-
-    ET.indent(mj, space="  ")
-    header = (
-        "<!-- AUTO-GENERIERT von scene_editor/build_env_scene.py.\n"
-        f"     Basis (G1 + Licht + Boden + Weld) + Umgebung: {env_path.name}\n"
-        f"     Roboter: {robot_file}\n"
-        "     NICHT von Hand editieren - wird bei jeder Umgebungs-Auswahl neu erzeugt. -->\n"
-    )
-    out_path.write_text(header + ET.tostring(mj, encoding="unicode") + "\n", encoding="utf-8")
-
-    for w in warnings:
+    for w in build_scene(env_path, robot_file, out_path):
         print(w, file=sys.stderr)
     print(out_path)
 
