@@ -15,7 +15,8 @@ import pytest
 
 pin = pytest.importorskip("pinocchio")
 
-from g1pilot.manipulation.arm_geometry import ArmGeometry, Environment, HAND_LINK_MIN  # noqa: E402
+from g1pilot.manipulation.arm_geometry import (ArmGeometry, Environment, ExactEnvDistance,  # noqa: E402
+                                               HAND_LINK_MIN)
 from g1pilot.manipulation.arm_planner import plan_arms, joint_indices_for  # noqa: E402
 from g1pilot.utils.ik_solver import G1IKSolver  # noqa: E402
 from g1pilot.utils.joints_names import JOINT_LIMITS_RAD  # noqa: E402
@@ -52,7 +53,15 @@ def models():
     return ik, geom, ik.make_scratch_buffers()
 
 
-def _plan(models, scene, cur, goal, params=None):
+@pytest.fixture(scope="module")
+def exact(models):
+    ik, _, _ = models
+    return ExactEnvDistance(ik.model, ik.collision_model)
+
+
+def _plan(models, scene, cur, goal, params=None, exact=None):
+    """Wie der Planer-Prozess: mit exakter Zielpruefung, wenn `exact`
+    (ExactEnvDistance) gegeben ist."""
     ik, geom, scratch = models
     sides = [s for s in ("left", "right") if s in goal]
     full = np.zeros(29)
@@ -68,10 +77,16 @@ def _plan(models, scene, cur, goal, params=None):
         return ik.arm_command_in_collision(f, hard=True, data=scratch["data"],
                                            cdata=scratch["cdata_hard"])
 
+    def goal_check(qN, env):
+        f = full.copy()
+        f[idx] = qN
+        return exact.min_distance(f, sides, env)
+
     return plan_arms(geom, sides, np.concatenate([cur[s] for s in sides]),
                      np.concatenate([goal[s] for s in sides]),
                      [JOINT_LIMITS_RAD[j] for j in idx], params,
-                     self_check=self_check, walk_pose=WALK)
+                     self_check=self_check, walk_pose=WALK,
+                     goal_check=goal_check if exact is not None else None)
 
 
 def _hand_table_dist(geom, Q, side="left"):
@@ -184,10 +199,12 @@ def test_start_inside_table_is_not_stuck(models):
     assert r["ok"], r["reason"]
 
 
-def test_goal_behind_wall_is_rejected_quickly(models):
+@pytest.mark.parametrize("use_exact", [False, True])
+def test_goal_behind_wall_is_rejected_quickly(models, exact, use_exact):
     wall = _table() + [_box("wand", (0.30, 0.2, 0.2), (0.01, 0.5, 0.5))]
     t0 = time.monotonic()
-    r = _plan(models, wall, {"left": SICHER_L, "right": WALK["right"]}, {"left": UEBER_TISCH_L})
+    r = _plan(models, wall, {"left": SICHER_L, "right": WALK["right"]}, {"left": UEBER_TISCH_L},
+              exact=exact if use_exact else None)
     assert not r["ok"]
     assert r["reason"] == "goal_in_collision"
     assert time.monotonic() - t0 < 1.0
@@ -231,3 +248,76 @@ def test_cancel(models):
                   should_stop=lambda: time.monotonic() - t0 > 0.05)
     assert r["reason"] in ("cancelled", "direct", "optimized")
     assert time.monotonic() - t0 < 1.0
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Echtes Auflegen (exakte Geometrie) -- Tischstudie 2026-11-26
+# ══════════════════════════════════════════════════════════════════════
+def _full_left(q7):
+    full = np.zeros(29)
+    full[joint_indices_for(["left"])] = q7
+    full[joint_indices_for(["right"])] = WALK["right"]
+    return full
+
+
+def _hand_exact(models, exact, target, xy=(0.30, 0.22)):
+    """IK-Pose ueber (x, y), so tief abgesenkt, bis der EXAKTE Abstand
+    Hand/Arm <-> Tisch <= target [m] ist (1-mm-Schritte)."""
+    ik, _, _ = models
+    full = _full_left(UEBER_TISCH_L)
+    R = ik._frame_placement("left", ik._q_full_from(None, full), pin.Data(ik.model)).rotation
+    env = Environment(_table())
+    for z in np.arange(0.20, 0.0, -0.001):
+        res = ik.solve_pose("left", pin.SE3(R, np.array([xy[0], xy[1], z])), full)
+        if res["q"] is None or res["pos_err_m"] > 0.006:
+            continue
+        q = np.asarray(res["q"])
+        d = exact.min_distance(_full_left(q), ["left"], env)
+        if d <= target:
+            return q, d
+    pytest.skip("keine Handpose gefunden")
+
+
+def test_exact_distance_sees_real_contact(models, exact):
+    """Exakte Distanz: aufliegende Hand ~0 mm; das Kugelmodell steht dort
+    deutlich (> 1 cm) ueber -- genau das hat die Kugel-Zielpruefung
+    getaeuscht."""
+    _, geom, _ = models
+    q, d = _hand_exact(models, exact, 0.0)
+    assert -0.002 <= d <= 0.0
+    geom.set_base(_full_left(q))
+    geom.set_environment(Environment(_table()))
+    ds, _ = _hand_table_dist(geom, q[None])
+    assert ds[0] < d - 0.01
+
+
+def test_really_resting_hand_is_valid_goal(models, exact):
+    """Wirklich aufliegende Hand (exakt 0 bis -1 mm) als Ziel: mit exakter
+    Zielpruefung gueltig, nur mit Kugeln (alte Pruefung) abgelehnt."""
+    q, _ = _hand_exact(models, exact, 0.0)
+    cur = {"left": SICHER_L, "right": WALK["right"]}
+    r = _plan(models, _table(), cur, {"left": q}, exact=exact)
+    assert r["ok"], r["reason"]
+    assert -0.002 <= r["stats"]["goal_exact_m"] <= 0.0
+    r_old = _plan(models, _table(), cur, {"left": q})
+    assert r_old["reason"] == "goal_in_collision"
+
+
+def test_hand_pressed_deep_into_table_is_rejected(models, exact):
+    q, d = _hand_exact(models, exact, -0.03)
+    assert d <= -0.03
+    r = _plan(models, _table(), {"left": SICHER_L, "right": WALK["right"]}, {"left": q},
+              exact=exact)
+    assert not r["ok"] and r["reason"] == "goal_in_collision"
+
+
+@pytest.mark.parametrize("down", [True, False])
+def test_lower_and_lift_one_cm_on_table(models, exact, down):
+    """Hand 1 cm ueber der Platte <-> aufgelegt (gleiche Stelle). Scheiterte
+    frueher (Untergrenze schaltete in der Mitte auf den Startwert)."""
+    hover, _ = _hand_exact(models, exact, 0.010)
+    rest, _ = _hand_exact(models, exact, 0.0)
+    a, b = (hover, rest) if down else (rest, hover)
+    r = _plan(models, _table(), {"left": a, "right": WALK["right"]}, {"left": b}, exact=exact)
+    assert r["ok"], r["reason"]
+    assert r["plan_time_s"] < 1.0

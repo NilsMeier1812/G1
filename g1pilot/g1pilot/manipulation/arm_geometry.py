@@ -616,3 +616,81 @@ class ArmGeometry:
         frc = np.flip(np.cumsum(np.flip(frc, -2), -2), -2)
         torque = mom - np.cross(o, frc)
         return np.einsum("...ji,...ji->...j", a, torque)
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Exakter Abstand am Ziel (echte Geometrie statt Kugeln)
+# ══════════════════════════════════════════════════════════════════════
+class ExactEnvDistance:
+    """Exakter, vorzeichenbehafteter Abstand der Arm-/Hand-Geometrie (coal,
+    dieselben Kollisionskoerper wie die Mesh-Selbstkollision) zu den Boxen
+    einer Environment -- fuer EINZELNE Posen (Zielpruefung des Planers).
+
+    Warum: die Umgebungskugeln umschliessen die Hand und stehen nach unten
+    bis ~2,4 cm ueber die echte Hand hinaus (Tischstudie 2026-11-26). Eine
+    wirklich aufliegende Hand ist im Kugelmodell ~23 mm "im Tisch"; die
+    Zielpruefung des Planers ("tiefer als 2 cm im Objekt") lehnte sie ab.
+    Kleinere Kugeln helfen nur teilweise (flache Handflaeche) und kosten ein
+    Vielfaches an Rechenzeit; fuer die eine Zielpose ist die exakte Rechnung
+    billig.
+
+    Hand-Teile (ab HAND_LINK_MIN) gegen Greif-Objekte zaehlen nicht (ACM),
+    wie im Kugelmodell."""
+
+    def __init__(self, model, collision_model, sides=SIDES):
+        import pinocchio as pin
+        try:
+            import coal as fcl
+            T3 = fcl.Transform3s
+        except ImportError:          # aeltere Pinocchio-Builds: hpp-fcl
+            import hppfcl as fcl
+            T3 = fcl.Transform3f
+        self._pin, self._fcl, self._T3 = pin, fcl, T3
+        self.model, self.cm = model, collision_model
+        from g1pilot.utils.joints_names import JOINT_NAMES_ROS
+        self._ros_to_q = {i: model.joints[model.getJointId(JOINT_NAMES_ROS[i])].idx_q
+                          for i in range(29)}
+        self.geoms = {}
+        for side in sides:
+            jids = [model.getJointId(f"{side}_{s}") for s in ARM_JOINT_SUFFIXES]
+            link_of = {}
+            for k, jid in enumerate(jids):
+                for j in model.subtrees[jid]:
+                    link_of[j] = k
+            self.geoms[side] = [(i, link_of[g.parentJoint] >= HAND_LINK_MIN)
+                                for i, g in enumerate(collision_model.geometryObjects)
+                                if g.parentJoint in link_of]
+        self.data = pin.Data(model)
+        self.gdata = pin.GeometryData(collision_model)
+        self._req = fcl.DistanceRequest()
+        try:
+            self._req.enable_signed_distance = True
+        except Exception:
+            pass
+
+    def min_distance(self, full29, sides, env):
+        """Kleinster vorzeichenbehafteter Abstand [m] (negativ = Eindringtiefe)
+        der Geometrie der Arme `sides` in der 29-DOF-Pose full29 zu `env`
+        (Environment). Ohne Objekte +inf."""
+        if env is None or env.n == 0:
+            return float("inf")
+        pin, fcl, T3 = self._pin, self._fcl, self._T3
+        q = pin.neutral(self.model)
+        for i, iq in self._ros_to_q.items():
+            q[iq] = float(full29[i])
+        pin.updateGeometryPlacements(self.model, self.data, self.cm, self.gdata, q)
+        boxes = [(fcl.Box(*(2.0 * env.H[n])), T3(env.R[n], env.P[n]), bool(env.is_grasp[n]))
+                 for n in range(env.n)]
+        best = float("inf")
+        for side in sides:
+            for gi, is_hand in self.geoms[side]:
+                M = self.gdata.oMg[gi]
+                Tg = T3(np.array(M.rotation), np.array(M.translation))
+                geo = self.cm.geometryObjects[gi].geometry
+                for box, Tb, grasp in boxes:
+                    if grasp and is_hand:
+                        continue
+                    res = fcl.DistanceResult()
+                    fcl.distance(geo, Tg, box, Tb, self._req, res)
+                    best = min(best, float(res.min_distance))
+        return best

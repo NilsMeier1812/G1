@@ -324,12 +324,18 @@ erst weit weg, dann zurück und zum Schluss auf einer Geraden fährt.
 
     w     = smoothstep( min(|c - c_start|, |c - c_ziel|) / relax_radius )
     boden = min(0, Abstand derselben Kugel am näheren Endpunkt)
+            (liegt die Kugel näher als relax_radius an BEIDEN Enden:
+             der kleinere der beiden Endwerte)
     bedarf = boden + w · (clearance - boden)
 
 Um Start und Ziel jeder Armkugel liegt also ein glatter „Trichter"
 (`relax_radius`, Default 15 cm): dort reicht, was die Endpose selbst hat
 (Berührung, sogar leicht drin), weiter weg gilt `clearance` (Default 5 cm).
 Da der Bedarf stetig ist, entsteht keine Knickstelle in der Bahn.
+Die Ausnahme „nahe an beiden Enden" macht kurze Bewegungen an einer Fläche
+möglich (Hand 1 cm über der Platte → auflegen und zurück): sonst müsste die
+Hand auf dem ersten halben Weg schon so weit draußen bleiben wie am Start,
+obwohl das Ziel tiefer liegt — das war unlösbar (Tischstudie 2026-11-26).
 
 **Optimierung** (CHOMP-artig, `_Problem.optimize`): 24 Stützpunkte im
 Gelenkraum, Kosten = Glattheit (Geschwindigkeit + Beschleunigung) +
@@ -344,11 +350,30 @@ die Hand auf den letzten `approach_len` (10 cm) entlang der Handachse
 ankommen; ist das nicht möglich, von oben. Abfahrt vom Start analog.
 
 **Rückfallkette:** (1) Gerade im Gelenkraum direkt gültig → fertig.
-(2) Optimierung von mehreren Startbahnen (gerade, angehoben,
-zurückgezogen). (3) Eigener vektorisierter RRT-Connect als Startbahn, dann
+(2) Optimierung von mehreren Startbahnen (gerade, um 15 cm und um
+30 cm angehoben, zurückgezogen; „30 cm" holt z. B. die Hand aus der
+Lauf-Pose über die Tischkante, ohne RRT). (3) Eigener vektorisierter RRT-Connect als Startbahn, dann
 Glättung mit schrittweise erhöhtem Abstand. (4) Reduzierter Abstand
 (×0,6 bis `min_clearance`) und Startbahn über die Lauf-Pose. Ziel in harter
-Selbstkollision oder > 2 cm in einem Objekt → `goal_in_collision`.
+Selbstkollision oder tiefer als `goal_max_depth` (2 cm) in einem Objekt →
+`goal_in_collision`.
+
+**Zielprüfung an der echten Geometrie** (`goal_check`,
+`ExactEnvDistance` in `arm_geometry.py`): die Umgebungskugeln umschließen
+die Hand und stehen nach unten rund 2 cm (je nach Neigung 1-2,4 cm) über die
+echte Hand hinaus. Eine wirklich aufliegende Hand ist im Kugelmodell also
+~23 mm „im Tisch" und wurde früher als `goal_in_collision` abgelehnt. Der
+Planer-Prozess prüft das Ziel deshalb mit coal an denselben
+Kollisionskörpern wie die Selbstkollision (~1 ms je Ziel); die 2 cm
+gelten dann für die echte Eindringtiefe. Ohne coal/hppfcl fällt er auf die
+Kugelprüfung zurück. Kleinere Kugeln wurden gemessen und verworfen: auch
+mit 12 mm Radius bleibt an der flachen Handfläche ~14 mm Überstand, die
+Rechenzeit je Kostenauswertung steigt auf das 2- bis 4-Fache.
+
+Das **Laufzeit-Gate** arbeitet weiter auf Kugelniveau (`gate_hand_floor`
+0): beim Joggen bleibt die Hand deshalb ~1-2 cm über einer Fläche stehen;
+bei einer geplanten Fahrt gelten Start/Ziel der Bahn als Untergrenze, ein
+aufliegendes Ziel wird also erreicht.
 
 **Abschlussprüfung:** dicht nachabgetastet (Kugelmodell) plus exakte
 Mesh-Selbstkollision (coal).

@@ -75,6 +75,9 @@ DEFAULTS = {
     # Kleinster Abstand, auf den der Planer zurueckgeht, wenn der volle nicht
     # geht (enge Stellen). Darunter: Fehlschlag statt Streifen.
     "min_clearance": 0.015,
+    # Ziel tiefer als das [m] in einem Objekt -> 'goal_in_collision'. Mit
+    # goal_check (exakte Geometrie) echte Eindringtiefe, sonst Kugelmodell.
+    "goal_max_depth": 0.02,
     # Abstand Arm <-> eigener Koerper / anderer Arm in der Mitte [m].
     "self_clearance": 0.015,
     # In diesem Abstand [m] von der Start-/Zielposition eines Koerperpunkts
@@ -258,6 +261,14 @@ class _Problem:
         u = a / self.R
         w = _smoothstep(u)
         fl = np.where(near_s[..., None], floor[0][None], floor[1][None])
+        # Liegt die Kugel nahe an BEIDEN Enden (kurze Bewegung, z.B. Hand 1 cm
+        # absenken/anheben auf der Platte), gilt der tiefere der beiden End-
+        # werte. Sonst wuerde in der ersten Haelfte schon die Starttiefe
+        # verlangt, obwohl das Ziel tiefer liegt -> unloesbar (Tischstudie
+        # 2026-11-26: 1 cm absenken 0/3).
+        both = (a_s < self.R) & (a_g < self.R)
+        if np.any(both):
+            fl = np.where(both[..., None], np.minimum(floor[0], floor[1])[None], fl)
         return w, fl, u, np.where(near_s[..., None], vs, vg), a
 
     def _collision(self, fk, clear, grad):
@@ -656,20 +667,20 @@ def time_parameterize(prob, Q):
 # Oeffentliche API
 # ══════════════════════════════════════════════════════════════════════
 def plan_arms(geom, sides, q_start, q_goal, limits, params=None, self_check=None,
-              walk_pose=None, should_stop=None):
+              walk_pose=None, should_stop=None, goal_check=None):
     """Siehe _plan_arms. Rechnet nur mit den Objekten, die die bewegten Arme
     ueberhaupt erreichen koennen (ArmGeometry.reachable)."""
     env_full = geom.env
     geom.set_environment(geom.reachable(env_full, list(sides)))
     try:
         return _plan_arms(geom, sides, q_start, q_goal, limits, params, self_check,
-                          walk_pose, should_stop)
+                          walk_pose, should_stop, goal_check)
     finally:
         geom.set_environment(env_full)
 
 
 def _plan_arms(geom, sides, q_start, q_goal, limits, params=None, self_check=None,
-               walk_pose=None, should_stop=None):
+               walk_pose=None, should_stop=None, goal_check=None):
     """Plant eine glatte, abstandshaltende Bahn fuer einen oder beide Arme.
 
     geom      : ArmGeometry mit gesetzter Basis (set_base) und Umgebung.
@@ -678,6 +689,12 @@ def _plan_arms(geom, sides, q_start, q_goal, limits, params=None, self_check=Non
     self_check: optional f(qN)->bool, True = harte Mesh-Selbstkollision.
     walk_pose : optional dict side->q7 (Lauf-Pose) fuer die Rueckfall-Startbahn.
     should_stop: optional f()->bool; True bricht die Planung ab ('cancelled').
+    goal_check: optional f(qN, env)->float, exakter Abstand [m] (negativ =
+               Eindringtiefe) der Arm-/Hand-Geometrie zu env in der Pose qN.
+               Damit wird das Ziel an der echten Geometrie geprueft statt am
+               Kugelmodell (das um bis zu ~2,4 cm uebersteht, s. ArmGeometry
+               / ExactEnvDistance) -- eine wirklich aufliegende Hand ist dann
+               ein gueltiges Ziel.
 
     Rueckgabe dict: ok, reason, waypoints (K+2,D), t, q (Trajektorie),
     clearance (tatsaechlich eingehaltener Mittelabstand), stats.
@@ -713,11 +730,18 @@ def _plan_arms(geom, sides, q_start, q_goal, limits, params=None, self_check=Non
     # Ziel/Start in harter Selbstkollision (Mesh)?
     if self_check is not None and self_check(prob.qg):
         return result(False, "goal_in_collision")
-    # Ziel tiefer als 2 cm in einem Objekt -> kein sinnvolles Ziel.
-    for s in prob.sides:
-        fe = np.where(prob.env_mask[s][None], prob.floor_env[s], 0.0)
-        if fe.size and fe[1].min() < -0.02:
+    # Ziel tiefer als goal_max_depth in einem Objekt -> kein sinnvolles Ziel.
+    depth = float(prm["goal_max_depth"])
+    if goal_check is not None and geom.env.n:
+        d_goal = float(goal_check(prob.qg, geom.env))
+        stats["goal_exact_m"] = round(d_goal, 4)
+        if d_goal < -depth:
             return result(False, "goal_in_collision")
+    else:
+        for s in prob.sides:
+            fe = np.where(prob.env_mask[s][None], prob.floor_env[s], 0.0)
+            if fe.size and fe[1].min() < -depth:
+                return result(False, "goal_in_collision")
 
     K = prob.K
     s_lin = np.linspace(0.0, 1.0, K + 2)[1:-1]
@@ -752,6 +776,10 @@ def _plan_arms(geom, sides, q_start, q_goal, limits, params=None, self_check=Non
     # 2) Optimierer mit vollem Abstand aus einfachen Startbahnen.
     seeds = [("straight", straight),
              ("lift", _bump_seed(prob, np.array([0.0, 0.0, 1.0]), 0.15)),
+             # Hoeher anheben: z.B. aus der Lauf-Pose (Hand unter Tischhoehe)
+             # ueber die Tischkante -- sonst landet das im RRT (1,7-2 s statt
+             # 0,75 s, Tischstudie 2026-11-26).
+             ("lift_high", _bump_seed(prob, np.array([0.0, 0.0, 1.0]), 0.30)),
              ("retract", _bump_seed(prob, np.array([-1.0, 0.0, 0.5]) / math.sqrt(1.25), 0.15))]
     for k, (name, Xi0) in enumerate(seeds):
         if expired():
