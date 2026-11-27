@@ -66,6 +66,45 @@ box_demo        -> Hindernis (statisch, der Arm weicht aus)
 grasp_apfel      -> Greif-Objekt (beweglich, die Hand darf ran)
 ```
 
+**Wie Greif-Objekte kollidieren.** MuJoCo rechnet Kontakte eines Netz-Geoms
+nur mit seiner konvexen Huelle -- eine KLT-Kiste waere ein voller Block ohne
+Innenraum und Grifftaschen. Darum bekommt jedes **nicht-konvexe** Greif-Netz
+beim Kombinieren eine Kollision aus achsparallelen **Quadern** im selben
+freien Koerper (Geoms `<objekt>__hull000` ..., Gruppe 3 = im Viewer
+ausgeblendet, rot):
+
+- Gitter mit Zellen bis 4 mm, dessen Ebenen genau auf den achsparallelen
+  Wandflaechen des Netzes liegen (Waende ab 10 cm^2). Gerade Waende,
+  Grifftaschen und Aussenmasse stimmen dadurch exakt (1-mm-Wand bleibt 1 mm,
+  17-mm-Tasche bleibt 17 mm). Oberflaeche ins Gitter legen, geschlossene
+  Hohlraeume fuellen, Spalten bis 2 Zellen schliessen, belegte Zellen zu
+  grossen Quadern zusammenfassen; die unterste Lage wird eine flache Auflage
+  aus wenigen Quadern.
+- Das Netz bleibt nur Optik (`contype`/`conaffinity` 0) und traegt wie bisher
+  Masse und Traegheit (`mass` aus der Szene); die Quader haben Masse 0 und die
+  ueblichen Umgebungs-Bits (3: Koerper und Haende).
+- Konvexe Netze (z. B. `sample_ramp`) und Grundkoerper (box, cylinder ...)
+  bleiben unveraendert.
+- Ergebnis liegt wie bei den Hindernissen im Cache
+  `meshes/.collision/<mesh>-<hash>/grasp_boxes_v2/boxes.json` (erster Bau
+  ~1-2 s je Netz, danach Millisekunden).
+- RViz, Armplaner und Nav sehen das Objekt wie bisher als **einen** Quader
+  (Bounding-Box des Netzes); die Hand darf Greif-Objekte dort ohnehin beruehren.
+- Grenzen: schraege/runde Flaechen werden zur Treppe (Stufe bis 4 mm, z. B.
+  der Wulst an der Schuerzen-Unterkante: Einstieg 14,9 statt 15,7 mm),
+  schmale Spalten zwischen zwei Zellen gehen zu. Jeder Quader kostet etwas
+  Rechenzeit (A5 mit zwei KLT: 0,35 -> 0,38 ms je Sim-Schritt gegenueber
+  dem reinen 3-mm-Raster, 4-Kern-Cloud-Rechner).
+  Feiner/grober: `GRASP_VOXEL` in `build_env_scene.py`.
+- Die kleine KLT (`meshes/KLT_300x200_m.stl`) ist an die echte SSI Schaefer
+  KLT 3115 angeglichen: Grifftasche 17 mm (Stirnwand 2,9 mm nach innen),
+  Masse 0,63 kg in Szene A5. Innenmasse weichen weiter ab (Modell ~261 x 184,
+  echt 243 x 162 mm); ein freies CAD-Modell gibt es nicht.
+- Behelfe wie die frueheren Quader-Rippen an der kleinen KLT (Anbauteile
+  `<grasp-Name>__...`) sind fuer KLT-Kisten nicht mehr noetig: die Haken-Hand
+  greift unter die Schuerze der Grifftasche, auch 90 Grad gedreht mit der
+  Lippe von unten in der Tasche (Test `g1pilot/test/test_grasp_collision.py`). Anbauteile funktionieren weiter.
+
 ---
 
 ## Was ist drin?
