@@ -181,7 +181,7 @@ oder live via `ros2 param set /arm_controller <name> <wert>`):
 |---|---|
 | Arm bewegt sich nicht | Arme übernommen? (GREIFEN bzw. Controller R2, `/g1pilot/arms/enabled`) |
 | Arm hält vor einem Hindernis an | Kollisions-Gate hat gegriffen — Marker zurückziehen; siehe Log „Kollisions-Gate: ...". |
-| Pose anfahren meldet „no_path_found" / „goal_in_collision" | Kein Weg mit mindestens 1,5 cm Abstand gefunden bzw. Zielpose steckt im Körper oder > 2 cm in einem Objekt (Roboter steht anders als beim Speichern?). |
+| Pose anfahren meldet „no_path_found" / „goal_in_collision" | Kein Weg mit mindestens 1,5 cm Abstand gefunden bzw. Zielpose steckt im Körper oder mit der echten Hand-/Armform > 2 cm in einem Objekt (Roboter steht anders als beim Speichern?). |
 | Pose anfahren meldet „Planer startet noch" | Der Planer-Prozess lädt nach dem Start noch das Modell (einige Sekunden) — kurz warten, erneut anfahren. |
 | Arbeitsplatz-Objekte wirken nicht (Sim) | Die Objekte brauchen den Frame `map` — in der Sim nur mit Navigation (Startmenü Frage 4). |
 | Marker springt nach Homing | Erwartetes Verhalten: nach Homing/Positionsspeicher wird die IK auf die neue Ist-Pose ausgerichtet. |

@@ -43,7 +43,7 @@ def _worker_main(conn, cancel_event, cfg):
     try:
         import pinocchio as pin
         from g1pilot.utils.ik_solver import G1IKSolver
-        from g1pilot.manipulation.arm_geometry import ArmGeometry, Environment
+        from g1pilot.manipulation.arm_geometry import ArmGeometry, Environment, ExactEnvDistance
         from g1pilot.manipulation.arm_planner import plan_arms, joint_indices_for
 
         ik = G1IKSolver(urdf_path=cfg["urdf_path"], mesh_dir=cfg["mesh_dir"], debug=False)
@@ -52,6 +52,10 @@ def _worker_main(conn, cancel_event, cfg):
         ik.null_space_gain = float(cfg.get("null_space_gain", ik.null_space_gain))
         geom = ArmGeometry(ik.model, ik.collision_model)
         scratch = ik.make_scratch_buffers()
+        try:
+            exact = ExactEnvDistance(ik.model, ik.collision_model)
+        except Exception:   # noqa: BLE001 -- ohne coal/hppfcl: Kugel-Zielpruefung
+            exact = None
         conn.send({"ready": True})
     except Exception as e:   # noqa: BLE001
         conn.send({"ready": False, "error": f"{e}\n{traceback.format_exc()}"})
@@ -108,11 +112,17 @@ def _worker_main(conn, cancel_event, cfg):
                 return ik.arm_command_in_collision(full, hard=True, data=scratch["data"],
                                                    cdata=scratch["cdata_hard"])
 
+            def goal_check(qN, env):
+                full = base.copy()
+                full[idx] = qN
+                return exact.min_distance(full, sides, env)
+
             walk = req.get("walk_pose")
             walk = {s: np.asarray(v, dtype=float) for s, v in walk.items()} if walk else None
             res = plan_arms(geom, sides, q_start, q_goal, req["limits"],
                             params=req.get("params"), self_check=self_check,
-                            walk_pose=walk, should_stop=cancel_event.is_set)
+                            walk_pose=walk, should_stop=cancel_event.is_set,
+                            goal_check=goal_check if exact is not None else None)
             out.update({
                 "ok": bool(res["ok"]), "reason": res["reason"],
                 "plan_time_s": round(time.monotonic() - t0, 3),
