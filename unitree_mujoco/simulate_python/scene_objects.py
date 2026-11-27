@@ -43,6 +43,12 @@ GRASP_PREFIX_RE = re.compile(r"^grasp_", re.IGNORECASE)
 # waere bei einem Arbeitsplatz ein Riesenquader um Tisch + Roboter -> die
 # Arm-Planung meldet dann jede Stellung als Kollision (start_in_collision).
 COLLISION_BODY_SUFFIX = "__collision"
+# Greif-Objekte aus Netzen (z. B. KLT-Kisten) kollidieren ueber Quader im
+# selben freien Koerper: Geoms "<objekt>__hull000" ... (build_env_scene.py,
+# add_grasp_collision); das Netz selbst ist dann reine Optik (contype/
+# conaffinity 0). Fuer RViz/IK/Nav bleibt das Objekt wie bisher EIN Eintrag mit
+# der Bounding-Box des Netzes -- die Quader werden hier nicht einzeln gemeldet.
+GRASP_HULL_INFIX = "__hull"
 # Unsichtbar in RViz (Alpha 0), zaehlen aber fuer IK/Nav. Zum Ansehen Alpha > 0.
 HULL_BOX_RGBA = [0.9, 0.3, 0.3, 0.0]
 
@@ -355,7 +361,11 @@ def parse_scene_objects(scene_xml_path: str):
                 inner_geom = el.find("geom")
                 if inner_geom is None:
                     continue
-                spec = _geom_spec(inner_geom, meshes, body_pos, body_quat)
+                hull_prefix = (inner_geom.get("name") or "\0") + GRASP_HULL_INFIX
+                has_parts = any((g.get("name") or "").startswith(hull_prefix)
+                                for g in el.findall("geom"))
+                spec = _geom_spec(inner_geom, meshes, body_pos, body_quat,
+                                  has_collision_body=has_parts)
                 if spec is not None:
                     # Bei gewrappten Greif-Objekten traegt die BODY den Namen
                     # (siehe build_env_scene.py) -- der ist massgeblich fuer die

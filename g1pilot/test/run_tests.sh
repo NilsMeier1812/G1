@@ -40,10 +40,11 @@ case "${1:-}" in
                  test_gui_external_estop test_status_line test_g1_temperature test_g1_battery test_shared_state
                  test_window_icons test_phone_demo_gui test_demo_gui_waist
                  test_sequences test_demo_gui_sequences test_start_gui test_start_gui_network test_demo_gui_hands_gate
-                 test_demo_gui_layout test_demo_gui_controller_view test_demo_gui_full_estop" ;;
+                 test_demo_gui_layout test_demo_gui_controller_view test_demo_gui_full_estop test_qr_code" ;;
   haende)     T="test_inspire_modbus_backend" ;;
-  sim)        T="test_walk_policy test_loco_sim_health test_push_charge test_sim_autostart test_hand_profile test_hand_new test_hand_tools_gui" ;;
-  handy)      T="test_phone_gateway test_phone_demo_gui test_phone_ble_dbus test_phone_protocol_js
+  sim)        T="test_walk_policy test_loco_sim_health test_push_charge test_sim_autostart test_hand_profile test_hand_new test_hand_tools_gui
+                 test_grasp_collision" ;;
+  handy)      T="test_phone_gateway test_phone_demo_gui test_phone_ble_dbus test_phone_protocol_js test_qr_code
                  test_phone_web_e2e" ;;
   schnell)    T=""
               for f in test/test_*.py; do

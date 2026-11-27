@@ -28,8 +28,11 @@ Hintergrund und Abwägung (WLAN, Bildschirmspiegelung, App): Analysebericht
 
 ## Einrichten (einmalig)
 
-1. **Handy-Seite aufs Handy bringen.** Am Handy in Chrome **https://nilsmeier1812.github.io/G1/** öffnen und
-   über das Chrome-Menü „Zum Startbildschirm hinzufügen“ wählen. Danach läuft die Seite **offline aus dem
+1. **Handy-Seite aufs Handy bringen.** Am einfachsten in der Demo-GUI oben **Handy** klicken: Die Karte
+   **Handy-Seite öffnen** zeigt einen **QR-Code** mit der Adresse. Mit der Kamera des Handys scannen und in
+   Chrome öffnen. Ohne Kamera: am Handy in Chrome **https://nilsmeier1812.github.io/G1/** eintippen (die
+   Adresse steht auch als Text im Fenster, mit **Adresse kopieren**). Dann über das Chrome-Menü
+   „Zum Startbildschirm hinzufügen“ wählen. Danach läuft die Seite **offline aus dem
    Cache**, also auch ohne Netz in der Halle.
    **Kein automatisches Update:** Die installierte Version bleibt, bis du sie selbst wechselst. Liegt eine neue
    Version auf GitHub, lädt Chrome sie im Hintergrund, und oben erscheint „Neue Version … Aktualisieren“. Erst
@@ -40,6 +43,8 @@ Hintergrund und Abwägung (WLAN, Bildschirmspiegelung, App): Analysebericht
 
    *Ohne Internet:* Handy per USB (USB-Debugging an), am PC im Ordner `g1pilot` `make phone-web`, am Handy
    `http://localhost:8790/index.html` öffnen. Der Webserver lauscht nur auf `127.0.0.1`.
+   *Andere Adresse im QR-Code* (z. B. eigenes Hosting): `G1_PHONE_WEB_URL=<Adresse>` setzen, bevor die
+   Demo-GUI startet. Der QR-Code wird am PC erzeugt (ohne Internet, ohne Zusatzpaket).
 2. **Starten** mit der Demo-GUI. Ein Haken im Start-Fenster ist nicht nötig: Der Knopf **Handy** ist immer
    da, aber Bluetooth startet erst, wenn du darauf klickst. Ohne Dongle gibt es beim normalen Start also keine
    Fehlermeldung. Fehlt der Adapter beim Klick, steht es im Handy-Fenster, mit **Bluetooth erneut versuchen**.
@@ -123,6 +128,7 @@ Gehen und Arm-/Hand-Jog, Kategorien anlegen, „Real/Sim beenden“, Parameter, 
 | `G1_PHONE_BT_ENCRYPT` | `0` | `1` = zusätzlich Android-Bluetooth-Kopplung verlangen (die Sicherheit hängt nicht davon ab). |
 | `G1_PHONE_VIEW_ESTOP` | `1` | Ansicht-Handys dürfen NOT-HALT. |
 | `G1_PHONE_STORE` | `~/.config/g1pilot/phone_devices.json` | Gekoppelte Handys (Datei 0600; im Container auf `~/.config/g1pilot` des Hosts gemountet). |
+| `G1_PHONE_WEB_URL` | `https://nilsmeier1812.github.io/G1/` | Adresse der Handy-Seite im QR-Code des Handy-Fensters. |
 
 ## Zweiter Dongle (Handy und Controller getrennt)
 

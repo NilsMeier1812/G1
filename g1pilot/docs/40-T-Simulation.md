@@ -80,7 +80,10 @@ auf. Das Ergebnis `unitree_robots/g1/scene_env_<name>.xml` enthält G1
 (passende Hand-Variante), Licht, Boden, Weld und die Objekte. Dabei werden
 `grasp_*` zu freien Körpern, `g1_spawn` und `station_*` entfernt und als
 Startpunkt bzw. Stationen hinterlegt, große Mesh-Hindernisse in konvexe
-Teilhüllen zerlegt (`trimesh`, `vhacdx`). `config.py` lädt bei gesetztem
+Teilhüllen zerlegt (`trimesh`, `vhacdx`). Nicht-konvexe Greif-Netze (KLT-Kisten)
+kollidieren über Quader im selben freien Körper, deren Gitter auf den Wandflächen
+liegt (Innenraum und Grifftaschen offen und maßhaltig, Netz nur Optik, Masse unverändert, Cache
+wie bei den Hindernissen); RViz/Planer sehen sie weiter als einen Quader. `config.py` lädt bei gesetztem
 `G1_ENV` diese Szene, sonst `scene.xml` bzw. `scene_inspire_ftp.xml`.
 Details: [`scene_editor/README.md`](../../unitree_mujoco/scene_editor/README.md).
 
