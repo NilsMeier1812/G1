@@ -44,12 +44,6 @@ RUN pip3 install pyqt6 "pin>=3.0" meshcat evdev numpy
 # Handy-Bedienung (BlueZ-GATT ueber D-Bus, rein Python)
 RUN pip3 install dbus-next
 
-# OMPL: Wegplaner-Backend fuer den Positionsspeicher (arm_planner.py). Reines
-# Python-Wheel (manylinux, cp310 fuer Ubuntu 22.04 = ros:humble), keine
-# ROS-/MoveIt-Abhaengigkeit. Fehlt es, faellt arm_planner transparent auf den
-# eingebauten RRT-Connect zurueck -- der Build bleibt also auch dann lauffaehig.
-RUN pip3 install ompl
-
 # ONNX Runtime (CPU) fuer die Whole-Body-Loco-Policy (loco_sim laedt
 # policies/g1_wholebody/policy.onnx). onnx fuer die Metadaten/Gegenprobe.
 # Schlank, kein CUDA noetig, kein PyTorch mehr.
