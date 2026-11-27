@@ -125,6 +125,109 @@ class HandCombo(QComboBox):
         super().showPopup()
 
 
+class HandPicker(QWidget):
+    """Hand-Auswahl (Art-Karten + Custom-Liste mit »Neue Hand anlegen« und
+    Bearbeitungstool). Sim: Rubber | Inspire | Custom, real: Inspire | Custom."""
+
+    ICONS = {"rubber": "hand", "inspire": "bot", "custom": "anchor"}
+
+    def __init__(self, app, choices, profile: str, last_custom: str = "",
+                 default_kind: str = "inspire", on_change=None):
+        super().__init__()
+        self.app = app
+        self._on_change = on_change or (lambda: None)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(12)
+        self._customs = core.list_hand_profiles()
+        kinds = {c[0] for c in choices}
+        cnames = [n for n, _ in self._customs]
+        if profile in kinds and profile != "custom":
+            kind = profile
+        elif profile in cnames and "custom" in kinds:
+            kind = "custom"
+        else:
+            kind = default_kind
+        self.kind = ChoiceGroup(choices, kind, self.ICONS)
+        self.kind.changed.connect(lambda _v: self.sync())
+        lay.addWidget(self.kind)
+
+        self.custom_box = RowList()
+        row = QWidget()
+        rl = QHBoxLayout(row)
+        rl.setContentsMargins(0, 8, 0, 8)
+        rl.setSpacing(10)
+        rl.addWidget(label("Custom Hand"))
+        self.combo = HandCombo(self._refresh_customs)
+        self.combo.setMinimumWidth(280)
+        rl.addWidget(self.combo, 1)
+        self.edit_btn = button("Bearbeiten …", "", self._edit_hand)
+        rl.addWidget(self.edit_btn)
+        self.custom_box.add(row)
+        hint = label("Bearbeiten öffnet das Bearbeitungstool (MuJoCo-Ansicht + Schieber für "
+                     "Versatz und Drehung). »Neue Hand anlegen«: 3D-Datei wählen, das Tool "
+                     "schlägt die Montage am Handgelenk vor. Anleitung: "
+                     + doc_link("Eigene Hände", "25-A-Eigene-Haende.md"),
+                     "hint", wrap=True, rich=True)
+        hint.linkActivated.connect(app.handle_link)
+        hint.setContentsMargins(0, 0, 0, 8)
+        self.custom_box.add(hint)
+        lay.addWidget(self.custom_box)
+        last = profile if profile in cnames else last_custom
+        self._fill_customs(dict(self._customs).get(last, ""))
+        self.combo.currentTextChanged.connect(lambda _t: self.sync())
+
+    def _fill_customs(self, select_title: str = "") -> None:
+        self.combo.blockSignals(True)
+        cur = select_title or self.combo.currentText()
+        self.combo.clear()
+        self.combo.addItems([t for _, t in self._customs] + [NEW_HAND])
+        idx = self.combo.findText(cur)
+        self.combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self.combo.blockSignals(False)
+
+    def _refresh_customs(self) -> None:
+        self._customs = core.list_hand_profiles()
+        self._fill_customs()
+
+    def custom_name(self) -> str:
+        title = self.combo.currentText()
+        return next((n for n, t in self._customs if t == title), "")
+
+    def custom_title(self) -> str:
+        return self.combo.currentText() if self.custom_name() else ""
+
+    def profile(self, custom_fallback: str = "") -> str:
+        """Wert fuer G1_HANDS: rubber | inspire | <custom-profil>; Custom ohne
+        Auswahl -> custom_fallback."""
+        kind = self.kind.value()
+        if kind == "custom":
+            return self.custom_name() or custom_fallback
+        return kind
+
+    def sync(self) -> None:
+        self.custom_box.setVisible(self.kind.value() == "custom")
+        new = self.combo.currentText() == NEW_HAND
+        self.edit_btn.setText("Anlegen …" if new else "Bearbeiten …")
+        self._on_change()
+
+    def _edit_hand(self) -> None:
+        if self.combo.currentText() == NEW_HAND:
+            self.app.start_process("Neue Hand anlegen", ["bash", str(core.HAND_TOOL_SH), "new"],
+                                   cwd=core.HAND_TOOL_SH.parent, env=os.environ.copy(),
+                                   stop_note="Schließt »Neue Hand anlegen« bzw. das "
+                                             "Bearbeitungstool danach.")
+            return
+        name = self.custom_name()
+        if not name:
+            return
+        self.app.start_process(f"Hand bearbeiten — {self.combo.currentText()}",
+                               ["bash", str(core.HAND_TOOL_SH), "adjust", name],
+                               cwd=core.HAND_TOOL_SH.parent, env=os.environ.copy(),
+                               stop_note="Schließt das Bearbeitungstool (nicht "
+                                         "Gespeichertes geht verloren).")
+
+
 # ════════════════════════════════════════════════════════════════════════
 #  Simulation
 # ════════════════════════════════════════════════════════════════════════
@@ -195,43 +298,16 @@ class SimView(Page):
 
         # 3) Haende ---------------------------------------------------------
         self.section("Hände")
-        self._customs = core.list_hand_profiles()
         hp = st.get("hand_profile") or ("inspire" if st.get("hands", True) else "rubber")
-        cnames = [n for n, _ in self._customs]
-        if hp in ("rubber", "inspire"):
-            kind = hp
-        elif hp in cnames:
-            kind = "custom"
-        else:
-            kind = "inspire"
-        self.hand_kind = ChoiceGroup(core.HAND_KIND_CHOICES, kind, self.HAND_ICONS)
-        self.hand_kind.changed.connect(lambda _v: self._sync_hands())
-        self.body.addWidget(self.hand_kind)
-
-        self.custom_box = RowList()
-        row = QWidget()
-        rl = QHBoxLayout(row)
-        rl.setContentsMargins(0, 8, 0, 8)
-        rl.setSpacing(10)
-        rl.addWidget(label("Custom Hand"))
-        self.hand_combo = HandCombo(self._refresh_customs)
-        self.hand_combo.setMinimumWidth(280)
-        rl.addWidget(self.hand_combo, 1)
-        self.edit_btn = button("Bearbeiten …", "", self._edit_hand)
-        rl.addWidget(self.edit_btn)
-        self.custom_box.add(row)
-        hint = label("Bearbeiten öffnet das Bearbeitungstool (MuJoCo-Ansicht + Schieber für "
-                     "Versatz und Drehung). »Neue Hand anlegen«: 3D-Datei wählen, das Tool "
-                     "schlägt die Montage am Handgelenk vor. Anleitung: "
-                     + doc_link("Eigene Hände", "25-A-Eigene-Haende.md"),
-                     "hint", wrap=True, rich=True)
-        hint.linkActivated.connect(app.handle_link)
-        hint.setContentsMargins(0, 0, 0, 8)
-        self.custom_box.add(hint)
-        self.body.addWidget(self.custom_box)
-        last_custom = hp if hp in cnames else st.get("hand_custom", "")
-        self._fill_customs(dict(self._customs).get(last_custom, ""))
-        self.hand_combo.currentTextChanged.connect(lambda _t: self._sync_hands())
+        self.hands_picker = HandPicker(app, core.HAND_KIND_CHOICES, hp,
+                                       st.get("hand_custom", ""),
+                                       on_change=self._sync_summary)
+        self.body.addWidget(self.hands_picker)
+        # Kurznamen (Tests und Altcode)
+        self.hand_kind = self.hands_picker.kind
+        self.hand_combo = self.hands_picker.combo
+        self.edit_btn = self.hands_picker.edit_btn
+        self.custom_box = self.hands_picker.custom_box
 
         # 4) Ausstattung ----------------------------------------------------
         self.section("Ausstattung")
@@ -303,51 +379,15 @@ class SimView(Page):
         self._apply_env_view()
 
     # ── Haende ───────────────────────────────────────────────────────────
-    def _fill_customs(self, select_title: str = "") -> None:
-        self.hand_combo.blockSignals(True)
-        cur = select_title or self.hand_combo.currentText()
-        self.hand_combo.clear()
-        self.hand_combo.addItems([t for _, t in self._customs] + [NEW_HAND])
-        idx = self.hand_combo.findText(cur)
-        self.hand_combo.setCurrentIndex(idx if idx >= 0 else 0)
-        self.hand_combo.blockSignals(False)
-
-    def _refresh_customs(self) -> None:
-        self._customs = core.list_hand_profiles()
-        self._fill_customs()
-
     def _custom_name(self) -> str:
-        title = self.hand_combo.currentText()
-        return next((n for n, t in self._customs if t == title), "")
+        return self.hands_picker.custom_name()
 
     def hand_profile(self) -> str:
         """Wert fuer G1_HANDS: rubber | inspire | <custom-profil>."""
-        kind = self.hand_kind.value()
-        if kind == "custom":
-            return self._custom_name() or "rubber"
-        return kind
+        return self.hands_picker.profile(custom_fallback="rubber")
 
     def _sync_hands(self) -> None:
-        self.custom_box.setVisible(self.hand_kind.value() == "custom")
-        new = self.hand_combo.currentText() == NEW_HAND
-        self.edit_btn.setText("Anlegen …" if new else "Bearbeiten …")
-        self._sync_summary()
-
-    def _edit_hand(self) -> None:
-        if self.hand_combo.currentText() == NEW_HAND:
-            self.app.start_process("Neue Hand anlegen", ["bash", str(core.HAND_TOOL_SH), "new"],
-                                   cwd=core.HAND_TOOL_SH.parent, env=os.environ.copy(),
-                                   stop_note="Schließt »Neue Hand anlegen« bzw. das "
-                                             "Bearbeitungstool danach.")
-            return
-        name = self._custom_name()
-        if not name:
-            return
-        self.app.start_process(f"Hand bearbeiten — {self.hand_combo.currentText()}",
-                               ["bash", str(core.HAND_TOOL_SH), "adjust", name],
-                               cwd=core.HAND_TOOL_SH.parent, env=os.environ.copy(),
-                               stop_note="Schließt das Bearbeitungstool (nicht "
-                                         "Gespeichertes geht verloren).")
+        self.hands_picker.sync()
 
     # ── Abhaengigkeiten ──────────────────────────────────────────────────
     def _sync(self) -> None:
@@ -375,8 +415,7 @@ class SimView(Page):
         parts = [self.env_name() or DEFAULT_ENV_LABEL,
                  dict((v, t) for v, t, _ in core.WALK_POLICY_CHOICES).get(self.policy.value(), ""),
                  {"rubber": "Rubber", "inspire": "Inspire"}.get(
-                     self.hand_kind.value(), self.hand_combo.currentText()
-                     if self._custom_name() else "Custom ?")]
+                     self.hand_kind.value(), self.hands_picker.custom_title() or "Custom ?")]
         for row, name in ((self.nav, "Navigation"), (self.ps4, "Controller"),
                           (self.rviz, "RViz")):
             if row.isChecked():
@@ -471,10 +510,22 @@ class RealView(Page):
         self.monitor = LinkMonitor(probe, self._probe_params, parent=self)
         self.monitor.updated.connect(self._on_link)
 
-        # 2) Ausstattung ----------------------------------------------------
+        # 2) Montierte Haende ----------------------------------------------
+        #    Gleiche Auswahl wie in der Sim (ohne Rubber). Das Profil bestimmt
+        #    Armplaner-Kugeln, Selbstkollision, IK-TCP, Schwerkraft und RViz.
+        self.section("Montierte Hände")
+        self.hands_picker = HandPicker(app, core.REAL_HAND_KIND_CHOICES,
+                                       st.get("hand_profile", "inspire"),
+                                       st.get("hand_custom", ""), on_change=self._sync)
+        self.body.addWidget(self.hands_picker)
+        self.hint("Muss zur echten Hand passen: Armplaner, Selbstkollision, IK und "
+                  "Schwerkraft-Ausgleich rechnen mit diesem Modell. Fehlt das Profil oder "
+                  "lässt es sich nicht erzeugen, startet nichts (kein Rückfall auf Inspire).")
+
+        # 3) Ausstattung ----------------------------------------------------
         self.section("Ausstattung")
         rows = RowList()
-        self.hands = rows.add(ToggleRow("Inspire-Hände", "Modbus TCP im Roboter-LAN",
+        self.hands = rows.add(ToggleRow("Inspire-Hände ansteuern", "Modbus TCP im Roboter-LAN",
                                         st.get("hands", True)))
         self.left = QLineEdit(st.get("left", "192.168.123.210"))
         self.right = QLineEdit(st.get("right", "192.168.123.211"))
@@ -543,7 +594,7 @@ class RealView(Page):
         self.start_btn.setEnabled(False)
         self.confirm.toggled.connect(self._sync_confirm)
         self._sync_lan()
-        self._sync()
+        self.hands_picker.sync()              # ruft _sync()
 
     def _iface(self) -> str:
         text = self.iface.currentText().strip()
@@ -565,7 +616,7 @@ class RealView(Page):
 
     def _probe_params(self) -> dict:
         hands = []
-        if self.hands.isChecked():
+        if self.hands.isChecked() and self._inspire_mounted():
             hands = [("Hand links", self.left.text().strip() or "192.168.123.210"),
                      ("Hand rechts", self.right.text().strip() or "192.168.123.211")]
         try:
@@ -621,8 +672,17 @@ class RealView(Page):
         self.monitor.stop()
         super().hideEvent(e)
 
+    def _inspire_mounted(self) -> bool:
+        return self.hands_picker.kind.value() == "inspire"
+
     def _sync(self) -> None:
-        on = self.hands.isChecked()
+        if not hasattr(self, "hands"):        # HandPicker meldet sich beim Aufbau
+            return
+        mounted = self._inspire_mounted()
+        self.hands.setEnabled(mounted)
+        self.hands.setHint("Modbus TCP im Roboter-LAN" if mounted
+                           else "nur mit Inspire-Händen (starre Hand hat keine Finger)")
+        on = self.hands.isChecked() and mounted
         self.left_row.setEnabled(on)
         self.right_row.setEnabled(on)
         if hasattr(self, "monitor") and self.monitor.running:
@@ -639,8 +699,15 @@ class RealView(Page):
             msgbox.error(self, "Interface fehlt",
                                  "Bitte ein Netzwerk-Interface wählen oder eintippen.")
             return
+        hp = self.hands_picker.profile()
+        if not hp:
+            msgbox.error(self, "Keine Custom Hand",
+                         "Bitte die montierte eigene Hand auswählen oder erst mit "
+                         "»Neue Hand anlegen« → »Anlegen …« eine anlegen.")
+            return
         vals = {
             "iface": iface, "hands": self.hands.isChecked(),
+            "hand_profile": hp, "hand_custom": self.hands_picker.custom_name(),
             "left": self.left.text().strip() or "192.168.123.210",
             "right": self.right.text().strip() or "192.168.123.211",
             "port": self.port.text().strip() or "6000",

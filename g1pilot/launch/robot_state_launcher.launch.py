@@ -22,8 +22,9 @@ def generate_launch_description():
     use_rviz = LaunchConfiguration("use_rviz")
     rviz_config = LaunchConfiguration("rviz_config")
 
-    # URDF je Hand-Profil (Sim: G1_HANDS=haken -> g1_29dof_hand_haken.urdf; sonst
-    # und am echten Roboter immer g1_29dof_inspire_ftp.urdf wie bisher).
+    # URDF je Hand-Profil (G1_HANDS=haken -> g1_29dof_hand_haken.urdf, sonst
+    # g1_29dof_inspire_ftp.urdf). Sim und real; real ohne Rueckfall: fehlt das
+    # Profil-URDF, wirft urdf_path() und der Launch bricht ab.
     urdf = urdf_path(os.path.join(get_package_share_directory(package_name),
                                   "description_files/urdf"))
     with open(urdf, "r") as infp:

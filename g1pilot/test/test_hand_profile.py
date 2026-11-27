@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Hand-Profile (eigene starre Haende in der Sim, z. B. die Box-Haken).
+"""Hand-Profile (eigene starre Haende, z. B. die Box-Haken; Sim und real).
 
-Prueft die Auswahl (G1_HANDS / G1_INSPIRE_HANDS, real unberuehrt), dass die
+Prueft die Auswahl (G1_HANDS / G1_INSPIRE_HANDS, real ohne Rueckfall), dass die
 committeten Modelle zu hand.yaml/STL passen, und dass MuJoCo-Modell und URDF
 (IK, Kollisions-Gate, Armplaner) dieselbe Hand am selben Ort haben.
 """
@@ -34,10 +34,11 @@ PROFILE = "haken"
     ({"G1_HANDS": "haken", "G1_SIM_MODE": "true", "G1_INSPIRE_HANDS": "1"},
      "haken", "g1_29dof_hand_haken.urdf"),
     ({"G1_HANDS": " Haken ", "G1_SIM_MODE": "true"}, "haken", "g1_29dof_hand_haken.urdf"),
-    # Real-Pfad: eigene Profile werden ignoriert -> wie bisher Inspire-URDF
+    # Real-Pfad (seit 2026-11-27): eigene Profile gelten auch dort
     ({"G1_HANDS": "haken", "G1_SIM_MODE": "false", "G1_INSPIRE_HANDS": "1"},
-     "inspire", "g1_29dof_inspire_ftp.urdf"),
-    ({"G1_HANDS": "haken"}, "rubber", "g1_29dof_inspire_ftp.urdf"),
+     "haken", "g1_29dof_hand_haken.urdf"),
+    ({"G1_HANDS": "haken"}, "haken", "g1_29dof_hand_haken.urdf"),
+    ({"G1_HANDS": "inspire", "G1_SIM_MODE": "false"}, "inspire", "g1_29dof_inspire_ftp.urdf"),
     # Unsinn im Namen -> kein Pfad-Basteln
     ({"G1_HANDS": "../x", "G1_SIM_MODE": "true"}, "rubber", "g1_29dof_inspire_ftp.urdf"),
 ])
@@ -62,6 +63,25 @@ def test_urdf_path_fallback(tmp_path):
     assert p.endswith("g1_29dof_inspire_ftp.urdf") and msgs
     p = hp.urdf_path(URDF_DIR, {"G1_HANDS": PROFILE, "G1_SIM_MODE": "true"})
     assert p.endswith(f"g1_29dof_hand_{PROFILE}.urdf")
+
+
+@pytest.mark.parametrize("hands", ["gibtsnicht", "../x", "Haken!"])
+def test_urdf_path_real_no_fallback(tmp_path, hands):
+    """Echter Roboter: fehlendes Profil-URDF oder Unsinn im Namen -> Abbruch
+    (HandProfileError), nie still das Inspire-URDF."""
+    (tmp_path / "g1_29dof_inspire_ftp.urdf").write_text("<robot/>")
+    for env in ({"G1_HANDS": hands, "G1_SIM_MODE": "false"}, {"G1_HANDS": hands}):
+        with pytest.raises(hp.HandProfileError):
+            hp.urdf_path(str(tmp_path), env, log=None)
+
+
+def test_urdf_path_real_ok():
+    real = {"G1_SIM_MODE": "false"}
+    assert hp.urdf_path(URDF_DIR, {**real, "G1_HANDS": PROFILE}).endswith(
+        f"g1_29dof_hand_{PROFILE}.urdf")
+    for hands in ("inspire", "rubber", ""):
+        assert hp.urdf_path(URDF_DIR, {**real, "G1_HANDS": hands}).endswith(
+            "g1_29dof_inspire_ftp.urdf")
 
 
 def _sim_config(env):

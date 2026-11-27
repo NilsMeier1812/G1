@@ -1,4 +1,4 @@
-# Eigene Hände in der Simulation — Technik
+# Eigene Hände (Simulation und echter Roboter) — Technik
 
 Bedienung: [25-A-Eigene-Haende.md](25-A-Eigene-Haende.md).
 
@@ -10,9 +10,14 @@ MuJoCo-Modell und ein URDF, die beide dieselbe Hand am selben Ort haben. Alles
 Erzeugte wird committet; zur Laufzeit braucht niemand trimesh.
 
 Die Auswahl läuft über `G1_HANDS` (`inspire`, `rubber` oder Profilname). Ohne
-`G1_HANDS` gilt wie bisher `G1_INSPIRE_HANDS`. Eigene Profile wirken nur bei
-`G1_SIM_MODE=true`; der Real-Service in `docker-compose.yml` bekommt `G1_HANDS`
-gar nicht. Zentrale Regel: `g1pilot/utils/hand_profile.py` (gleiche Regel ohne
+`G1_HANDS` gilt wie bisher `G1_INSPIRE_HANDS`. Eigene Profile wirken in Sim und
+real (seit 2026-11-27; vorher nur bei `G1_SIM_MODE=true`). Real gibt es keinen
+Rückfall: ungültiger Name oder fehlendes Profil-URDF -> `urdf_path()` wirft
+`HandProfileError` (robot_state-Launch, arm_controller, IK brechen ab), `start.sh`
+bricht schon vorher auf dem Host ab. Die Sim fällt weiter mit Warnung auf das
+Inspire-URDF bzw. die Rubber-Hand zurück. Real erzwingt ein eigenes Profil
+`G1_INSPIRE_HANDS=0` (start.sh, Start-GUI, zusätzlich `bringup_real.launch.py`).
+Zentrale Regel: `g1pilot/utils/hand_profile.py` (gleiche Regel ohne
 g1pilot-Import in `simulate_python/config.py` und `scene_editor/build_env_scene.py`).
 
 ## Frames

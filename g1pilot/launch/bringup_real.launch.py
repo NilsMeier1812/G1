@@ -23,6 +23,8 @@ from launch_ros.actions import Node
 from launch.actions import IncludeLaunchDescription
 import os
 
+from g1pilot.utils.hand_profile import hand_profile, is_custom
+
 
 def _env_bool(name, default='0'):
     return os.environ.get(name, default).strip().lower() in ('1', 'true', 'yes', 'on')
@@ -34,7 +36,16 @@ def generate_launch_description():
     # ── Konfiguration ueber Umgebungsvariablen (start.sh-Real-Zweig) ─────
     interface = os.environ.get('ROBOT_INTERFACE', 'eth0').strip()
     use_rviz = os.environ.get('USE_RVIZ', 'true').strip().lower()
-    inspire_hands = _env_bool('G1_INSPIRE_HANDS')
+    # Montierte Haende (Hand-Profil, G1_HANDS): inspire oder eigenes starres
+    # Profil (z. B. haken). Das URDF dazu laden robot_state, arm_controller,
+    # Planer und IK selbst ueber utils/hand_profile.py (real ohne Rueckfall).
+    # Eigenes Profil = keine Inspire-Finger -> die Modbus-Bridge startet nie,
+    # auch wenn G1_INSPIRE_HANDS versehentlich 1 ist.
+    hands = hand_profile()
+    inspire_hands = _env_bool('G1_INSPIRE_HANDS') and not is_custom(hands)
+    print(f"[bringup_real] Haende: {hands}"
+          + ("" if not is_custom(hands) else " (eigenes Profil, keine Inspire-Bridge)"),
+          flush=True)
     left_host = os.environ.get('G1_HAND_LEFT_HOST', '192.168.123.210').strip()
     right_host = os.environ.get('G1_HAND_RIGHT_HOST', '192.168.123.211').strip()
     hand_port = int(os.environ.get('G1_HAND_PORT', '6000'))

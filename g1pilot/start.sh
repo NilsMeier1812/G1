@@ -12,11 +12,12 @@
 #  Allererste Frage: SIMULATION oder ECHTER ROBOTER.
 #
 #  SIM  : MuJoCo + loco_sim (Whole-Body-Policy, Lockstep immer an).
-#         Umgebung -> Inspire-Haende -> Lauf-Policy
+#         Umgebung -> Haende (Rubber/Inspire/Custom) -> Lauf-Policy
 #         -> Navigation -> RViz -> Rebuild.
 #  REAL : Unitree-Loco-Controller (loco_client) + Arm-Manipulation +
-#         Inspire-Haende via Modbus TCP. Netzwerk-Interface (Auto-
-#         Erkennung) -> Haende + IPs -> RViz ->
+#         Inspire-Haende via Modbus TCP oder eigenes Hand-Profil (Haken).
+#         Netzwerk-Interface (Auto-Erkennung) -> montierte Haende (Profil,
+#         ohne Rueckfall) -> Inspire-Bridge + IPs -> RViz ->
 #         Rebuild, plus SICHERHEITS-BESTAETIGUNG (der Roboter bewegt sich!).
 #
 #  Bedienoberflaeche ist immer die Demo-GUI (Handsteuerung eingebaut).
@@ -148,6 +149,57 @@ ask_rebuild() {
   if [ "$REPLY_VALUE" = "1" ]; then PASSTHRU+=("--build"); fi
 }
 
+# ── Hand-Profile (Sim 3) und Real R2), siehe docs/25-A-Eigene-Haende.md ──
+_hand_gen=../unitree_mujoco/unitree_robots/g1/tools/gen_hand_profile.py
+_hand_tool=../unitree_mujoco/unitree_robots/g1/tools/hand_tool.sh
+# Custom Hand waehlen (mit »Neue Hand anlegen« und Bearbeitungstool).
+#   $1 = Menue-Praefix (3 -> "3a)"/"3b)", R2 -> "R2a)"/"R2b)"),
+#   $2 = bisheriges Profil ("" = keins). Setzt HAND_CHOICE ("" = keine Wahl).
+choose_custom_hand() {
+  local _pre="$1" _cur="$2" _created=0
+  local _hand_menu _hand_def _i _hp _hn _before _new
+  while true; do
+    _hand_menu=(); _hand_def=1; _i=0
+    while IFS='|' read -r _hp _hn; do
+      [ -z "$_hp" ] && continue
+      _i=$((_i+1)); _hand_menu+=("${_hn} (hands/${_hp})|${_hp}")
+      [ "$_hp" = "$_cur" ] && _hand_def=$_i
+    done < <(python3 "$_hand_gen" --list 2>/dev/null)
+    _hand_menu+=("Neue Hand anlegen ... (3D-Datei waehlen, Montage wird vorgeschlagen)|__new__")
+    ask_menu "${_pre}a) Welche Custom Hand?" "$_hand_def" "$_cur" "${_hand_menu[@]}"
+    [ "$REPLY_VALUE" != "__new__" ] && break
+    if [ "$ASSUME_YES" = "1" ]; then REPLY_VALUE=""; break; fi
+    # Fenster: Datei waehlen, Vorschlag waehlen, danach Bearbeitungstool
+    _before=$(python3 "$_hand_gen" --list 2>/dev/null | cut -d'|' -f1)
+    bash "$_hand_tool" new \
+      || echo -e "${Y}[start] Neue Hand anlegen abgebrochen oder fehlgeschlagen.${R}"
+    _new=$(comm -13 <(echo "$_before" | sort) \
+                    <(python3 "$_hand_gen" --list 2>/dev/null | cut -d'|' -f1 | sort) | head -1)
+    if [ -n "$_new" ]; then _cur="$_new"; _created=1; fi
+    echo
+  done
+  HAND_CHOICE="$REPLY_VALUE"
+  [ -z "$HAND_CHOICE" ] && return 0
+  # Eben angelegt + gewaehlt: »Neue Hand anlegen« hatte das Tool schon offen.
+  if [ "$_created" = "0" ] || [ "$HAND_CHOICE" != "$_cur" ]; then
+    ask_menu "${_pre}b) Custom Hand vorher im Bearbeitungstool einpassen?" 1 "" \
+      "Nein — so starten|0" \
+      "Ja   — Bearbeitungstool oeffnen (MuJoCo + Schieber), danach geht es weiter|1"
+    if [ "$REPLY_VALUE" = "1" ]; then
+      bash "$_hand_tool" adjust "$HAND_CHOICE" \
+        || echo -e "${Y}[start] Bearbeitungstool beendet mit Fehler -> starte trotzdem.${R}"
+    fi
+  fi
+}
+# Profil-Modelle (MuJoCo + URDF) aktuell zu hand.yaml/STL? Sonst neu erzeugen.
+#   Exit 0 = aktuell, 1 = fehlt/nicht erzeugbar.
+ensure_hand_profile() {
+  python3 "$_hand_gen" --check "$1" >/dev/null 2>&1 && return 0
+  echo -e "${Y}[start] Hand-Profil '$1' veraltet oder fehlt -> erzeuge neu ...${R}"
+  python3 "$_hand_gen" "$1" || return 1
+  python3 "$_hand_gen" --check "$1" >/dev/null 2>&1
+}
+
 clear 2>/dev/null || true
 echo -e "${B}╔══════════════════════════════════════════════╗${R}"
 echo -e "${B}║      G1 — Start-Menue (Sim / Real)            ║${R}"
@@ -187,17 +239,51 @@ if [ "$G1_MODE" = "real" ]; then
   fi
   export ROBOT_INTERFACE="$REPLY_VALUE"
 
-  # ── R3) Inspire-FTP-Haende (Modbus TCP im Roboter-LAN) ────────────────
-  ask_menu "R3) Inspire-Haende ansteuern? (Modbus TCP im Roboter-LAN)" 1 "${G1_INSPIRE_HANDS:-}" \
-    "Ja   — Hand-Bridge mit Modbus-Backend|1" \
-    "Nein — ohne Haende|0"
-  export G1_INSPIRE_HANDS="$REPLY_VALUE"
-  if [ "$G1_INSPIRE_HANDS" = "1" ] && [ "$ASSUME_YES" != "1" ]; then
-    read -rp "$(echo -e "   ${DIM}IP linke Hand  [${G1_HAND_LEFT_HOST:-192.168.123.210}]:${R} ")" _l
-    read -rp "$(echo -e "   ${DIM}IP rechte Hand [${G1_HAND_RIGHT_HOST:-192.168.123.211}]:${R} ")" _r
-    G1_HAND_LEFT_HOST="${_l:-${G1_HAND_LEFT_HOST:-}}"
-    G1_HAND_RIGHT_HOST="${_r:-${G1_HAND_RIGHT_HOST:-}}"
-    echo
+  # ── R2) Montierte Haende (Hand-Profil G1_HANDS) ───────────────────────
+  #   Bestimmt das Modell fuer Armplaner-Kugeln, Selbstkollisions-Gate, IK-TCP,
+  #   Schwerkraft-Feedforward und RViz. MUSS zur echten Hand passen! Real gibt
+  #   es KEINEN Rueckfall: fehlt das Profil oder ist es nicht erzeugbar, bricht
+  #   der Start ab (Rubber gibt es real nicht -> wie Inspire).
+  _hands_cur="${G1_HANDS:-}"
+  case "$_hands_cur" in
+    ""|inspire|rubber) _hand_kind_cur=inspire ;;
+    *)                 _hand_kind_cur=custom ;;
+  esac
+  ask_menu "R2) Welche Haende sind am G1 montiert?" 1 "$_hand_kind_cur" \
+    "Inspire Haende — Finger steuerbar + Kraftsensoren (Modbus-Bridge)|inspire" \
+    "Custom Haende  — eigene starre Haende (hands/<profil>, z. B. Box-Haken)|custom"
+  if [ "$REPLY_VALUE" = "custom" ]; then
+    _custom_cur=""
+    [ "$_hand_kind_cur" = "custom" ] && _custom_cur="$_hands_cur"
+    choose_custom_hand R2 "$_custom_cur"
+    if [ -z "$HAND_CHOICE" ]; then
+      echo -e "${Y}[start] Keine Custom Hand gewaehlt — Abbruch (real kein Rueckfall auf Inspire).${R}"
+      exit 1
+    fi
+    export G1_HANDS="$HAND_CHOICE"
+    if ! ensure_hand_profile "$G1_HANDS"; then
+      echo -e "${Y}[start] Hand-Profil '${G1_HANDS}' fehlt oder ist nicht erzeugbar — Abbruch.${R}"
+      echo -e "${Y}        Real gibt es keinen Rueckfall (falsches Modell = falsches Kollisionsmodell).${R}"
+      echo -e "${Y}        Erzeugen: ../unitree_mujoco/unitree_robots/g1/tools/hand_tool.sh build ${G1_HANDS}${R}"
+      exit 1
+    fi
+    # Starre Hand: keine Inspire-Finger -> keine Modbus-Bridge.
+    export G1_INSPIRE_HANDS=0
+  else
+    export G1_HANDS=inspire
+
+    # ── R3) Inspire-FTP-Haende (Modbus TCP im Roboter-LAN) ──────────────
+    ask_menu "R3) Inspire-Haende ansteuern? (Modbus TCP im Roboter-LAN)" 1 "${G1_INSPIRE_HANDS:-}" \
+      "Ja   — Hand-Bridge mit Modbus-Backend|1" \
+      "Nein — ohne Haende|0"
+    export G1_INSPIRE_HANDS="$REPLY_VALUE"
+    if [ "$G1_INSPIRE_HANDS" = "1" ] && [ "$ASSUME_YES" != "1" ]; then
+      read -rp "$(echo -e "   ${DIM}IP linke Hand  [${G1_HAND_LEFT_HOST:-192.168.123.210}]:${R} ")" _l
+      read -rp "$(echo -e "   ${DIM}IP rechte Hand [${G1_HAND_RIGHT_HOST:-192.168.123.211}]:${R} ")" _r
+      G1_HAND_LEFT_HOST="${_l:-${G1_HAND_LEFT_HOST:-}}"
+      G1_HAND_RIGHT_HOST="${_r:-${G1_HAND_RIGHT_HOST:-}}"
+      echo
+    fi
   fi
   export G1_HAND_LEFT_HOST="${G1_HAND_LEFT_HOST:-192.168.123.210}"
   export G1_HAND_RIGHT_HOST="${G1_HAND_RIGHT_HOST:-192.168.123.211}"
@@ -226,8 +312,14 @@ if [ "$G1_MODE" = "real" ]; then
   echo -e "${B}\033[31m║  ACHTUNG: ECHTER ROBOTER — der G1 wird sich bewegen!      ║${R}"
   echo -e "${B}\033[31m╚══════════════════════════════════════════════════════════╝${R}"
   echo -e "   Interface      : ${G}ROBOT_INTERFACE=${ROBOT_INTERFACE}${R}"
-  _hands_lbl=$( [ "${G1_INSPIRE_HANDS}" = "1" ] && echo "Modbus ${G1_HAND_LEFT_HOST} / ${G1_HAND_RIGHT_HOST}" || echo "aus" )
-  echo -e "   Haende         : ${G}G1_INSPIRE_HANDS=${G1_INSPIRE_HANDS}${R} ${DIM}(${_hands_lbl})${R}"
+  if [ "${G1_HANDS}" = "inspire" ]; then
+    _hands_lbl=$( [ "${G1_INSPIRE_HANDS}" = "1" ] && echo "Modbus ${G1_HAND_LEFT_HOST} / ${G1_HAND_RIGHT_HOST}" || echo "Bridge aus" )
+    echo -e "   Haende         : ${G}G1_HANDS=inspire G1_INSPIRE_HANDS=${G1_INSPIRE_HANDS}${R} ${DIM}(${_hands_lbl})${R}"
+  else
+    echo -e "   Haende         : ${Y}G1_HANDS=${G1_HANDS}${R} ${DIM}(eigenes Profil hands/${G1_HANDS}, keine Inspire-Bridge)${R}"
+    echo -e "   ${Y}Montiert = Profil? Planer, Selbstkollision, IK und Schwerkraft rechnen mit dieser Hand${R}"
+    echo -e "   ${Y}(Masse aus hand.yaml — gewogen?).${R}"
+  fi
   echo -e "   RViz           : ${G}USE_RVIZ=${USE_RVIZ}${R}"
   echo -e "   Geh-Limits     : ${G}vx=${G1_MAX_VX:-0.4} vy=${G1_MAX_VY:-0.3} vyaw=${G1_MAX_VYAW:-0.4}${R}"
   _ps4_lbl=$( [ "${G1_PS4_ARMS}" = "1" ] \
@@ -282,7 +374,6 @@ else
   #   rubber  = starre Standard-Hand, sonst eigene starre Werkzeuge aus
   #   unitree_mujoco/unitree_robots/g1/hands/<profil>/ (z. B. die Box-Haken).
   #   Ohne G1_HANDS gilt wie frueher G1_INSPIRE_HANDS (1 = inspire, 0 = rubber).
-  _hand_gen=../unitree_mujoco/unitree_robots/g1/tools/gen_hand_profile.py
   _hands_cur="${G1_HANDS:-}"
   if [ -z "$_hands_cur" ] && [ -n "${G1_INSPIRE_HANDS:-}" ]; then
     _hands_cur=$( [ "$G1_INSPIRE_HANDS" = "1" ] && echo inspire || echo rubber )
@@ -297,44 +388,14 @@ else
     "Custom Haende  — eigene starre Haende (hands/<profil>, z. B. Box-Haken)|custom"
   export G1_HANDS="$REPLY_VALUE"
   if [ "$G1_HANDS" = "custom" ]; then
-    _hand_tool=../unitree_mujoco/unitree_robots/g1/tools/hand_tool.sh
     _custom_cur=""
     [ "$_hand_kind_cur" = "custom" ] && _custom_cur="$_hands_cur"
-    _hand_created=0
-    while true; do
-      _hand_menu=(); _hand_def=1; _i=0
-      while IFS='|' read -r _hp _hn; do
-        [ -z "$_hp" ] && continue
-        _i=$((_i+1)); _hand_menu+=("${_hn} (hands/${_hp})|${_hp}")
-        [ "$_hp" = "$_custom_cur" ] && _hand_def=$_i
-      done < <(python3 "$_hand_gen" --list 2>/dev/null)
-      _hand_menu+=("Neue Hand anlegen ... (3D-Datei waehlen, Montage wird vorgeschlagen)|__new__")
-      ask_menu "3a) Welche Custom Hand?" "$_hand_def" "$_custom_cur" "${_hand_menu[@]}"
-      [ "$REPLY_VALUE" != "__new__" ] && break
-      if [ "$ASSUME_YES" = "1" ]; then REPLY_VALUE=""; break; fi
-      # Fenster: Datei waehlen, Vorschlag waehlen, danach Bearbeitungstool
-      _before=$(python3 "$_hand_gen" --list 2>/dev/null | cut -d'|' -f1)
-      bash "$_hand_tool" new \
-        || echo -e "${Y}[start] Neue Hand anlegen abgebrochen oder fehlgeschlagen.${R}"
-      _new=$(comm -13 <(echo "$_before" | sort) \
-                      <(python3 "$_hand_gen" --list 2>/dev/null | cut -d'|' -f1 | sort) | head -1)
-      if [ -n "$_new" ]; then _custom_cur="$_new"; _hand_created=1; fi
-      echo
-    done
-    if [ -z "$REPLY_VALUE" ]; then
+    choose_custom_hand 3 "$_custom_cur"
+    if [ -z "$HAND_CHOICE" ]; then
       echo -e "${Y}[start] Keine Custom Hand gewaehlt -> Rubber.${R}"
       export G1_HANDS=rubber
     else
-      export G1_HANDS="$REPLY_VALUE"
-      if [ "$_hand_created" = "0" ] || [ "$G1_HANDS" != "$_custom_cur" ]; then
-        ask_menu "3b) Custom Hand vorher im Bearbeitungstool einpassen?" 1 "" \
-          "Nein — so starten|0" \
-          "Ja   — Bearbeitungstool oeffnen (MuJoCo + Schieber), danach geht es weiter|1"
-        if [ "$REPLY_VALUE" = "1" ]; then
-          bash "$_hand_tool" adjust "$G1_HANDS" \
-            || echo -e "${Y}[start] Bearbeitungstool beendet mit Fehler -> starte trotzdem.${R}"
-        fi
-      fi
+      export G1_HANDS="$HAND_CHOICE"
     fi
   fi
   if [ "$G1_HANDS" = "inspire" ]; then export G1_INSPIRE_HANDS=1; else export G1_INSPIRE_HANDS=0; fi
@@ -342,12 +403,9 @@ else
   case "$G1_HANDS" in
     inspire|rubber) ;;
     *)
-      if ! python3 "$_hand_gen" --check "$G1_HANDS" >/dev/null 2>&1; then
-        echo -e "${Y}[start] Hand-Profil '${G1_HANDS}' veraltet oder fehlt -> erzeuge neu ...${R}"
-        if ! python3 "$_hand_gen" "$G1_HANDS"; then
-          echo -e "${Y}[start] Hand-Profil '${G1_HANDS}' nicht erzeugbar -> starte mit Rubber-Hand.${R}"
-          export G1_HANDS=rubber
-        fi
+      if ! ensure_hand_profile "$G1_HANDS"; then
+        echo -e "${Y}[start] Hand-Profil '${G1_HANDS}' nicht erzeugbar -> starte mit Rubber-Hand.${R}"
+        export G1_HANDS=rubber
       fi
       ;;
   esac

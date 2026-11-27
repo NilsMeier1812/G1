@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """HAENDE-Seite in GREIFEN nur mit Inspire-Haenden: Sim mit Rubber oder eigenem
 starren Profil (G1_HANDS) -> Knopf ausgegraut, Seite nicht erreichbar.
-Real immer frei (der echte G1 hat Inspire-Haende)."""
+Real frei mit Inspire-Haenden, ausgegraut mit eigenem starren Profil."""
 import os
 import time
 
@@ -27,6 +27,8 @@ def test_hands_controllable_rule():
     assert not f({"G1_SIM_MODE": "true"})                             # Default rubber
     assert f({"G1_SIM_MODE": "false"})                                # real: Inspire
     assert f({"G1_SIM_MODE": "false", "G1_HANDS": "rubber"})
+    assert f({"G1_SIM_MODE": "false", "G1_HANDS": "inspire"})
+    assert not f({"G1_SIM_MODE": "false", "G1_HANDS": "haken"})    # real mit Haken
 
 
 @pytest.fixture
