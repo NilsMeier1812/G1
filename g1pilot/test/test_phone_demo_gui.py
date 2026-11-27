@@ -137,6 +137,68 @@ def test_bluetooth_starts_only_on_click(monkeypatch, tmp_path):
         _close(g, node)
 
 
+def _qr_from_label(lbl):
+    """Pixmap des QR-Labels zurueck in eine Modul-Matrix (ohne Ruhezone) lesen."""
+    from g1pilot.teleoperation.phone import link as L
+    img = lbl.pixmap().toImage()
+    w = img.width()
+    assert w == img.height()
+    # Ruhezone: oberste Zeile komplett weiss
+    assert all(img.pixelColor(x, 0).lightness() > 200 for x in range(w))
+    # Modulgroesse aus der linken oberen Ecke des Suchmusters
+    q0 = next(x for x in range(w) if img.pixelColor(x, x).lightness() < 100)
+    scale = q0 // L.QR_QUIET
+    n = w // scale - 2 * L.QR_QUIET
+    return [[img.pixelColor((L.QR_QUIET + x) * scale + scale // 2,
+                            (L.QR_QUIET + y) * scale + scale // 2).lightness() < 128
+             for x in range(n)] for y in range(n)]
+
+
+def test_dialog_shows_qr_and_url_for_new_phones(sim):
+    """Neue Benutzer: QR-Code + Adresse der Handy-Seite im Handy-Fenster."""
+    _dg, g, _node, app, *_ = sim
+    from g1pilot.teleoperation.phone import link as L
+    from g1pilot.utils.qr_code import qr_matrix
+    g.phone.show_dialog()
+    d = g.phone.dialog
+    assert d.lbl_url.text() == L.WEB_URL_DEFAULT == "https://nilsmeier1812.github.io/G1/"
+    assert not d.lbl_qr.isHidden() and d.lbl_qr.pixmap() is not None
+    # Der gezeichnete Code ist genau der QR der angezeigten Adresse
+    assert _qr_from_label(d.lbl_qr) == qr_matrix(d.lbl_url.text())
+    assert d.lbl_qr.pixmap().width() >= 29 * 4, "zu klein zum Scannen"
+    d.btn_copy.click()
+    assert app.clipboard().text() == L.WEB_URL_DEFAULT
+    assert d.btn_copy.text() == "Kopiert"
+    d.close()
+
+
+def test_dialog_url_from_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("G1_PHONE_WEB_URL", "http://localhost:8790/index.html")
+    dg, g, node, app, *_ = _make(monkeypatch, tmp_path, sim=True)
+    try:
+        from g1pilot.utils.qr_code import qr_matrix
+        g.phone.show_dialog()
+        d = g.phone.dialog
+        assert d.lbl_url.text() == "http://localhost:8790/index.html"
+        assert _qr_from_label(d.lbl_qr) == qr_matrix(d.lbl_url.text())
+        d.close()
+    finally:
+        _close(g, node)
+
+
+def test_dialog_url_too_long_shows_text_only(monkeypatch, tmp_path):
+    long_url = "https://example.org/" + "a" * 300
+    monkeypatch.setenv("G1_PHONE_WEB_URL", long_url)
+    dg, g, node, app, *_ = _make(monkeypatch, tmp_path, sim=True)
+    try:
+        g.phone.show_dialog()
+        d = g.phone.dialog
+        assert d.lbl_qr.isHidden() and d.lbl_url.text() == long_url
+        d.close()
+    finally:
+        _close(g, node)
+
+
 def test_phone_default_on_without_env(monkeypatch, tmp_path):
     monkeypatch.delenv("G1_PHONE", raising=False)
     from g1pilot.teleoperation.phone import link

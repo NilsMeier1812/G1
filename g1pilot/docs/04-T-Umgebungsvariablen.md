@@ -108,6 +108,7 @@ G1_ESTOP_DAMP_LEGS=1 G1_MAX_VX=0.3 make real ROBOT_INTERFACE=enp3s0
 | `G1_PHONE_BT_ENCRYPT` | `0` | BLE-Kopplung verlangen | [12-A](12-A-Handy.md) |
 | `G1_PHONE_VIEW_ESTOP` | `1` | Ansicht-Handys dürfen NOT-HALT | [12-A](12-A-Handy.md) |
 | `G1_PHONE_STORE` | `~/.config/g1pilot/phone_devices.json` | Datei der gekoppelten Handys | [12-T](12-T-Handy.md) |
+| `G1_PHONE_WEB_URL` | `https://nilsmeier1812.github.io/G1/` | Adresse der Handy-Seite (QR-Code und Text im Handy-Fenster) | [12-A](12-A-Handy.md) |
 
 ## Posen, Abläufe, Anzeige
 
