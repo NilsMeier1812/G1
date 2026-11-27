@@ -49,8 +49,8 @@ Die letzte Auswahl merkt sich das Startmenü in
 |---|---|---|
 | Umgebung / Verbindung | Kachel mit Vorschaubild je Szene aus `scene_editor/scenes/` (siehe [Vorschaubilder](#vorschaubilder-der-umgebungen)); Kachel **+ Neue Umgebung** führt zu *Umgebungen* | Netzwerk-Interface mit Live-Anzeige (alle 3 s im Hintergrund: Adresse 192.168.123.x, Kabel, Ping zum G1, Inspire-Hände), Knopf **Netzwerk einrichten …** (siehe [unten](#netzwerk-einrichten)) |
 | Lauf-Policy | Alt `g1_wholebody` (Standard), AGILE Velocity, AGILE Velocity-Height | — |
-| Hände | Karten Rubber, Inspire (Standard) oder Custom; bei Custom Auswahl des Profils (z. B. Box-Haken) und Knopf **Bearbeiten …** fürs Bearbeitungstool; Eintrag **➕ Neue Hand anlegen …** + **Anlegen …** für eine neue Hand aus einer 3D-Datei ([25-A](25-A-Eigene-Haende.md)) | — |
-| Ausstattung (Schalter) | Navigation, **Controller (PS4 / Xbox)**, RViz | Inspire-Hände + IPs, RViz (empfohlen), **Controller (PS4 / Xbox) für Arme + Hände** |
+| Hände | Karten Rubber, Inspire (Standard) oder Custom; bei Custom Auswahl des Profils (z. B. Box-Haken) und Knopf **Bearbeiten …** fürs Bearbeitungstool; Eintrag **➕ Neue Hand anlegen …** + **Anlegen …** für eine neue Hand aus einer 3D-Datei ([25-A](25-A-Eigene-Haende.md)) | **Montierte Hände**: Inspire (Standard) oder Custom, sonst wie Sim; kein Rückfall, fehlt das Profil, startet nichts ([25-A](25-A-Eigene-Haende.md#am-echten-roboter)) |
+| Ausstattung (Schalter) | Navigation, **Controller (PS4 / Xbox)**, RViz | Inspire-Hände ansteuern + IPs (nur bei Inspire), RViz (empfohlen), **Controller (PS4 / Xbox) für Arme + Hände** |
 | Geh-Limits | — | vorwärts / seitlich / drehen (Default 0,4 m/s / 0,3 m/s / 0,4 rad/s) |
 | Erweitert (eingeklappt) | Sim-Tempo (1.0 = Echtzeit), Images neu bauen | Modbus-Port, Gamepad-Name (alter Joystick), Images neu bauen |
 | Sicherheit | — | Häkchen „Sicherheitshinweise gelesen, Bereich frei“, sonst bleibt *Starten* grau |

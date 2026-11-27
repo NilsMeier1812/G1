@@ -492,8 +492,10 @@ class ArmController(Node):
 
         from ament_index_python.packages import get_package_share_directory
         pkg_share = get_package_share_directory('g1pilot')
-        # URDF je Hand-Profil (Sim: eigene Haende wie die Haken bringen eigenes
-        # URDF mit TCP + Kollisionsgeometrie; real immer das Inspire-URDF).
+        # URDF je Hand-Profil (eigene Haende wie die Haken bringen eigenes URDF
+        # mit TCP, Kollisionsgeometrie und Masse fuer den Schwerkraft-Feedforward
+        # mit). Gilt in Sim und real; real ohne Rueckfall (HandProfileError ->
+        # Node startet nicht, statt mit falschem Kollisionsmodell zu fahren).
         from g1pilot.utils.hand_profile import urdf_path as _hand_urdf_path
         urdf_path = _hand_urdf_path(os.path.join(pkg_share, 'description_files', 'urdf'),
                                     log=lambda m: self.get_logger().warn(m))

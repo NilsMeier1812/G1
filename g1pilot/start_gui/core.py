@@ -57,6 +57,12 @@ HAND_KIND_CHOICES = [
     ("inspire", "Inspire", "Finger steuerbar, Kraftsensoren"),
     ("custom", "Custom", "eigene starre Hände aus dem CAD, z. B. Haken"),
 ]
+# Echter Roboter: welche Haende sind MONTIERT? (Rubber gibt es real nicht.)
+# Das Profil bestimmt Kollisionsmodell, TCP und Schwerkraft -> kein Rueckfall.
+REAL_HAND_KIND_CHOICES = [
+    ("inspire", "Inspire", "Finger steuerbar, Kraftsensoren (Modbus-Bridge)"),
+    ("custom", "Custom", "eigene starre Hände, z. B. Box-Haken (ohne Bridge)"),
+]
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -293,7 +299,12 @@ def real_launch(vals: dict, *, rebuild: bool, base_env: dict | None = None) -> L
     env["G1_MODE"] = "real"
     env["G1_REAL_CONFIRM"] = "1"  # Sicherheits-Gate von start.sh im --yes-Modus
     env["ROBOT_INTERFACE"] = vals["iface"]
-    env["G1_INSPIRE_HANDS"] = "1" if vals["hands"] else "0"
+    # Montierte Haende: inspire oder eigenes Profil. Eigenes Profil -> nie die
+    # Inspire-Bridge (keine Finger). start.sh bricht real ab, wenn das Profil
+    # fehlt/nicht erzeugbar ist (kein Rueckfall auf Inspire).
+    hp = (vals.get("hand_profile") or "inspire").strip().lower()
+    env["G1_HANDS"] = hp
+    env["G1_INSPIRE_HANDS"] = "1" if vals["hands"] and hp == "inspire" else "0"
     env["G1_HAND_LEFT_HOST"] = vals["left"]
     env["G1_HAND_RIGHT_HOST"] = vals["right"]
     env["G1_HAND_PORT"] = vals["port"]

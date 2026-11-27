@@ -52,6 +52,14 @@ def _real_vals(**kw):
     return v
 
 
+def test_real_launch_hand_profile():
+    L = core.real_launch(_real_vals(), rebuild=False, base_env={})
+    assert L.env["G1_HANDS"] == "inspire" and L.env["G1_INSPIRE_HANDS"] == "1"
+    # Eigenes Profil: nie die Inspire-Bridge, auch wenn der Schalter an ist
+    L = core.real_launch(_real_vals(hand_profile="haken"), rebuild=False, base_env={})
+    assert L.env["G1_HANDS"] == "haken" and L.env["G1_INSPIRE_HANDS"] == "0"
+
+
 def test_real_launch_env():
     L = core.real_launch(_real_vals(vx="0.2"), rebuild=False, base_env={})
     assert L.env["G1_MODE"] == "real"
@@ -320,6 +328,42 @@ def test_real_view_gate(win, monkeypatch):
     v2 = RealView(win, nics=[])
     assert not v2.confirm.isChecked() and not v2.start_btn.isEnabled()
     assert "confirm" not in core.load_settings("real")
+
+
+def test_real_view_custom_hand(win, monkeypatch):
+    """Real: montierte Hand wie in der Sim waehlbar (ohne Rubber); eigenes
+    Profil -> Inspire-Bridge aus, G1_HANDS gesetzt, Auswahl gemerkt."""
+    from start_gui.views import RealView
+    customs = core.list_hand_profiles()
+    assert customs, "mindestens ein Hand-Profil (haken) erwartet"
+    v = RealView(win, nics=[("enp0s31f6", "192.168.123.222/24")])
+    win.show_view(v)
+    monkeypatch.setattr(win, "start_process", win._fake_start)
+    assert set(v.hands_picker.kind.cards) == {"inspire", "custom"}
+    assert v.hands_picker.kind.value() in ("inspire", "custom")
+    v.hands_picker.kind.cards["inspire"].click()
+    assert not v.hands_picker.custom_box.isVisibleTo(v) and v.hands.isEnabled()
+    v.hands_picker.kind.cards["custom"].click()
+    assert v.hands_picker.custom_box.isVisibleTo(v)
+    assert not v.hands.isEnabled() and not v.left_row.isEnabled()
+    assert v._probe_params()["hands"] == []
+    v.hands_picker.combo.setCurrentIndex(0)
+    v.confirm.setChecked(True)
+    v.start_btn.click()
+    env = win._started[-1][2]["env"]
+    assert env["G1_HANDS"] == customs[0][0] and env["G1_INSPIRE_HANDS"] == "0"
+    v2 = RealView(win, nics=[])
+    assert v2.hands_picker.kind.value() == "custom"
+    assert v2.hands_picker.custom_name() == customs[0][0]
+    # »Neue Hand anlegen« ohne Profil -> kein Start
+    shown = []
+    from g1pilot.utils import msgbox
+    monkeypatch.setattr(msgbox, "error", lambda *a, **k: shown.append(a))
+    n = len(win._started)
+    v2.hands_picker.combo.setCurrentIndex(v2.hands_picker.combo.count() - 1)
+    v2.confirm.setChecked(True)
+    v2.start_btn.click()
+    assert shown and len(win._started) == n
 
 
 def test_real_view_unknown_lan(win):

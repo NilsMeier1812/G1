@@ -1,11 +1,11 @@
-# Eigene Hände in der Simulation — Anleitung
+# Eigene Hände (Simulation und echter Roboter) — Anleitung
 
 Richtet sich an: alle, die statt der Inspire- oder Rubber-Hand ein eigenes,
-starres Werkzeug am G1 simulieren wollen, z. B. die gedruckten Box-Haken.
+starres Werkzeug am G1 nutzen wollen, z. B. die gedruckten Box-Haken.
 Wie es intern funktioniert: [25-T-Eigene-Haende.md](25-T-Eigene-Haende.md).
 
-Gilt **nur für die Simulation**. Am echten Roboter bleibt alles wie bisher
-(Inspire-URDF für IK und Planer).
+Gilt für die Simulation **und** (seit 2026-11-27) den echten Roboter, siehe
+[Am echten Roboter](#am-echten-roboter).
 
 ## Hände auswählen
 
@@ -23,6 +23,41 @@ Mit einem eigenen Profil gibt es keine Finger und keine Hand-Bridge (wie bei
 der Rubber-Hand). Arme, Jog, Posen und der Planer funktionieren normal; sie
 zielen auf den Greifpunkt (TCP) des Profils, bei den Haken auf die Innenecke
 der Lippe.
+
+## Am echten Roboter
+
+Sind am echten G1 eigene Hände montiert, muss das Startmenü das wissen: Armplaner
+(Kugelmodell), Selbstkollisions-Gate, IK-Greifpunkt, Schwerkraft-Ausgleich der
+Arme und die Hand in RViz rechnen alle mit dem gewählten Profil. Mit dem
+Inspire-Modell und montierten Haken stimmen Kollisionsmodell, TCP und Masse
+(Inspire 0,88 kg je Hand, Haken ca. 0,15 kg) nicht.
+
+- **Start-GUI:** Echter Roboter → **Montierte Hände** → *Inspire* oder *Custom*
+  (Rubber gibt es real nicht). Bei *Custom* dieselbe Liste wie in der Sim, mit
+  **Bearbeiten …** und **➕ Neue Hand anlegen …**. Der Schalter *Inspire-Hände
+  ansteuern* ist dann aus (starre Hand, keine Finger, keine Modbus-Bridge).
+- **Startmenü im Terminal:** *R2) Welche Hände sind am G1 montiert?*, bei Custom
+  *R2a)* Profil und *R2b)* Bearbeitungstool. *R3)* (Inspire-Bridge) kommt nur
+  bei Inspire.
+- **Direkt:** `G1_MODE=real G1_HANDS=haken ROBOT_INTERFACE=… G1_REAL_CONFIRM=1 ./start.sh --yes`
+
+**Kein Rückfall:** Fehlt das Profil, ist der Name ungültig oder lässt sich das
+Modell nicht erzeugen, bricht der Start ab (`start.sh` auf dem Host, zusätzlich
+`hand_profile.urdf_path()` in den Nodes). In der Sim wird wie bisher mit der
+Rubber-Hand weitergemacht.
+
+Vor dem ersten Einsatz real:
+
+1. Hand **wiegen** und `mass_kg` in `hand.yaml` eintragen (danach neu erzeugen,
+   macht das Startmenü selbst). Die Masse geht in den Schwerkraft-Ausgleich ein.
+2. In der Sim mit demselben Profil prüfen, ob Montage und TCP stimmen
+   (Bearbeitungstool).
+3. Real erst langsam joggen und in RViz kontrollieren, dass die gezeigte Hand
+   zur echten passt. In der Demo-GUI steht das Profil oben neben *G1 · REAL*;
+   **HÄNDE** ist ausgegraut.
+
+Beide Seiten haben immer dasselbe Profil (links gespiegelt); eine Inspire- und
+eine eigene Hand gemischt geht nicht.
 
 ## Eine neue Hand anlegen
 

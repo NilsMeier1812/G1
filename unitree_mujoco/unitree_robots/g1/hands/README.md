@@ -1,4 +1,4 @@
-# Hand-Profile (eigene starre Hände, nur Simulation)
+# Hand-Profile (eigene starre Hände, Simulation und echter Roboter)
 
 Jeder Unterordner mit einer `hand.yaml` ist ein Hand-Profil und erscheint im
 Startmenü und in der Start-GUI unter **Hände**.

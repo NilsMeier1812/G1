@@ -103,8 +103,8 @@ services:
       # Inspire-Haende: bringup_sim.launch.py startet dann inspire_hand und setzt
       # robot_state publish_hand_joints:=false (sonst doppelte Finger-/joint_states).
       - G1_INSPIRE_HANDS=${G1_INSPIRE_HANDS:-0}
-      # Hand-Profil (nur Sim): eigenes URDF fuer IK/Planer/RViz, z. B. haken.
-      # Der Real-Service bekommt G1_HANDS bewusst NICHT (bleibt Inspire-URDF).
+      # Hand-Profil: eigenes URDF fuer IK/Planer/RViz, z. B. haken. Gilt auch im
+      # Real-Service (dort ohne Rueckfall auf Inspire, siehe unten).
       - G1_HANDS=${G1_HANDS:-}
       # Bezug der Controller-/GUI-Jogs (command | start | tf), siehe Real-Service.
       - G1_JOG_REFERENCE=${G1_JOG_REFERENCE:-command}
@@ -192,7 +192,13 @@ services:
       - G1_PHONE=${G1_PHONE:-1}
       - G1_PHONE_BT_ADAPTER=${G1_PHONE_BT_ADAPTER:-auto}
       - G1_PHONE_WEB_URL=${G1_PHONE_WEB_URL:-}
-      # Inspire-FTP-Haende (Modbus TCP im Roboter-LAN).
+      # Montierte Haende (Hand-Profil): inspire (Default) | eigenes Profil aus
+      # unitree_robots/g1/hands/ (z. B. haken). Bestimmt URDF fuer IK, Armplaner-
+      # Kugeln, Selbstkollisions-Gate, Schwerkraft-Feedforward und RViz. Real
+      # KEIN Rueckfall: fehlt das Profil, bricht der Start ab (start.sh + Nodes).
+      - G1_HANDS=${G1_HANDS:-inspire}
+      # Inspire-FTP-Haende (Modbus TCP im Roboter-LAN). Bei eigenem Profil
+      # setzt start.sh 0 (keine Bridge), bringup_real erzwingt das zusaetzlich.
       - G1_INSPIRE_HANDS=${G1_INSPIRE_HANDS:-0}
       - G1_HAND_LEFT_HOST=${G1_HAND_LEFT_HOST:-192.168.123.210}
       - G1_HAND_RIGHT_HOST=${G1_HAND_RIGHT_HOST:-192.168.123.211}

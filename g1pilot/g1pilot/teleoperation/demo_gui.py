@@ -63,7 +63,7 @@ from g1pilot.utils import ui_theme as T
 from g1pilot.utils.window_style import DarkStyle, set_app_identity
 from g1pilot.utils import ui_icons
 from g1pilot.utils.common import is_sim_mode
-from g1pilot.utils.hand_profile import hand_profile, inspire_active
+from g1pilot.utils.hand_profile import hand_profile, inspire_active, is_custom
 from g1pilot.utils import g1_temperature as g1t
 from g1pilot.utils import g1_battery as g1b
 from g1pilot.utils import push_charge
@@ -443,10 +443,11 @@ class DemoNode(GuiNode):
 
 # ── Bausteine (demo_ui.py) ───────────────────────────────────────────────
 def hands_controllable(env=None):
-    """HAENDE-Seite nutzbar? Real immer (Inspire), Sim nur mit Inspire-Profil."""
+    """HAENDE-Seite nutzbar? Real mit Inspire-Haenden (Default), nicht mit einem
+    eigenen starren Profil (G1_HANDS=haken o. ae.); Sim nur mit Inspire-Profil."""
     env = os.environ if env is None else env
     if str(env.get("G1_SIM_MODE", "false")).strip().lower() != "true":
-        return True
+        return not is_custom(hand_profile(env))
     return inspire_active(env)
 
 
@@ -981,8 +982,8 @@ class ManipPanel(QWidget):
 
         self.show_view("arms")
         # Fingersteuerung gibt es nur mit Inspire-Haenden. In der Sim mit Rubber-
-        # oder eigenem starren Profil (G1_HANDS) ist HAENDE ausgegraut; real hat
-        # der G1 immer Inspire-Haende.
+        # oder eigenem starren Profil (G1_HANDS) ist HAENDE ausgegraut, real mit
+        # eigenem Profil ebenso (sonst Inspire).
         self.hands_available = hands_controllable()
         hb = self.view_btns["hands"]
         hb.setEnabled(self.hands_available)
@@ -1179,6 +1180,13 @@ class DemoGUI(QWidget):
         head.setContentsMargins(18, 8, 18, 8)
         head.setSpacing(12)
         badge = QLabel("G1 · SIM" if self.sim_mode else "G1 · REAL")
+        # Eigenes Hand-Profil sichtbar machen (real: falsches Profil = falsches
+        # Kollisionsmodell, darum direkt neben SIM/REAL).
+        hp = hand_profile()
+        if is_custom(hp):
+            badge.setText(badge.text() + f" · Hand {hp}")
+            badge.setToolTip(f"Hand-Profil G1_HANDS={hp}: Armplaner, Selbstkollision, "
+                             "IK und RViz rechnen mit dieser Hand.")
         badge.setStyleSheet(
             "font-size:15px; font-weight:800; letter-spacing:1px; padding:6px 12px;"
             " border-radius:8px; "

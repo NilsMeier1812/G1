@@ -173,7 +173,9 @@ viel Platz, darum nie gleichzeitig), oben rechts steht immer **Bewegung
 stoppen**.
 Beim Wechsel in GREIFEN ist ARME aktiv. **HÄNDE** ist nur mit Inspire-Händen
 bedienbar: In der Sim mit Rubber- oder Custom-Händen (starr, `G1_HANDS`) ist der
-Knopf ausgegraut, der Tooltip nennt den Grund. Am echten G1 ist er immer frei.
+Knopf ausgegraut, der Tooltip nennt den Grund. Am echten G1 ist er mit
+Inspire-Händen frei, mit einem eigenen Profil ebenfalls ausgegraut. Ein eigenes
+Profil steht oben neben *G1 · SIM* bzw. *G1 · REAL* (z. B. *G1 · REAL · Hand haken*).
 
 *Seite ARME*: drei Karten, *Hand bewegen* links, *Abläufe* und *Posen* rechts.
 
