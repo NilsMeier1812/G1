@@ -146,7 +146,7 @@ def test_mass_and_inertia_unchanged(built):
         assert a.body_mass[i] == pytest.approx(b.body_mass[j], abs=1e-12)
         np.testing.assert_allclose(a.body_inertia[i], b.body_inertia[j], atol=1e-12)
         np.testing.assert_allclose(a.body_ipos[i], b.body_ipos[j], atol=1e-12)
-    assert a.body_mass[a.body(KLT).id] == pytest.approx(0.6)      # Masse aus der Szene
+    assert a.body_mass[a.body(KLT).id] == pytest.approx(0.63)     # Masse aus der Szene
     assert a.body_mass[a.body(KLT_BIG).id] == pytest.approx(1.0)
 
 
@@ -184,17 +184,20 @@ def test_interior_and_handle_open(built):
         return any(np.all(np.abs(np.asarray(p) - c) <= s + 1e-9) for c, s in boxes)
 
     # Mesh-Koordinaten (Ursprung Mitte Unterkante, Koerper ungedreht):
-    # Stirnwand y = +-0.1325..0.1336, Schuerze y = +-0.1478, Tasche dazwischen
-    # von z ~0.083 (Unterkante Schuerze) bis 0.135 (Rand).
+    # Stirnwand y = +-0.1296..0.1307, Schuerze y = +-0.1477, Tasche dazwischen
+    # 17 mm breit (wie die echte KLT 3115), von z ~0.083 (Unterkante Schuerze)
+    # bis 0.134 (Rand). Gitterebenen liegen auf den Wandflaechen: die Tasche
+    # ist auf 0,2 mm genau frei.
     for p in ([0, 0, 0.07], [0.05, 0.08, 0.12], [-0.06, -0.1, 0.03]):
         assert not inside(p), f"Innenraum zu bei {p}"
     for sgn in (1, -1):
         for x in (-0.03, 0.0, 0.03):
             for z in (0.09, 0.11, 0.125):
-                assert not inside([x, sgn * 0.1405, z]), f"Grifftasche zu bei {x, sgn, z}"
+                for y in (0.1309, 0.139, 0.1475):
+                    assert not inside([x, sgn * y, z]), f"Grifftasche zu bei {x, sgn * y, z}"
         for x in np.linspace(-0.08, 0.08, 9):
             for z in np.linspace(0.01, 0.13, 13):
-                assert inside([x, sgn * 0.1331, z]), f"Loch in der Stirnwand bei {x:.2f}, {z:.2f}"
+                assert inside([x, sgn * 0.1302, z]), f"Loch in der Stirnwand bei {x:.2f}, {z:.2f}"
 
 
 # ── Physik ──────────────────────────────────────────────────────────────
@@ -297,7 +300,7 @@ def _hook_probe(path, klt, half_y, wall_y, lift=0.08):
     return float(d.xpos[kb][2] - z0), tilt, (-min(pen) if pen else 0.0)
 
 
-@pytest.mark.parametrize("klt,half_y,wall_y", [(KLT, 0.15, 0.1336), (KLT_BIG, 0.20, 0.1781)])
+@pytest.mark.parametrize("klt,half_y,wall_y", [(KLT, 0.15, 0.1307), (KLT_BIG, 0.20, 0.1781)])
 def test_hook_lifts_klt_by_handle(built, klt, half_y, wall_y):
     lift, tilt, pen = _hook_probe(built["a5"], klt, half_y, wall_y)
     print(f"\n[Haken {klt}] Hub {lift * 100:.1f} cm, Kippung {tilt:.1f} Grad, "
@@ -307,11 +310,91 @@ def test_hook_lifts_klt_by_handle(built, klt, half_y, wall_y):
     assert pen < 0.003            # sauber eingehakt, nicht in die Kiste gedrueckt
 
 
+def _hook_probe_rotated(path, klt, wall_y, lip_top, squeeze=0.002, lift=0.06):
+    """Haken so, wie Nils ihn benutzt: Hand 90 Grad nach innen gedreht, Paddel
+    waagrecht unter der Schuerze, die 15-mm-Lippe steht nach oben. Ablauf:
+    Lippe nahe der Stirnwand von unten in die Tasche, beide Haken nach innen
+    zusammendruecken, dann heben. Rueckgabe: (Hub beim Einfahren, Hub der
+    Kiste, Kippung, tiefste Durchdringung)."""
+    spec = mujoco.MjSpec.from_file(str(path))
+    m0 = spec.compile()
+    d0 = mujoco.MjData(m0)
+    mujoco.mj_forward(m0, d0)
+    P = d0.xpos[m0.body(klt).id].copy()
+
+    def quat(cols):
+        R = np.array(cols, float).T
+        q = np.zeros(4)
+        mujoco.mju_mat2Quat(q, R.ravel())
+        return q
+
+    # Spalten = Hand-Achsen in Weltkoordinaten: Finger -x, Lippen-Hoehe (hand y) nach oben
+    cfg = {"right": (1, quat([(-1, 0, 0), (0, 0, 1), (0, 1, 0)])),
+           "left": (-1, quat([(-1, 0, 0), (0, 0, -1), (0, -1, 0)]))}
+    for side, (_, q) in cfg.items():
+        b = spec.worldbody.add_body(name=f"rot_{side}", mocap=True, quat=list(q))
+        for f in sorted(glob.glob(str(G1_DIR / "hands" / "haken" / "generated" / f"{side}_col_*.stl"))):
+            mn = f"rot_{side}_{Path(f).stem}"
+            spec.add_mesh(name=mn, file=f)
+            b.add_geom(type=mujoco.mjtGeom.mjGEOM_MESH, meshname=mn, contype=2, conaffinity=2,
+                       friction=[1.0, 0.01, 0.001])
+    m = spec.compile()
+    m.opt.timestep = 0.002
+    d = mujoco.MjData(m)
+    kb = m.body(klt).id
+    mids = {s: m.body(f"rot_{s}").mocapid[0] for s in cfg}
+    hook_ids = {m.body(f"rot_{s}").id for s in cfg}
+    lip_y = wall_y + 0.0075 + 0.0005        # Lippe (15 mm) 0,5 mm vor der Stirnwand
+
+    def place(dy_in, top):
+        for s, (sgn, _) in cfg.items():
+            # Lippenmitte = hand z -0.0425, Lippen-Oberkante = |hand y| 0.034
+            d.mocap_pos[mids[s]] = [P[0] + 0.1615, P[1] + sgn * (lip_y - dy_in + 0.0425),
+                                    P[2] + top - 0.034]
+
+    def run(T, f):
+        n = int(T / m.opt.timestep)
+        for i in range(n):
+            f(i / n)
+            mujoco.mj_step(m, d)
+
+    z_start = 0.060
+    place(0, z_start)
+    run(0.5, lambda a: None)
+    z0 = d.xpos[kb][2]
+    run(1.0, lambda a: place(0, z_start + (lip_top - z_start) * a))   # von unten einfahren
+    z_in = d.xpos[kb][2] - z0
+    run(0.5, lambda a: place(squeeze * a, lip_top))                   # zusammendruecken
+    run(1.5, lambda a: place(squeeze, lip_top + lift * a))            # heben
+    run(1.0, lambda a: None)
+    pen = [d.contact[k].dist for k in range(d.ncon)
+           if {m.geom_bodyid[d.contact[k].geom1], m.geom_bodyid[d.contact[k].geom2]} & hook_ids
+           and kb in {m.geom_bodyid[d.contact[k].geom1], m.geom_bodyid[d.contact[k].geom2]}]
+    R = d.xmat[kb].reshape(3, 3)
+    tilt = float(np.degrees(np.arccos(np.clip(R[2, 2], -1, 1))))
+    return float(z_in), float(d.xpos[kb][2] - z0), tilt, (-min(pen) if pen else 0.0)
+
+
+@pytest.mark.parametrize("klt,wall_y", [(KLT, 0.1307), (KLT_BIG, 0.1781)])
+def test_rotated_hook_enters_pocket_and_lifts(built, klt, wall_y):
+    """Gedrehter Haken: die Lippe faehrt frei in die Tasche (Kiste bewegt sich
+    beim Einfahren nicht), Paddel liegt unter der Schuerze, Kiste hebt gerade."""
+    # Lippe 24 mm ueber dem Paddel; Paddel stoppt knapp unter der Schuerze
+    # (Unterkante ~80 mm) -> Lippen-Oberkante 100 mm ueber dem Kistenboden
+    z_in, lift, tilt, pen = _hook_probe_rotated(built["a5"], klt, wall_y, lip_top=0.100)
+    print(f"\n[Haken gedreht {klt}] Einfahren {z_in * 1e3:.1f} mm, Hub {lift * 100:.1f} cm, "
+          f"Kippung {tilt:.1f} Grad, Durchdringung {pen * 1e3:.1f} mm")
+    assert abs(z_in) < 0.003          # nicht geklemmt, Kiste nicht mitgeschoben
+    assert lift > 0.05                # Haken heben 6 cm
+    assert tilt < 5.0
+    assert pen < 0.003
+
+
 def test_hook_cannot_lift_convex_hull(built):
     """Gegenprobe: mit der alten Kollision (konvexe Huelle = voller Block, ohne
     die frueheren Behelfs-Rippen) gibt es keine Tasche -- die Haken drueckt es
     zur Seite, die Kiste bleibt (fast) liegen."""
-    lift, tilt, pen = _hook_probe(built["ohne"], KLT, 0.15, 0.1336)
+    lift, tilt, pen = _hook_probe(built["ohne"], KLT, 0.15, 0.1307)
     print(f"\n[Haken alte Huelle] Hub {lift * 100:.1f} cm, Kippung {tilt:.1f} Grad, "
           f"Durchdringung {pen * 1e3:.1f} mm")
     assert lift < 0.02

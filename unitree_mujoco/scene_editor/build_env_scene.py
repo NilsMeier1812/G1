@@ -490,11 +490,17 @@ def add_collision_hulls(geom_el, mesh_abs: Path, mesh_scale, asset, wb, warnings
 # konvexen Huelle: eine KLT-Kiste ist dann ein voller Block, Innenraum und
 # Grifftaschen sind zu. Darum bekommt jedes nicht-konvexe Greif-Netz eine
 # Kollision aus Quadern (siehe _grasp_boxes):
-#   * Oberflaeche des Netzes auf ein Voxelgitter (GRASP_VOXEL) legen, rundum
-#     geschlossene Hohlraeume fuellen, Spalten bis 2*GRASP_CLOSE_VOXELS Voxel
-#     schliessen (Treppenstufen schraeger Flaechen, Mini-Loecher), belegte
-#     Voxel gierig zu moeglichst grossen achsparallelen Quadern zusammenfassen.
-#   * Die unterste Voxel-Lage wird als eine flache Auflage zusammengefasst
+#   * Gitter mit Zellen bis GRASP_VOXEL, dessen Ebenen genau auf den
+#     achsparallelen Wandflaechen des Netzes liegen (_wall_planes, ab
+#     GRASP_PLANE_MIN_AREA). Punkte einer solchen Wand kommen in die Zelle auf
+#     der Materialseite (_material_side, per Strahl, weil die Wicklung der
+#     Netze nicht stimmt). Gerade Waende und Taschen sind dadurch exakt: die
+#     1-mm-Stirnwand bleibt 1 mm, die 17-mm-Grifftasche 17 mm.
+#   * Oberflaeche ins Gitter legen, rundum geschlossene Hohlraeume fuellen,
+#     Spalten bis 2*GRASP_CLOSE_VOXELS Zellen schliessen (Treppenstufen
+#     schraeger Flaechen), belegte Zellen gierig zu moeglichst grossen
+#     achsparallelen Quadern zusammenfassen.
+#   * Die unterste Lage wird als eine flache Auflage zusammengefasst
 #     (Loecher in der Grundflaeche gefuellt): auf dem Tisch beruehren nur ~3
 #     Quader die Platte statt ~20 -- jeder beruehrende Quader kostet MuJoCo pro
 #     Schritt eine Box-Box-Rechnung.
@@ -502,28 +508,30 @@ def add_collision_hulls(geom_el, mesh_abs: Path, mesh_scale, asset, wb, warnings
 #     kleinen KLT (Stirnwand 1 mm, Grifftasche 14 mm): V-HACD verliert selbst
 #     mit 4 Mio. Voxeln Teile der 1-mm-Stirnwand (Hand faehrt durch die Wand in
 #     die Kiste), CoACD haelt die Wand, braucht aber ~190 s und macht die Tasche
-#     mit schraegen Keilen enger. Die Quader liegen bis auf ein Voxel genau
-#     (Tasche 12 statt 14 mm), jede Wand ist mindestens ein Voxel dick (nichts
-#     tunnelt), Bau ~1-2 s je Kiste, danach aus dem Cache.
-#   * Rechenzeit: jeder Quader kostet MuJoCo etwas Kollisionspruefung gegen
-#     die Nachbarn (gemessen A5, 4-Kern-Cloud-Rechner, je Sim-Schritt):
-#     Voxel 2 mm 591 Quader +0,21 ms, 3 mm 377 Quader +0,14 ms, 4 mm 234
-#     Quader +0,09 ms. 3 mm ist der Kompromiss: Tasche und 1-mm-Wand bleiben
-#     richtig, Haken heben die Kiste bei allen drei Werten.
-#   * Grenze: schraege/runde Flaechen werden zur Treppe (Stufe <= 1 Voxel),
-#     Oeffnungen unter 2*GRASP_CLOSE_VOXELS Voxel (6 mm) gehen zu. Konvexe
-#     Netze (z. B. sample_ramp) brauchen nichts und bleiben wie bisher.
+#     mit schraegen Keilen enger. Ein reines 3-mm-Raster (grasp_boxes_v1)
+#     machte die Tasche 2 mm enger -- zu eng fuer die 15-mm-Haken-Lippe, die
+#     gedreht von unten in die echte 17-mm-Tasche faehrt. Bau ~2-3 s je Kiste,
+#     danach aus dem Cache.
+#   * Rechenzeit (A5, zwei KLT, 4-Kern-Cloud-Rechner, je Sim-Schritt): reines
+#     3-mm-Raster 377 Quader 0,35 ms; Wand-Gitter 3 mm 652 Quader 0,50 ms,
+#     4 mm 468 Quader 0,38 ms. 4 mm reicht, weil die Wandebenen die Genauigkeit
+#     liefern; nur schraege/runde Flaechen werden zur Treppe (Stufe <= 4 mm).
+#   * Grenze: Spalten unter 2 Zellen gehen zu; konvexe Netze (z. B.
+#     sample_ramp) brauchen nichts und bleiben wie bisher.
 # Die Quader haengen im freien Koerper des Objekts (Geom-Namen
 # "<objekt>__hull000" ..., Gruppe 3 = im Viewer ausgeblendet) und tragen KEINE
 # Masse; das Netz bleibt Optik (contype/conaffinity 0) und traegt wie bisher
 # Masse und Traegheit. scene_objects.py erkennt die Teile am Namen.
 GRASP_HULL_INFIX = "__hull"
-GRASP_VOXEL = 0.003           # m: Kantenlaenge eines Voxels (Genauigkeit)
+GRASP_VOXEL = 0.004           # m: groesste Zellkante (schraege Flaechen)
 GRASP_CLOSE_VOXELS = 1        # Spalten bis 2*N Voxel werden geschlossen
 GRASP_MAX_CELLS = 8_000_000   # groessere Objekte -> Voxel wird groesser
+GRASP_PLANE_MIN_AREA = 1e-3   # m^2: achsparallele Wand ab 10 cm^2 -> Gitterebene
+GRASP_PLANE_MERGE = 3e-4      # m: Ebenen naeher als 0,3 mm = eine Wand
+GRASP_WALL_MAX = 0.006        # m: dickere Wand -> Seite per Gegenflaeche unsicher
 # Version des Verfahrens -- hochzaehlen, wenn sich etwas an _grasp_boxes
 # aendert (eigener Cache-Unterordner, alte Ergebnisse werden nicht benutzt).
-GRASP_DECOMP_VERSION = "grasp_boxes_v1"
+GRASP_DECOMP_VERSION = "grasp_boxes_v2"
 
 
 def _surface_points(vertices, faces, step):
@@ -656,29 +664,154 @@ def _greedy_boxes(occ):
     return best
 
 
+def _wall_planes(mesh, axis, min_area=GRASP_PLANE_MIN_AREA, merge=GRASP_PLANE_MERGE):
+    """Achsparallele Flaechen eines Netzes entlang einer Achse: Liste
+    (Koordinate, Flaechen-Indizes) fuer jede Ebene mit mindestens min_area
+    Flaeche. Ebenen naeher als merge werden zusammengefasst (flaechengewichtet)."""
+    import numpy as np
+    n = mesh.face_normals[:, axis]
+    sel = np.nonzero(np.abs(n) > 0.999)[0]
+    if not len(sel):
+        return []
+    coord = mesh.triangles_center[sel, axis]
+    area = mesh.area_faces[sel]
+    order = np.argsort(coord)
+    groups, cur = [], [order[0]]
+    for a, b in zip(order[:-1], order[1:]):
+        if coord[b] - coord[a] > merge:
+            groups.append(cur)
+            cur = []
+        cur.append(b)
+    groups.append(cur)
+    out = []
+    for g in groups:
+        g = np.array(g)
+        if area[g].sum() >= min_area:
+            out.append((float(np.average(coord[g], weights=area[g])), sel[g]))
+    return out
+
+
+def _material_side(mesh, faces, axis, max_wall=GRASP_WALL_MAX):
+    """Auf welcher Seite (+1/-1 entlang axis) liegt bei achsparallelen Flaechen
+    das Material? Die Wicklung der Netze ist nicht verlaesslich, darum per
+    Strahl: Material ist die Seite, auf der die Gegenflaeche der Wand innerhalb
+    max_wall liegt (duennwandige Teile). Eine Flaeche ohne nahe Gegenflaeche,
+    die zu einer Seite ins Freie zeigt, ist eine Haut ohne Dicke (KLT-Schuerze):
+    Material dann zur freien Seite. 0 = unklar (beide Nachbarzellen)."""
+    import numpy as np
+    c = mesh.triangles_center[faces]
+    side = np.zeros(len(faces), dtype=int)
+    dist = {}
+    for sg in (1, -1):
+        d = np.zeros(3)
+        d[axis] = sg
+        org = c + d * 1e-5
+        loc, ray, _ = mesh.ray.intersects_location(org, np.tile(d, (len(c), 1)),
+                                                   multiple_hits=True)
+        best = np.full(len(c), np.inf)
+        if len(ray):
+            t = (loc[:, axis] - org[ray, axis]) * sg
+            ok = t > 1e-5
+            np.minimum.at(best, ray[ok], t[ok])
+        dist[sg] = best
+    near = np.minimum(dist[1], dist[-1]) <= max_wall
+    side[near & (dist[1] < dist[-1])] = 1
+    side[near & (dist[-1] < dist[1])] = -1
+    # Einzelne Flaeche ohne Gegenflaeche (z. B. Schuerze als duenne Haut):
+    # Material zur offenen Seite hin, damit die Tasche davor frei bleibt
+    side[~near & np.isinf(dist[1]) & np.isfinite(dist[-1])] = 1
+    side[~near & np.isinf(dist[-1]) & np.isfinite(dist[1])] = -1
+    return side
+
+
 def _grasp_boxes(mesh, voxel=GRASP_VOXEL, close=GRASP_CLOSE_VOXELS):
     """Quader-Zerlegung eines Netzes (siehe GRASP_HULL_INFIX).
 
-    Das Gitter wird je Achse genau an die Bounding-Box des Netzes angepasst,
-    die Aussenmasse stimmen also exakt; innere Flaechen liegen bis zu einem
-    Voxel daneben (duenne Waende werden auf 1 Voxel aufgedickt).
+    Gitter: je Achse ein Raster von etwa voxel Kantenlaenge, aber die
+    Gitterebenen liegen genau auf den achsparallelen Wandflaechen des Netzes
+    (Raster-Linien naeher als voxel/2 an einer Wand fallen weg). Achsparallele
+    Waende, Taschen und Aussenmasse stimmen dadurch exakt (1-mm-Wand bleibt
+    1 mm, Tasche behaelt ihre Breite); nur schraege/runde Flaechen werden zur
+    Treppe mit Stufen bis ~1,5 voxel.
     Rueckgabe: Liste [cx, cy, cz, hx, hy, hz] in Netz-Koordinaten.
     """
     import numpy as np
     lo = mesh.bounds[0].astype(float)
-    ext = np.maximum(mesh.extents.astype(float), 1e-6)
+    hi = mesh.bounds[1].astype(float)
+    ext = np.maximum(hi - lo, 1e-6)
     while True:
         n = np.maximum(1, np.round(ext / voxel)).astype(int)
         if int(np.prod(n)) <= GRASP_MAX_CELLS:
             break
         voxel *= 1.25
-    pitch = ext / n
-    pts = _surface_points(np.asarray(mesh.vertices, float), np.asarray(mesh.faces),
-                          0.5 * float(pitch.min()))
-    idx = np.clip(np.floor((pts - lo) / pitch).astype(int), 0, n - 1)
-    occ = np.zeros(n, dtype=bool)
-    occ[idx[:, 0], idx[:, 1], idx[:, 2]] = True
-    occ = _close(_fill_enclosed(occ), close)
+    verts = np.asarray(mesh.vertices, float)
+    faces = np.asarray(mesh.faces)
+    edges, snap = [], []          # snap: je Achse (Flaechen, Ebene, Seite)
+    for ax in range(3):
+        planes = _wall_planes(mesh, ax)
+        e = np.unique(np.clip([lo[ax], hi[ax]] + [p for p, _ in planes], lo[ax], hi[ax]))
+        e = e[np.concatenate([[True], np.diff(e) > 1e-4])]    # keine Null-Zellen
+        e[-1] = hi[ax]
+        # jedes Stueck zwischen zwei Ebenen gleichmaessig auf <= voxel teilen
+        e = np.concatenate([np.linspace(a, b, max(1, int(np.ceil((b - a) / voxel - 1e-9))) + 1)[:-1]
+                            for a, b in zip(e[:-1], e[1:])] + [e[-1:]])
+        edges.append(e)
+        sn = []
+        for p, fidx in planes:
+            sn.append((fidx, p, _material_side(mesh, fidx, ax)))
+        snap.append(sn)
+    shape = tuple(len(e) - 1 for e in edges)
+    step = 0.5 * min(float(np.diff(e).min()) for e in edges)
+    step = max(step, 0.25 * voxel)
+    # Punkte je Dreieck, leicht zur Dreiecksmitte gezogen (Kantenpunkte liegen
+    # sonst genau auf Nachbar-Ebenen und landen in der falschen Zelle)
+    tri = verts[faces]
+    cen = tri.mean(axis=1, keepdims=True)
+    tri = cen + (tri - cen) * (1.0 - 1e-4)
+    cells = np.zeros(shape, dtype=bool)
+    fid_all = np.arange(len(faces))
+    edge_len = np.max(np.linalg.norm(tri - np.roll(tri, 1, axis=1), axis=2), axis=1)
+    n_div_f = np.maximum(1, np.ceil(edge_len / step)).astype(int)
+    # Achsparallele Wandflaechen: Koordinate genau auf die Ebene, dann ein
+    # Hauch zur Materialseite (unklar: in beide Nachbarzellen)
+    fix = [dict() for _ in range(3)]
+    for ax in range(3):
+        for fidx, p, side in snap[ax]:
+            for f, sg in zip(fidx, side):
+                fix[ax][int(f)] = (p, int(sg))
+    for nd in np.unique(n_div_f):
+        fsel = fid_all[n_div_f == nd]
+        i, j = np.meshgrid(np.arange(nd + 1), np.arange(nd + 1), indexing="ij")
+        keep = (i + j) <= nd
+        a, b = i[keep] / nd, j[keep] / nd
+        w = np.stack([1.0 - a - b, a, b], axis=1)
+        pts = np.einsum("kv,fvd->fkd", w, tri[fsel])           # (F,K,3)
+        fids = fsel
+        for ax in range(3):
+            rows, plane, sgn = [], [], []
+            for r, f in enumerate(fids):
+                hit = fix[ax].get(int(f))
+                if hit is not None:
+                    rows.append(r)
+                    plane.append(hit[0])
+                    sgn.append(hit[1])
+            if not rows:
+                continue
+            rows, plane, sgn = np.array(rows), np.array(plane), np.array(sgn)
+            pts[rows, :, ax] = (plane + np.where(sgn == 0, 1, sgn) * 1e-7)[:, None]
+            dup = rows[sgn == 0]
+            if len(dup):
+                extra = pts[dup].copy()
+                extra[:, :, ax] -= 2e-7
+                pts = np.concatenate([pts, extra])
+                fids = np.concatenate([fids, fids[dup]])
+        variants = [pts]
+        for P in variants:
+            P = P.reshape(-1, 3)
+            idx = [np.clip(np.searchsorted(edges[ax], P[:, ax], side="right") - 1,
+                           0, shape[ax] - 1) for ax in range(3)]
+            cells[idx[0], idx[1], idx[2]] = True
+    occ = _close(_fill_enclosed(cells), close)
     # Auflage: unterste Lage fuer sich (Loecher gefuellt), Rest darueber
     base = np.zeros_like(occ)
     base[:, :, 0] = _fill_enclosed(occ[:, :, 0])
@@ -687,8 +820,8 @@ def _grasp_boxes(mesh, voxel=GRASP_VOXEL, close=GRASP_CLOSE_VOXELS):
     out = []
     for part in (base, upper):
         for b_lo, b_hi in _greedy_boxes(part):
-            p0 = lo + np.array(b_lo) * pitch
-            p1 = lo + np.array(b_hi) * pitch
+            p0 = np.array([edges[ax][b_lo[ax]] for ax in range(3)])
+            p1 = np.array([edges[ax][b_hi[ax]] for ax in range(3)])
             out.append([float(v) for v in (*((p0 + p1) / 2), *((p1 - p0) / 2))])
     return out
 
